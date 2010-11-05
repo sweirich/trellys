@@ -1,0 +1,41 @@
+module receg where
+
+import Prelude
+
+
+data Vector : (a : Type 0) => (n : Nat) -> Type 0 where
+   VCons : (size : Nat) -> (x:a) -> (xs : Vector [a] size) -> Vector [a] (Succ size)
+   VNil : Vector [a] Zero
+
+data Bool : Type 0 where
+   True :  Bool
+   False : Bool
+
+data LT : [n : Nat] -> [m : Nat] -> Type 0 where
+  LTz : (p : n = 0
+
+
+lt : (x : Nat) -> (y:Nat) -> Bool
+recnat lt x = \y ->
+   case x of
+     (Zero) xw -> (case y of
+                    (Zero) yw -> False
+                    (Succ y') yw -> True)
+     (Succ x') xw -> case y of
+                       (Zero) yw -> False
+                       (Succ y') yw -> lt x' [xw] y'
+
+
+{-
+working on this, but need some lemmas...
+
+sig cvrec : (x:Nat) -> (A : (x:Nat) -> Type) ->
+            (step : (x:Nat) -> (IH:(y:Nat) -> (p:lt y x = True) -> (A y)) -> A x) ->
+            (y:Nat) -> (p:lt y x = True) -> A y
+val cvrec =
+  recnat cvrec x = \ A . \ step . \ y . \ p .
+    case x of
+   	 Zero xw ->  |
+   	 Succ m xw -> False
+
+-}

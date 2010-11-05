@@ -1,0 +1,42 @@
+module Lists where
+
+import Prelude
+
+-- lists of length <= n.
+data List (a : Type 0) (n : Nat) -> Type 0 where
+  Nil : List a n
+  Cons : [m : Nat] -> [pf  : n = Succ m] ->
+         (x : a) -> (xs : List a m) -> List a n
+
+map : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
+      [n : Nat] -> (xs : List a n) -> List b n
+map = \ [a] . \ [b] . \ f . recnat map [n] = \ xs .
+        case xs [xs_eq] of
+          Nil -> Nil [b] [n]
+          Cons [m] [pf] x xs -> Cons [b] [n] [m] [pf] (f x) 
+ 	                          (map [m] [pf] xs)
+
+append : [a:Type 0] -> [n:Nat] -> (xs : List a n) -> [m:Nat] -> (ys : List a m) -> Exists Nat (List a)
+append = \[a]. recnat append [n] = \xs. \[m]. \ys.
+                 case xs [xs_eq] of
+		   Nil -> Ex [Nat] [List a] [m] ys
+		   Cons [n'] [pf] x xs -> 
+		     case (append [n'] [pf] xs [m] ys) [append_eq] of
+		       Ex [l] zs ->  Ex [Nat] [List a] [Succ l] (Cons [a] [Succ l] [l] [join 0] x zs)
+
+concat : [a:Type 0] -> [n:Nat] -> (xs : List (Exists Nat (List a)) n) -> Exists Nat (List a)
+concat = \[a]. recnat concat [n] = \xs.
+                 case xs [xs_eq] of 
+		   Nil -> Ex [Nat] [List a] [0] (Nil [a] [0])
+		   Cons [n'] [pf] x xs -> 
+  		     case x [x_eq] of
+		       Ex [m] ys ->
+		         case (concat [n'] [pf] xs) [concat_eq] of
+			   Ex [l] zs ->
+			     append [a] [m] ys [l] zs
+
+concatmap : [a:Type 0] -> [b:Type 0]  -> (f: (x:a) -> Exists Nat (List b)) ->
+	      [n:Nat]  -> (xs:List a n) -> Exists Nat (List b)
+concatmap = \[a]. \[b]. \f. \[n]. \xs.
+	       concat [b] [n] (map [a] [Exists Nat (List b)] f [n] xs)
+

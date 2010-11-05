@@ -1,0 +1,220 @@
+module Append where
+
+import Prelude
+import Vectors
+import Arithmetic
+        
+plus0 : [n:Nat] -> n = plus 0 n 
+plus0 = \[n] . join 3
+
+plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
+plusSucc = \[n] [m] . join 42
+
+-- there is a much nicer looking append in Lists that existentially
+-- quantifies the length of the returned list. NC
+append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append = \[a] . recnat app [n] = \[m] . \xs ys .
+  case xs [p] of
+    VNil [neq] -> 
+      let [neq'] [p] = (sym Nat Nat n 0 neq) in -- evidence of backwards equality. NC
+      conv (conv ys by (plus0 [m]) at x.Vector a x) by neq' at h.Vector a (plus h m)
+    VCons [n'] [neq] x xs' -> 
+      let xs'ys [p] = app [n'] [neq] [m] xs' ys in
+      let xsys [p] = VCons [a] [Succ (plus n' m)] [plus n' m] [join 42] x xs'ys in
+      let xsys' [p] = conv xsys by (plusSucc [n'] [m]) at h.Vector a h in
+      let [neq'] [p] = (sym Nat Nat n (Succ n') neq) in -- evidence of backwards equality. NC
+      conv xsys' by neq' at h.Vector a (plus h m)
+
+appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat] 
+                   -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
+                   -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
+                    = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [xseq] of
+    -- Question: why does this proof style work, but below does not???
+    {- VNil: app (app xs ys) zs = app ys zs
+                                = app xs (app ys zs) -}
+    VNil [ieq] -> let eq [p] = (join 42 : append [a] [plus i j] [k] (append [a] [i] [j] (VNil [a] [i] [ieq]) ys) zs
+                                        = append [a] [i] [plus j k] (VNil [a] [i] [ieq]) (append [a] [j] [k] ys zs))
+                  -- can't use [] in `Vector a i` (e.g. `Vector [a] [i]`)
+                  -- args to `sym`: get an annotation error ??? NC
+                  in let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq -- evidence of backwards equality. NC
+                  in conv eq by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs 
+                                           = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
+                                             
+    {-
+       let p = aa a ms y z :: (ms++y)++z = ms++(y++z)
+       in trans [ (x++y)++z BY pattern q
+                , ((m:ms)++y)++z BY join 5
+                , (m:((ms++y)++z)) BY rewrite p
+                , (m:(ms++(y++z))) BY join 4
+                , (m:ms)++(y++z) BY  pattern' q
+                , x++(y++z)
+                ]
+    -}
+{- Strategy for rewriting multiple interdependent holes:
+
+suppose t[x,y] is an type expression with holes x:X and y:Y, and eqx :
+x1 = x2, eqy : y1 = y2.  To convert t[x1,y1] to t[x2,y2], we would like to do
+
+  t[x1,y1] =eqx=> t[x2,y1] =eqy=> t[x2,y2]
+
+or
+
+  t[x1,y1] =eqy=> t[x1,y2] =eqx=> t[x2,y2]
+
+But, if there is an interdependence between x1 and y1, then rewriting
+one w/o before the other may lead to an intermediate type expression
+which doesn't type check :P
+
+The language support work around is to provide `conv` with multiple
+hole contexts.  The minimal primitives workaround is to identify the
+common subexpression of x1 and y1, and then do some intermediate
+rewrites:
+
+Suppose eqx : x1[a1] = x2[a2], eqy : y1[a1] = y2[a2], eqa : a1 = a2, a1:A, a2:A.
+
+Then eqx' : x1[a2] = x2[a2], by converting eqx by eqa, and similarly eqy' : y1[a2] = y2[a2] and so
+
+  t[x1[a1],y1[a1]] =eqa=> t[x1[a2],y1[a2]] =eqx'=> t[x2[a2],y1[a2]] =eqy'=> t[x2[a2],y2[a2]]
+
+A special case (what i actually experienced) arises when a1 = y1 and
+a2 = y2.  This case is simpler:
+
+  t[x1[a1],a1] =eqa=> t[x1[a2],a2] =eqx'=> t[x2[a2],a2]
+
+-}
+    VCons [i'] [ieq] x xs' -> 
+        let ih [p] = aa [i'] [ieq] [j] [k] [xs'] [ys] [zs]
+        in let i'jk [p] = plus (plus i' j) k -- need to rewrite `ih` to with `i'jk` to use `i'jk` below :P
+        in let eq [p] = conv (join 0) by ih at h . VCons [a] [Succ (plus (plus i' j) k)] [(plus (plus i' j) k)] [(join 0)] x 
+                                                         (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)
+                                                 = VCons [a] [Succ (plus (plus i' j) k)] [(plus (plus i' j) k)] [(join 0)] x h
+        in x
+
+-- TODO: improve error message to point to which branch fails (the line number given is for the `case`!)
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [xseq] of
+    {- VNil: app (app xs ys) zs = app ys zs
+                                = app xs (app ys zs) -}
+    VNil [ieq] -> let eq [p] = (join 42 : append [a] [plus i j] [k] (append [a] [i] [j] (VNil [a] [i] [ieq]) ys) zs
+                                        = append [a] [i] [plus j k] (VNil [a] [i] [ieq]) (append [a] [j] [k] ys zs))
+                  -- can't use [] in `Vector a i` (e.g. `Vector [a] [i]`)
+                  -- args to `sym`: get an annotation error ??? NC
+                  in let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq
+                  in conv eq by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs 
+                                           = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
+    VCons [i'] [ieq] x xs -> xs
+
+
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [xseq] of
+    {- VNil: app (app xs ys) zs = app ys zs
+                                = app xs (app ys zs) -}
+                  -- expand xs into VNil
+    VNil [ieq] -> let e1 [p] = conv (join 0 : append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs
+                                            = append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs)
+                              by xseq at h.append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs
+                                           = append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs
+                  -- compute away VNil in append
+                  in let e2 [p] = (join 42 : append [a] [i] [j] (VNil [a] [i] [ieq]) ys = ys)
+                  in let e3 [p] = (join 42 : append [a] [plus i j] [k] (append [a] [i] [j] (VNil [a] [i] [ieq]) ys) zs
+                                           = append [a] [j] [k] ys zs)
+                  in let e3 [p] = (join 42 : append [a] [plus i j] [k] (append [a] [i] [j] (VNil [a] [i] [ieq]) ys) zs
+                                           = append [a] [i] [plus j k] (VNil [a] [i] [ieq]) (append [a] [j] [k] ys zs))
+                  -- can't use [] in `Vector a i` (e.g. `Vector [a] [i]`)
+                  -- args to `sym`: get an annotation error ??? NC
+                  in let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq
+                  in conv e3 by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs 
+                                           = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
+    VCons [i'] [ieq] x xs -> xs
+
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [xseq] of
+    VNil [ieq] -> let e [p] =  (join 42 : append [a] [plus 0 j] [k] (append [a] [0] [j] (VNil [a] [0] [(join 42)]) ys) zs 
+                                          = append [a] [0] [plus j k] (VNil [a] [0] [(join 42)]) (append [a] [j] [k] ys zs))
+                  in let ieq' [p] = sym Nat Nat i 0 ieq
+                  -- can't use [] in `Vector a i` (e.g. `Vector [a] [i]`)
+                  -- args to `sym`: get an annotation error ??? NC
+                  in let xseq' [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq])
+                  -- big question: how to convert (VNil a 0 p1) to (VNil a i p2)? problem is the proofs p1 and p2
+                  in let e' [p] = conv e by ieq'
+                       at h.append [a] [plus h j] [k] (append [a] [h] [j] (VNil [a] [h] [(join 42)]) ys) zs
+                            = append [a] [h] [plus j k] (VNil [a] [h] [(join 42)]) (append [a] [j] [k] ys zs)
+
+                  -- `conv` fails because `join 42` can't join `i` with `0` when `h` = `i`. NC
+                  {-
+                  in let e' [p] = conv e by ieq'
+                       at h.append [a] [plus h j] [k] (append [a] [h] [j] (VNil [a] [h] [(join 42)]) ys) zs
+                            = append [a] [h] [plus j k] (VNil [a] [h] [(join 42)]) (append [a] [j] [k] ys zs)
+                  -}
+                  in (join 42 : append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
+                    = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs))
+    VCons [i'] [ieq] x xs -> xs
+{-
+-}
+
+{-
+-}
+
+{-
+                   -> Exists Nat (\ij . Exists Nat (\jk . 
+                      append [a] [ij] [k] (append [a] [i] [j] xs ys) zs 
+                    = append [a] [i] [jk] xs (append [a] [j] [k] ys zs)))
+-}
+{-
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [p] of
+    VNil [ieq] -> join 42
+    VCons [i'] [ieq] x xs -> xs
+-}
+{-
+[]++ ys = ys
+(x:xs)++ys = x:(xs++ys)
+
+s0 :: (x++y)++z  = (x++y)++z
+s0 = refl (x++y)++z
+
+s1:: (x++y)++z  = ((m:ms)++y)++z
+s1 = conv s0 by q::(x=m:ms) at C[u]=(x++y)++z=(u++y)++z
+
+s2 :: ((m:ms)++y)++z = m:((ms++y)++z)
+s2 = join _  (((m:ms)++y)++z)  (m:((ms++y)++z))
+
+s3 :: (m:((ms++y)++z)) = (m:(ms++(y++z)))
+s3 = conv (refl (m:((ms++y)++z))) by (p: (ms++y)++z = ms++(y++z)) at C[u].(m:((ms++y)++z)) = (m:u)
+
+s4 :: (m:(ms++(y++z))) = (m:ms)++(y++z)
+s4 = join _ (m:(ms++(y++z))) ((m:ms)++(y++z))
+
+s5 :: (m:ms)++(y++z) = x++(y++z)
+s5 = conv (refl x++(y++z)) by q at C[u]= u++(y++z) = x++(y++z)
+
+trans [s1,s2,s3,s4,s5]
+
+data ProofStep a b =
+  Nil :: ProofStep a a
+  Cons :: (b=a) -> ProofStep b c -> ProofStep a c
+
+trans:: ProofStep a b -> a=b
+
+
+appAssociates:: (a:type) -> (x,y,z:List a) -> (x++(y++z)) = ((x++y)++z))
+appAssociates a x y z =
+  case x by q of
+    [] -> trans [ (x++y)++z BY  pattern q
+                , ([]++y)++z) BY join 4
+                , ([]++(y++z))  BY pattern' q
+                , (x++(y++z)) ]
+    (m:ms) ->
+       let p = appAssociates a ms y z
+       in trans [ (x++y)++z BY pattern q
+                , ((m:ms)++y)++z BY join 5
+                , (m:((ms++y)++z)) BY rewrite p
+                , (m:(ms++(y++z))) BY join 4
+                , (m:ms)++(y++z) BY  pattern' q
+                , x++(y++z)
+                ]
+
+ where
+-}
