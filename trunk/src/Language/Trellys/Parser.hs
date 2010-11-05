@@ -10,7 +10,7 @@ module Language.Trellys.Parser
 
 import Language.Trellys.Syntax
 
-import qualified LangLib.LayoutToken as Token
+import qualified Language.Trellys.LayoutToken as Token
 import Language.Trellys.GenericBind
 
 import Text.ParserCombinators.Parsec

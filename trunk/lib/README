@@ -1,2 +1,1 @@
-langlib: one file from LangLib; part of the repo
 replib-read-only: an copy of the externally maintained RepLib; pulled in with svn:externals
