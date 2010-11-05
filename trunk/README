@@ -1,0 +1,3 @@
+lib: libraries maintained by others
+src: trellys language source
+test: example .trellys files

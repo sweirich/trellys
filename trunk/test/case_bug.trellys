@@ -1,0 +1,24 @@
+module bug where
+
+import Prelude
+
+data Vector [a : Type 0] [n : Nat] -> Type 0 where
+   VNil  : [pf : n = 0] -> Vector a n
+   VCons : [size : Nat] -> [pf : n = Succ size]
+        -> (x:a) -> (xs : Vector a size) -> Vector a n
+
+prog bug : [a:Type 0] -> [n:Nat] -> (v:Vector a n) => Nat
+
+bug = \[a] . \[n]. \ v.
+        case v [v_eq] of
+          VNil [n_eq] -> 
+
+            -- the bug is here that checking this ascription
+            -- fails, because v_eq actually has type v = VNil a n [n_eq]
+            -- here, where we have the wrong stage for "a" and "n".
+            -- v_eq's type says they are run-time, but they should be
+            -- compile-time.
+
+            ( v_eq : v = VNil [a] [n] [n_eq] )
+
+          VCons [n'] [n_eq] x xs -> x

@@ -1,0 +1,13 @@
+module Trees where
+
+import Prelude
+
+data List [a : Type 0] -> Type 0 where
+  Nil : List a
+  Cons : (x:a) -> (xs:List a) -> List a
+
+data Rose [a : Type 0] -> Type 0 where
+  Fork : (x:a) -> (r:List (Rose a)) -> Rose a
+
+-- data Bin [a : Type 0] -> Type 0 where
+--  Bin : (x:a)

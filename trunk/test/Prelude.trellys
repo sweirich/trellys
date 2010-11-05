@@ -1,0 +1,65 @@
+module Prelude where
+
+data Bool -> Type 0 where
+  True : Bool
+  False : Bool
+
+
+data Nat -> Type 0 where
+    Zero : Nat
+    Succ : (x : Nat) => Nat
+
+
+-- I'm not sure, but I think generally we can make all
+-- proof arguments run-time (since we don't plan to
+-- actually run proofs). So I changed some arguments
+-- from compile-time to run-time. AS.
+
+-- But this is inconvenient when proving equalities.  You want the
+-- arguments to these lemmas to be erased, because you want to use
+-- eraseable things in them.  CJC
+
+-- Do we have an example where we care that the arguments are erasable?
+-- My intution is that these proofs should only be used in two contexts:
+-- as the argument to conv (where they are erased), or as lemmas to build
+-- other proofs (so in erasable positions, so the arguments can be runtime). VS
+
+
+sym : (aTy : Type 0) -> (bTy : Type 0) -> (a : aTy) -> (b : bTy)  -> (p : a = b) -> (b = a)
+sym = \ aTy bTy a b p . 
+           conv (join 1 : a = a) by p at x.x = a
+
+sym1 : (aTy : Type 1) -> (bTy : Type 1) -> (a : aTy) -> (b : bTy)  -> (p : a = b) -> (b = a)
+sym1 = \ aTy bTy a b p . 
+           conv (join 1 : a = a) by p at x.x = a
+
+trans : [aTy : Type 0] -> [bTy : Type 0] -> [cTy : Type 0] ->
+        [a : aTy] -> [b : bTy] -> [c : cTy] ->
+				[p : a = b] -> [q : b = c] -> (a = c)
+trans = \ [aTy] [bTy] [cTy] [a] [b] [c] [p] [q] .
+             conv join 0 
+               by (conv p by q at h.a = h)
+               at h.a = h
+-- The more natural definition of trans is:
+--    conv p by q at h.a = h
+-- But this forces p to be a runtime argument to trans, which is
+-- annoying
+
+trans1 : (aTy : Type 1) -> (bTy : Type 1) -> (cTy : Type 1) ->
+         (a : aTy) -> (b : bTy) -> (c : cTy) ->
+				(p : a = b) -> (q : b = c) -> (a = c)
+trans1 = \ aTy bTy cTy a b c p q .
+             conv q by (sym1 aTy bTy a b p) at x.x = c
+
+trans' : (aTy : Type 0) -> (bTy : Type 0) -> (cTy : Type 0) ->
+         (a : aTy) -> (b : bTy) -> (c : cTy) ->
+				(p : a = b) -> (q : b = c) -> (a = c)
+trans' = \ aTy bTy cTy a b c p q .
+             conv join 0 
+               by (conv p by q at h.a = h)
+               at h.a = h
+
+-- Existential types.
+
+data Exists (a : Type 0) (p : (x:a) -> Type 0) -> Type 0 where
+  Ex : [x : a] -> (witness : p x) -> Exists a p

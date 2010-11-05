@@ -1,0 +1,14 @@
+* bug
+- (NC) correctly parenthesize nested applications in error messages
+  (see ErrorFormatBug.trellys)
+
+* feature
+- (NC) allow comments anywhere (currently comments on first line are
+  not allowed)
+- (NC) add support for C preprocessor (simple version is 
+  `cpp <file> | grep -v '^#'`)
+- (AS,NC) remove trailing number from variable names in error messages (at
+  least when not ambiguous, maybe that's the tricky part ...)
+- (NC) hierarchical module system
+- (NC) make "implicit var appears free in body" error show *where* the
+  variable appears free

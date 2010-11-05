@@ -1,0 +1,90 @@
+module Append where
+
+import Prelude
+import Vectors
+import Arithmetic
+        
+plus0 : [n:Nat] -> n = plus 0 n 
+plus0 = \[n] . join 3
+
+plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
+plusSucc = \[n] [m] . join 42
+
+append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append = \[a] . recnat app [n] = \[m] . \xs ys .
+  case xs [p] of
+    VNil [neq] -> 
+      conv (conv ys by (plus0 [m]) at x.Vector a x) by (sym Nat Nat n 0 neq) at h.Vector a (plus h m)
+    VCons [n'] [neq] x xs' -> 
+      conv conv VCons [a] [Succ (plus n' m)] [plus n' m] [join 42] x (app [n'] [neq] [m] xs' ys) 
+           by (plusSucc [n'] [m]) at h.Vector a h 
+      by (sym Nat Nat n (Succ n') neq) at h.Vector a (plus h m)
+
+plusAssoc : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus i (plus j k) = plus (plus i j) k 
+
+appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat] 
+                   -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
+                   -> append [a] [(plus i j)] [k] (append [a] [i] [j] xs ys) zs 
+                    = append [a] [i] [(plus j k)] xs (append [a] [j] [k] ys zs)
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+  case xs [xseq] of
+    VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq 
+                  in conv join 42 by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs 
+                                           = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
+                                             
+    VCons [i'] [ieq] x xs' -> 
+      let ih [p] = aa [i'] [ieq] [j] [k] [xs'] [ys] [zs] in
+      trans [Vector a (plus (plus i j) k)] [Vector a (plus (plus i j) k)] [Vector a (plus i (plus j k))]
+        [append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs]
+        [VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+               [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+               x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)]
+        [append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)]
+        [trans [Vector a (plus (plus i j) k)] [Vector a (plus (plus i j) k)] [Vector a (plus (plus i j) k)]
+          [append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs]
+          [append [a] [plus i j] [k] 
+              (VCons [a] [plus i j] [plus i' j] 
+                  [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus hhh j = Succ (plus i' j)]
+                  x (append [a] [i'] [j] xs' ys)) zs]
+          [VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+                 [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+                 x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)]
+          [conv join 0 by
+	    (trans [Vector a (plus i j)] [Vector a (plus i j)] [Vector a (plus i j)]
+                [append [a] [i] [j] xs ys]
+                [append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys]
+                [VCons [a] [plus i j] [plus i' j] 
+                    [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus hhh j = Succ (plus i' j)]
+                    x (append [a] [i'] [j] xs' ys)]
+                [conv join 0 by xseq at hhh . (append [a] [i] [j] xs ys) = (append [a] [i] [j] hhh ys)]
+                [join 42])
+           at hhh . append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
+                 = append [a] [plus i j] [k] hhh zs ]
+          [join 42]]
+        [trans [Vector a (plus (plus i j) k)] [Vector a (plus (plus i j) k)] [Vector a (plus i (plus j k))]
+           [VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+               [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+               x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)]
+           [VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+               [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+               x (conv (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs))
+                  by (plusAssoc i' j k) at hhh. Vector a hhh)]
+           [append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)]
+           [conv join 0 
+            by conv ih by (join 4 : (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs))
+                                  = (conv (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs))
+                                     by (plusAssoc i' j k) at hhh. Vector a hhh))
+               at hhh. append [a] [(plus i' j)] [k] (append [a] [i'] [j] xs' ys) zs = hhh
+            at hhh . (VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+                      [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+                      x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs))
+                  = (VCons [a] [(plus (plus i j) k)] [(plus (plus i' j) k)] 
+                      [conv join 42 by sym Nat Nat i (Succ i') ieq at hhh . plus (plus hhh j) k = Succ (plus (plus i' j) k)]
+                      x hhh)]
+
+           -- out of steam here for the moment, but just 
+           -- need to do similar reasoning as above to go from
+           --    (VCons (append xs' (append ys zs))) 
+           -- to (append xs (append ys zs))
+           -- AS
+        ]

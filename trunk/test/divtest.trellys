@@ -1,0 +1,47 @@
+module Divtest where
+
+import Prelude
+import Arithmetic
+
+{-
+This module is intended to give an example of reasoning about possibly
+non-terminating programs.
+-}
+
+
+isZero : (x : Nat) -> Bool
+isZero = \ x .
+  case x [cw] of
+    Zero -> True
+    Succ n-> False
+
+
+-- 'div' calculates ceiling(n/m+1)
+prog div : (n : Nat) -> (m : Nat) -> Nat
+-- rec div n = \m => case n of
+--                       (Zero) zw -> m
+--                       (Succ n) sw -> (div (minus n m) m)
+
+
+
+-- A Lemma needed in the inductive step of the theorem.
+-- prog lemma_minus_plus_id : (n : Nat) -> (m : Nat) ->
+--    (n = (minus (plus m n) m))
+
+-- The main theorem to prove.
+-- prog theorem_div_mult_id : (n : Nat) -> (m : Nat) ->
+--    (n = (div (mult n (Succ m)) m))
+
+------------------------------------------------------------
+-- we would actually need to write the following for these:
+------------------------------------------------------------
+prog lemma_minus_plus_id : (n : Nat) -> (m : Nat) ->
+   (n = let p [pw] = (plus m n) in
+         (minus p m))
+
+-- The main theorem to prove.
+prog theorem_div_mult_id : (n : Nat) -> (m : Nat) ->
+   (n = let sm [smw] = (Succ m) in
+        let p [pw] = (mult n sm) in
+         (div p m))
+
