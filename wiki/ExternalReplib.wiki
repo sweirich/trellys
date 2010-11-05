@@ -1,0 +1,28 @@
+#summary How to work with the external replib
+
+How to work with the external replib:
+
+  * To incorporate a new version of replib, for testing, without forcing others to use the new replib (local change):
+
+{{{
+   svn update [-r REV] trunk/Lib/replib-read-only
+}}}
+
+  * To force everyone to use a different version of replib (global change):
+
+{{{
+   svn propedit svn:externals trunk/Lib
+}}}
+
+ and change the leading -rREV part.  E.g. here's my current change (I
+ also changed the svn:externals format to svn 1.5):
+
+{{{
+   Property changes on: Lib
+   Modified: svn:externals
+      - replib-read-only http://replib.googlecode.com/svn/trunk/
+      + -r31 http://replib.googlecode.com/svn/trunk/ replib-read-only
+}}}
+
+Everything about 
+[http://svnbook.red-bean.com/en/1.5/svn.advanced.externals.html svn:externals]
