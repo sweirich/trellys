@@ -1,27 +1,27 @@
 #summary How to work with the external replib
+#labels Phase-Implementation
 
 How to work with the external replib:
 
   * To incorporate a new version of replib, for testing, without forcing others to use the new replib (local change):
 
 {{{
-   svn update [-r REV] trunk/Lib/replib-read-only
+   svn update [-r REV] trunk/lib/replib-read-only
 }}}
 
   * To force everyone to use a different version of replib (global change):
 
 {{{
-   svn propedit svn:externals trunk/Lib
+   svn propedit svn:externals trunk/lib
 }}}
 
- and change the leading -rREV part.  E.g. here's my current change (I
- also changed the svn:externals format to svn 1.5):
+ and change the central -rREV part.  E.g. here's the addition of fixed revision (We use the pre 1.5 externals syntax to support old clients):
 
 {{{
-   Property changes on: Lib
+   Property changes on: lib
    Modified: svn:externals
       - replib-read-only http://replib.googlecode.com/svn/trunk/
-      + -r31 http://replib.googlecode.com/svn/trunk/ replib-read-only
+      + replib-read-only -r31 http://replib.googlecode.com/svn/trunk/
 }}}
 
 Everything about 
