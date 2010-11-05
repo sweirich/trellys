@@ -17,7 +17,7 @@
 -- 
 -----------------------------------------------------------------------------
 
-module LangLib.LayoutToken
+module Language.Trellys.LayoutToken
   ( LanguageDef (..)
   , TokenParser (..)
   , LayoutFun(..)
