@@ -12,7 +12,7 @@ data Vector [a : Type 0] [n : Nat] -> Type 0 where
 
 -- terminating recursor for the vector type
 recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
-         (base : (c [0] (VNil [a] [0] [join 0]))) ->
+         (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [a] [n] [n_eq]))) ->
          (step : (x:a) -> [n:Nat] -> (xs : Vector a n) -> (ih : c [n] xs) ->
                  c [Succ n] (VCons [a] [Succ n] [n] [join 0] x xs)) ->
          [n:Nat] -> (v:Vector a n) -> (c [n] v)
@@ -21,41 +21,9 @@ recvec = \ [a] . \ [c] . \ base . \ step .
              case v [v_eq] of
                VNil [n_eq] -> 
  
-                  {- to change the type of base, we follow these steps:
-
-                     1. (c [0] (VNil [a] [0] [join 0]))  =  (c [0] conv v by n_eq at x.Vector a x)
-
-                        The idea here is that we need to use v_eq, but we have to preserve types,
-                        so we cast v to have type Vector a 0, instead of Vector a n.
-
-                    2. (c [0] conv v by n_eq at x.Vector a x)  =  ((conv (c [0]) by sym n_eq at x.((v:Vector a x) -> Type 0)) v)
-
-                    3. ((conv (c [0]) by sym n_eq at x.((v:Vector a x) -> Type 0)) v)  =  c [n] v
-
-                  -}
-
- 
-                 conv
-                  conv
-                   conv base 
-                   by let log p1 [ign] = (sym (Vector a n) (Vector a n) v (VNil [a] [n] [n_eq]) v_eq) in
-                      let log p2 [ign] = (trans' (Vector a n) (Vector a n) (Vector a 0)
-                                            (VNil [a] [n] [n_eq]) v (conv v by n_eq at x.Vector a x)
-                                            p1
-                                            (join 0)) in
- 	  	       (trans' (Vector a 0) (Vector a n) (Vector a 0)
-			 (VNil [a] [0] [join 0]) (VNil [a] [n] [n_eq]) (conv v by n_eq at x.Vector a x)
-			 (join 0)
-			 p2)
-                   at x.(c [0] x)
-                  by (join 0 : (c [0] conv v by n_eq at x.Vector a x)  =  
-                               ((conv (c [0]) by sym Nat Nat n 0 n_eq at x.((v:Vector a x) -> Type 0)) v))
-                  at x.x
-                 by conv 
-                      conv (join 0) by n_eq at x.(c[x] = c[n])
-                    by (join 0 : c[0] = (conv c[0] by sym Nat Nat n 0 n_eq at x.((v:Vector a x) -> Type 0)))
-                    at x.(x = c[n])
-                 at x.(x v)
+                 conv base [n] [n_eq] by sym (Vector a n) (Vector a n) v (VNil [a] [n] [n_eq]) v_eq
+                 at x.(c [n] x)
+                
                       
                VCons [n'] [n_eq] x xs ->
                  let r[r_eq] = (recvec [n'] [n_eq] xs) in
