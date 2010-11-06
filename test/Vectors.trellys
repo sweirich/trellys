@@ -13,8 +13,8 @@ data Vector [a : Type 0] [n : Nat] -> Type 0 where
 -- terminating recursor for the vector type
 recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
          (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [a] [n] [n_eq]))) ->
-         (step : (x:a) -> [n:Nat] -> (xs : Vector a n) -> (ih : c [n] xs) ->
-                 c [Succ n] (VCons [a] [Succ n] [n] [join 0] x xs)) ->
+         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] -> (x:a) -> (xs : Vector a n') -> (ih : c [n'] xs) ->
+                 c [n] (VCons [a] [n] [n'] [n_eq] x xs)) ->
          [n:Nat] -> (v:Vector a n) -> (c [n] v)
 recvec = \ [a] . \ [c] . \ base . \ step .
            recnat recvec[n] = \ v .
@@ -26,39 +26,10 @@ recvec = \ [a] . \ [c] . \ base . \ step .
                 
                       
                VCons [n'] [n_eq] x xs ->
-                 let r[r_eq] = (recvec [n'] [n_eq] xs) in
+	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [n_eq] xs)
+                 by sym (Vector a n) (Vector a n) v (VCons [a] [n] [n'] [n_eq] x xs) v_eq
+                 at x.(c [n] x)
 
-                    {- this is similar to the base case.  The steps we take are:
-
-		       1. (c [Succ n'] (VCons [a] [Succ n'] [n'] [join 0] x xs))  =  (c [Succ n'] conv v by n_eq at x.Vector a x)
-       
-                       2. (c [Succ n'] conv v by n_eq at x.Vector a x) = ((conv (c [Succ n']) by sym n_eq at x.((v:Vector a x)->Type 0)) v)
-
-                       3. ((conv (c [Succ n']) by sym n_eq at x.((v:Vector a x)->Type 0)) v) = c [n] v
-
-                     -}
-                    conv
-                      conv
-                        conv (step x [n'] xs r) 
-                        by 
-                           let log p1 [ign] = (sym (Vector a n) (Vector a n) v (VCons [a] [n] [n'] [n_eq] x xs) v_eq) in
-                           let log p2 [ign] = (trans' (Vector a n) (Vector a n) (Vector a (Succ n'))
-                                                (VCons [a] [n] [n'] [n_eq] x xs) v (conv v by n_eq at x.Vector a x)
-                                                p1
-                                                (join 0)) in
-     	  	           (trans' (Vector a (Succ n')) (Vector a n) (Vector a (Succ n'))
-			     (VCons [a] [Succ n'] [n'] [join 0] x xs) (VCons [a] [n] [n'] [n_eq] x xs) (conv v by n_eq at x.Vector a x)
-			     (join 0)
-  			     p2)
-                        at x.(c [Succ n'] x)
-                      by (join 0 : (c [Succ n'] conv v by n_eq at x.Vector a x) =
-                                   ((conv (c [Succ n']) by sym Nat Nat n (Succ n') n_eq at x.((v:Vector a x)->Type 0)) v))
-                      at x.x
-                    by conv
-                         conv (join 0) by n_eq at x.(c[x] = c[n])
-                       by (join 0 : c[Succ n'] = (conv (c [Succ n']) by sym Nat Nat n (Succ n') n_eq at x.((v:Vector a x)->Type 0)))
-                       at x.(x = c[n])
-                    at x.(x v)
 
 vmap : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
       [n : Nat] -> (xs : Vector a n) -> Vector b n
