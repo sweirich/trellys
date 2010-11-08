@@ -5,7 +5,7 @@
 module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
   ,AlphaCtx
   ,Name,rName,name1,name2,name3,name4,name5
-  ,name2Integer,integer2Name,string2Name
+  ,name2Integer,name2String,integer2Name,string2Name,makeName
   ,binders,patfv,fv,swaps
   ,aeq
   ,Bind,rBind,bind,unbind,unbind2,unbind3
@@ -13,7 +13,7 @@ module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
   ,Annot(..),rAnnot
   ,Subst(..), matchR1
   ,unsafeUnBind
-  ,lunbind
+  ,lunbind, lfreshen
   ,abs_swaps',abs_fv',abs_freshen',abs_match'
   ,abs_nthpatrec,abs_findpatrec,abs_close,abs_open  -- only for LocallyNameless
 --  ,subst,substs -- only for Nominal

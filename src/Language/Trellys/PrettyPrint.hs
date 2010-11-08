@@ -5,31 +5,33 @@
 module Language.Trellys.PrettyPrint(Disp(..), D(..))  where
 
 import Language.Trellys.Syntax
-import Language.Trellys.GenericBind hiding (avoid)
+import Language.Trellys.GenericBind
 
 import Control.Monad.Reader
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos
 import Data.Set (Set)
 import qualified Data.Set as S
 
--- | Convert to a formatted 'Doc'. FIXME: Needs to be made monadic, so that
--- 'Name's can be displayed correctly.
+
+-- | The 'DocAble' class governs types which can be turned into 'Doc's
 class Disp d where
   disp :: d -> Doc
 
--- This function tries to pretty-print terms using as little renaming
--- of variables as possible.
-cleverDisp :: (Disp' d, Alpha d) => d -> Doc 
-cleverDisp d = 
-  let pc = PPContext{currentAvoid = S.empty}
-      -- bind then unbind in order to pick "better" names for
-      -- free variables.
-      vars = S.elems (fv d)
-      (vars', d') = unbindAvoiding pc (bind vars d)
-      pc' = avoid vars' pc
-  in  
-    disp' pc' d'
+
+-- This function tries to pretty-print terms using the lowest number in 
+-- the names of the variable (i.e. as close to what the user originally 
+-- wrote.)
+-- It first freshens the free variables of the argument (using the lowest
+-- numbers that it can) then displays the term, swapping the free variables
+-- with their new name in the process
+cleverDisp :: (Display d, Alpha d) => d -> Doc 
+cleverDisp d =
+  runReader dm initDI where
+    dm = let vars = S.elems (fv d)  in
+         lfreshen vars $ \vars'  p -> 
+           (display (swaps p d))
+
 
 instance Disp Term where
   disp = cleverDisp
@@ -37,21 +39,143 @@ instance Disp ETerm where
   disp = cleverDisp
 instance Disp Name where
   disp = cleverDisp
-instance Disp  Telescope where
+instance Disp Telescope where
   disp = cleverDisp
 
+-------------------------------------------------------------------------
+-- Adapted From AuxFuns
+-------------------------------------------------------------------------
+-- | The data structure for information about the display
 -- In a more perfect world this would also include the current precedence
 -- level, so we could print parenthesis exactly when needed.
-data PPContext = PPContext { currentAvoid :: Set Name }
+data DispInfo = DI 
+  { 
+  dispAvoid :: Set Name -- ^ names that have already been used
+  }
+    
+-- | An empty 'DispInfo' context
+initDI :: DispInfo
+initDI = DI S.empty 
 
-class Disp' d where
-  disp' :: PPContext -> d -> Doc
+instance LFresh (Reader DispInfo) where
+  lfresh nm = do 
+      let s = name2String nm
+      di <- ask;
+      return $ head (filter (\x -> x `S.notMember` (dispAvoid di))
+                      (map (makeName s) [0..]))
+  avoid names = local upd where
+     upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
 
-unbindAvoiding :: (Alpha a, Alpha b) => PPContext -> Bind a b -> (a, b)
-unbindAvoiding pc b  = runReader (lunbind b) (currentAvoid pc)
 
-avoid :: [Name] -> PPContext -> PPContext
-avoid ns pc = pc { currentAvoid = (currentAvoid pc) `S.union` (S.fromList ns) }
+type M = Reader DispInfo
+
+-- | The 'Display' class is like the 'Disp' class. It qualifies
+--   types that can be turned into 'Doc'.  The difference is that the
+--   type might need the 'Display' context to turn a long
+--   machine-generated name into a short user-readable one.
+--
+--   Minimal complete definition: 'display'.
+
+class (Alpha t) => Display t where
+  -- | Convert a value to a 'Doc'.
+  display  :: t -> M Doc
+  -- | Convert a value to a 'String'. Default definition: @'render' . 'display'@.
+  showd :: t -> String
+  -- | Print a value to the screen.  Default definition: @'putStrLn' . 'showd'@.
+  pp    :: t -> IO ()
+
+  -- Default implementations that can be overridden
+  showd = render . cleverDisp
+  pp    = putStrLn . showd
+
+
+instance Display String where
+  display = return . text
+instance Display Int where
+  display = return . text . show
+instance Display Integer where
+  display = return . text . show
+instance Display Double where
+  display = return . text . show
+instance Display Float where
+  display = return . text . show
+instance Display Char where
+  display = return . text . show
+instance Display Bool where
+  display = return . text . show
+
+{-
+-- | 'Display' is automatically lifted across pairs.
+instance (Display a, Display b) => Display (a,b) where
+  display (x,y) = do
+      s1 <- display x
+      s2 <- display y
+      return $ PP.parens (s1 <> text "," <> s2)
+-}
+
+-- | 'DispElem' is used like a format string, to pretty print
+--   complicated types, or long rich error messages. A whole class of
+--   functions take @['DispElem']@ as input; for example, see
+--   'displays', 'docM', 'stringM', 'warnM', and 'errM'.
+
+data DispElem
+  = -- | A displayable object.
+    forall x . (Display x) =>  Dd x
+    -- | Some literal text.
+  | Ds String
+    -- | Display the object, followed by a newline.
+  | forall x . (Display x) => Dn x
+    -- | A list of objects, separated by the given string.
+  | forall x . (Display x) => Dl [x] String
+    -- | A list of objects to be formatted according to the given
+    --   specification, separated by the given string.
+  | forall a x . Dlf (a -> [DispElem]) [a] String
+    -- | A literal document.
+  | D Doc
+    -- | A nested list of display elements.
+  | Dr [DispElem]
+
+
+-- | 'displays' is the main function that combines together
+-- display elements.
+displays :: [DispElem] -> M [Doc]
+displays xs = help (reverse xs) [] where
+  help :: [DispElem] -> [Doc] -> M [Doc]
+  help [] s = return s
+  help ((Dr xs):ys) s = help (reverse xs++ys) s
+  help (x:xs) s = do
+    s2 <- case x of
+        Dd y -> do y' <- display y
+                   return [y']
+        Ds s -> return [text s]
+        Dn y -> do s <- display y
+                   return [s <> text "\n"]
+        D doc -> return [doc]
+        Dl ys sep -> dispL display ys (text sep)
+        Dlf f ys sep -> dlf f ys (text sep)
+        Dr xs -> help (reverse xs) s
+    help xs (s2++s)
+
+dlf ::  (a -> [DispElem]) -> [a] -> Doc  -> M [Doc]
+dlf f ys sep = do
+  let elems = map f ys
+  docss <- mapM displays elems
+  return $ PP.punctuate sep (map PP.hcat docss)
+
+dispL :: (a -> M Doc) -> [a] -> Doc -> M [Doc]
+dispL f [] sep = return [PP.empty]
+dispL f [m] sep = do { y <- f m ; return [y] }
+dispL f (m:ms) sep = do
+  a <- f m
+  b <- dispL f ms sep
+  return (a:[sep]++b)
+
+docM :: [DispElem] -> M Doc
+docM xs = do
+   docs <- displays xs
+   return $ PP.fsep docs
+
+-------------------------------------------------------------------------
 
 thetaArrow :: Theta -> Doc
 thetaArrow Logic = text "->"
@@ -60,7 +184,6 @@ thetaArrow Program = text "=>"
 bindParens :: Epsilon -> Doc -> Doc
 bindParens Runtime d = d
 bindParens Erased  d = brackets d
-
 
 instance Disp Module where
   disp m = text "module" <+> disp (moduleName m) <+> text "where" $$
@@ -89,108 +212,173 @@ instance Disp Decl where
 instance Disp ModuleImport where
   disp (ModuleImport i) = text "import" <+> disp i
 
-instance Disp' Term where
-  disp' pc (Var n) = disp' pc n
-  disp' pc (Con n) = disp' pc n
-  disp' pc (Type n) = text "Type" <+> (text $ show n)
+instance Display Term where
+  display (Var n) = display n
+  display (Con n) = display n
+  display (Type n) = return $ text "Type" <+> (text $ show n)
 
-  disp' pc (Arrow th ep a bnd) =
-         (bindParens ep $ disp' pc n <+> colon <+> disp' pc a)
-     <+> thetaArrow th <+> disp' (avoid [n] pc) b
-   where (n,b) = unbindAvoiding pc bnd
+  display (Arrow th ep a bnd) = do
+     da <- display a 
+     lunbind bnd $ \(n, b) -> do
+        dn <- display n
+        db <- display b
+        return $ (bindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
 
-  disp' pc (Lam ep b) =
-    text "\\" <+> bindParens ep (disp' pc n) <+> text "." <+> disp' (avoid [n] pc) body
-   where (n,body) = unbindAvoiding pc b
+  display (Lam ep b) = 
+    lunbind b $ \(n, body) -> do
+      dn <- display n
+      db <- display body
+      return $ text "\\" <+> bindParens ep dn
+               <+> text "." <+> db
 
-  disp' pc (NatRec ep binding) =
-    let ((n,x),body) = unbindAvoiding pc binding
-    in     text "recnat" <+> disp' pc n <+> bindParens ep (disp' pc x) <+> text "="
-       <+> disp' (avoid [n,x] pc) body
+  display (NatRec ep binding) = 
+    lunbind binding $ \ ((n,x),body) -> do
+      dn <- display n 
+      dx <- display x 
+      db <- display body
+      return $ text "recnat" <+> dn <+> bindParens ep dx <+> text "="
+               <+> db
 
-  disp' pc (Rec ep binding) =
-    let ((n,x),body) = unbindAvoiding pc binding
-    in     text "rec" <+> disp' pc n <+> bindParens ep (disp' pc x) <+> text "="
-       <+> disp' (avoid [n,x] pc) body
+  display (Rec ep binding) =  
+    lunbind binding $ \ ((n,x),body) -> do
+      dn <- display n
+      dx <- display x 
+      db <- display body
+      return $  text "rec" <+> dn <+> bindParens ep (dx) <+> text "="
+       <+> db
 
-  disp' pc (App ep e1 e2) = disp' pc e1 <+> (bindParens ep $ disp' pc e2)
-  disp' pc (Paren e) = parens $ disp' pc e
-  disp' pc (Pos _ e) = disp' pc e
+  display (App ep e1 e2) = do 
+     de1 <- display e1 
+     de2 <- display e2
+     return $ de1 <+> (bindParens ep de2)
+  display (Paren e) = do 
+     de <- display e 
+     return $ (parens de)
 
-  disp' pc (Let th ep a bnd) =
-         text "let" <+> tag <+> bindParens ep (disp' pc x) <+> brackets (disp' pc y)
-     <+> text "=" <+> disp' pc a <+> text "in" <+> disp' (avoid [x,y] pc) b
+  display (Pos _ e) = display e
+
+  display (Let th ep a bnd) = do
+    da <- display a 
+    lunbind bnd $ \ ((x,y) , b) -> do
+     dx <- display x 
+     dy <- display y
+     db <- display b
+     return $  text "let" <+> tag <+> bindParens ep dx <+> brackets dy
+               <+> text "=" <+> da <+> text "in" <+> db
      where
-       ((x,y),b) = unbindAvoiding pc bnd
        tag = case th of {Logic -> text ""; Program -> text "prog"}
 
-  disp' pc (Case d bnd) =
-     text "case" <+> disp' pc d <+> (brackets (disp' pc y)) <+> text "of" $$
-          (nest 2 $ vcat $  map (disp'Alt (avoid [y] pc)) alts)
+  display (Case d bnd) = 
+    lunbind bnd $ \ (y, alts) -> do
+     dd <- display d 
+     dy <- display y
+     dalts <- mapM displayAlt alts
+     return $ text "case" <+> dd <+> (brackets dy) <+> text "of" $$
+          (nest 2 $ vcat $  dalts)
     where
-      (y,alts) = unbindAvoiding pc bnd
+      displaybnd (v, ep) = do 
+        dv <- display v
+        return $ bindParens ep dv
 
-      disp'bnd pc (v, ep) = bindParens ep $ disp' pc v
+      displayAlt (c, bd) =
+        lunbind bd $ \ (vs, ubd) -> do
+              dc <- display c
+              dvs <- mapM displaybnd vs
+              dubd <- display ubd
+              return $ (hsep (dc : dvs)) <+> text "->" <+> dubd
 
-      disp'Alt pc (c, bd) =
-        let (vs,ubd) = unbindAvoiding pc bd in
-              hsep (disp' pc c : map (disp'bnd pc) vs)
-          <+> text "->" <+> disp' (avoid (map fst vs) pc) ubd
+  display (Conv a b bnd) = 
+    lunbind bnd $ \(x,c) -> do
+      da <- display a
+      db <- display b
+      dx <- display x 
+      dc <- display c 
+      return $ text "conv" <+> da <+> text "by" <+> db <+> text "at"
+                <+> dx <+> text "." <+> dc
 
-  disp' pc (Conv a b bnd) =
-    text "conv" <+> disp' pc a <+> text "by" <+> disp' pc b <+> text "at"
-                <+> disp' pc x <+> text "." <+> disp' (avoid [x] pc) c
-    where
-      (x,c) = unbindAvoiding pc bnd
-
-  disp' pc (TyEq a b)   = disp' pc a <+> text "=" <+> disp' pc b
-  disp' pc (Join s1 s2) =
-    text "join" <+> text (if s1 == s2
+  display (TyEq a b)   = do 
+      da <- display a
+      db <- display b
+      return $ da  <+> text "=" <+> db
+  display (Join s1 s2) =
+    return $ text "join" <+> text (if s1 == s2
                             then if s1 == 100
                                    then ""
                                    else show s1
                             else show s1 ++ " " ++ show s2)
-  disp' pc (Contra ty)  = text "contra" <+> disp' pc ty
-  disp' pc Abort        = text "abort"
-  disp' pc (Ann a b)    = parens (disp' pc a <+> text ":" <+> disp' pc b)
+  display (Contra ty)  = do
+     dty <- display ty 
+     return $ text "contra" <+> dty
+  display  Abort       = return $ text "abort"
+  display (Ann a b)    = do
+    da <- display a
+    db <- display b 
+    return $ parens (da <+> text ":" <+> db)
 
+{-
+epParens :: Epsilon -> [DispElem] -> DispElem
+epParens Runtime l = Dd (brackets (displays l))
+epParens Erased  l = Dd displays l
+-}
 
-instance Disp' ETerm where
-  disp' pc (EVar v) = disp' pc v
-  disp' pc (ECon v) = disp' pc v
-  disp' pc (EType level) = text "Type" <+> int level
-  disp' pc (EArrow th ep a bnd) =
-         (bindParens ep $ disp' pc n <+> colon <+> disp' pc a)
-     <+> thetaArrow th <+> disp' (avoid [n] pc) b
-   where (n,b) = unbindAvoiding pc bnd
-  disp' pc (ELam  b) =
-    text "\\" <+> (disp' pc n) <+> text "." <+> disp' (avoid [n] pc) body
-   where (n,body) = unbindAvoiding pc b
-  disp' pc (EApp f x) = disp' pc f <+> disp' pc x
-  disp' pc (ETyEq e0 e1) = disp' pc e0 <+> text "=" <+> disp' pc e1
-  disp' pc EJoin = text "join"
-  disp' pc EAbort = text "abort"
-  disp' pc (ERecPlus bnd) =
-      parens $ text "rec" <+> disp' pc n <+> brackets (disp' pc w) <+> text "." 
-                <+> disp' (avoid [n,w] pc) body
-    where ((n,w),body) = unbindAvoiding pc bnd
-  disp' pc (ERecMinus bnd) =
-      parens $ text "rec" <+> disp' pc n <+>  text "." <+> disp' (avoid [n] pc) body
-    where (n,body) = unbindAvoiding pc bnd
-  disp' pc (ECase dis matches) = nest 2
-    (text "case" <+> disp' pc dis <+> text "of" $$
-    nest 2 (vcat (map (disp' pc) matches)))
-  disp' pc (ELet val bnd) =
-      text "let" <+> disp' pc n <+> text "=" <+> disp' pc val $$
-      text "in" <+> disp' (avoid [n] pc) body
-    where (n,body) = unbindAvoiding pc bnd
-  disp' pc EContra = text "contra"
+instance Display ETerm where
+  display (EVar v) = display v
+  display (ECon v) = display v
+  display (EType level) = return $ text "Type" <+> int level
+  display (EArrow th ep a bnd) = do
+     da <- display a 
+     lunbind bnd $ \ (n,b) -> do
+        dn <- display n
+        db <- display b 
+        return $ (bindParens ep (dn <+> text ":" <+> da) <+>
+                                (thetaArrow th) <+> db)
+  display (ELam  b) =
+     lunbind b $ \ (n, body) -> do
+       dn <- display n
+       dbody <- display body
+       return ( text "\\" <+> dn <+> text "." <+> dbody )
+  display (EApp f x) = do
+       df <- display f 
+       dx <- display x 
+       return (df <+> dx) 
+  display (ETyEq e0 e1) = do
+       de0 <- display e0
+       de1 <- display e1
+       return (de0 <+> text "=" <+> de1)
+  display EJoin = return $ text "join"
+  display EAbort = return $ text "abort"
+  display (ERecPlus bnd) =
+     lunbind bnd $ \ ((n,w),body) -> do 
+        dn <- display n
+        dw <- display w
+        db <- display body
+        return $ parens ( text "rec" <+> dn <+> brackets (dw) 
+                          <+> text "." 
+                          <+> db )
+  display (ECase dis matches) = do 
+    ddis <- display dis
+    dmatches <- mapM display matches
+    return $ nest 2
+      (text "case" <+> ddis <+> text "of" $$
+        nest 2 (vcat dmatches))
+  display (ELet val bnd) = do
+    dval <- display val
+    lunbind bnd $ \(n,body) -> do
+      dn <- display n
+      dbody <- display body
+      return (text "let" <+> dn <+> text "=" <+> dval $$
+             text "in" <+> dbody)
+  display EContra = return $ text "contra"
 
+instance Display EMatch where
+  display (n,bnd) = do
+    dn <- display n
+    lunbind bnd $ \(vars,body) -> do
+       db <- display body
+       dvs <- mapM display vars
+       let pat = hcat $ punctuate space $ dvs 
+       return $ dn <+> pat <+> text "->" <+> db
 
-instance Disp' EMatch where
-  disp' pc (n,bnd) = disp' pc n <+> pat <+> text "->" <+> disp' (avoid vars pc) body
-    where (vars,body) = unbindAvoiding pc bnd
-          pat = hcat $ punctuate space $ map (disp' pc) vars
 
 
 
@@ -199,24 +387,29 @@ instance Disp Epsilon where
   disp Erased = text "-"
   disp Runtime = text "+"
 
-instance Disp' Telescope where
-  disp' pc ts =
-    hcat $ [prns ep $ disp' pc n <+> colon <+> disp' pc ty <+> thetaArrow th
-              | (n,ty,th,ep) <- ts]
-    where prns Runtime = parens
+instance Display Telescope where
+  display ts = do
+    dts <- mapM dentry ts
+    return $ hcat dts where
+          prns Runtime = parens
           prns Erased = brackets
+          dentry (n, ty, th, ep) = do
+            dn <- display n
+            dty <- display ty
+            return (prns ep $ dn <+> colon <+> dty <+> thetaArrow th)
+
 
 instance Disp Theta where
   disp Logic = text "L"
   disp Program = text "P"
 
 -- Assumes that all terms were opened safely earlier.
-instance Disp' Name where
-  disp' pc = text . show
+instance Display Name where
+  display n = return $ (text . show) n
 
 instance Disp SourcePos where
   disp p = text (sourceName p) <> colon <> int (sourceLine p) <>
-           colon <> int (sourceColumn p) <> colon
+                colon <> int (sourceColumn p) <> colon
 
 -- | Error message quoting
 data D = DS String -- ^ String literal
