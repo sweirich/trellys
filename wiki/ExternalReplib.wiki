@@ -6,13 +6,13 @@ How to work with the external replib:
   * To incorporate a new version of replib, for testing, without forcing others to use the new replib (local change):
 
 {{{
-   svn update [-r REV] trunk/lib/replib-read-only
+   svn update [-r REV] lib/replib-read-only
 }}}
 
   * To force everyone to use a different version of replib (global change):
 
 {{{
-   svn propedit svn:externals trunk/lib
+   svn propedit svn:externals lib
 }}}
 
  and change the central -rREV part.  E.g. here's the addition of fixed revision (We use the pre 1.5 externals syntax to support old clients):
