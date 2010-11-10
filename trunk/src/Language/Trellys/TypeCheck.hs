@@ -370,7 +370,7 @@ ts tsTh tsTm =
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
                     DS "doesn't match arrow annotation", DD epArr]
-             
+
              let b_for_x_in_B = subst x b tyB
              -- To implement app1 and app2 rules, we first try to
              -- check the argument Logically and check the resulting
@@ -379,11 +379,11 @@ ts tsTh tsTm =
              -- must be a value.
              ((ta Logic b tyA >> kc th b_for_x_in_B)
                 `catchError`
-                 \e -> 
+                 \e ->
                    if th' == Logic then throwError e else
                      do unless (isValue b) $
                           err [DS "When applying to a term with classifier",
-                               DS "P, it must be a value, but", 
+                               DS "P, it must be a value, but",
                                DD b, DS "is not."]
                         ta Program b tyA)
 
@@ -396,20 +396,19 @@ ts tsTh tsTm =
       return $ Type 0
 
     -- rule T_conv
-    ts' th (Conv b a bnd) =
-      do (x,c) <- unbind bnd
-         aty <- ts Logic a
-         case isTyEq aty of
-           Nothing ->
-             err $ [DS "The second argument to conv must be an equality proof,",
-                    DS "but here it has type", DD aty]
-           Just (tyA1,tyA2) ->
-             let cA1 = subst x tyA1 c
-                 cA2 = subst x tyA2 c
-             in
-             do ta th b cA1
-                kc th cA2
-                return cA2
+    ts' th (Conv b as bnd) =
+      do (xs,c) <- unbind bnd
+         atys <- mapM (ts Logic) as
+         let errMsg aty =
+               err $ [DS "The second arguments to conv must be equality proofs,",
+                      DS "but here has type", DD aty]
+         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
+         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
+         let cA1 = substs xs tyA1s c
+         let cA2 = substs xs tyA2s c
+         ta th b cA1
+         kc th cA2
+         return cA2
 
     -- rule T_annot
     ts' th (Ann a tyA) =
@@ -487,7 +486,7 @@ tcEntry val@(Def n term) = do
   case oldDef of
     Nothing -> tc
     Just term' -> die term'
-  where 
+  where
     tc = do
       lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
       case lkup of
@@ -505,7 +504,7 @@ tcEntry val@(Def n term) = do
     die term' =
       let (Pos p t) = term
           (Pos p' _) = term'
-          msg = disp [DS "Multiple definitions of", DD n, 
+          msg = disp [DS "Multiple definitions of", DD n,
                       DS "Previous definition at", DD p']
       in do throwError $ Err [(p,t)] msg
 
@@ -519,8 +518,8 @@ tcEntry s@(Sig n th ty) = do
       let (Pos p t) = ty
           (Pos p' _) = typ
           msg = disp [DS "Duplicate type signature ", DD ty,
-                      DS "for name ", DD n, 
-                      DS "Previous typing at", DD p', 
+                      DS "for name ", DD n,
+                      DS "Previous typing at", DD p',
                       DS "was", DD typ]
       in do throwError $ Err [(p,t)] msg
 

@@ -85,7 +85,7 @@ data Term = Var Name    -- | variables
           -- bidirectionally infer the terms
           | Join Int Int
           -- | @conv a by b at C@
-          | Conv Term Term (Bind Name Term)
+          | Conv Term [Term] (Bind [Name] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- | The @abort@ expression.

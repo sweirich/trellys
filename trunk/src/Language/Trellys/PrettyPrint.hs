@@ -19,17 +19,17 @@ class Disp d where
   disp :: d -> Doc
 
 
--- This function tries to pretty-print terms using the lowest number in 
--- the names of the variable (i.e. as close to what the user originally 
+-- This function tries to pretty-print terms using the lowest number in
+-- the names of the variable (i.e. as close to what the user originally
 -- wrote.)
 -- It first freshens the free variables of the argument (using the lowest
 -- numbers that it can) then displays the term, swapping the free variables
 -- with their new name in the process
-cleverDisp :: (Display d, Alpha d) => d -> Doc 
+cleverDisp :: (Display d, Alpha d) => d -> Doc
 cleverDisp d =
   runReader dm initDI where
     dm = let vars = S.elems (fv d)  in
-         lfreshen vars $ \vars'  p -> 
+         lfreshen vars $ \vars'  p ->
            (display (swaps p d))
 
 
@@ -48,17 +48,17 @@ instance Disp Telescope where
 -- | The data structure for information about the display
 -- In a more perfect world this would also include the current precedence
 -- level, so we could print parenthesis exactly when needed.
-data DispInfo = DI 
-  { 
+data DispInfo = DI
+  {
   dispAvoid :: Set Name -- ^ names that have already been used
   }
-    
+
 -- | An empty 'DispInfo' context
 initDI :: DispInfo
-initDI = DI S.empty 
+initDI = DI S.empty
 
 instance LFresh (Reader DispInfo) where
-  lfresh nm = do 
+  lfresh nm = do
       let s = name2String nm
       di <- ask;
       return $ head (filter (\x -> x `S.notMember` (dispAvoid di))
@@ -218,49 +218,49 @@ instance Display Term where
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
   display (Arrow th ep a bnd) = do
-     da <- display a 
+     da <- display a
      lunbind bnd $ \(n, b) -> do
         dn <- display n
         db <- display b
         return $ (bindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
 
-  display (Lam ep b) = 
+  display (Lam ep b) =
     lunbind b $ \(n, body) -> do
       dn <- display n
       db <- display body
       return $ text "\\" <+> bindParens ep dn
                <+> text "." <+> db
 
-  display (NatRec ep binding) = 
+  display (NatRec ep binding) =
     lunbind binding $ \ ((n,x),body) -> do
-      dn <- display n 
-      dx <- display x 
+      dn <- display n
+      dx <- display x
       db <- display body
       return $ text "recnat" <+> dn <+> bindParens ep dx <+> text "="
                <+> db
 
-  display (Rec ep binding) =  
+  display (Rec ep binding) =
     lunbind binding $ \ ((n,x),body) -> do
       dn <- display n
-      dx <- display x 
+      dx <- display x
       db <- display body
       return $  text "rec" <+> dn <+> bindParens ep (dx) <+> text "="
        <+> db
 
-  display (App ep e1 e2) = do 
-     de1 <- display e1 
+  display (App ep e1 e2) = do
+     de1 <- display e1
      de2 <- display e2
      return $ de1 <+> (bindParens ep de2)
-  display (Paren e) = do 
-     de <- display e 
+  display (Paren e) = do
+     de <- display e
      return $ (parens de)
 
   display (Pos _ e) = display e
 
   display (Let th ep a bnd) = do
-    da <- display a 
+    da <- display a
     lunbind bnd $ \ ((x,y) , b) -> do
-     dx <- display x 
+     dx <- display x
      dy <- display y
      db <- display b
      return $  text "let" <+> tag <+> bindParens ep dx <+> brackets dy
@@ -268,15 +268,15 @@ instance Display Term where
      where
        tag = case th of {Logic -> text ""; Program -> text "prog"}
 
-  display (Case d bnd) = 
+  display (Case d bnd) =
     lunbind bnd $ \ (y, alts) -> do
-     dd <- display d 
+     dd <- display d
      dy <- display y
      dalts <- mapM displayAlt alts
      return $ text "case" <+> dd <+> (brackets dy) <+> text "of" $$
           (nest 2 $ vcat $  dalts)
     where
-      displaybnd (v, ep) = do 
+      displaybnd (v, ep) = do
         dv <- display v
         return $ bindParens ep dv
 
@@ -287,16 +287,18 @@ instance Display Term where
               dubd <- display ubd
               return $ (hsep (dc : dvs)) <+> text "->" <+> dubd
 
-  display (Conv a b bnd) = 
-    lunbind bnd $ \(x,c) -> do
+  display (Conv a bs bnd) =
+    lunbind bnd $ \(xs,c) -> do
       da <- display a
-      db <- display b
-      dx <- display x 
-      dc <- display c 
-      return $ text "conv" <+> da <+> text "by" <+> db <+> text "at"
-                <+> dx <+> text "." <+> dc
+      dbs <- mapM display bs
+      dxs <- mapM display xs
+      dc <- display c
+      return $ text "conv" <+> da <+> text "by" <+>
+               sep (punctuate comma dbs) <+>
+               text "at" <+> sep dxs  <+> text "." <+> dc
 
-  display (TyEq a b)   = do 
+
+  display (TyEq a b)   = do
       da <- display a
       db <- display b
       return $ da  <+> text "=" <+> db
@@ -307,12 +309,12 @@ instance Display Term where
                                    else show s1
                             else show s1 ++ " " ++ show s2)
   display (Contra ty)  = do
-     dty <- display ty 
+     dty <- display ty
      return $ text "contra" <+> dty
   display  Abort       = return $ text "abort"
   display (Ann a b)    = do
     da <- display a
-    db <- display b 
+    db <- display b
     return $ parens (da <+> text ":" <+> db)
 
 {-
@@ -326,10 +328,10 @@ instance Display ETerm where
   display (ECon v) = display v
   display (EType level) = return $ text "Type" <+> int level
   display (EArrow th ep a bnd) = do
-     da <- display a 
+     da <- display a
      lunbind bnd $ \ (n,b) -> do
         dn <- display n
-        db <- display b 
+        db <- display b
         return $ (bindParens ep (dn <+> text ":" <+> da) <+>
                                 (thetaArrow th) <+> db)
   display (ELam  b) =
@@ -338,9 +340,9 @@ instance Display ETerm where
        dbody <- display body
        return ( text "\\" <+> dn <+> text "." <+> dbody )
   display (EApp f x) = do
-       df <- display f 
-       dx <- display x 
-       return (df <+> dx) 
+       df <- display f
+       dx <- display x
+       return (df <+> dx)
   display (ETyEq e0 e1) = do
        de0 <- display e0
        de1 <- display e1
@@ -348,14 +350,14 @@ instance Display ETerm where
   display EJoin = return $ text "join"
   display EAbort = return $ text "abort"
   display (ERecPlus bnd) =
-     lunbind bnd $ \ ((n,w),body) -> do 
+     lunbind bnd $ \ ((n,w),body) -> do
         dn <- display n
         dw <- display w
         db <- display body
-        return $ parens ( text "rec" <+> dn <+> brackets (dw) 
-                          <+> text "." 
+        return $ parens ( text "rec" <+> dn <+> brackets (dw)
+                          <+> text "."
                           <+> db )
-  display (ECase dis matches) = do 
+  display (ECase dis matches) = do
     ddis <- display dis
     dmatches <- mapM display matches
     return $ nest 2
@@ -376,7 +378,7 @@ instance Display EMatch where
     lunbind bnd $ \(vars,body) -> do
        db <- display body
        dvs <- mapM display vars
-       let pat = hcat $ punctuate space $ dvs 
+       let pat = hcat $ punctuate space $ dvs
        return $ dn <+> pat <+> text "->" <+> db
 
 

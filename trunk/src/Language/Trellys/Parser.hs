@@ -222,6 +222,10 @@ brackets = Token.brackets tokenizer
 natural :: LParser Integer
 natural = Token.natural tokenizer
 
+commaSep1 :: LParser a -> LParser [a]
+commaSep1 = Token.commaSep1 tokenizer
+
+
 natenc :: LParser Term
 natenc =
   do n <- natural
@@ -492,12 +496,12 @@ convExpr = do
   reserved "conv"
   a <- expr
   reserved "by"
-  b <- expr
+  bs <- commaSep1 expr
   reserved "at"
-  x <- variable
+  xs <- many1 variable
   dot
   c <- expr
-  return $ Conv a b (bind x c)
+  return $ Conv a bs (bind xs c)
 
 contra :: LParser Term
 contra = do
