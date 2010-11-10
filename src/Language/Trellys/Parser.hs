@@ -126,7 +126,7 @@ parseModuleFile name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ runParser (do { v <- moduleDef;eof; return v}) [] name contents
+  return $ runParser (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
 
@@ -137,7 +137,7 @@ parseModule input = do
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
-parseExpr str = runParser (do { v <- expr; eof; return v}) [] "<interactive>" str
+parseExpr str = runParser (do { whiteSpace; v <- expr; eof; return v}) [] "<interactive>" str
 
 
 -- * Lexer definitions
@@ -175,6 +175,9 @@ layout:: LParser item -> LParser stop -> LParser [item]
 
 identifier :: LParser String
 identifier = Token.identifier tokenizer
+
+whiteSpace :: LParser ()
+whiteSpace = Token.whiteSpace tokenizer
 
 variable :: LParser Name
 variable = 
