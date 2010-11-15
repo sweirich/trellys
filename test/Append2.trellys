@@ -20,61 +20,57 @@ append = \[a] . recnat app [n] = \[m] . \xs ys .
            by (plusSucc [n'] [m]) at h.Vector a h
       by (sym Nat Nat n (Succ n') neq) at h.Vector a (plus h m)
 
-plusAssoc : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus i (plus j k) = plus (plus i j) k
 
 appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
-                   -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k]
+                   -> (xs:Vector a i) -> (ys:Vector a j) -> (zs:Vector a k)
                    -> append [a] [(plus i j)] [k] (append [a] [i] [j] xs ys) zs
                     = append [a] [i] [(plus j k)] xs (append [a] [j] [k] ys zs)
 
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . recnat aa [i] = \[j] [k] xs ys zs .
   case xs [xseq] of
     VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq
                   in conv join 42 by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs
                                            = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
 
     VCons [i'] [ieq] x xs' ->
-      let ih [p] = aa [i'] [ieq] [j] [k] [xs'] [ys] [zs] in
-			-- i_eq : i = Succ i'
-			-- xseq : xs = VCons [a] [i] [i'] [i_eq] x xs'
+      let ih [p] = aa [i'] [ieq] [j] [k] xs' ys zs in
 			let lhs [lhs_eq] =  append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs in
-			-- ==  {xs_eq}
-			let unfold_xs [ign] =	conv lhs_eq by xseq at hole. lhs = append [a] [plus i j] [k] (append [a] [i] [j] hole ys) zs in
-			-- lhs = append [a] [plus i j] [k] (append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys) zs
+
+			-- The following won't work, because lhs_eq will appear free, which is
+			-- apparently not cool:
+			-- let unfold_xs [ign] = conv lhs_eq  by xseq at hole. lhs = append [a] [plus i j] [k] (append [a] [i] [j] hole ys) zs in
+			-- So we use k0 instead.
+			let k0 [ign] = conv join by lhs_eq at hole. lhs = hole in
+			let unfold_xs [ign] =	conv k0 by xseq at hole. lhs = append [a] [plus i j] [k] (append [a] [i] [j] hole ys) zs in
 
 			let unfold_append [unfold_app_eq] = (join 42 :
-			    append [a] [plus i j] [k] (append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys) zs =
-			  	 VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [join 42] x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
-
-			--	Now apply the induction hypothesis and the plus_associates lemma.
-			let unfold_append_ih [ign] = conv unfold_append by (plus_associates i' j k), ih at pa_hole ih_hole.
 			     append [a] [plus i j] [k] (append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys) zs =
-			   	 VCons [a] [Succ pa_hole] [pa_hole] [join 42] x (ih_hole) in
+			   	 VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [join 42] x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
 
-			-- unfold_append
 
-			-- Get rid of the VCons on the lhs
-			let xseq_sym [ign] = sym (Vector a i) (Vector a i) xs (VCons [a] [i] [i'] [ieq] x xs') xseq in
+			let eq_cons [ign] = (join 0 : VCons [a] [Succ (plus (plus i' j) k)] [(plus (plus i' j) k)] [join 42] x =
+																		VCons [a] [Succ (plus i' (plus j k))] [(plus i' (plus j k))] [join 42] x) in
 
-			let lhs_done [ign] =
-			   conv unfold_append_ih by xseq_sym at hole.
-			     append [a] [plus i j] [k] (append [a] [i] [j] hole ys) zs =
-			 		 VCons [a] [Succ plus i' (plus j k)] [plus i' (plus j k)] [join 42] x (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs)) in
+      let e [ign] = conv unfold_xs by unfold_append at hole. lhs = hole in
+			let step_case [ign] = conv e by eq_cons, ih at cons step . lhs = cons step in
 
-			-- lhs_done
-			xseq_sym
+			let rhs_unfold [ign] = (join 42 :
+			  VCons [a] [Succ (plus i' (plus j k))] [plus i' (plus j k)] [join 42] x (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs)) =
+				append [a] [Succ i'] [plus j k] (VCons [a] [Succ i'] [i'] [join 42] x xs') (append [a] [j] [k] ys zs)) in
 
-			{-
-			--
-			-- == {join}
-			-- == {let m [m_eq] = plus (plus i' j) k
-			VCons [a] [Succ m] [m] [join 0] (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)
-			== {ind. hyp} -- and the type is wrong here
-			VCons [a] [Succ m] [m] [join 0] (append [a] [i'] [plus j k] xs' (append [a] [j] [k] ys zs))
-			(append [a] [plus i' j] [k] (append [a] [i'] [j] xs'ys') zs)
+      let l0 [ign] = conv step_case by rhs_unfold at hole. lhs = hole in
+			let l1 [ign] = (join 42 : VCons [a] [Succ i'] [i'] [join 42] x xs' = VCons [a] [i] [i'] [ieq] x xs') in
+			let l2 [ign] = trans [Vector a (Succ i')] [Vector a i] [Vector a i]
+                          [VCons [a] [Succ i'] [i'] [join 42] x xs']
+													[VCons [a] [i] [i'] [ieq] x xs']
+													[xs]
+													[l1] [sym (Vector a i) (Vector a i) xs (VCons [a] [i] [i'] [ieq] x xs') xseq] in
+      let l3 [ign] =
+			  conv l0 by lhs_eq, (sym Nat Nat i (Succ i') ieq), l2 at
+			    lhs_hole i_hole cons_hole . lhs_hole = append [a] [i_hole] [plus j k] cons_hole (append [a] [j] [k] ys zs)
+      in l3
 
-			-}
-
+-- Aaron's version of associativity of append. Kept for archival purposes.
 {-
 appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
