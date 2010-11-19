@@ -12,13 +12,13 @@ import Arithmetic
 -- Terms with Pi types
 
 log e0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
-		    (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
+	      (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
 			 (p : a1 = a2) ->
 			 (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (m1 x1 = m2 x2)) -> 
 			 (m1 = m2)
 
 log e1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
- 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
+ 	      (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
 			  (p : m1 = m2) ->
  			  a1 = a2
 
@@ -184,6 +184,26 @@ e0'' = \ a1 b1 m1 m2 q .
            (join 0)
 					 	    
 
+log cont : (a : Type 0) -> (p:1 = 0) -> a
+
+
+log bad : (\x . 1 : (x:Nat) -> Nat) = (\x . 0 : (x:Nat) -> Nat) 
+bad = trans4' ((x:Nat) -> Nat)
+	    		  ((x:1=0) -> Nat)
+				  ((x:1=0) -> Nat)
+				  ((x:Nat) -> Nat)
+		    (\x . 1 : (x:Nat) -> Nat) 
+		    (\x . 1 : (x:1=0) -> Nat) 
+			 (\x . 0 : (x:1=0) -> Nat)
+		    (\x . 0 : (x:Nat) -> Nat) 				  
+     (join 0)
+	  (e0'' (1 = 0) 
+	        Nat
+	        (\x. 1 : (x:1=0) -> Nat)
+			  (\x. 0 : (x:1=0) -> Nat)
+			  (\ p . cont ((\x.1 : (x:1=0) -> Nat) p = (\x.0 : (x:1=0)->Nat) p) p))
+     (join 0)
+
 -- An example of reasoning under a binder
 
 log example : (\x. plus (plus x x) x : (x:Nat) -> Nat) = 
@@ -201,3 +221,5 @@ example = e0'' Nat Nat
 						 (plus_associates x x x)
                    (join 0 1)
 						 )
+-----------------------------------------------------------
+
