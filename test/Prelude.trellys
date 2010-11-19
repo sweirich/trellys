@@ -59,7 +59,25 @@ trans' = \ aTy bTy cTy a b c p q .
                by (conv p by q at h.a = h)
                at h.a = h
 
+
+trans4' : (aTy : Type 0) -> (bTy : Type 0) -> (cTy : Type 0) -> (dTy : Type 0) -> 
+         (a : aTy) -> (b : bTy) -> (c : cTy) -> (d : dTy) -> 
+				(p : a = b) -> (q : b = c) -> (r : c = d) -> (a = d)
+trans4' = \ aTy bTy cTy dTy a b c d p q r . 
+		    trans' aTy cTy dTy a c d
+             (trans' aTy bTy cTy a b c p q) r
+
 -- Existential types.
 
 data Exists (a : Type 0) (p : (x:a) -> Type 0) -> Type 0 where
   Ex : [x : a] -> (witness : p x) -> Exists a p
+
+-- Unit
+
+data Unit -> Type 0 where
+  U : Unit
+
+-- Void
+
+data Void -> Type 0 where
+  
