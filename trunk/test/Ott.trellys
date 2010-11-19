@@ -1,0 +1,203 @@
+module Ott where
+
+import Prelude
+import Arithmetic
+
+-- Axioms about observational equivalence. These equalities cannot be proven in 
+-- trellys, but they should be (?) consistent to add to the language. 
+
+-- These axioms all have runtime arguments because we expect all equality 
+-- proofs to be erased anyways.
+
+-- Terms with Pi types
+
+log e0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+		    (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
+			 (p : a1 = a2) ->
+			 (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (m1 x1 = m2 x2)) -> 
+			 (m1 = m2)
+
+log e1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+ 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
+			  (p : m1 = m2) ->
+ 			  a1 = a2
+
+log e2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+ 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
+		     (p : m1 = m2) ->
+			  (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (m1 x1 = m2 x2)
+
+-- Pi types themselves
+
+log a0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+		  	  (p : a1 = a2) ->
+			  (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2)) -> 
+			  ((x1 : a1) -> b1 x1 = (x2 : a2) -> b2 x2)
+
+log a1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+			  (p : (x1 : a1) -> b1 x1 = (x2 : a2) -> b2 x2) ->
+		  	  (a1 = a2) 
+
+log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+			  (p : ((x1 : a1) -> b1 x1) = (x2 : a2) -> b2 x2) ->
+			  ((x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2))
+
+-- The above rules are not as useful as we want them to be because the RHS
+-- of Pi types is often not written as (b1 x1) but as something
+-- equivalent to that.  I think to do this rule justice we'll have to
+-- actually add it to the type checker. In the meantime, we can
+-- augment it by the following axiom that handles the non-dependent
+-- case.
+log const : (a1 : Type 0) -> (b1 : Type 0) -> 
+		  ((x:a1) -> b1) = (x:a1) -> ((\x.b1 : (x:a1) -> Type 0) x)
+
+
+-- A few other extensionality axioms
+
+-- Unit type
+
+log unit_eta : (x : Unit) -> (y : Unit) -> (x = y)
+
+-- Void type
+
+log void_eta : (x : Void) -> (y : Void) -> (x = y)
+
+-- Things with Sigma types
+
+log p0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> 
+		   (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> 
+			(x1 : a1) -> (y1 : (x1:a1) -> b1 x1) -> 
+			(x2 : a2) -> (y2 : (x2:a2) -> b2 x2) ->
+			(p : x1 = x2) -> 
+			(q : (x1:a1) -> (x2:a2) -> y1 x1 = y2 x2) ->
+			(Ex [a1] [b1] [x1] (y1 x1) = Ex [a2] [b2] [x2] (y2 x2))
+-- probably derivable from appcong below
+
+-- (Not sure how to state the projection axioms)
+
+-- Sigma types
+
+-- Exists : (a : Type 0) -> (b : (x:a) -> Type 0) -> Type 0
+
+log s0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		   (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+		  	(p : a1 = a2) ->
+			(q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2)) -> 
+			(Exists a1 b1 = Exists a2 b2)
+-- probably derivable from appcong
+
+log s1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+			  (p : Exists a1 b1 = Exists a2 b2) ->
+		  	  (a1 = a2) 
+-- not derivable b/c requires injectivity
+
+log s2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
+			  (p : Exists a1 b1 = Exists a2 b2) ->
+			  ((x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2))
+
+---------------------------------------------------------------------
+---------------------------------------------------------------------
+--- Some examples of what we can do with these axioms
+---------------------------------------------------------------------
+
+-- Application congruence - homogeneous
+
+log appcong : (a : Type 0) -> (b : (x:a) -> Type 0) ->
+		    (m1 : (x:a) -> b x) -> (n1 : a) -> 
+			 (m2 : (x:a) -> b x) -> (n2 : a) -> 
+          (p1 : m1 = m2) -> (p2 : n1 = n2) ->
+			 (m1 n1 = m2 n2) 
+appcong = \ a b m1 n1 m2 n2 p1 p2 . e2 a b m1 a b m2 p1 n1 n2 p2
+		
+-- Application congruence - heterogeneous
+
+log appconghet : (a1 : Type 0) -> (b1 : (x:a1) -> Type 0) ->
+              (a2 : Type 0) -> (b2 : (x:a2) -> Type 0) ->
+		    (m1 : (x:a1) -> b1 x) -> (n1 : a1) -> 
+			 (m2 : (x:a2) -> b2 x) -> (n2 : a2) -> 
+          (p1 : m1 = m2) -> (p2 : n1 = n2) ->
+			 (m1 n1 = m2 n2) 
+appconghet = \ a1 b1 a2 b2 m1 n1 m2 n2 p1 p2 . e2 a1 b1 m1 a2 b2 m2 p1 n1 n2 p2
+
+-- Eta equivalence for functions
+
+log eta :  (a : Type 0) -> (b : (x:a) -> Type 0) ->
+		     (f : (x:a) -> b x) -> (x : a) -> 
+			  f = (\ x . f x : (x:a) -> b x)
+eta = \ a b f x . 
+   e0 a b f a b (\x.f x :(x:a) -> b x) (join 0) 
+	   (\ x1 x2 p.
+         trans' (b x1) (b x2) (b x2)
+			       (f x1) (f x2) ((\x.f x :(x:a) -> b x) x2)
+					 (appcong a b f x1 f x2 (join 0) p)
+                (join 1))
+
+-- Simplified version of extensionality for homogenous equality
+
+log e0' : (a1 : Type 0) -> (b1 : (x1 : a1) -> Type 0) -> 
+	       (m1 : (x1 : a1) -> b1 x1) ->
+		    (m2 : (x1 : a1) -> b1 x1) -> 
+			 (q : (x1 : a1) -> (m1 x1 = m2 x1)) -> 
+			 (m1 = m2)
+e0' = \ a1 b1 m1 m2 q. e0 a1 b1 m1 a1 b1 m2 (join 0) 
+	     (\ x1 x2 p.  
+		     trans' (b1 x1) (b1 x1) (b1 x2)
+                  (m1 x1) (m2 x1) (m2 x2)
+						(q x1) 
+						(conv (join 0 : m2 x1 = m2 x1) by p at x . m2 x1 = m2 x))
+
+-- Yet more simplfied for non-dependent functions
+
+log e0'' : (a1 : Type 0) -> (b1 : Type 0) -> 
+	       (m1 : (x1 : a1) -> b1) ->
+		    (m2 : (x1 : a1) -> b1) -> 
+			 (q : (x1 : a1) -> (m1 x1 = m2 x1)) -> 
+			 (m1 = m2)
+e0'' = \ a1 b1 m1 m2 q . 
+	    trans4' ((x1 : a1) -> b1)
+		         ((x1 : a1) -> ((\x.b1 : (x:a1) -> Type 0) x1))
+		         ((x1 : a1) -> ((\x.b1 : (x:a1) -> Type 0) x1))
+					((x1 : a1) -> b1)
+		     m1
+		     (conv m1 by (const a1 b1) at x.x)
+			  (conv m2 by (const a1 b1) at x.x)
+			  m2
+			  (join 0)
+	        (e0' a1 (\x . b1 : (x:a1) -> Type 0)
+	           (conv m1 by (const a1 b1) at x.x)
+			     (conv m2 by (const a1 b1) at x.x)
+			     (\ x1 . 
+  			       trans4' ((\x.b1 : (x:a1) -> Type 0) x1) b1 b1 
+				          ((\x.b1 : (x:a1) -> Type 0) x1)
+			          ((conv m1 by (const a1 b1) at x.x) x1)
+						 (m1 x1)
+						 (m2 x1)
+						 ((conv m2 by (const a1 b1) at x.x) x1)
+						 (join 0)
+						 (q x1)
+						 (join 0)))
+           (join 0)
+					 	    
+
+-- An example of reasoning under a binder
+
+log example : (\x. plus (plus x x) x : (x:Nat) -> Nat) = 
+              (\x. plus x (plus x x) : (x:Nat) -> Nat)
+
+example = e0'' Nat Nat
+		        (\x. plus (plus x x) x : (x:Nat) -> Nat)
+		        (\x. plus x (plus x x) : (x:Nat) -> Nat)
+				  (\x. trans4' Nat Nat Nat Nat
+				       ((\x. plus (plus x x) x : (x:Nat) -> Nat) x)
+				       (plus (plus x x) x)
+						 (plus x (plus x x))
+						 ((\x. plus x (plus x x) : (x:Nat) -> Nat) x)
+						 (join 1 0)
+						 (plus_associates x x x)
+                   (join 0 1)
+						 )
