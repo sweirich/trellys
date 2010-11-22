@@ -75,8 +75,8 @@ ta th (Join s1 s2) (TyEq a b) =
 ta th (Contra a) b =
   do kc th b
      tyA <- ts Logic a
-     case tyA of
-       TyEq cvs1 cvs2 ->
+     case isTyEq tyA of
+       Just (cvs1, cvs2) ->
          case (splitApp cvs1, splitApp cvs2) of
            ((Con c1, vs1), (Con c2, vs2)) ->
               do when (c1 == c2) $
