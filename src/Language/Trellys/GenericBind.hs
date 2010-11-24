@@ -14,8 +14,8 @@ module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
   ,Subst(..), matchR1
   ,unsafeUnBind
   ,lunbind, lfreshen
---  ,abs_swaps',abs_fv',abs_freshen',abs_match'
---  ,abs_nthpatrec,abs_findpatrec,abs_close,abs_open  -- only for LocallyNameless
+  ,abs_swaps',abs_fv',abs_freshen',abs_match'
+  ,abs_nthpatrec,abs_findpatrec,abs_close,abs_open  -- only for LocallyNameless
 --  ,subst,substs -- only for Nominal
   ,rSourcePos
 )  where
@@ -32,20 +32,17 @@ import Text.ParserCombinators.Parsec.Pos
 
 -- We define an rSourcePos, which then allows us to use derive for
 -- expressions that include SourcePos's directly.
-{-
 rSourcePos :: R a
 rSourcePos = Data (DT "SourcePos" MNil) [error "rSourcePos: SourcePos is abstract"]
 
 instance Rep SourcePos where rep = rSourcePos
 instance (Sat (ctx SourcePos)) => Rep1 ctx SourcePos where
    rep1 = Data1 (DT "SourcePos" MNil) [error "rep1: SourcePos is abstract"]
--}
 
-$(derive_abstract [''SourcePos])
+
 
 -- Alpha for source positions (cannot be derived b/c type is abstract)
 instance Alpha SourcePos where
-{-
   swaps'      = abs_swaps'
   fv'         = abs_fv'
   freshen'    = abs_freshen'
@@ -55,7 +52,6 @@ instance Alpha SourcePos where
   findpatrec = abs_findpatrec
   close      = abs_close
   open       = abs_open
--}
 
 instance Subst b SourcePos where
   isvar _ = Nothing
