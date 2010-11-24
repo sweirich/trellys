@@ -4,12 +4,14 @@
 module Language.Trellys.Environment
   (
    Env,
+   getFlag,
    emptyEnv, dumpEnv,
    lookupVar, lookupVarDef, lookupCon, getDecls,
    extendEnv, extendEnvTele, extendEnvs, replaceEnv,
    substDefs
   )where
 
+import Language.Trellys.Options
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.Error
@@ -24,18 +26,26 @@ import Data.List
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
-data Env = Env { decls :: [Decl] 
+data Env = Env { decls :: [Decl], 
                -- ^ This context has both the type declarations and the
                -- definitions, for convenience
+                 flags :: [Flag]
+               -- ^ Command-line options that might influence typechecking
                } deriving Show
 
 
 -- | The initial environment.
-emptyEnv :: Env
-emptyEnv = Env { decls = [] }
+emptyEnv :: [Flag] -> Env
+emptyEnv fs = Env { decls = [] , flags = fs }
 
 instance Disp Env where
   disp e = vcat [disp decl | decl <- decls e]
+
+-- | Determine if a flag is set
+getFlag :: (MonadReader Env m) => Flag -> m Bool
+getFlag f = do 
+ flags <- asks flags
+ return (f `elem` flags)
 
 -- | Find a name's type in the context.
 lookupVar :: (MonadReader Env m, MonadError Err m, MonadIO m) 
@@ -99,7 +109,7 @@ extendEnvTele bds m =
 
 -- | Replace the entire context with a new one
 replaceEnv :: (MonadReader Env m) => [Decl] -> m a -> m a
-replaceEnv newenv = local (\_ -> Env newenv)
+replaceEnv newenv = local (\m -> m { decls = newenv })
 
 -- | Get the complete current context
 getDecls :: MonadReader Env m => m [Decl]
@@ -123,5 +133,5 @@ dumpEnv :: (MonadReader Env m, MonadIO m) => Int -> m ()
 dumpEnv n = do
   env <- asks decls
   liftIO $ putStrLn "-- BENV --"
-  liftIO $ putStrLn $ render $ disp (Env (take n env))
+  liftIO $ putStrLn $ render $ disp (Env {decls = take n env, flags = []})
   liftIO $ putStrLn "-- EENV --"

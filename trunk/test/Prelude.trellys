@@ -24,6 +24,13 @@ data Nat -> Type 0 where
 -- as the argument to conv (where they are erased), or as lemmas to build
 -- other proofs (so in erasable positions, so the arguments can be runtime). VS
 
+-- SCW: I don't think that we care whether the arguments to sym/trans
+-- etc are compiletime or runtime. All equality proofs are irrelevant
+-- as the definition of irr below shows. (i.e. even if you use trans'
+-- to produce an equality proof, you can still erase it with irr
+-- below.) So I think we should just use runtime only arguments for
+-- simplicity.
+
 
 sym : (aTy : Type 0) -> (bTy : Type 0) -> (a : aTy) -> (b : bTy)  -> (p : a = b) -> (b = a)
 sym = \ aTy bTy a b p . 
@@ -66,6 +73,13 @@ trans4' : (aTy : Type 0) -> (bTy : Type 0) -> (cTy : Type 0) -> (dTy : Type 0) -
 trans4' = \ aTy bTy cTy dTy a b c d p q r . 
 		    trans' aTy cTy dTy a c d
              (trans' aTy bTy cTy a b c p q) r
+
+-- Irrelevance for equality types
+
+irr : [aTy : Type 0] -> [a:aTy] -> [bTy:Type 0] -> [b:bTy] -> [p: a = b] -> (a = b)
+irr = \ [aTy][a][bTy][b][p] . 
+	 conv join 0 by p at x . a = x
+
 
 -- Existential types.
 
