@@ -10,6 +10,7 @@ import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint(Disp(..))
 import Language.Trellys.OpSem
 
+import Language.Trellys.Options
 import Language.Trellys.Environment
 import Language.Trellys.Error
 import Language.Trellys.TypeMonad
@@ -64,6 +65,12 @@ ta th tm (Paren ty) = ta th tm ty
 -- rule T_join
 ta th (Join s1 s2) (TyEq a b) =
   do kc th (TyEq a b)
+     k1 <- ts Program a 
+     k2 <- ts Program b
+     picky <- getFlag PickyEq
+     when (picky && not (k1 `aeq` k2)) $
+         err [DS "Cannot join terms of different types:", DD a,
+         DS "has type", DD k1, DS "and", DD b, DS "has type", DD k2]
      t1E <- erase =<< substDefs a
      t2E <- erase =<< substDefs b
      joinable <- join s1 s2 t1E t2E
@@ -291,7 +298,7 @@ ta th (Let th' ep a bnd) tyB =
            DS "appears in the erasure of", DD b]
     unless (th' <= th) $
       err [DS "Program variables can't be bound with let expressions in",
-           DS "Logical contexts because they would be normalized when the",
+           DS "Logical contexts because thSCey would be normalized when the",
            DS "expression is."]
 
 -- rule T_chk
@@ -399,15 +406,35 @@ ts tsTh tsTm =
     ts' th (Conv b as bnd) =
       do (xs,c) <- unbind bnd
          atys <- mapM (ts Logic) as
+         picky <- getFlag PickyEq
          let errMsg aty =
                err $ [DS "The second arguments to conv must be equality proofs,",
                       DS "but here has type", DD aty]
-         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
-         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
+--         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
+--         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
+         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\aty -> do
+              case isTyEq aty of 
+                Just (tyA1, tyA2) -> do
+                 k1 <- ts Program tyA1
+                 k2 <- ts Program tyA2
+                 when (picky && (not (k1 `aeq` k2))) $ err
+                   [DS "Terms ", DD tyA1, DS "and", DD tyA2, 
+                    DS " must have the same type when used in conversion.",       
+                    DS "Here they have types: ", DD k1, DS "and", DD k2, 
+                    DS "respectively."]
+                 return (tyA1, tyA2, k1)
+                _ -> errMsg aty) atys
          let cA1 = substs xs tyA1s c
          let cA2 = substs xs tyA2s c
-         ta th b cA1
-         kc th cA2
+         ta th b cA1  
+         if picky then         
+            -- check c with extended environment
+            -- Don't know whether these should be logical or programmatic
+            let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
+              extendEnvs decls $ kc th c
+           else 
+            -- check c after substitution
+            kc th cA2
          return cA2
 
     -- rule T_annot

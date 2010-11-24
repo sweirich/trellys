@@ -2,6 +2,7 @@ module Ott where
 
 import Prelude
 import Arithmetic
+import Vectors
 
 -- Axioms about observational equivalence. These equalities cannot be proven in 
 -- trellys, but they should be (?) consistent to add to the language. 
@@ -100,6 +101,7 @@ log s2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) ->
 			  (p : Exists a1 b1 = Exists a2 b2) ->
 			  ((x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2))
 
+
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 --- Some examples of what we can do with these axioms
@@ -183,10 +185,6 @@ e0'' = \ a1 b1 m1 m2 q .
 						 (join 0)))
            (join 0)
 					 	    
-
-log cont : (a : Type 0) -> (p:1 = 0) -> a
-
-
 log bad : (\x . 1 : (x:Nat) -> Nat) = (\x . 0 : (x:Nat) -> Nat) 
 bad = trans4' ((x:Nat) -> Nat)
 	    		  ((x:1=0) -> Nat)
@@ -201,7 +199,7 @@ bad = trans4' ((x:Nat) -> Nat)
 	        Nat
 	        (\x. 1 : (x:1=0) -> Nat)
 			  (\x. 0 : (x:1=0) -> Nat)
-			  (\ p . cont ((\x.1 : (x:1=0) -> Nat) p = (\x.0 : (x:1=0)->Nat) p) p))
+			  (\p. contra p))
      (join 0)
 
 -- An example of reasoning under a binder
@@ -222,4 +220,43 @@ example = e0'' Nat Nat
                    (join 0 1)
 						 )
 -----------------------------------------------------------
+-- OTT style Append associates.
+-----------------------------------------------------------
 
+otrans : (aTy : Type 0) -> (a : aTy) -> (b : aTy) -> (c : aTy) -> 
+		   (p : a = b) -> (q : b = c) -> (a = c) 
+otrans = \ aTy a b c p q .
+             conv join 0 
+               by (conv p by q at h.a = h)
+               at h.a = h
+
+otrans4 : (aTy : Type 0) -> (a : aTy) -> (b : aTy) -> (c : aTy) -> (d : aTy) -> 
+		   (p : a = b) -> (q : b = c) -> (r : c = d) -> (a = d) 
+otrans4 = \ aTy a b c d p q r .
+            otrans aTy a c d
+              (otrans aTy a b c p q) r
+
+plus0 : [n:Nat] -> n = plus 0 n 
+plus0 = \[n] . join 3
+
+plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
+plusSucc = \[n] [m] . join 42
+
+append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append = \[a] . recnat app [n] = \[m] . \xs ys .
+  case xs [p] of
+    VNil [neq] -> 
+      let [neq'] [p] = (sym Nat Nat n 0 neq) in -- evidence of backwards equality. NC
+      conv (conv ys by (plus0 [m]) at x.Vector a x) by neq' at h.Vector a (plus h m)
+    VCons [n'] [neq] x xs' -> 
+      let xs'ys [p] = app [n'] [neq] [m] xs' ys in
+      let xsys [p] = VCons [a] [Succ (plus n' m)] [plus n' m] [join 42] x xs'ys in
+      let xsys' [p] = conv xsys by (plusSucc [n'] [m]) at h.Vector a h in
+      let [neq'] [p] = (sym Nat Nat n (Succ n') neq) in -- evidence of backwards equality. NC
+      conv xsys' by neq' at h.Vector a (plus h m)
+
+appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat] 
+                   -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
+                   -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
+                    = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
+-- appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .

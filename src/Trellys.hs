@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Trellys where
 
-
+import Language.Trellys.Options
 import Language.Trellys.Modules
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeCheck
@@ -30,7 +30,7 @@ main = do
     Right val -> do
              when (TypeCheck `elem` flags) $ do
                putStrLn "TypeChecking"
-               contents <- runTcMonad emptyEnv (tcModules val)
+               contents <- runTcMonad (emptyEnv flags) (tcModules val)
                case contents of
                  Left typeError -> do
                           putStrLn "Type Error:"
@@ -47,13 +47,4 @@ getOptions argv =
           (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
       where header = "Usage: trellys [OPTION...] files..."
 
--- Options handling stuff. To be determined.
-options :: [OptDescr Flag]
-options = [Option "t" ["typecheck"] (NoArg TypeCheck) "Typecheck the module"
-          ]
-
-
-data Flag = TypeCheck
-          | Parse
-  deriving (Eq,Show,Read)
 
