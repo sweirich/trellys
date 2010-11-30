@@ -86,7 +86,7 @@ log a0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) ->
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 		  	  (p : a1 = a2) ->
 			  (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2)) -> 
-			  ((x1 : a1) -> b1 x1 = (x2 : a2) -> b2 x2)
+			  ((x1 : a1) -> b1 x1) = ((x2 : a2) -> b2 x2)
 
 log a1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
@@ -106,6 +106,7 @@ log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) ->
 -- case.
 log const : (a1 : Type 0) -> (b1 : Type 0) -> 
 		  ((x:a1) -> b1) = (x:a1) -> ((\x.b1 : (x:a1) -> Type 0) x)
+const = \a1 b1 . join 
 
 
 -- A few other extensionality axioms
@@ -334,7 +335,8 @@ consinj = \ a n x y xs ys eq.
 
 -- A proof that equal vectors imply equal types
 
-log eqvec : (a : Type 0) -> (n:Nat) -> (m:Nat) ->  (xs : Vector a n) -> (ys : Vector a m) -> 
+{-
+log eqvec : (a : Type 0) -> [n:Nat] -> [m:Nat] ->  (xs : Vector a n) -> (ys : Vector a m) -> 
     (eq : xs = ys) -> (n = m)
 eqvec = \a . recnat eqv [n] = \ [m] xs ys eq .
   case xs [pxs] of 
@@ -352,7 +354,7 @@ eqvec = \a . recnat eqv [n] = \ [m] xs ys eq .
 								-- meq : m = Suc m'
 								let p2 [p2eq] = conv (join 0) by p1 at x . Suc n' = Suc x in
 								conv p2 by (Sym Nat neq) , (Sym Nat meq) at x1 x2 . x1 = x2 
-
+-}
                      
 
 
@@ -382,3 +384,23 @@ appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
 	      {- VNil: app (app Nil ys) zs = app ys zs
                                       = app Nil (app ys zs) -}
 
+
+-- A simple example of using axiom a0, demonstrating that we can reduce redexes under Pis.
+log v : (n : Nat) -> Type 0
+v = Vector Nat 
+
+log thm : (n : Nat)  -> (m : Nat) -> (p : n = m) ->
+            ((x:Nat) -> v (plus x n)) = ((x:Nat) -> v (plus x m))
+thm = \ n m p .
+  conv
+    a0 Nat (\x . v (plus x n) : (x:Nat) -> Type 0) 
+       Nat (\x . v (plus x m) : (x:Nat) -> Type 0) 
+       (join)
+       (\ x1 x2 p' . conv (join :((\x . v (plus x n) : (x:Nat)->Type 0) x1) = ((\x . v (plus x n) : (x:Nat)->Type 0) x1))
+                      by p, p'
+                      at h1 h2. ((\x . v (plus x n) : (x:Nat)->Type 0) x1) = ((\x . v (plus x h1) : (x:Nat)->Type 0) h2))
+    by (join : ((x1 : Nat) -> (\ x . v (plus x n) : (x:Nat) -> Type 0) x1)
+              =((x : Nat) -> v (plus x n))),
+       (join : ((x2 : Nat) -> (\ x . v (plus x m) : (x:Nat) -> Type 0) x2)
+              =(((x : Nat) -> v (plus x m))))
+    at h1 h2. h1 = h2
