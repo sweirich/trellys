@@ -2,17 +2,51 @@ module Trees where
 
 import Prelude
 
--- programmatic list
+
 data List [a : Type 0] -> Type 0 where
   Nil : List a
-  Cons : (x:a) => (xs:List a) => List a
+  Cons : (x:a) -> (xs:List a) -> List a
 
--- programmatic map (not really)
-map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) => b) -> (xs:List a) -> List b
-map = \ [a] . \ [b] . \ f . \ xs .
-              case xs [xs_eq] of
-                Nil       -> Nil [b]
-                Cons x xs -> let x1 [xx] = f x in Cons [b] x1 (Nil [b])
+-- programmatic map but does not type check
+prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) -> b) -> (xs:List a) -> List b
+map = \ [a] . \ [b] . \ f .
+  rec map' xs = case xs [xs_eq] of
+                  Nil       -> Nil [b]
+                  Cons y ys -> let y1 [yy] = f y in
+                                 let ys1 [yys] = map' ys in
+                                   Cons [b] y1 ys1
+
+
+{- type error message
+Type Error:
+Trees.trellys:16:50:
+    Variable 'map'' is programmatic, but it was checked logically.
+    when checking the term 
+    '\ [a] . \ [b] . \ f . rec map' xs = case xs [xs_eq] of
+                                           Nil -> Nil [b]
+                                           Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1'
+    against the signature
+    '[a : Type 0] -> [b : Type 0] -> f : x : a -> b -> xs : List a -> List b'
+    In the expression  map' ys
+    In the expression  let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+    In the expression  case xs [xs_eq] of
+                         Nil -> Nil [b]
+                         Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+    In the expression  rec map' xs = case xs [xs_eq] of
+                                       Nil -> Nil [b]
+                                       Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+    In the expression  \ f . rec map' xs = case xs [xs_eq] of
+                                             Nil -> Nil [b]
+                                             Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+    In the expression  \ [b] . \ f . rec map' xs = case xs [xs_eq] of
+                                                     Nil -> Nil [b]
+                                                     Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+    In the expression  \ [a] . \ [b] . \ f . rec map' xs = case xs [xs_eq] of
+                                                             Nil -> Nil [b]
+                                                             Cons y ys -> let  y1 [yy] = f y in let  ys1 [yys] = map' ys in Cons [b] y1 ys1
+-}
+
+
 
 {-
 prog foldr : [a : Type 0] -> [b : Type 0] ->
