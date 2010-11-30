@@ -2,9 +2,27 @@ module Trees where
 
 import Prelude
 
+-- programmatic list
 data List [a : Type 0] -> Type 0 where
   Nil : List a
-  Cons : (x:a) -> (xs:List a) -> List a
+  Cons : (x:a) => (xs:List a) => List a
+
+-- programmatic map
+prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) => b) => (xs:List a) => List b
+map = \ [a] . \ [b] . \ f . \ xs . case xs [xs_eq] of
+                                     Nil       -> Nil [b]
+                                     Cons x xs -> let x1 [xx] = f x in Cons [b] x1 (Nil [b])
+-- not working yet
+
+
+--   Cons x xs -> Cons (f x) (map Zero xs)
+{-
+prog foldr : [a : Type 0] -> [b : Type 0] ->
+             (f:(x:a) -> (y:b) -> b) -> (z:b) -> (l:List a) -> b
+rec foldr f = \ v0 xs x . case xs [cw] of
+                            Nil  -> v0
+                            Cons -> f (foldr f v0 xs)
+-}
 
 data Rose [a : Type 0] -> Type 0 where
   Fork : (x:a) -> (r:List (Rose a)) -> Rose a
