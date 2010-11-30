@@ -7,11 +7,12 @@ data List [a : Type 0] -> Type 0 where
   Nil : List a
   Cons : (x:a) => (xs:List a) => List a
 
--- programmatic map
-prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) => b) => (xs:List a) => List b
-map = \ [a] . \ [b] . \ f . \ xs . case xs [xs_eq] of
-                                     Nil       -> Nil [b]
-                                     Cons x xs -> let [x1] [xx] = f x in Cons [b] x1 (Nil [b])
+-- programmatic map (not really)
+map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) => b) -> (xs:List a) -> List b
+map = \ [a] . \ [b] . \ f . \ xs .
+              case xs [xs_eq] of
+                Nil       -> Nil [b]
+                Cons x xs -> let x1 [xx] = f x in Cons [b] x1 (Nil [b])
 
 {-
 prog foldr : [a : Type 0] -> [b : Type 0] ->
