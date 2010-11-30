@@ -4,7 +4,7 @@
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
   (runEvalMonad,
-   join, reduce,isValue, eval, erase)
+   join, reduce,isValue, isEValue, eval, erase)
 where
 
 
@@ -120,7 +120,23 @@ cbvStep :: ETerm -> TcMonad (Maybe ETerm)
 cbvStep (EVar _)         = return Nothing
 cbvStep (ECon _)         = return Nothing
 cbvStep (EType _)        = return Nothing
-cbvStep (EArrow _ _ _ _) = return Nothing
+cbvStep (EArrow th ep a bnd) = do
+  stpa <- cbvStep a
+  case stpa of
+    Just EAbort -> return $ Just EAbort
+    Just a'     -> return $ Just $ EArrow th ep a' bnd
+    Nothing     ->
+      if not (isEValue a) then return Nothing
+       else do 
+         (x,b) <- unbind bnd
+         stpb <- cbvStep b
+         case stpb of
+           Just EAbort -> return $ Just EAbort
+           Just b'     -> return $ Just $ EArrow th ep a (bind x b')
+           Nothing ->
+             if isEValue b
+               then return $ Just $ (EArrow th ep a (bind x b))
+               else return Nothing           
 cbvStep (ELam _)         = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
@@ -189,7 +205,9 @@ isValue :: Term -> Bool
 isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
-isValue (Arrow _ _ _ _)    = True
+isValue (Arrow _ _ t1 b)  =
+  let (_,t2) = unsafeUnBind b in
+  isValue t1 && isValue t2
 isValue (Lam _ _)          = True
 isValue (App _ e1 e2)      =
   isValue e2 &&
@@ -215,7 +233,9 @@ isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
-isEValue (EArrow _ _ _ _) = True
+isEValue (EArrow th ep t1 b) = 
+  let (x,t2) = unsafeUnBind b in
+   isEValue t1 && isEValue t2
 isEValue (ELam _)         = True
 isEValue (EApp e1 e2)     =
   isEValue e2 &&
