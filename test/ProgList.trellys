@@ -1,0 +1,34 @@
+module Trees where
+
+import Prelude
+
+-- pragrammatic list whose elelments are logical
+data List [a : Type 0] -> Type 0 where
+  Nil : List a
+  Cons : (x:a) -> (xs:List a) => List a
+
+-- programmatic map
+prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) -> b) -> (xs:List a) => List b
+map = \ [a] . \ [b] . \ f .
+  rec map' xs = case xs [xs_eq] of
+                  Nil       -> Nil [b]
+                  Cons y ys -> let y1 [yy] = f y in
+                                 let prog ys1 [yys] = map' ys in
+                                   Cons [b] y1 ys1
+
+prog x : List Nat
+x = map [Nat] [Nat] (\ x . Succ x ) (Cons [Nat] 0 (Cons [Nat] 1 (Nil [Nat])))
+
+{-
+prog foldr : [a : Type 0] -> [b : Type 0] ->
+             (f:(x:a) => (y:b) => b) -> (z:b) => (l:List a) => b
+rec foldr f = \ v0 xs x . case xs [cw] of
+                            Nil  -> v0
+                            Cons -> f (foldr f v0 xs)
+-}
+
+-- data Rose [a : Type 0] -> Type 0 where
+--   Fork : (x:a) -> (r:List (Rose a)) -> Rose a
+
+-- data Bin [a : Type 0] -> Type 0 where
+--  Bin : (x:a)
