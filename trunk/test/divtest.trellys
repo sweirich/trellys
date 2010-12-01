@@ -17,7 +17,7 @@ isZero = \ x .
 
 
 -- 'div' calculates ceiling(n/m+1)
-prog div : (n : Nat) -> (m : Nat) -> Nat
+-- prog div : (n : Nat) -> (m : Nat) -> Nat
 -- rec div n = \m => case n of
 --                       (Zero) zw -> m
 --                       (Succ n) sw -> (div (minus n m) m)
@@ -35,9 +35,9 @@ prog div : (n : Nat) -> (m : Nat) -> Nat
 ------------------------------------------------------------
 -- we would actually need to write the following for these:
 ------------------------------------------------------------
-prog lemma_minus_plus_id : (n : Nat) -> (m : Nat) ->
-   (n = let p [pw] = (plus m n) in
-         (minus p m))
+-- prog lemma_minus_plus_id : (n : Nat) -> (m : Nat) ->
+--    (n = let p [pw] = (plus m n) in
+--          (minus p m))
 
 -- The main theorem to prove.
 prog theorem_div_mult_id : (n : Nat) -> (m : Nat) ->
