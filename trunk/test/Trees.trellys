@@ -7,13 +7,13 @@ data List [a : Type 0] -> Type 0 where
   Nil : List a
   Cons : (x:a) -> (xs:List a) -> List a
 
--- programmatic map but does not type check
+-- programmatic map
 prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) -> b) -> (xs:List a) -> List b
 map = \ [a] . \ [b] . \ f .
   rec map' xs = case xs [xs_eq] of
                   Nil       -> Nil [b]
                   Cons y ys -> let y1 [yy] = f y in
-                                 let ys1 [yys] = map' ys in
+                                 let prog ys1 [yys] = map' ys in
                                    Cons [b] y1 ys1
 
 
