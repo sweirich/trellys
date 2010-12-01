@@ -1,4 +1,4 @@
-module Trees where
+module ProgList where
 
 import Prelude
 
@@ -19,13 +19,15 @@ map = \ [a] . \ [b] . \ f .
 prog x : List Nat
 x = map [Nat] [Nat] (\ x . Succ x ) (Cons [Nat] 0 (Cons [Nat] 1 (Nil [Nat])))
 
-{-
+
 prog foldr : [a : Type 0] -> [b : Type 0] ->
-             (f:(x:a) => (y:b) => b) -> (z:b) => (l:List a) => b
-rec foldr f = \ v0 xs x . case xs [cw] of
-                            Nil  -> v0
-                            Cons -> f (foldr f v0 xs)
--}
+             (f:(x:a) -> (y:b) => b) -> (z:b) -> (l:List a) => b
+foldr = \ [a] . \ [b] . \ f . \ v0 .
+  rec foldr' xs = case xs [xs_eq] of
+                   Nil       -> v0
+                   Cons y ys -> let prog ys1 [yys] = foldr' ys in
+                                  f y ys1
+
 
 -- data Rose [a : Type 0] -> Type 0 where
 --   Fork : (x:a) -> (r:List (Rose a)) -> Rose a
