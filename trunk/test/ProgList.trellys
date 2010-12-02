@@ -29,8 +29,25 @@ foldr = \ [a] . \ [b] . \ f . \ v0 .
                                   f y ys1
 
 
--- data Rose [a : Type 0] -> Type 0 where
---   Fork : (x:a) -> (r:List (Rose a)) -> Rose a
+data Fix [f : (a:Type 0) -> Type 0] -> Type 0 where
+  In : (x: f (Fix f)) -> Fix f
 
--- data Bin [a : Type 0] -> Type 0 where
---  Bin : (x:a)
+data L [a:Type 0] [c:Type 0] -> Type 0 where
+  N : L a c
+  C : (x:a) -> (y:c) -> L a c
+
+
+nil : [a:Type 0] -> Fix (L a)
+nil = \ [a] . In [L a] (N [a] [Fix (L a)])
+
+cons : [a:Type 0] -> (x:a) -> (xs:Fix (L a)) -> Fix (L a)
+cons = \ [a] . \ x . \ xs . In [L a] (C [a] [Fix (L a)] x xs)
+
+l1 : Fix (L Nat)
+l1 = nil [Nat]
+
+l2 : Fix (L Nat)
+l2 = cons [Nat] 0 l1
+
+-- TODO mcata 
+
