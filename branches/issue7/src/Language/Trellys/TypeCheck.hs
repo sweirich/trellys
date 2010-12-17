@@ -45,6 +45,8 @@ encapsulated in the TcMonad.
  -}
 
 
+-- | kind check, for check = synthesis ?
+
 -- Check that tm is a wellformed type at some level
 kc :: Theta -> Term -> TcMonad ()
 kc th tm = do
@@ -52,8 +54,9 @@ kc th tm = do
   when (isNothing $ isType ty) $
     err [DD tm, DS "is not a well-formed type at", DD th]
 
--- Position terms wrap up an error handler
+-- | type analysis
 ta :: Theta -> Term -> Term -> TcMonad ()
+-- Position terms wrap up an error handler
 ta th (Pos p t) ty = do
   ta th t ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
@@ -316,6 +319,7 @@ ta th a tyB =
 ------------------------------
 ------------------------------
 
+-- | type synthesis
 ts :: Theta -> Term -> TcMonad Term
 ts tsTh tsTm =
   do typ <- ts' tsTh tsTm
@@ -497,6 +501,7 @@ tcModules mods = tcModules' [] mods
 tcModule :: [(Name, [Decl])] -> Module -> TcMonad [Decl]
 tcModule defs m' = foldr f (return []) (moduleEntries m')
   where f d m = extendEnvs (concat allDefs) $ do
+                    -- issue7: make sure this only returns types of terms (issue8: and axioms)
           ldecls <- tcEntry d
           sdecls <- extendEnvs ldecls m
           return $ ldecls ++ sdecls
@@ -514,7 +519,7 @@ tcEntry val@(Def n term) = do
     Nothing -> tc
     Just term' -> die term'
   where
-    tc = do
+    tc = do                  -- issue7: this lookup should be in hints, not ctx
       lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
       case lkup of
         Nothing -> do ty <- ts Logic term
@@ -539,6 +544,7 @@ tcEntry s@(Sig n th ty) = do
   lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
   case lkup of
     Nothing -> do kc th ty
+                  -- issue7: this goes in hints, not ctx
                   return [s]
     -- We already have a type in the environment so fail.
     Just (_,typ) ->

@@ -10,6 +10,9 @@ clean:
 	-rm -rf lib/replib-read-only/dist
 	-rm -rf src/dist
 
+etags:
+	find ./ -name .svn -prune -o -name '*.hs' -print | xargs hasktags --etags
+
 # HACK: bump the RepLib version number so that cabal won't get
 # confused when hackage tells cabal that RepLib-0.3 requires base >=
 # 4.3.
