@@ -1,0 +1,25 @@
+-- examples of bug where type declarations (signatures) enter context
+-- before they should.
+module SigDefBug where
+
+import Prelude
+
+-- signatures enter context even if there is no corresponding def
+--
+-- a comment on TypeCheck.tcModule indicates the implementer was aware
+-- of the problem
+log p : 0 = 1
+log v : Void
+v = contra p
+
+-- in particular, signatures enter the context before the
+-- corresponding def is checked
+log v' : Void
+v' = v'
+
+-- and it's not enough to remove the signature for x from the context
+-- when checking x
+log v1 : Void
+log v2 : Void
+v1 = v2
+v2 = v1

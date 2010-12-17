@@ -1,0 +1,39 @@
+module Vectors where
+
+import Prelude
+
+data Vector [a : Type 0] [n : Nat] -> Type 0 where
+   VNil  : [pf : n = 0] -> Vector a n
+   VCons : [size : Nat] -> [pf : n = Succ size]
+        -> (x:a) -> (xs : Vector a size) -> Vector a n
+
+-- not needed:
+-- hole : (a : Type 0) -> a
+
+-- terminating recursor for the vector type
+recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
+         (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [a] [n] [n_eq]))) ->
+         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] -> (x:a) -> (xs : Vector a n') -> (ih : c [n'] xs) ->
+                 c [n] (VCons [a] [n] [n'] [n_eq] x xs)) ->
+         [n:Nat] -> (v:Vector a n) -> (c [n] v)
+recvec = \ [a] . \ [c] . \ base . \ step .
+           recnat recvec[n] = \ v .
+             case v [v_eq] of
+               VNil [n_eq] -> 
+ 
+                 conv base [n] [n_eq] by sym (Vector a n) (Vector a n) v (VNil [a] [n] [n_eq]) v_eq
+                 at x.(c [n] x)
+                
+                      
+               VCons [n'] [n_eq] x xs ->
+	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [n_eq] xs)
+                 by sym (Vector a n) (Vector a n) v (VCons [a] [n] [n'] [n_eq] x xs) v_eq
+                 at x.(c [n] x)
+
+
+vmap : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
+      [n : Nat] -> (xs : Vector a n) -> Vector b n
+vmap = \ [a] . \ [b] . \ f . recnat vmap [n] = \ xs .
+        case xs [xs_eq] of
+          VNil [n_eq] -> VNil [b] [n] [n_eq]
+          VCons [n'] [n_eq] x xs -> VCons [b] [n] [n'] [n_eq] (f x) (vmap [n'] [n_eq] xs) 
