@@ -233,8 +233,8 @@ isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
-isEValue (EArrow th ep t1 b) = 
-  let (x,t2) = unsafeUnBind b in
+isEValue (EArrow _ _ t1 b) = 
+  let (_,t2) = unsafeUnBind b in
    isEValue t1 && isEValue t2
 isEValue (ELam _)         = True
 isEValue (EApp e1 e2)     =

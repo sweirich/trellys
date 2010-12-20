@@ -332,11 +332,14 @@ ts tsTh tsTm =
 
     -- Rule T_var
     ts' th (Var y) =
-      do (th',ty) <- lookupVarTy y
-         unless (th' <= th || isFirstOrder ty) $
-           err [DS "Variable", DD y, DS "is programmatic, but it was checked",
-                DS "logically."]
-         return ty
+      do x <- lookupTy y
+         case x of
+           Just (th',ty) -> do
+             unless (th' <= th || isFirstOrder ty) $
+               err [DS "Variable", DD y, DS "is programmatic, but it was checked",
+                    DS "logically."]
+             return ty
+           Nothing -> err [DS "The variable", DD y, DS "was not found."]
 
     -- Rule T_type
     ts' _ (Type l) = return $ Type (l + 1)
@@ -367,7 +370,6 @@ ts tsTh tsTm =
                   err [DS "Constructor", DD c,
                        DS "is programmatic, but it was checked logically."]
                 return $ telePi (map (\(t,a,b,_) -> (t,a,b,Erased)) delta) tm
-
 
     -- rule T_app
     ts' th tm@(App ep a b) =
@@ -487,20 +489,21 @@ ts tsTh tsTm =
 -- | Typecheck a collection of modules. Assumes that each modules appears after
 -- its dependencies.
 tcModules :: [Module] -> TcMonad [(Name,[Decl])]
-tcModules mods = tcModules' [] mods
-  where tcModules' defs [] = return defs
-        tcModules' defs (m:ms) = do
-          liftIO $ putStrLn $ "Checking module " ++ show (moduleName m)
-          ds <- tcModule defs m
-          tcModules' ((moduleName m, ds):defs) ms
+tcModules mods = foldM tcM [] mods
+  -- Check module m against modules in defs; add m's decls to assocs.
+  where defs `tcM` m = do -- "M" is for "Module" not "monad"
+          let name = moduleName m
+          liftIO $ putStrLn $ "Checking module " ++ show name
+          decls <- defs `tcModule` m
+          return $ (name, decls):defs
 
 
 -- | Typecheck an entire module.
 tcModule :: [(Name, [Decl])] -- ^ Assoc list mapping Module names to their (checked) Decls.
          -> Module           -- ^ Module to check.
          -> TcMonad [Decl]   -- ^ Decls of the Module being checked.
-tcModule defs m' = env $ foldr f (return []) (moduleEntries m')
-  where d `f` m = do
+tcModule defs m' = env $ foldr tcE (return []) (moduleEntries m')
+  where d `tcE` m = do
           -- Extend the Env per the current Decl before checking
           -- subsequent Decls.
           x <- tcEntry d
@@ -524,7 +527,7 @@ type HintOrCtx = Either Decl [Decl]
 
 tcEntry :: Decl -> TcMonad HintOrCtx
 tcEntry val@(Def n term) = do
-  oldDef <- ((liftM Just $ lookupVarDef n) `catchError` (\_ -> return Nothing))
+  oldDef <- lookupDef n
   case oldDef of
     Nothing -> tc
     Just term' -> die term'
@@ -552,7 +555,7 @@ tcEntry val@(Def n term) = do
 
 tcEntry s@(Sig n th ty) = do
   -- Look for existing Sigs ...
-  l  <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
+  l  <- lookupTy n
   l' <- lookupHint n
   -- ... we don't care which, if either are Just.
   case catMaybes [l,l'] of

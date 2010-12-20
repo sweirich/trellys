@@ -6,7 +6,7 @@ module Language.Trellys.Environment
    Env,
    getFlag,
    emptyEnv, dumpEnv,
-   lookupVarTy, lookupVarDef, lookupHint, lookupCon,
+   lookupTy, lookupDef, lookupHint, lookupCon,
    getCtx, extendCtx, extendCtxTele, extendCtxs,
    extendHints,
    substDefs
@@ -60,28 +60,18 @@ lookupHint v = do
   return $ listToMaybe [(th,ty) | Sig v' th ty <- hints, v == v']
 
 -- | Find a name's type in the context.
-lookupVarTy :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-          => Name -> m (Theta,Term)
-lookupVarTy v = do
-  g <- asks ctx
-  scanGamma g
-  where
-    scanGamma [] = err [DS "The variable", DD v, DS "was not found."]
-    scanGamma ((Sig v' th a):g) = 
-      if v == v' then return (th,a) else scanGamma g
-    scanGamma (_:g) = scanGamma g
+lookupTy :: (MonadReader Env m, MonadError Err m, MonadIO m) 
+         => Name -> m (Maybe (Theta,Term))
+lookupTy v = do
+  ctx <- asks ctx
+  return $ listToMaybe [(th,ty) | Sig v' th ty <- ctx, v == v']  
 
 -- | Find a name's def in the context.
-lookupVarDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-             => Name -> m (Term)
-lookupVarDef v = do
-  g <- asks ctx
-  scanGamma g
-  where
-    scanGamma [] = err [DS "The variable", DD v, DS "was not found."]
-    scanGamma ((Def v' a):g) = 
-      if v == v' then return (a) else scanGamma g
-    scanGamma (_:g) = scanGamma g
+lookupDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
+          => Name -> m (Maybe Term)
+lookupDef v = do
+  ctx <- asks ctx
+  return $ listToMaybe [a | Def v' a <- ctx, v == v']
 
 -- | Find a constructor in the context - left is type con, right is term con
 lookupCon :: (MonadReader Env m, MonadError Err m) 
