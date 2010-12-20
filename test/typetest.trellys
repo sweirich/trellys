@@ -1,3 +1,6 @@
+-- issue8: there is no definition for inj_succ given below, and so
+-- this file fails to typecheck since issue7 (Sigs w/o Defs) is fixed.
+
 module TypeTest where
 
 import Prelude
@@ -79,7 +82,7 @@ pred = \x . case x [y] of
 
 v2 = pred 0 -- (VNil [Nat])
 
-
+-- issue8: use "axiom" here to avoid giving definition
 inj_succ :(a:Nat) -> (b:Nat) ->
 					 (p : Succ a = Succ b) -> (a = b)
 --inj_succ = \a b p .
