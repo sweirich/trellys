@@ -502,21 +502,21 @@ tcModule :: [(Name, [Decl])] -> Module -> TcMonad [Decl]
 tcModule defs m' = foldr f (return []) (moduleEntries m')
   where f d m = extendCtxs (concat allDefs) $ do
                     -- issue7: make sure this only returns types of terms (issue8: and axioms)
-          ldecls <- tcEntry d
-          sdecls <- extendCtxs ldecls m
-          return $ ldecls ++ sdecls
+          out <- tcEntry d
+          case out of
+            Left  hint  -> extendHints hint m
+            Right decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules
-        allDefs = [defs' | ModuleImport m <- moduleImports m',
-                           Just defs' <- [lookup m defs]]
+        allDefs = catMaybes [lookup m defs | ModuleImport m <- moduleImports m']
 
--- | The Env delta returned when type checking a top-level Decl.
+-- | The Env-delta returned when type-checking a top-level Decl.
 type HintOrCtx = Either Decl [Decl]
                  --     Hint Ctx
 
 -- Q: why does this return [Decl] and not Decl ? A: when checking a
 -- Def w/o a Sig, a Sig is synthesized and both Def and Sig are
 -- returned.
-tcEntry :: Decl -> TcMonad [Decl] --HintOrCtx
+tcEntry :: Decl -> TcMonad HintOrCtx
 tcEntry val@(Def n term) = do
   oldDef <- ((liftM Just $ lookupVarDef n) `catchError` (\_ -> return Nothing))
   case oldDef of
@@ -524,19 +524,19 @@ tcEntry val@(Def n term) = do
     Just term' -> die term'
   where
     tc = do                  -- issue7: this lookup should be in hints, not ctx
-      lkup <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
+      lkup <- lookupHint n
       case lkup of
         Nothing -> do ty <- ts Logic term
-                      return [val,Sig n Logic ty]
-        Just (theta,typ) ->
+                      return $ Right [val,Sig n Logic ty]
+        Just (theta,ty) ->
           let handler (Err ps msg) = throwError $ Err (ps) (msg $$ msg')
               msg' = disp [DS "when checking the term ", DD term,
-                           DS "against the signature", DD typ]
+                           DS "against the signature", DD ty]
           in do
-            ta theta term typ `catchError` handler
+            ta theta term ty `catchError` handler
             -- If we already have a type in the environment, due to a sig
             -- declaration, then we don't add a new signature
-            return [val]
+            return $ Right [val,Sig n theta ty]
     die term' =
       let (Pos p t) = term
           (Pos p' _) = term'
@@ -545,13 +545,16 @@ tcEntry val@(Def n term) = do
       in do throwError $ Err [(p,t)] msg
 
 tcEntry s@(Sig n th ty) = do
-  lkup <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
-  case lkup of
-    Nothing -> do kc th ty
-                  -- issue7: this goes in hints, not ctx
-                  return [s]
+  -- Look for existing Sigs ...
+  l  <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
+  l' <- lookupHint n
+  -- ... we don't care which, if either are Just.
+  case catMaybes [l,l'] of
+    [] -> do kc th ty
+             -- issue7: this goes in hints, not ctx
+             return $ Left s
     -- We already have a type in the environment so fail.
-    Just (_,typ) ->
+    (_,typ):_ ->
       let (Pos p t) = ty
           (Pos p' _) = typ
           msg = disp [DS "Duplicate type signature ", DD ty,
@@ -586,12 +589,11 @@ tcEntry dt@(Data t delta th lev cs) =
        mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
 
      ---- finally, add the datatype to the env and perform action m
-     return [dt]
+     return $ Right [dt]
 
 tcEntry dt@(AbsData _ delta th lev) =
   do kc th (telePi delta (Type lev))
-     return [dt]
-
+     return $ Right [dt]
 
 -----------------------
 ------ subtyping

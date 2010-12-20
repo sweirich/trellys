@@ -6,10 +6,11 @@ module Language.Trellys.Environment
    Env,
    getFlag,
    emptyEnv, dumpEnv,
-   lookupVarTy, lookupVarDef, lookupCon, getCtx,
-   extendCtx, extendCtxTele, extendCtxs,
+   lookupVarTy, lookupVarDef, lookupHint, lookupCon,
+   getCtx, extendCtx, extendCtxTele, extendCtxs,
+   extendHints,
    substDefs
-  )where
+  ) where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax
@@ -23,6 +24,7 @@ import Control.Monad.Reader
 import Control.Monad.Error
 
 import Data.List
+import Data.Maybe (listToMaybe)
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
@@ -50,6 +52,12 @@ getFlag :: (MonadReader Env m) => Flag -> m Bool
 getFlag f = do 
  flags <- asks flags
  return (f `elem` flags)
+
+-- | Find a name's user supplied type signature.
+lookupHint   :: (MonadReader Env m) => Name -> m (Maybe (Theta,Term))
+lookupHint v = do
+  hints <- asks hints
+  return $ listToMaybe [(th,ty) | Sig v' th ty <- hints, v == v']
 
 -- | Find a name's type in the context.
 lookupVarTy :: (MonadReader Env m, MonadError Err m, MonadIO m) 
@@ -114,6 +122,10 @@ extendCtxTele bds m =
 -- | Get the complete current context
 getCtx :: MonadReader Env m => m [Decl]
 getCtx = asks ctx
+
+-- | Add a type hint
+extendHints :: (MonadReader Env m) => Decl -> m a -> m a
+extendHints h = local (\m@(Env {hints = hs}) -> m { hints = h:hs })
 
 -- | substitute all of the defs through a term
 substDefs :: MonadReader Env m => Term -> m Term
