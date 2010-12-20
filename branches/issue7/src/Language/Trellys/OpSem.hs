@@ -105,7 +105,7 @@ join s1 s2 m n =
 reduce :: (MonadReader Env m, MonadError Err m)
        => Int -> Term -> m Term
 reduce _ t = do
-  vals <- getDecls
+  vals <- getCtx
   -- We have to convert the Entry to a (Name,Term) pair
   let vals' = concatMap (\d -> case d of
                                  Def n tm -> [(n,tm)]

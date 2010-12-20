@@ -124,7 +124,7 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
              DS "does not match arrow annotation", DD aep])
 
   -- typecheck the function body
-  extendEnv (Sig x ath tyA) (ta th body tyB)
+  extendCtx (Sig x ath tyA) (ta th body tyB)
 
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
@@ -166,8 +166,8 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
                   (Arrow Logic Erased eqType (bind z
                          xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
-  extendEnv (Sig f Logic tyA) $
-     extendEnv (Sig y Logic natType) $ ta Logic a tyB
+  extendCtx (Sig f Logic tyA) $
+     extendCtx (Sig y Logic natType) $ ta Logic a tyB
   -- in the case where ep is Erased, we have the two extra checks:
   aE <- erase a
   when (ep == Erased && y `S.member` fv aE) $
@@ -192,8 +192,8 @@ ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
 
   let a = subst dumby y dumbbody
 
-  extendEnv (Sig f Program fty) $
-    extendEnv (Sig y ath tyA) $
+  extendCtx (Sig f Program fty) $
+    extendCtx (Sig y ath tyA) $
       ta Program a tyB
 
   -- perform the FV and value checks if in T_RecImp
@@ -263,8 +263,8 @@ ta th (Case b bnd) tyA = do
                  subdeltai = substs (teleVars delta) (map fst bbar) deltai
                  eqtype = TyEq b (teleApp (multiApp (Con c) bbar) deltai)
              -- premise 5
-             extendEnv (Sig y Logic eqtype) $
-               extendEnvTele subdeltai $ ta th ai tyA
+             extendCtx (Sig y Logic eqtype) $
+               extendCtxTele subdeltai $ ta th ai tyA
              -- premise 6
              aE <- erase ai
              let shouldBeNull = S.fromList (y : domTeleMinus delta) `S.intersection` fv aE
@@ -284,8 +284,8 @@ ta th (Let th' ep a bnd) tyB =
     -- premise 1
     tyA <- ts th' a
     -- premise 2
-    extendEnv (Sig y Logic (TyEq (Var x) a)) $
-      extendEnv (Sig x th' tyA) $
+    extendCtx (Sig y Logic (TyEq (Var x) a)) $
+      extendCtx (Sig x th' tyA) $
         ta th b tyB
     -- premise 3
     kc th tyB
@@ -301,7 +301,7 @@ ta th (Let th' ep a bnd) tyB =
            DS "appears in the erasure of", DD b]
     unless (th' <= th) $
       err [DS "Program variables can't be bound with let expressions in",
-           DS "Logical contexts because thSCey would be normalized when the",
+           DS "Logical contexts because they would be normalized when the",
            DS "expression is."]
 
 -- rule T_chk
@@ -333,7 +333,7 @@ ts tsTh tsTm =
 
     -- Rule T_var
     ts' th (Var y) =
-      do (th',ty) <- lookupVar y
+      do (th',ty) <- lookupVarTy y
          unless (th' <= th || isFirstOrder ty) $
            err [DS "Variable", DD y, DS "is programmatic, but it was checked",
                 DS "logically."]
@@ -346,7 +346,7 @@ ts tsTh tsTm =
     ts' th (Arrow th' _ tyA body) =
       do (x, tyB) <- unbind body
          tytyA <- ts th tyA
-         tytyB <- extendEnv (Sig x th' tyA) $ ts th tyB
+         tytyB <- extendCtx (Sig x th' tyA) $ ts th tyB
          case (isType tytyA, isType tytyB) of
            (Just _, Just 0) -> return $ Type 0
            (Just n, Just m) -> return $ Type $ max n m
@@ -435,7 +435,7 @@ ts tsTh tsTm =
             -- check c with extended environment
             -- Don't know whether these should be logical or programmatic
             let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
-              extendEnvs decls $ kc th c
+              extendCtxs decls $ kc th c
            else 
             -- check c after substitution
             kc th cA2
@@ -455,8 +455,8 @@ ts tsTh tsTm =
         -- premise 1
         tyA <- ts th' a
         -- premise 2
-        tyB <- extendEnv (Sig y Logic (TyEq (Var x) a)) $
-                 extendEnv (Sig x th' tyA) $
+        tyB <- extendCtx (Sig y Logic (TyEq (Var x) a)) $
+                 extendCtx (Sig x th' tyA) $
                    ts th b
         -- premise 3
         kc th tyB
@@ -500,19 +500,23 @@ tcModules mods = tcModules' [] mods
 --   every signature has a corresponding definition
 tcModule :: [(Name, [Decl])] -> Module -> TcMonad [Decl]
 tcModule defs m' = foldr f (return []) (moduleEntries m')
-  where f d m = extendEnvs (concat allDefs) $ do
+  where f d m = extendCtxs (concat allDefs) $ do
                     -- issue7: make sure this only returns types of terms (issue8: and axioms)
           ldecls <- tcEntry d
-          sdecls <- extendEnvs ldecls m
+          sdecls <- extendCtxs ldecls m
           return $ ldecls ++ sdecls
         -- Get all of the defs from imported modules
         allDefs = [defs' | ModuleImport m <- moduleImports m',
                            Just defs' <- [lookup m defs]]
 
+-- | The Env delta returned when type checking a top-level Decl.
+type HintOrCtx = Either Decl [Decl]
+                 --     Hint Ctx
 
-
-
-tcEntry :: Decl -> TcMonad [Decl]
+-- Q: why does this return [Decl] and not Decl ? A: when checking a
+-- Def w/o a Sig, a Sig is synthesized and both Def and Sig are
+-- returned.
+tcEntry :: Decl -> TcMonad [Decl] --HintOrCtx
 tcEntry val@(Def n term) = do
   oldDef <- ((liftM Just $ lookupVarDef n) `catchError` (\_ -> return Nothing))
   case oldDef of
@@ -520,7 +524,7 @@ tcEntry val@(Def n term) = do
     Just term' -> die term'
   where
     tc = do                  -- issue7: this lookup should be in hints, not ctx
-      lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
+      lkup <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
       case lkup of
         Nothing -> do ty <- ts Logic term
                       return [val,Sig n Logic ty]
@@ -541,7 +545,7 @@ tcEntry val@(Def n term) = do
       in do throwError $ Err [(p,t)] msg
 
 tcEntry s@(Sig n th ty) = do
-  lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
+  lkup <- ((liftM Just $ lookupVarTy n) `catchError` (\_ -> return Nothing))
   case lkup of
     Nothing -> do kc th ty
                   -- issue7: this goes in hints, not ctx
@@ -578,7 +582,7 @@ tcEntry dt@(Data t delta th lev cs) =
      mapM_ (uncurry checkConRet) cs
 
      -- Part 2: type check the whole constructor type
-     extendEnv (AbsData t delta th lev) $
+     extendCtx (AbsData t delta th lev) $
        mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
 
      ---- finally, add the datatype to the env and perform action m
