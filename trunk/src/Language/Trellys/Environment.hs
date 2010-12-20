@@ -6,10 +6,11 @@ module Language.Trellys.Environment
    Env,
    getFlag,
    emptyEnv, dumpEnv,
-   lookupVar, lookupVarDef, lookupCon, getDecls,
-   extendEnv, extendEnvTele, extendEnvs, replaceEnv,
+   lookupTy, lookupDef, lookupHint, lookupCon,
+   getCtx, extendCtx, extendCtxTele, extendCtxs,
+   extendHints,
    substDefs
-  )where
+  ) where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax
@@ -23,12 +24,17 @@ import Control.Monad.Reader
 import Control.Monad.Error
 
 import Data.List
+import Data.Maybe (listToMaybe)
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
-data Env = Env { decls :: [Decl], 
+data Env = Env { ctx :: [Decl], 
                -- ^ This context has both the type declarations and the
                -- definitions, for convenience
+                 hints :: [Decl],
+               -- ^ Type declarations (signatures): it's not safe to
+               -- put these in the context until a corresponding term
+               -- has been checked.
                  flags :: [Flag]
                -- ^ Command-line options that might influence typechecking
                } deriving Show
@@ -36,10 +42,10 @@ data Env = Env { decls :: [Decl],
 
 -- | The initial environment.
 emptyEnv :: [Flag] -> Env
-emptyEnv fs = Env { decls = [] , flags = fs }
+emptyEnv fs = Env { ctx = [] , hints = [], flags = fs }
 
 instance Disp Env where
-  disp e = vcat [disp decl | decl <- decls e]
+  disp e = vcat [disp decl | decl <- ctx e]
 
 -- | Determine if a flag is set
 getFlag :: (MonadReader Env m) => Flag -> m Bool
@@ -47,36 +53,32 @@ getFlag f = do
  flags <- asks flags
  return (f `elem` flags)
 
+-- | Find a name's user supplied type signature.
+lookupHint   :: (MonadReader Env m) => Name -> m (Maybe (Theta,Term))
+lookupHint v = do
+  hints <- asks hints
+  return $ listToMaybe [(th,ty) | Sig v' th ty <- hints, v == v']
+
 -- | Find a name's type in the context.
-lookupVar :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-          => Name -> m (Theta,Term)
-lookupVar v = do
-  g <- asks decls
-  scanGamma g
-  where
-    scanGamma [] = err [DS "The variable", DD v, DS "was not found."]
-    scanGamma ((Sig v' th a):g) = 
-      if v == v' then return (th,a) else scanGamma g
-    scanGamma (_:g) = scanGamma g
+lookupTy :: (MonadReader Env m, MonadError Err m, MonadIO m) 
+         => Name -> m (Maybe (Theta,Term))
+lookupTy v = do
+  ctx <- asks ctx
+  return $ listToMaybe [(th,ty) | Sig v' th ty <- ctx, v == v']  
 
 -- | Find a name's def in the context.
-lookupVarDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-             => Name -> m (Term)
-lookupVarDef v = do
-  g <- asks decls
-  scanGamma g
-  where
-    scanGamma [] = err [DS "The variable", DD v, DS "was not found."]
-    scanGamma ((Def v' a):g) = 
-      if v == v' then return (a) else scanGamma g
-    scanGamma (_:g) = scanGamma g
+lookupDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
+          => Name -> m (Maybe Term)
+lookupDef v = do
+  ctx <- asks ctx
+  return $ listToMaybe [a | Def v' a <- ctx, v == v']
 
 -- | Find a constructor in the context - left is type con, right is term con
 lookupCon :: (MonadReader Env m, MonadError Err m) 
           => Name -> m (Either (Telescope,Theta,Int,Maybe [Constructor]) 
                                (Telescope,Theta,Term))
 lookupCon v = do
-  g <- asks decls
+  g <- asks ctx
   scanGamma g
   where
     scanGamma [] = err [DS "The constructor", DD v, DS "was not found."]
@@ -93,27 +95,27 @@ lookupCon v = do
     scanGamma (_:g) = scanGamma g
 
 -- | Extend the context with a new binding.
-extendEnv :: (MonadReader Env m) => Decl -> m a -> m a
-extendEnv d =
-  local (\ m@(Env {decls = cs}) -> m { decls = d:cs })
+extendCtx :: (MonadReader Env m) => Decl -> m a -> m a
+extendCtx d =
+  local (\ m@(Env {ctx = cs}) -> m { ctx = d:cs })
 
 -- | Extend the context with a list of bindings
-extendEnvs :: (MonadReader Env m) => [Decl] -> m a -> m a
-extendEnvs ds = 
-  local (\ m@(Env {decls = cs}) -> m { decls = ds ++ cs })
+extendCtxs :: (MonadReader Env m) => [Decl] -> m a -> m a
+extendCtxs ds = 
+  local (\ m@(Env {ctx = cs}) -> m { ctx = ds ++ cs })
 
 -- | Extend the context with a telescope
-extendEnvTele :: (MonadReader Env m) => Telescope -> m a -> m a
-extendEnvTele bds m = 
-  foldr (\(x,tm,th,_) -> extendEnv (Sig x th tm)) m bds
-
--- | Replace the entire context with a new one
-replaceEnv :: (MonadReader Env m) => [Decl] -> m a -> m a
-replaceEnv newenv = local (\m -> m { decls = newenv })
+extendCtxTele :: (MonadReader Env m) => Telescope -> m a -> m a
+extendCtxTele bds m = 
+  foldr (\(x,tm,th,_) -> extendCtx (Sig x th tm)) m bds
 
 -- | Get the complete current context
-getDecls :: MonadReader Env m => m [Decl]
-getDecls = asks decls
+getCtx :: MonadReader Env m => m [Decl]
+getCtx = asks ctx
+
+-- | Add a type hint
+extendHints :: (MonadReader Env m) => Decl -> m a -> m a
+extendHints h = local (\m@(Env {hints = hs}) -> m { hints = h:hs })
 
 -- | substitute all of the defs through a term
 substDefs :: MonadReader Env m => Term -> m Term
@@ -125,13 +127,15 @@ substDefs tm =
     substDef m (Data _ _ _ _ _)  = m
     substDef m (AbsData _ _ _ _) = m
   in
-    do defs <- getDecls
+    do defs <- getCtx
        return $ foldl' substDef tm defs
 
 -- | Print the context to a depth @n@.
 dumpEnv :: (MonadReader Env m, MonadIO m) => Int -> m ()
 dumpEnv n = do
-  env <- asks decls
+  ctx <- asks ctx
+  hints <- asks hints
   liftIO $ putStrLn "-- BENV --"
-  liftIO $ putStrLn $ render $ disp (Env {decls = take n env, flags = []})
+  liftIO $ putStrLn $ render $
+         disp (Env {ctx = take n ctx, hints = take n hints, flags = []})
   liftIO $ putStrLn "-- EENV --"

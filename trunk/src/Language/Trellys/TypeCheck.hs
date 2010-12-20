@@ -24,7 +24,6 @@ import Control.Monad.Error hiding (join)
 
 import Data.Maybe
 import Data.List
-import Data.Set (Set)
 import qualified Data.Set as S
 
 -- import System.IO.Unsafe (unsafePerformIO)
@@ -45,6 +44,8 @@ encapsulated in the TcMonad.
  -}
 
 
+-- | kind check, for check = synthesis ?
+
 -- Check that tm is a wellformed type at some level
 kc :: Theta -> Term -> TcMonad ()
 kc th tm = do
@@ -52,8 +53,9 @@ kc th tm = do
   when (isNothing $ isType ty) $
     err [DD tm, DS "is not a well-formed type at", DD th]
 
--- Position terms wrap up an error handler
+-- | type analysis
 ta :: Theta -> Term -> Term -> TcMonad ()
+-- Position terms wrap up an error handler
 ta th (Pos p t) ty = do
   ta th t ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
@@ -121,7 +123,7 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
              DS "does not match arrow annotation", DD aep])
 
   -- typecheck the function body
-  extendEnv (Sig x ath tyA) (ta th body tyB)
+  extendCtx (Sig x ath tyA) (ta th body tyB)
 
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
@@ -163,8 +165,8 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
                   (Arrow Logic Erased eqType (bind z
                          xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
-  extendEnv (Sig f Logic tyA) $
-     extendEnv (Sig y Logic natType) $ ta Logic a tyB
+  extendCtx (Sig f Logic tyA) $
+     extendCtx (Sig y Logic natType) $ ta Logic a tyB
   -- in the case where ep is Erased, we have the two extra checks:
   aE <- erase a
   when (ep == Erased && y `S.member` fv aE) $
@@ -189,8 +191,8 @@ ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
 
   let a = subst dumby y dumbbody
 
-  extendEnv (Sig f Program fty) $
-    extendEnv (Sig y ath tyA) $
+  extendCtx (Sig f Program fty) $
+    extendCtx (Sig y ath tyA) $
       ta Program a tyB
 
   -- perform the FV and value checks if in T_RecImp
@@ -260,8 +262,8 @@ ta th (Case b bnd) tyA = do
                  subdeltai = substs (teleVars delta) (map fst bbar) deltai
                  eqtype = TyEq b (teleApp (multiApp (Con c) bbar) deltai)
              -- premise 5
-             extendEnv (Sig y Logic eqtype) $
-               extendEnvTele subdeltai $ ta th ai tyA
+             extendCtx (Sig y Logic eqtype) $
+               extendCtxTele subdeltai $ ta th ai tyA
              -- premise 6
              aE <- erase ai
              let shouldBeNull = S.fromList (y : domTeleMinus delta) `S.intersection` fv aE
@@ -281,8 +283,8 @@ ta th (Let th' ep a bnd) tyB =
     -- premise 1
     tyA <- ts th' a
     -- premise 2
-    extendEnv (Sig y Logic (TyEq (Var x) a)) $
-      extendEnv (Sig x th' tyA) $
+    extendCtx (Sig y Logic (TyEq (Var x) a)) $
+      extendCtx (Sig x th' tyA) $
         ta th b tyB
     -- premise 3
     kc th tyB
@@ -298,7 +300,7 @@ ta th (Let th' ep a bnd) tyB =
            DS "appears in the erasure of", DD b]
     unless (th' <= th) $
       err [DS "Program variables can't be bound with let expressions in",
-           DS "Logical contexts because thSCey would be normalized when the",
+           DS "Logical contexts because they would be normalized when the",
            DS "expression is."]
 
 -- rule T_chk
@@ -316,6 +318,7 @@ ta th a tyB =
 ------------------------------
 ------------------------------
 
+-- | type synthesis
 ts :: Theta -> Term -> TcMonad Term
 ts tsTh tsTm =
   do typ <- ts' tsTh tsTm
@@ -329,11 +332,14 @@ ts tsTh tsTm =
 
     -- Rule T_var
     ts' th (Var y) =
-      do (th',ty) <- lookupVar y
-         unless (th' <= th || isFirstOrder ty) $
-           err [DS "Variable", DD y, DS "is programmatic, but it was checked",
-                DS "logically."]
-         return ty
+      do x <- lookupTy y
+         case x of
+           Just (th',ty) -> do
+             unless (th' <= th || isFirstOrder ty) $
+               err [DS "Variable", DD y, DS "is programmatic, but it was checked",
+                    DS "logically."]
+             return ty
+           Nothing -> err [DS "The variable", DD y, DS "was not found."]
 
     -- Rule T_type
     ts' _ (Type l) = return $ Type (l + 1)
@@ -342,7 +348,7 @@ ts tsTh tsTm =
     ts' th (Arrow th' _ tyA body) =
       do (x, tyB) <- unbind body
          tytyA <- ts th tyA
-         tytyB <- extendEnv (Sig x th' tyA) $ ts th tyB
+         tytyB <- extendCtx (Sig x th' tyA) $ ts th tyB
          case (isType tytyA, isType tytyB) of
            (Just _, Just 0) -> return $ Type 0
            (Just n, Just m) -> return $ Type $ max n m
@@ -364,7 +370,6 @@ ts tsTh tsTm =
                   err [DS "Constructor", DD c,
                        DS "is programmatic, but it was checked logically."]
                 return $ telePi (map (\(t,a,b,_) -> (t,a,b,Erased)) delta) tm
-
 
     -- rule T_app
     ts' th tm@(App ep a b) =
@@ -431,7 +436,7 @@ ts tsTh tsTm =
             -- check c with extended environment
             -- Don't know whether these should be logical or programmatic
             let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
-              extendEnvs decls $ kc th c
+              extendCtxs decls $ kc th c
            else 
             -- check c after substitution
             kc th cA2
@@ -451,8 +456,8 @@ ts tsTh tsTm =
         -- premise 1
         tyA <- ts th' a
         -- premise 2
-        tyB <- extendEnv (Sig y Logic (TyEq (Var x) a)) $
-                 extendEnv (Sig x th' tyA) $
+        tyB <- extendCtx (Sig y Logic (TyEq (Var x) a)) $
+                 extendCtx (Sig x th' tyA) $
                    ts th b
         -- premise 3
         kc th tyB
@@ -484,50 +489,63 @@ ts tsTh tsTm =
 -- | Typecheck a collection of modules. Assumes that each modules appears after
 -- its dependencies.
 tcModules :: [Module] -> TcMonad [(Name,[Decl])]
-tcModules mods = tcModules' [] mods
-  where tcModules' defs [] = return defs
-        tcModules' defs (m:ms) = do
-          liftIO $ putStrLn $ "Checking module " ++ show (moduleName m)
-          ds <- tcModule defs m
-          tcModules' ((moduleName m, ds):defs) ms
+tcModules mods = foldM tcM [] mods
+  -- Check module m against modules in defs; add m's decls to assocs.
+  where defs `tcM` m = do -- "M" is for "Module" not "monad"
+          let name = moduleName m
+          liftIO $ putStrLn $ "Checking module " ++ show name
+          decls <- defs `tcModule` m
+          return $ (name, decls):defs
 
 
--- | Typecheck an entire module.  Currently, this doesn't check that
---   every signature has a corresponding definition
-tcModule :: [(Name, [Decl])] -> Module -> TcMonad [Decl]
-tcModule defs m' = foldr f (return []) (moduleEntries m')
-  where f d m = extendEnvs (concat allDefs) $ do
-          ldecls <- tcEntry d
-          sdecls <- extendEnvs ldecls m
-          return $ ldecls ++ sdecls
+-- | Typecheck an entire module.
+tcModule :: [(Name, [Decl])] -- ^ Assoc list mapping Module names to their (checked) Decls.
+         -> Module           -- ^ Module to check.
+         -> TcMonad [Decl]   -- ^ Decls of the Module being checked.
+tcModule defs m' = env $ foldr tcE (return []) (moduleEntries m')
+  where d `tcE` m = do
+          -- Extend the Env per the current Decl before checking
+          -- subsequent Decls.
+          x <- tcEntry d
+          case x of
+            Left  hint  -> extendHints hint m
+                           -- Add decls to the Decls to be returned
+            Right decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules
-        allDefs = [defs' | ModuleImport m <- moduleImports m',
-                           Just defs' <- [lookup m defs]]
+        allDefs = catMaybes [lookup m defs | ModuleImport m <- moduleImports m']
+        -- Env to check the current Module in
+        env = extendCtxs (concat allDefs)
 
 
+-- | The Env-delta returned when type-checking a top-level Decl.
+type HintOrCtx = Either Decl [Decl]
+                 --     Hint Ctx
+                 --
+                 -- Q: why [Decl] and not Decl ? A: when checking a
+                 -- Def w/o a Sig, a Sig is synthesized and both the
+                 -- Def and the Sig are returned.
 
-
-tcEntry :: Decl -> TcMonad [Decl]
+tcEntry :: Decl -> TcMonad HintOrCtx
 tcEntry val@(Def n term) = do
-  oldDef <- ((liftM Just $ lookupVarDef n) `catchError` (\_ -> return Nothing))
+  oldDef <- lookupDef n
   case oldDef of
     Nothing -> tc
     Just term' -> die term'
   where
     tc = do
-      lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
+      lkup <- lookupHint n
       case lkup of
         Nothing -> do ty <- ts Logic term
-                      return [val,Sig n Logic ty]
-        Just (theta,typ) ->
+                      return $ Right [val,Sig n Logic ty]
+        Just (theta,ty) ->
           let handler (Err ps msg) = throwError $ Err (ps) (msg $$ msg')
               msg' = disp [DS "when checking the term ", DD term,
-                           DS "against the signature", DD typ]
+                           DS "against the signature", DD ty]
           in do
-            ta theta term typ `catchError` handler
+            ta theta term ty `catchError` handler
             -- If we already have a type in the environment, due to a sig
             -- declaration, then we don't add a new signature
-            return [val]
+            return $ Right [val,Sig n theta ty]
     die term' =
       let (Pos p t) = term
           (Pos p' _) = term'
@@ -536,12 +554,15 @@ tcEntry val@(Def n term) = do
       in do throwError $ Err [(p,t)] msg
 
 tcEntry s@(Sig n th ty) = do
-  lkup <- ((liftM Just $ lookupVar n) `catchError` (\_ -> return Nothing))
-  case lkup of
-    Nothing -> do kc th ty
-                  return [s]
+  -- Look for existing Sigs ...
+  l  <- lookupTy n
+  l' <- lookupHint n
+  -- ... we don't care which, if either are Just.
+  case catMaybes [l,l'] of
+    [] -> do kc th ty
+             return $ Left s
     -- We already have a type in the environment so fail.
-    Just (_,typ) ->
+    (_,typ):_ ->
       let (Pos p t) = ty
           (Pos p' _) = typ
           msg = disp [DS "Duplicate type signature ", DD ty,
@@ -572,16 +593,15 @@ tcEntry dt@(Data t delta th lev cs) =
      mapM_ (uncurry checkConRet) cs
 
      -- Part 2: type check the whole constructor type
-     extendEnv (AbsData t delta th lev) $
+     extendCtx (AbsData t delta th lev) $
        mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
 
      ---- finally, add the datatype to the env and perform action m
-     return [dt]
+     return $ Right [dt]
 
 tcEntry dt@(AbsData _ delta th lev) =
   do kc th (telePi delta (Type lev))
-     return [dt]
-
+     return $ Right [dt]
 
 -----------------------
 ------ subtyping
