@@ -1,3 +1,5 @@
+.PHONY: test
+
 install: fix-replib
 	cd lib/replib-read-only && cabal install
 	cd src && cabal install
@@ -9,6 +11,9 @@ uninstall:
 clean:
 	-rm -rf lib/replib-read-only/dist
 	-rm -rf src/dist
+
+test:
+	cd test && make
 
 etags:
 	find ./ -name .svn -prune -o -name '*.hs' -print | xargs hasktags --etags
