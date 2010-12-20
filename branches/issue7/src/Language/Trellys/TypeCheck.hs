@@ -24,7 +24,6 @@ import Control.Monad.Error hiding (join)
 
 import Data.Maybe
 import Data.List
-import Data.Set (Set)
 import qualified Data.Set as S
 
 -- import System.IO.Unsafe (unsafePerformIO)
@@ -496,26 +495,33 @@ tcModules mods = tcModules' [] mods
           tcModules' ((moduleName m, ds):defs) ms
 
 
--- | Typecheck an entire module.  Currently, this doesn't check that
---   every signature has a corresponding definition
-tcModule :: [(Name, [Decl])] -> Module -> TcMonad [Decl]
-tcModule defs m' = foldr f (return []) (moduleEntries m')
-  where f d m = extendCtxs (concat allDefs) $ do
-                    -- issue7: make sure this only returns types of terms (issue8: and axioms)
-          out <- tcEntry d
-          case out of
+-- | Typecheck an entire module.
+tcModule :: [(Name, [Decl])] -- ^ Assoc list mapping Module names to their (checked) Decls.
+         -> Module           -- ^ Module to check.
+         -> TcMonad [Decl]   -- ^ Decls of the Module being checked.
+tcModule defs m' = env $ foldr f (return []) (moduleEntries m')
+  where d `f` m = do
+          -- Extend the Env per the current Decl before checking
+          -- subsequent Decls.
+          x <- tcEntry d
+          case x of
             Left  hint  -> extendHints hint m
+                           -- Add decls to the Decls to be returned
             Right decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules
         allDefs = catMaybes [lookup m defs | ModuleImport m <- moduleImports m']
+        -- Env to check the current Module in
+        env = extendCtxs (concat allDefs)
+
 
 -- | The Env-delta returned when type-checking a top-level Decl.
 type HintOrCtx = Either Decl [Decl]
                  --     Hint Ctx
+                 --
+                 -- Q: why [Decl] and not Decl ? A: when checking a
+                 -- Def w/o a Sig, a Sig is synthesized and both the
+                 -- Def and the Sig are returned.
 
--- Q: why does this return [Decl] and not Decl ? A: when checking a
--- Def w/o a Sig, a Sig is synthesized and both Def and Sig are
--- returned.
 tcEntry :: Decl -> TcMonad HintOrCtx
 tcEntry val@(Def n term) = do
   oldDef <- ((liftM Just $ lookupVarDef n) `catchError` (\_ -> return Nothing))
@@ -523,7 +529,7 @@ tcEntry val@(Def n term) = do
     Nothing -> tc
     Just term' -> die term'
   where
-    tc = do                  -- issue7: this lookup should be in hints, not ctx
+    tc = do
       lkup <- lookupHint n
       case lkup of
         Nothing -> do ty <- ts Logic term
@@ -551,7 +557,6 @@ tcEntry s@(Sig n th ty) = do
   -- ... we don't care which, if either are Just.
   case catMaybes [l,l'] of
     [] -> do kc th ty
-             -- issue7: this goes in hints, not ctx
              return $ Left s
     -- We already have a type in the environment so fail.
     (_,typ):_ ->
