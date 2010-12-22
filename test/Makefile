@@ -9,6 +9,9 @@
 #            fix something in TODO_PASS (TODO_FAIL) then you should
 #            move it to PASS (FAIL).
 
+# Use bash to run targets.
+SHELL=/bin/bash
+
 # PASS are tests that *should* always pass.
 PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2
 # FAIL are tests that *should* always fail.
