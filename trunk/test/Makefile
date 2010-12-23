@@ -1,4 +1,4 @@
-# main rules
+# Main Rules
 # ==========
 #
 # make [all]: does a regression test, by checking that everything that
@@ -22,8 +22,8 @@ TODO_FAIL=
 TODO_PASS=typetest
 # stale?
 UNKNOWN=bad_datatype case_bug divtest jointest langlibbug recursion-examples
-
-TRELLYS=trellys
+# A symlink to the ../.capri local trellys, installed by top level make.
+TRELLYS=./trellys
 # typecheck *quietly*
 TYPECHECK=$(TRELLYS) -t 1>/dev/null 2>&1
 
