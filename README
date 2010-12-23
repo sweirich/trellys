@@ -1,4 +1,20 @@
-Do `make` to cabal install trellys.
+Dependencies
+============
+
+- Pre-version-7 GHC (NC thinks ...).
+- Default `cabal install` directory on $PATH (~/.cabal/bin
+  for default "per-user" Cabal setup).
+
+Install
+=======
+
+Do `make` to install trellys locally.  A trellys binary is linked to
+./test/trellys, the only place you're expected to run it.  NB: this
+does *not* put a trellys binary on your $PATH, so if you have one,
+then it's probably out of date.
+
+Dir Summary
+===========
 
 lib: libraries maintained by others
 src: trellys language source
