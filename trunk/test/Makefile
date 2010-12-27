@@ -13,13 +13,13 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2
+PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 typetest
 # FAIL are tests that *should* always fail.
 FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL= 
 # TODO_PASS are tests that *should* pass but currently fail.
-TODO_PASS=typetest
+TODO_PASS=
 # stale?
 UNKNOWN=bad_datatype case_bug divtest jointest langlibbug recursion-examples
 # A symlink to the ../.capri local trellys, installed by top level make.
