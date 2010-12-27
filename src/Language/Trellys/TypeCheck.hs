@@ -571,6 +571,11 @@ tcEntry s@(Sig n th ty) = do
                       DS "was", DD typ]
       in do throwError $ Err [(p,t)] msg
 
+-- Promote a decl from a hint to the context.
+tcEntry (Axiom a) = do
+  Left s <- tcEntry a
+  return $ Right [s]
+
 -- rule Decl_data
 tcEntry dt@(Data t delta th lev cs) =
   do ---- Premise 1
