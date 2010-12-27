@@ -89,6 +89,11 @@ import Data.List
 
       prog foo : A
       foo = A
+
+    For axiom declarations:
+      axiom prog foo : A -- programmatic
+      axiom log  foo : A -- logical
+      axiom foo : A      -- also logical
     
     For logical datatype declarations:
 
@@ -135,9 +140,19 @@ parseModule :: String -> IO ()
 parseModule input = do
   putStrLn $ "Parsing " ++ show input
 
+-- | Test an 'LParser' on a String.
+--
+-- E.g., do
+--
+-- > testParser decl "axiom fix : (aTy : Type 0) -> (f : ((a:aTy) -> aTy)) -> aTy"
+-- 
+-- to parse an axiom declaration of a logical fixpoint combinator.
+testParser :: (LParser t) -> String -> Either ParseError t
+testParser parser str = runParser (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
+
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
-parseExpr str = runParser (do { whiteSpace; v <- expr; eof; return v}) [] "<interactive>" str
+parseExpr = testParser expr
 
 
 -- * Lexer definitions
@@ -163,6 +178,7 @@ trellysStyle = haskellStyle {
                   ,"conv", "by", "at"
                   ,"let", "in"
                   ,"prog", "log"
+                  ,"axiom"
                   ]
                ,
                Token.reservedOpNames =
@@ -277,8 +293,8 @@ eitherArrow =     (reservedOp "->" >> return Logic)
 --- Top level declarations
 ---
 
-decl,dataDef,sigDef,valDef,recNatDef,recDef :: LParser Decl
-decl = dataDef <|> sigDef <|> valDef <|> recNatDef <|> recDef
+decl,dataDef,axiomDef,sigDef,valDef,recNatDef,recDef :: LParser Decl
+decl = dataDef <|> axiomDef <|> sigDef <|> valDef <|> recNatDef <|> recDef
 
 -- datatype declarations.
 dataDef = do
@@ -297,6 +313,9 @@ dataDef = do
             ty <- expr
             return $ (cname,ty)
           <?> "Constructor"
+
+axiomDef = do
+  Axiom <$> (reserved "axiom" >> sigDef)
 
 sigDef = do
   theta <- option Logic $

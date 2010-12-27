@@ -195,6 +195,7 @@ instance Disp Decl where
   disp (Def _ r@(Rec _ _)) = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
+  disp (Axiom s) = text "axiom" <+> disp s
   disp (Sig n ep ty) =
         disp n
     <+> (case ep of {Logic -> text ":"; Program -> text ":c"})
