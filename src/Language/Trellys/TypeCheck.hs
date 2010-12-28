@@ -508,9 +508,9 @@ tcModule defs m' = env $ foldr tcE (return []) (moduleEntries m')
           -- subsequent Decls.
           x <- tcEntry d
           case x of
-            Left  hint  -> extendHints hint m
+            Hint  hint  -> extendHints hint m
                            -- Add decls to the Decls to be returned
-            Right decls -> liftM (decls++) (extendCtxs decls m)
+            Ctx decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules
         allDefs = catMaybes [lookup m defs | ModuleImport m <- moduleImports m']
         -- Env to check the current Module in
@@ -518,9 +518,8 @@ tcModule defs m' = env $ foldr tcE (return []) (moduleEntries m')
 
 
 -- | The Env-delta returned when type-checking a top-level Decl.
-type HintOrCtx = Either Decl [Decl]
-                 --     Hint Ctx
-                 --
+data HintOrCtx = Hint Decl
+               | Ctx [Decl]
                  -- Q: why [Decl] and not Decl ? A: when checking a
                  -- Def w/o a Sig, a Sig is synthesized and both the
                  -- Def and the Sig are returned.
@@ -536,7 +535,7 @@ tcEntry val@(Def n term) = do
       lkup <- lookupHint n
       case lkup of
         Nothing -> do ty <- ts Logic term
-                      return $ Right [val,Sig n Logic ty]
+                      return $ Ctx [val,Sig n Logic ty]
         Just (theta,ty) ->
           let handler (Err ps msg) = throwError $ Err (ps) (msg $$ msg')
               msg' = disp [DS "when checking the term ", DD term,
@@ -545,7 +544,7 @@ tcEntry val@(Def n term) = do
             ta theta term ty `catchError` handler
             -- If we already have a type in the environment, due to a sig
             -- declaration, then we don't add a new signature
-            return $ Right [val,Sig n theta ty]
+            return $ Ctx [val,Sig n theta ty]
     die term' =
       let (Pos p t) = term
           (Pos p' _) = term'
@@ -560,7 +559,7 @@ tcEntry s@(Sig n th ty) = do
   -- ... we don't care which, if either are Just.
   case catMaybes [l,l'] of
     [] -> do kc th ty
-             return $ Left s
+             return $ Hint s
     -- We already have a type in the environment so fail.
     (_,typ):_ ->
       let (Pos p t) = ty
@@ -573,8 +572,8 @@ tcEntry s@(Sig n th ty) = do
 
 -- Promote a decl from a hint to the context.
 tcEntry (Axiom a) = do
-  Left s <- tcEntry a
-  return $ Right [s]
+  Hint s <- tcEntry a
+  return $ Ctx [s]
 
 -- rule Decl_data
 tcEntry dt@(Data t delta th lev cs) =
@@ -602,11 +601,11 @@ tcEntry dt@(Data t delta th lev cs) =
        mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
 
      ---- finally, add the datatype to the env and perform action m
-     return $ Right [dt]
+     return $ Ctx [dt]
 
 tcEntry dt@(AbsData _ delta th lev) =
   do kc th (telePi delta (Type lev))
-     return $ Right [dt]
+     return $ Ctx [dt]
 
 -----------------------
 ------ subtyping
