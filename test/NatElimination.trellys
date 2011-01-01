@@ -1,0 +1,105 @@
+-- Nat elimination with examples.
+-- 
+-- Goal was to write an Ackermann's function using higher-order
+-- primitive recursion.  This is easy, but NC was surprised when he
+-- heard this could be done, because Ackermann is not (first-order)
+-- primitive recursive.
+--
+-- Includes an example (add') where the lack of extensionality for
+-- Pi-types had to be worked around.
+module NatElimination where
+
+import Prelude
+import Arithmetic
+
+-- Higher-order primitive recursion
+-- --------------------------------
+
+-- Higher-order primitive recursion / nat
+-- elimination. Cf. Vecters.recvec.
+primrec : [p: (n:Nat) -> Type 0]
+       -> (base:p 0)
+       -> (step: (n:Nat) -> (pn:p n) -> p (Succ n))
+       -> (n:Nat) -> p n
+primrec = \[p]. \base. \step. recnat pr n =
+  case n [neq] of
+    -- sym is evidence of backwards equality.
+    Zero    -> conv base                  by (sym Nat Nat n Zero      neq) at x.p x
+    Succ n' -> conv step n' (pr n' [neq]) by (sym Nat Nat n (Succ n') neq) at x.p x
+
+-- Higher order primitive recursion with a constant predicate / nat
+-- elimination: easier to compute terms with, when it works, but not
+-- much use for proofs.
+foldNat : [p: Type 0] -> (base:p) -> (step: (pn:p) -> p) -> (n:Nat) -> p
+foldNat = \[p]. \base. \step. recnat pr n =
+  case n [neq] of
+    -- sym is evidence of backwards equality.
+    Zero    -> base
+    Succ n' -> step (pr n' [neq])
+
+-- Addition
+-- --------
+    
+-- First with primrec
+  
+-- Need a predicate with constant value Nat.
+--
+-- Can build one from const, but it's too much trouble to use ...
+const : [aT:Type 1] -> [bT:Type 0] -> (a:aT) -> (b:bT) -> aT
+const = \[aT] [bT] a b.a
+
+-- ... it's better to specialize const
+constNat : (w:Nat) -> Type 0
+constNat = \w.Nat
+
+-- Now get addition, a heavily conv'd version of
+--
+--   add' = \m. primrec [constNat] m (\n.\add_m_n.Succ add_m_n)
+add' : (m:Nat) -> (n:Nat) -> Nat
+add' = 
+  \m. \n. 
+  -- I don't know how (or if it's even possible, since we don't have
+  -- extensionality?) to prove equality of arrow types for the
+  -- n-eta-reduced version, but it's easy to conv the body of the
+  -- n-eta-expanded version:
+    conv
+      (primrec
+        [constNat]
+        (conv m by (join: Nat = (constNat 0)) at x.x)
+        (\n.\mn.conv (Succ (conv mn by (join: (constNat n) = Nat) at x.x))
+                  by (join: Nat = (constNat (Succ n))) at x.x)
+        n)
+      by (join: (constNat n) = Nat) at x.x
+-- trellys can't infer type for [\w.Nat] and annotation causes parse
+-- error in my first attempt:
+--
+--   add' = \m. primrec [\w.Nat : ((w:Nat) -> Type 0)] m (\n.\mn.Succ mn)
+--
+-- Is this a bug? I'll create a separate, simpler, example ...
+
+-- Then with foldNat, which is much easier.
+add'' : (m:Nat) -> (n:Nat) -> Nat
+add'' = \m. foldNat [Nat] m (\mn.Succ mn)
+
+
+-- Ackermann
+-- ---------
+
+-- primrec version
+--
+-- left as an exercise for the reader ... may the conv be with you.
+
+-- foldNat version
+ack : (m:Nat) -> (n:Nat) -> Nat
+ack = foldNat [(w:Nat) -> Nat] (\n.Succ n)
+        (\a_m. foldNat [Nat] (a_m 1) (\a_Sm_n. a_m a_Sm_n))
+
+-- recnat version
+ack' : (m:Nat) -> (n:Nat) -> Nat
+ack' = recnat a m =
+  case m [meq] of
+    Zero    -> \n. Succ n
+    Succ m' -> recnat am n =
+      case n [neq] of
+        Zero    -> a m' [meq] 1
+        Succ n' -> a m' [meq] (am n' [neq])
