@@ -12,36 +12,36 @@ import Vectors
 
 -- Terms with Pi types
 
-log e0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+axiom log e0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
 	      (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
 			 (p : a1 = a2) ->
 			 (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (m1 x1 = m2 x2)) -> 
 			 (m1 = m2)
 
-log e1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+axiom log e1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
  	      (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
 			  (p : m1 = m2) ->
  			  a1 = a2
 
-log e2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
+axiom log e2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> (m1 : (x1 : a1) -> b1 x1) ->
  		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> (m2 : (x2 : a2) -> b2 x2) -> 
 		     (p : m1 = m2) ->
 			  (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (m1 x1 = m2 x2)
 
 -- Pi types themselves
 
-log a0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log a0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 		  	  (p : a1 = a2) ->
 			  (q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2)) -> 
 			  ((x1 : a1) -> b1 x1 = (x2 : a2) -> b2 x2)
 
-log a1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log a1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 			  (p : (x1 : a1) -> b1 x1 = (x2 : a2) -> b2 x2) ->
 		  	  (a1 = a2) 
 
-log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 			  (p : ((x1 : a1) -> b1 x1) = (x2 : a2) -> b2 x2) ->
 			  ((x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2))
@@ -52,7 +52,7 @@ log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) ->
 -- actually add it to the type checker. In the meantime, we can
 -- augment it by the following axiom that handles the non-dependent
 -- case.
-log const : (a1 : Type 0) -> (b1 : Type 0) -> 
+axiom log const : (a1 : Type 0) -> (b1 : Type 0) -> 
 		  ((x:a1) -> b1) = (x:a1) -> ((\x.b1 : (x:a1) -> Type 0) x)
 
 
@@ -60,15 +60,15 @@ log const : (a1 : Type 0) -> (b1 : Type 0) ->
 
 -- Unit type
 
-log unit_eta : (x : Unit) -> (y : Unit) -> (x = y)
+axiom log unit_eta : (x : Unit) -> (y : Unit) -> (x = y)
 
 -- Void type
 
-log void_eta : (x : Void) -> (y : Void) -> (x = y)
+axiom log void_eta : (x : Void) -> (y : Void) -> (x = y)
 
 -- Things with Sigma types
 
-log p0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> 
+axiom log p0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) -> 
 		   (a2 : Type 0) -> (b2 : ( x2 : a2 ) -> Type 0) -> 
 			(x1 : a1) -> (y1 : (x1:a1) -> b1 x1) -> 
 			(x2 : a2) -> (y2 : (x2:a2) -> b2 x2) ->
@@ -83,20 +83,20 @@ log p0 : (a1 : Type 0) -> (b1 : ( x1 : a1) -> Type 0) ->
 
 -- Exists : (a : Type 0) -> (b : (x:a) -> Type 0) -> Type 0
 
-log s0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log s0 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		   (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 		  	(p : a1 = a2) ->
 			(q : (x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2)) -> 
 			(Exists a1 b1 = Exists a2 b2)
 -- probably derivable from appcong
 
-log s1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log s1 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 			  (p : Exists a1 b1 = Exists a2 b2) ->
 		  	  (a1 = a2) 
 -- not derivable b/c requires injectivity
 
-log s2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
+axiom log s2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) -> 
 		     (a2 : Type 0) -> (b2 : (x2:a2) -> Type 0) -> 
 			  (p : Exists a1 b1 = Exists a2 b2) ->
 			  ((x1 : a1) -> (x2 : a2) -> (p : x1 = x2) -> (b1 x1 = b2 x2))
