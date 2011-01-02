@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
   (
@@ -131,7 +131,7 @@ parseModuleFile name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ runParser (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents
+  return $ runParser (do { whiteSpace; v <- moduleDef;eof; return v}) ([],0) name contents
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
 
@@ -148,18 +148,33 @@ parseModule input = do
 -- 
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
-testParser parser str = runParser (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
+testParser parser str = runParser (do { whiteSpace; v <- parser; eof; return v}) ([],0) "<interactive>" str
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
 parseExpr = testParser expr
 
+data ParserState = ParserState {
+                     tabs :: [Column], -- internal state for layout tabs.
+                     nameSupply :: Integer -- source of fresh names
+                   }
 
 -- * Lexer definitions
 type LParser a = GenParser
                     Char         -- The input is a sequence of Char
-                    [Column]     -- The internal state for Layout tabs
+                    ([Column],   -- The internal state for Layout tabs
+                     Integer)    -- The internal state for generating fresh names.
                     a            -- the type of the object being parsed
+
+instance HasNext (GenParser Char ([Column],Integer))  where
+  nextInteger = do
+    (tabs, x) <- getState
+    setState (tabs, x+1)
+    return (x+1)
+  resetNext x = do
+    (tabs, _) <- getState
+    setState (tabs, x)
+
 
 trellysStyle :: LanguageDef st
 trellysStyle = haskellStyle {
@@ -182,11 +197,11 @@ trellysStyle = haskellStyle {
                   ]
                ,
                Token.reservedOpNames =
-                 ["!","?","\\",":",".", "=", "+", "-", "^", "()"]
+                 ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_"]
               }
 
-tokenizer :: Token.TokenParser [Column]
-layout:: LParser item -> LParser stop -> LParser [item]
+tokenizer :: Token.TokenParser ([Column],Integer)
+--layout:: LParser item -> LParser stop -> LParser [item]
 (tokenizer,Token.LayFun layout) = Token.makeTokenParser trellysStyle "{" ";" "}"
 
 identifier :: LParser String
@@ -204,6 +219,12 @@ variable =
          if isUpper c 
            then fail "Expected a variable, but a constructor was found"
            else return $ string2Name i
+
+wildcard :: LParser Name 
+wildcard = reservedOp "_" >> fresh (string2Name "_")
+
+variableOrWild :: LParser Name
+variableOrWild = try wildcard <|> variable
 
 constructor :: LParser Name
 constructor =
@@ -369,9 +390,14 @@ expr,term,factor :: LParser Term
 expr = do
     p <- getPosition
     Pos p <$> (buildExpressionParser table term)
-  where table = [[ifix "=" TyEq]
+  where table = [[ifix  AssocLeft "=" TyEq],
+                 [ifixM AssocRight "=>" (mkArrow Program),
+                  ifixM AssocRight "->" (mkArrow Logic)]
                 ]
-        ifix op f = Infix (reservedOp op >> return f) AssocLeft
+        ifix  assoc op f = Infix (reservedOp op >> return f) assoc
+        ifixM assoc op f = Infix (reservedOp op >> f) assoc
+        mkArrow th = do x <- fresh (string2Name "_")
+                             return $ \tyA tyB -> Arrow th Runtime tyA (bind x tyB)
 
 term = do -- This eliminates left-recursion in (<expr> := <expr> <expr>)
   f <- factor
@@ -398,8 +424,8 @@ factor = choice [ varOrCon <?> "an identifier"
                 ]
 
 impBind,expBind :: LParser (Epsilon,Name)
-impBind = brackets $ liftM ((,) Erased) variable
-expBind = liftM ((,) Runtime) variable
+impBind = brackets $ liftM ((,) Erased) variableOrWild
+expBind = liftM ((,) Runtime) variableOrWild
 
 impOrExpBind :: LParser (Epsilon,Name)
 impOrExpBind = impBind <|> expBind
@@ -448,7 +474,7 @@ letExpr =
      th <- option Logic $ choice [reserved "prog" >> return Program,
                                   reserved "log"  >> return Logic]
      (ep,x) <- impOrExpBind
-     y <- brackets variable
+     y <- brackets variableOrWild
      reservedOp "="
      boundExp <- expr
      reserved "in"
@@ -456,12 +482,16 @@ letExpr =
      return $ (Let th ep boundExp (bind (x,y) body))
 
 -- impProd - implicit dependent products
+-- These have the syntax [x:a]->b or [a]->b .
 impProd :: LParser Term
 impProd =
-  do (x,tyA) <- brackets (liftM2 (,) variable (colon >> expr))
+  do (x,tyA) <- brackets (try (liftM2 (,) variableOrWild (colon >> expr))
+                          <|> (liftM2 (,) (fresh (string2Name "_")) expr))
      th <- eitherArrow
      tyB <- expr
      return $ Arrow th Erased tyA (bind x tyB)
+
+--FIXME: add wildcard
 
 -- Product types have the syntax '(x:A) -> B'.  This production deals
 -- with the ambiguity caused because explicit producs, annotations and
@@ -497,7 +527,7 @@ caseExpr :: LParser Term
 caseExpr = do
     reserved "case"
     e <- factor
-    y <- brackets variable
+    y <- brackets variableOrWild
     reserved "of"
     alts <- layout alt (return ())
     return $ Case e (bind y alts)

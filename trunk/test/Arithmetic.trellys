@@ -2,21 +2,21 @@ module Arithmetic where
 
 import Prelude
 
-plus : (n : Nat) -> (m : Nat) -> Nat
+plus : Nat -> Nat -> Nat
 recnat plus n = \m .
   case n [cw] of
     Zero -> m
     Succ pred -> Succ (plus pred [cw] m)
 
 
-mult : (n : Nat) -> (m : Nat) -> Nat
+mult : Nat -> Nat -> Nat
 recnat mult n = \m .
   case n [cw] of
     Zero -> Zero
     Succ pred -> plus m (mult pred [cw] m)
 
 
-minus : (n : Nat) -> (m : Nat) -> Nat
+minus : Nat -> Nat -> Nat
 recnat minus n = \m .
    case n [cn] of
      Zero -> Zero
@@ -26,53 +26,53 @@ recnat minus n = \m .
 
 
 -- 'x > y'
-gt : (x:Nat) -> (y:Nat) -> Bool
+gt : Nat -> Nat -> Bool
 recnat gt x = \y.
    case x [xpf] of
-        Zero -> case y [ypf] of
+        Zero -> case y [_] of
                      Zero -> False
                      Succ y' -> False
-        Succ x' -> case y [ypf] of
+        Succ x' -> case y [_] of
                    Zero -> True
                    Succ y' -> gt x' [xpf] y' 
 -- 'x < y'
-lt : (x:Nat) -> (y:Nat) -> Bool
+lt : Nat -> Nat -> Bool
 lt = \x.\y.gt y x
 
 -- 'x >= y'
-gte : (x:Nat) -> (y:Nat) -> Bool
-gte = \x.\y.case (minus x y) [mpf] of 
-            Zero -> case x [xpf] of
-                    Zero -> case y [ypf] of
+gte : Nat -> Nat -> Bool
+gte = \x.\y.case (minus x y) [_] of 
+            Zero -> case x [_] of
+                    Zero -> case y [_] of
                             Zero -> True
                             Succ y' -> False
                     Succ x' -> False
             Succ z -> True
 
 -- 'x <= y'
-lte : (x:Nat) -> (y:Nat) -> Bool
+lte : Nat -> Nat -> Bool
 lte = \x.\y.gte y x
 
 -- 'x = y'
-eq : (x:Nat) -> (y:Nat) -> Bool
-eq = \x.\y.case (gt x y) [gpf] of
-           False -> case (lt  x y) [lpf] of
+eq : Nat -> Nat -> Bool
+eq = \x.\y.case (gt x y) [_] of
+           False -> case (lt  x y) [_] of
                     False -> True
                     True -> False
            True  -> False
 
 -- x != y
-neq : (x:Nat) -> (y:Nat) -> Bool
-neq = \x.\y.case (eq x y) [eqpf] of
+neq : Nat -> Nat -> Bool
+neq = \x.\y.case (eq x y) [_] of
             True -> False
             False -> True
 
 -- 'div' calculates ceiling(n/m+1)
-prog div : (n : Nat) => (m : Nat) => Nat
+prog div : Nat => Nat => Nat
 rec div n = \m .
-  case n [cw] of
+  case n [_] of
     Zero -> Zero
-    Succ pred ->  let prog rc [rc_eq] = div (minus pred m) m in
+    Succ pred ->  let prog rc [_] = div (minus pred m) m in
                   Succ rc
 
 minus_same_zero : (n : Nat) -> (minus n n = 0)
@@ -85,14 +85,14 @@ recnat minus_same_zero n =
       Succ pred ->
 
         let step [step_eq] =
-         (join 100 : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+         (join : (minus (Succ pred) (Succ pred)) = minus pred pred) in
 				 -- minus (Succ pred) (Succ pred) = minus pred pred
         let ic [ic_eq] = minus_same_zero pred [n_eq] in
 				-- minus pred pred = 0
-				let tc [tc_eq] = trans [Nat] [Nat] [Nat]
-                				    [minus (Succ pred) (Succ pred)]
-                						[minus pred pred]
-                						[0] [step] [ic] in
+				let tc [_] = trans [Nat] [Nat] [Nat]
+                				   [minus (Succ pred) (Succ pred)]
+                				   [minus pred pred]
+                			           [0] [step] [ic] in
         -- minus (Succ pred) (Succ pred) = 0
 				let [n_eq_sym] [n_eq_sym_eq] = sym Nat Nat n (Succ pred) n_eq in
 				-- TODO: should really be an application of 'sym'
@@ -143,7 +143,7 @@ recnat div_mult n = \m .
     Zero ->
             let zc [zc_eq] = (join : 0 = div (mult 0 (Succ m)) m) in
 						 -- 0 = div (mult 0 (Succ m)) m
-						let [n_eq_sym] [n_eq_sym_eq] = (sym Nat Nat n 0 n_eq) in
+						let [n_eq_sym] [_] = (sym Nat Nat n 0 n_eq) in
 						-- 0 = n
 						conv zc
 						  by n_eq_sym
@@ -164,31 +164,31 @@ recnat div_mult n = \m .
 
 
 			-- { apply the minus/plus cancellation lemma }
-			let l2 [l2_eq] = conv l1
+			let l2 [_] = conv l1
 			       by (lemma_minus_plus_id p1 m)
 			       at hole.(let prog rc [rc_eq] = div hole m in Succ rc) = div (Succ (plus m p1)) m in
       --> let prog rc [rc_eq] = div p1 m in Succ rc = div (Succ (plus m p1)) m
 
 			-- { expand the def. of p1 }
-			let l3 [l3_eq] = conv l2
+			let l3 [_] = conv l2
 			       by p1_eq
 						 at hole.(let prog rc [rc_eq] = div hole m in Succ rc) = div (Succ (plus m p1)) m in
       --> (let prog rc [rc_eq] = div (mult pred (Succ m)) m in Succ rc) = div (Succ (plus m p1)) m
 
 			-- { Apply the induction hypothesis }
- 			let [ih] [ih_eq] = conv (join : pred = pred)
+ 			let [ih] [_] = conv (join : pred = pred)
 			                      by (div_mult pred [n_eq] m)
 														at hole.(hole = pred) in
       --> div (mult pred (Succ m)) m = pred
-			let l4 [l4_eq] = conv l3 by ih at
+			let l4 [_] = conv l3 by ih at
 			   hole.(let prog rc [rc_eq] = hole in Succ rc) = div (Succ (plus m p1)) m in
       --> let prog rc [rc_eq] = pred in Succ rc = div (Succ (plus m p1)) m
 
 			-- { Convert 'let prog rc [rc_eq] = pred in Succ rc' to 'Succ pred', then to 'n' }
-			let l5 [l5_eq] = conv l4
+			let l5 [_] = conv l4
                         by (join : (let prog rc [rc_eq] = pred in Succ rc) = Succ pred)
 												at hole.(hole = div (Succ (plus m p1)) m) in
-      let l6 [l6_eq] = conv l5
+      let l6 [_] = conv l5
                          by (sym Nat Nat n (Succ pred) n_eq)
 												 at hole.(hole = div (Succ (plus m p1)) m) in
       --> n = div (Succ (plus m p1)) m
@@ -196,21 +196,21 @@ recnat div_mult n = \m .
 			-- * The right-hand side (converting to 'div (mult n (Succ m)) m'
 
 			-- { Rewrite (Succ (plus m p1)) to plus (Succ m) p1
-			let [plus_inv] [plus_inv_eq] = (join : Succ (plus m p1) = (plus (Succ m) p1)) in
+			let [plus_inv] [_] = (join : Succ (plus m p1) = (plus (Succ m) p1)) in
 
-			let l7 [l7_eq] = conv l6 by plus_inv at hole.(n = div hole m) in
+			let l7 [_] = conv l6 by plus_inv at hole.(n = div hole m) in
 			--> n = div (plus (Succ m) p1) m'
 
 			-- { Expand the definition of 'p1' }
-			let l8 [l8_eq] = conv l7 by p1_eq at hole.(n = div (plus (Succ m) hole) m) in
+			let l8 [_] = conv l7 by p1_eq at hole.(n = div (plus (Succ m) hole) m) in
 			--> n = div (plus (Succ m) (mult pred (Succ m))) m
 
 			-- { Rewrite 'plus (Succ m) (mult pred (Succ m))' to 'mult (Succ pred) (Succ m)'
-			let mult_inv [mult_inv_eq] =
+			let mult_inv [_] =
 			  (join : plus (Succ m) (mult pred (Succ m)) = mult (Succ pred) (Succ m)) in
 
       -- { Apply the mult. inv. rule -}
-			let l9 [l9_eq] = conv l8 by mult_inv at hole.(n = div hole m) in
+			let l9 [_] = conv l8 by mult_inv at hole.(n = div hole m) in
 			--> n = div (mult (Succ pred) (Succ m)) m
 
 			-- { Apply the n = Succ pred rule }
@@ -220,22 +220,22 @@ plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (p
 plus_associates = recnat pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
-    Zero -> let [ieq'] [p] = sym Nat Nat i 0 ieq -- evidence of backwards equality. NC
+    Zero -> let [ieq'] [_] = sym Nat Nat i 0 ieq -- evidence of backwards equality. NC
             in conv (join 42 : plus (plus 0 j) k = plus 0 (plus j k)) by ieq'
                  at i . plus (plus i j) k = plus i (plus j k)
 
                -- associate `plus` in `Succ` of the inductive case: S ((i'+j)+k) = S (i'+(j+k))
-    Succ i' -> let ih [p] = pa i' [ieq] j k
+    Succ i' -> let ih [_] = pa i' [ieq] j k
                in let e1 [p] = conv (join 0) by ih at h . Succ (plus (plus i' j) k) = Succ h
 
                -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
-               in let [ieq'] [p] = sym Nat Nat i (Succ i') ieq -- evidence of backwards equality. NC
-               in let e2 [p] = (join 42 : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
-               in let e2' [p] = conv e2 by ieq' at h . Succ (plus (plus i' j) k) = plus (plus h j) k
+               in let [ieq'] [_] = sym Nat Nat i (Succ i') ieq -- evidence of backwards equality. NC
+               in let e2 [_] = (join 42 : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
+               in let e2' [_] = conv e2 by ieq' at h . Succ (plus (plus i' j) k) = plus (plus h j) k
 
                -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
-               in let e3 [p] = (join 42 : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))
-               in let e3' [p] = conv e3 by ieq' at h . Succ (plus i' (plus j k)) = plus h (plus j k)
+               in let e3 [_] = (join 42 : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))
+               in let e3' [_] = conv e3 by ieq' at h . Succ (plus i' (plus j k)) = plus h (plus j k)
 
                -- move the `Succ` inside both sides
                in conv (conv e1 by e2' at h . h = Succ (plus i' (plus j k))) by e3' at h . plus (plus i j) k = h

@@ -3,8 +3,8 @@ module Vectors where
 import Prelude
 
 data Vector [a : Type 0] [n : Nat] -> Type 0 where
-   VNil  : [pf : n = 0] -> Vector a n
-   VCons : [size : Nat] -> [pf : n = Succ size]
+   VNil  : [n = 0] -> Vector a n
+   VCons : [size : Nat] -> [n = Succ size]
         -> (x:a) -> (xs : Vector a size) -> Vector a n
 
 -- not needed:
@@ -31,7 +31,7 @@ recvec = \ [a] . \ [c] . \ base . \ step .
                  at x.(c [n] x)
 
 
-vmap : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
+vmap : [a : Type 0] -> [b : Type  0] -> ((x:a) -> b) ->
       [n : Nat] -> (xs : Vector a n) -> Vector b n
 vmap = \ [a] . \ [b] . \ f . recnat vmap [n] = \ xs .
         case xs [xs_eq] of
