@@ -76,6 +76,8 @@ add' =
 --   add' = \m. primrec [\w.Nat : ((w:Nat) -> Type 0)] m (\n.\mn.Succ mn)
 --
 -- Is this a bug? I'll create a separate, simpler, example ...
+-- ... UPDATE: I can't find a simple version, maybe I imagined the problem :P
+
 
 -- Then with foldNat, which is much easier.
 add'' : (m:Nat) -> (n:Nat) -> Nat
