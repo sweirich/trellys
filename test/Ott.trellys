@@ -52,8 +52,9 @@ axiom log a2 : (a1 : Type 0) -> (b1 : (x1:a1) -> Type 0) ->
 -- actually add it to the type checker. In the meantime, we can
 -- augment it by the following axiom that handles the non-dependent
 -- case.
-axiom log const : (a1 : Type 0) -> (b1 : Type 0) -> 
+log const : (a1 : Type 0) -> (b1 : Type 0) -> 
 		  ((x:a1) -> b1) = (x:a1) -> ((\x.b1 : (x:a1) -> Type 0) x)
+const = \a1 b1 . join 
 
 
 -- A few other extensionality axioms
@@ -204,6 +205,7 @@ bad = trans4' ((x:Nat) -> Nat)
 
 -- An example of reasoning under a binder
 
+{-
 log example : (\x. plus (plus x x) x : (x:Nat) -> Nat) = 
               (\x. plus x (plus x x) : (x:Nat) -> Nat)
 
@@ -219,6 +221,8 @@ example = e0'' Nat Nat
 						 (plus_associates x x x)
                    (join 0 1)
 						 )
+-}
+
 -----------------------------------------------------------
 -- OTT style Append associates.
 -----------------------------------------------------------

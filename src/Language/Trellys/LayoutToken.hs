@@ -25,6 +25,7 @@ module Language.Trellys.LayoutToken
   , getInfo
   ) where
 
+import Control.Monad (liftM)
 import Data.Char (isAlpha,toLower,toUpper,isSpace,digitToInt)
 import Data.List (nub,sort)
 import Text.ParserCombinators.Parsec
@@ -471,27 +472,30 @@ makeTokenParser languageDef open sep close
 --MOD --------------------------------------------------------------------
 -- THE FOLLOWING WAS ADDED FOR LAYOUT TOKEN PARSERS by Tim Sheard 7/27/09
 
+getTabs = liftM fst getState
+setTabs tabs = updateState (\(_,st) -> (tabs,st))
+
 getInfo = 
    do { pos <- getPosition
-      ; tabs <- getState
+      ; tabs <- getTabs
       ; tokens <- getInput
       ; return(sourceColumn pos,tabs,tokens) }
 
 setInfo (col,tabs,tokens) =
   do { p <- getPosition
      ; setPosition (setSourceColumn p col)
-     ; setState tabs
+     ; setTabs tabs
      ; setInput tokens }
 
 indent =
   do { pos <- getPosition
-     ; tabs <- getState
-     ; setState (sourceColumn pos : tabs)
+     ; tabs <- getTabs
+     ; setTabs (sourceColumn pos : tabs)
      }
 
 undent =
-  do { (p:ps) <- getState
-     ; setState ps
+  do { (p:ps) <- getTabs
+     ; setTabs ps
      }
      
 eoln whiteSpace = 
@@ -518,9 +522,9 @@ eoln whiteSpace =
       ; return '\n' }    
       
 data LayoutFun = 
-   LayFun (forall a t. GenParser Char [Column] a
-             -> GenParser Char [Column] t
-             -> GenParser Char [Column] [a])          
+   LayFun (forall st a t. GenParser Char ([Column],st) a
+             -> GenParser Char ([Column],st) t
+             -> GenParser Char ([Column],st) [a])          
           
 -- End of added code          
 --MOD --------------------------------------------------------------------

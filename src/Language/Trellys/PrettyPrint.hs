@@ -408,7 +408,9 @@ instance Disp Theta where
 
 -- Assumes that all terms were opened safely earlier.
 instance Display Name where
-  display n = return $ (text . show) n
+  display n = if (name2String n == "_")
+               then return $ text "_"
+               else return $ (text . show) n
 
 instance Disp SourcePos where
   disp p = text (sourceName p) <> colon <> int (sourceLine p) <>

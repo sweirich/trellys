@@ -1,4 +1,4 @@
-module Ott where
+module OttAppend where
 
 -------------------------------------------------------------------------
 --- Can't import the prelude because it violates some of the OTT restrictions
@@ -386,6 +386,7 @@ appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
 
 
 -- A simple example of using axiom a0, demonstrating that we can reduce redexes under Pis.
+{-
 log v : (n : Nat) -> Type 0
 v = Vector Nat 
 
@@ -404,3 +405,4 @@ thm = \ n m p .
        (join : ((x2 : Nat) -> (\ x . v (plus x m) : (x:Nat) -> Type 0) x2)
               =(((x : Nat) -> v (plus x m))))
     at h1 h2. h1 = h2
+-}
