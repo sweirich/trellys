@@ -14,7 +14,7 @@ SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
 PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 typetest NatElimination Ott \
-     OttAppend
+     OttAppend CastShiftTrick
 # FAIL are tests that *should* always fail.
 FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug
 # TODO_FAIL are tests that *should* fail but currently pass.
