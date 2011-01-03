@@ -3,6 +3,12 @@ module Bad where
 data False -> Type 0 where
      {}
 
+data Id (a : Type 0) -> Type 0 where
+  IdC : (x : a) -> Id a
+
+data BadId -> Type 0 where
+  NBad : (f : Id ((b : BadId) -> False)) -> BadId
+
 data Bad -> Type 0 where
   CBad : (f:((b:Bad) -> False)) -> Bad
 
