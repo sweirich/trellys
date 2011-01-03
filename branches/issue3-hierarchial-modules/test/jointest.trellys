@@ -1,0 +1,11 @@
+module JoinTest where
+
+data Nat -> Type 0 where
+  Zero : Nat
+  Succ : (x : Nat) -> Nat
+
+prog f : (n : Nat) => Nat
+f = \x . x
+
+prog g : (n : Nat) => f n = n
+g = \x . join 10000 (f x) x
