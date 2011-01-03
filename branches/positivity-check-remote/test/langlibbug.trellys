@@ -1,0 +1,11 @@
+module langlib where
+
+data Nat : Type 0 where
+ Zero : Nat
+ Succ : (x:Nat) -> Nat
+
+add : (x : Nat) -> (y:Nat) -> Nat
+recnat add x = \y ->
+   case x of
+   	 (Zero) xw -> y
+   	 (Succ m) xw -> add m [xw] y

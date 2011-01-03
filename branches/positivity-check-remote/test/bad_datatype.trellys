@@ -1,0 +1,27 @@
+module Bad where
+
+data False -> Type 0 where
+     {}
+
+data Bad -> Type 0 where
+  CBad : (f:((b:Bad) -> False)) -> Bad
+
+not_bad : (b : Bad) -> False
+
+not_bad = \ b . case b [beq] of CBad f -> f b
+
+inconsistent : False
+
+inconsistent = not_bad (CBad not_bad)
+
+
+data Ok -> Type 0 where
+  COk : (f:((b:Ok) => False)) => Ok
+
+prog still_ok : (b : Ok) => False
+
+still_ok = \ b . case b [beq] of COk f -> f b
+
+prog loop : False
+
+loop = still_ok (COk still_ok)
