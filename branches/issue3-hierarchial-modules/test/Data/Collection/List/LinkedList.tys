@@ -1,0 +1,3 @@
+-- This module is just a placeholder for testing hierarchial module support.
+module Data.Collection.List.LinkedList where
+
