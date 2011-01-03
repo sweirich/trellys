@@ -397,7 +397,7 @@ expr = do
         ifix  assoc op f = Infix (reservedOp op >> return f) assoc
         ifixM assoc op f = Infix (reservedOp op >> f) assoc
         mkArrow th = do x <- fresh (string2Name "_")
-                             return $ \tyA tyB -> Arrow th Runtime tyA (bind x tyB)
+                        return $ \tyA tyB -> Arrow th Runtime tyA (bind x tyB)
 
 term = do -- This eliminates left-recursion in (<expr> := <expr> <expr>)
   f <- factor
