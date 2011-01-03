@@ -1,0 +1,3 @@
+module HierTest where
+
+import Data.Collection.List.LinkedList

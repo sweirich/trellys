@@ -11,6 +11,8 @@ import Text.ParserCombinators.Parsec.Error
 import Control.Monad.Error
 import System.FilePath
 import System.Directory
+import System.Environment(getEnv)
+import System.IO.Error(isDoesNotExistError)
 import qualified Data.Graph as Gr
 import Data.List(nub,(\\))
 
@@ -50,14 +52,40 @@ topSort ms = reverse sorted -- gr -- reverse $ topSort' ms []
 instance Error ParseError
 
 -- | Find the file associated with a module. Currently very simple.
+--  We look for files corresponding to module 'm' in the following order:
 getModuleFileName :: (MonadIO m, Show a) => a -> m String
 getModuleFileName m = do
-  fe <- liftIO $ doesFileExist (show m)
-  if fe
-     then return (show m)
-     else return (addExtension (show m) "trellys")
-          -- TODO: Add support for tys extension.
+  sp <- liftIO $ getIncludePaths
+  checkMods [base </> c <.> ext | base <- sp, c <- candidates, ext <- extensions]
 
+  where hierName = joinPath $ splitString '.' (show m)
+        candidates = [show m, hierName]
+        extensions = ["","trellys","tys"]
+        -- Probe for names
+        checkMods [] = fail $ "Could not find module " ++ show m
+        checkMods (c:cs) = do fe <- liftIO $ doesFileExist c
+                              liftIO $ putStrLn $ "Checking for " ++ c
+                              if fe
+                                 then return c
+                                 else checkMods cs
+
+
+-- | Return a list of directories to search when looking for a module file.
+getIncludePaths :: IO [String]
+getIncludePaths = do str <- getEnv "TRELLYS_INCLUDE"
+                     return $ splitString ':' str
+     `catch`
+     (\e -> if isDoesNotExistError e then return ["."] else ioError e)
+
+
+
+-- | Split a string based on a given character.
+splitString :: Char -> String -> [String]
+splitString delim s =
+  case s' of
+    [] -> [l]
+    (_:rest) -> l : splitString delim rest
+  where (l,s') = break (== delim) s
 
 parseModule
   :: (MonadIO m, MonadError ParseError m) => String -> m Module
