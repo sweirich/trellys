@@ -17,7 +17,7 @@ library
 executable trellys
   Main-is: Trellys.hs
   Build-depends: base >=4,
-                 parsec >= 2.1 && < 3,
+                 parsec >= 3.1 && < 3.2,
                  pretty >= 1.0.1.0,
                  RepLib >= 0.3,
                  mtl, containers,

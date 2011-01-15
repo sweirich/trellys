@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts #-}
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
   (
@@ -10,15 +10,17 @@ module Language.Trellys.Parser
 
 import Language.Trellys.Syntax
 
-import qualified Language.Trellys.LayoutToken as Token
 import Language.Trellys.GenericBind
 
-import Text.ParserCombinators.Parsec
-import Text.ParserCombinators.Parsec.Language 
-import Text.ParserCombinators.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
+import Text.Parsec hiding (State)
+import Text.Parsec.Prim (ParsecT)
+import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
+import qualified Language.Trellys.LayoutToken as Token
 
 import Control.Applicative ( (<$>) )
+import Control.Monad.Trans (lift)
 import Control.Monad.Error hiding (join)
+import Control.Monad.State hiding (join)
 
 import Data.Char
 import Data.List
@@ -131,7 +133,7 @@ parseModuleFile name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ runParser (do { whiteSpace; v <- moduleDef;eof; return v}) ([],0) name contents
+  return $ evalState (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents) 0
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
 
@@ -148,7 +150,7 @@ parseModule input = do
 -- 
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
-testParser parser str = runParser (do { whiteSpace; v <- parser; eof; return v}) ([],0) "<interactive>" str
+testParser parser str = evalState (runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str) 0
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
@@ -160,25 +162,34 @@ data ParserState = ParserState {
                    }
 
 -- * Lexer definitions
-type LParser a = GenParser
-                    Char         -- The input is a sequence of Char
-                    ([Column],   -- The internal state for Layout tabs
-                     Integer)    -- The internal state for generating fresh names.
-                    a            -- the type of the object being parsed
+type LParser a = ParsecT
+                    String             -- The input is a sequence of Char
+                    [Column]           -- The internal state for Layout tabs
+                    (State Integer)    -- The internal state for generating fresh names.
+                    a                  -- the type of the object being parsed
 
-instance HasNext (GenParser Char ([Column],Integer))  where
+instance HasNext (ParsecT s u (State Integer))  where
   nextInteger = do
-    (tabs, x) <- getState
-    setState (tabs, x+1)
+    x <- lift get
+    lift (put (x+1))
     return (x+1)
   resetNext x = do
-    (tabs, _) <- getState
-    setState (tabs, x)
+    lift (put x)
 
-
-trellysStyle :: LanguageDef st
-trellysStyle = haskellStyle {
-                Token.reservedNames =
+-- Based on Parsec's haskellStyle (which we can not use directly since
+-- Parsec gives it a too specific type.
+trellysStyle :: (Stream s m Char, Monad m) => Token.GenLanguageDef s u m
+trellysStyle = Token.LanguageDef
+                { Token.commentStart   = "{-"
+                , Token.commentEnd     = "-}"
+                , Token.commentLine    = "--"
+                , Token.nestedComments = True
+                , Token.identStart     = letter
+                , Token.identLetter    = alphaNum <|> oneOf "_'"
+                , Token.opStart	       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.caseSensitive  = True
+                , Token.reservedNames =
                   ["join"
                   ,"rec"
                   ,"recnat"
@@ -195,12 +206,11 @@ trellysStyle = haskellStyle {
                   ,"prog", "log"
                   ,"axiom"
                   ]
-               ,
-               Token.reservedOpNames =
+               , Token.reservedOpNames =
                  ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_"]
-              }
+                }
 
-tokenizer :: Token.TokenParser ([Column],Integer)
+tokenizer :: Token.GenTokenParser String [Column] (State Integer)
 --layout:: LParser item -> LParser stop -> LParser [item]
 (tokenizer,Token.LayFun layout) = Token.makeTokenParser trellysStyle "{" ";" "}"
 
