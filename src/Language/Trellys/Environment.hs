@@ -54,28 +54,28 @@ getFlag f = do
  return (f `elem` flags)
 
 -- | Find a name's user supplied type signature.
-lookupHint   :: (MonadReader Env m) => Name -> m (Maybe (Theta,Term))
+lookupHint   :: (MonadReader Env m) => TName -> m (Maybe (Theta,Term))
 lookupHint v = do
   hints <- asks hints
   return $ listToMaybe [(th,ty) | Sig v' th ty <- hints, v == v']
 
 -- | Find a name's type in the context.
 lookupTy :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-         => Name -> m (Maybe (Theta,Term))
+         => TName -> m (Maybe (Theta,Term))
 lookupTy v = do
   ctx <- asks ctx
   return $ listToMaybe [(th,ty) | Sig v' th ty <- ctx, v == v']  
 
 -- | Find a name's def in the context.
 lookupDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
-          => Name -> m (Maybe Term)
+          => TName -> m (Maybe Term)
 lookupDef v = do
   ctx <- asks ctx
   return $ listToMaybe [a | Def v' a <- ctx, v == v']
 
 -- | Find a constructor in the context - left is type con, right is term con
 lookupCon :: (MonadReader Env m, MonadError Err m) 
-          => Name -> m (Either (Telescope,Theta,Int,Maybe [Constructor]) 
+          => TName -> m (Either (Telescope,Theta,Int,Maybe [Constructor]) 
                                (Telescope,Theta,Term))
 lookupCon v = do
   g <- asks ctx
@@ -122,10 +122,11 @@ substDefs :: MonadReader Env m => Term -> m Term
 substDefs tm =
   let
     substDef :: Term -> Decl -> Term
-    substDef m (Def nm df)       = subst nm df m
-    substDef m (Sig _ _ _)       = m
-    substDef m (Data _ _ _ _ _)  = m
-    substDef m (AbsData _ _ _ _) = m
+    substDef m (Def nm df)         = subst nm df m
+    substDef m (Sig _ _ _)         = m
+    substDef m (Axiom (Sig _ _ _)) = m
+    substDef m (Data _ _ _ _ _)    = m
+    substDef m (AbsData _ _ _ _)   = m
   in
     do defs <- getCtx
        return $ foldl' substDef tm defs

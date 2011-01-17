@@ -19,7 +19,7 @@
 # make install: does a `cabal install` of RepLib and trellys-core.
 
 .PHONY: all sandbox-install sandbox-uninstall sandbox-replib sandbox-trellys \
-	    install uninstall clean test fix-replib
+	    install uninstall clean test 
 
 all: sandbox-install
 
@@ -28,7 +28,7 @@ sandbox-install: sandbox-replib sandbox-trellys
 sandbox-uninstall:
 	-rm -rf .capri
 
-sandbox-replib: .capri fix-replib
+sandbox-replib: .capri 
 	capri import lib/replib-read-only
 
 # This has no dependencies to allow `make sandbox-trellys` to run
@@ -45,7 +45,7 @@ sandbox-trellys:
     # some trellys depend needs base < 4, and base < 4 needs syb
 	capri clone syb 'base-3*'
 
-install: fix-replib
+install: 
 	cd lib/replib-read-only && cabal install
 	cd src && cabal install
 
@@ -65,9 +65,3 @@ test:
 
 etags:
 	find ./ -name .svn -prune -o -name '*.hs' -print | xargs hasktags --etags
-
-# HACK: bump the RepLib version number so that cabal won't get
-# confused when hackage tells cabal that RepLib-0.3 requires base >=
-# 4.3.
-fix-replib:
-	cd lib/replib-read-only && sed -i -e 's/^version:.*0.3$$/version: 0.3.1/' RepLib.cabal

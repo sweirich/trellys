@@ -24,7 +24,7 @@ getModules top = runErrorT $ gatherModules [string2Name top] []
 -- | Build the module dependency graph, with parsed modules.
 gatherModules
   :: (MonadError ParseError m, MonadIO m) =>
-     [Name] -> [Module] -> m [Module]
+     [MName] -> [Module] -> m [Module]
 gatherModules [] accum = return $ topSort accum
 gatherModules (m:ms) accum = do
   modFileName <- getModuleFileName m

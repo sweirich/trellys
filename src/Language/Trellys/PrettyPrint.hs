@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances #-}
 
 -- | A Pretty Printer for the core trellys. The 'Disp' class and 'D' type should
 -- be replace with their LangLib equivalents.
@@ -7,6 +7,7 @@ module Language.Trellys.PrettyPrint(Disp(..), D(..))  where
 import Language.Trellys.Syntax
 import Language.Trellys.GenericBind
 
+import Generics.RepLib.R (Rep)
 import Control.Monad.Reader
 import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos
@@ -28,16 +29,15 @@ class Disp d where
 cleverDisp :: (Display d, Alpha d) => d -> Doc
 cleverDisp d =
   runReader dm initDI where
-    dm = let vars = S.elems (fv d)  in
+    dm = let vars = S.elems (fvAny d)  in
          lfreshen vars $ \vars'  p ->
            (display (swaps p d))
-
 
 instance Disp Term where
   disp = cleverDisp
 instance Disp ETerm where
   disp = cleverDisp
-instance Disp Name where
+instance Rep a => Disp (Name a) where
   disp = cleverDisp
 instance Disp Telescope where
   disp = cleverDisp
@@ -50,7 +50,7 @@ instance Disp Telescope where
 -- level, so we could print parenthesis exactly when needed.
 data DispInfo = DI
   {
-  dispAvoid :: Set Name -- ^ names that have already been used
+  dispAvoid :: Set AnyName -- ^ names that have already been used
   }
 
 -- | An empty 'DispInfo' context
@@ -61,11 +61,10 @@ instance LFresh (Reader DispInfo) where
   lfresh nm = do
       let s = name2String nm
       di <- ask;
-      return $ head (filter (\x -> x `S.notMember` (dispAvoid di))
+      return $ head (filter (\x -> AnyName x `S.notMember` (dispAvoid di))
                       (map (makeName s) [0..]))
   avoid names = local upd where
      upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
-
 
 type M = Reader DispInfo
 
@@ -358,6 +357,13 @@ instance Display ETerm where
         return $ parens ( text "rec" <+> dn <+> brackets (dw)
                           <+> text "."
                           <+> db )
+  display (ERecMinus bnd) =
+     lunbind bnd $ \ (n,body) -> do
+        dn <- display n
+        db <- display body
+        return $ parens ( text "rec" <+> dn
+                          <+> text "."
+                          <+> db )
   display (ECase dis matches) = do
     ddis <- display dis
     dmatches <- mapM display matches
@@ -407,7 +413,7 @@ instance Disp Theta where
   disp Program = text "P"
 
 -- Assumes that all terms were opened safely earlier.
-instance Display Name where
+instance Rep a => Display (Name a) where
   display n = if (name2String n == "_")
                then return $ text "_"
                else return $ (text . show) n
@@ -430,9 +436,9 @@ instance Disp [D] where
 instance Disp [Term] where
   disp = vcat . map disp
 
-instance Disp [(Name,Term)] where
+instance Disp [(Name Term,Term)] where
   disp = vcat . map disp
 
-instance Disp (Name,Term) where
+instance Disp (Name Term,Term) where
   disp (n,t) = parens $ (disp n) <> comma <+> disp t
 

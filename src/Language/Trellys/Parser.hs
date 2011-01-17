@@ -13,14 +13,11 @@ import Language.Trellys.Syntax
 import Language.Trellys.GenericBind
 
 import Text.Parsec hiding (State)
-import Text.Parsec.Prim (ParsecT)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
 import Control.Applicative ( (<$>) )
-import Control.Monad.Trans (lift)
 import Control.Monad.Error hiding (join)
-import Control.Monad.State hiding (join)
 
 import Data.Char
 import Data.List
@@ -133,7 +130,7 @@ parseModuleFile name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ evalState (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents) 0
+  return $ runFreshM (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents) 
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
 
@@ -150,34 +147,24 @@ parseModule input = do
 -- 
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
-testParser parser str = evalState (runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str) 0
+testParser parser str = runFreshM $ runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
 parseExpr = testParser expr
 
-data ParserState = ParserState {
-                     tabs :: [Column], -- internal state for layout tabs.
-                     nameSupply :: Integer -- source of fresh names
-                   }
-
 -- * Lexer definitions
 type LParser a = ParsecT
-                    String             -- The input is a sequence of Char
-                    [Column]           -- The internal state for Layout tabs
-                    (State Integer)    -- The internal state for generating fresh names.
-                    a                  -- the type of the object being parsed
+                    String      -- The input is a sequence of Char
+                    [Column]    -- The internal state for Layout tabs
+                    FreshM      -- The internal state for generating fresh names.
+                    a           -- the type of the object being parsed
 
-instance HasNext (ParsecT s u (State Integer))  where
-  nextInteger = do
-    x <- lift get
-    lift (put (x+1))
-    return (x+1)
-  resetNext x = do
-    lift (put x)
+instance Fresh (ParsecT s u FreshM)  where
+  fresh = lift . fresh
 
 -- Based on Parsec's haskellStyle (which we can not use directly since
--- Parsec gives it a too specific type.
+-- Parsec gives it a too specific type).
 trellysStyle :: (Stream s m Char, Monad m) => Token.GenLanguageDef s u m
 trellysStyle = Token.LanguageDef
                 { Token.commentStart   = "{-"
@@ -210,7 +197,7 @@ trellysStyle = Token.LanguageDef
                  ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_"]
                 }
 
-tokenizer :: Token.GenTokenParser String [Column] (State Integer)
+tokenizer :: Token.GenTokenParser String [Column] FreshM
 --layout:: LParser item -> LParser stop -> LParser [item]
 (tokenizer,Token.LayFun layout) = Token.makeTokenParser trellysStyle "{" ";" "}"
 
@@ -220,7 +207,7 @@ identifier = Token.identifier tokenizer
 whiteSpace :: LParser ()
 whiteSpace = Token.whiteSpace tokenizer
 
-variable :: LParser Name
+variable :: LParser TName
 variable = 
   do i <- identifier
      case i of
@@ -230,13 +217,13 @@ variable =
            then fail "Expected a variable, but a constructor was found"
            else return $ string2Name i
 
-wildcard :: LParser Name 
+wildcard :: LParser TName 
 wildcard = reservedOp "_" >> fresh (string2Name "_")
 
-variableOrWild :: LParser Name
+variableOrWild :: LParser TName
 variableOrWild = try wildcard <|> variable
 
-constructor :: LParser Name
+constructor :: LParser TName
 constructor =
   do i <- identifier
      case i of
@@ -300,7 +287,7 @@ importDef = do reserved "import" >>  (ModuleImport <$> importName)
 telescope :: LParser Telescope
 telescope = many teleBinding
   where
-    annot :: Epsilon -> LParser (Name,Term,Theta,Epsilon)
+    annot :: Epsilon -> LParser (TName,Term,Theta,Epsilon)
     annot ep =
       do th <- option Logic $ choice [reserved "prog" >> return Program,
                                       reserved "log"  >> return Logic]
@@ -309,7 +296,7 @@ telescope = many teleBinding
          ty <- expr
          return (n,ty,th,ep)
 
-    teleBinding :: LParser (Name,Term,Theta,Epsilon)
+    teleBinding :: LParser (TName,Term,Theta,Epsilon)
     teleBinding =
       (    parens (annot Runtime)
        <|> brackets (annot Erased)) <?> "binding"
@@ -433,11 +420,11 @@ factor = choice [ varOrCon <?> "an identifier"
                     <?> "an explicit function type or annotated expression"
                 ]
 
-impBind,expBind :: LParser (Epsilon,Name)
+impBind,expBind :: LParser (Epsilon,TName)
 impBind = brackets $ liftM ((,) Erased) variableOrWild
 expBind = liftM ((,) Runtime) variableOrWild
 
-impOrExpBind :: LParser (Epsilon,Name)
+impOrExpBind :: LParser (Epsilon,TName)
 impOrExpBind = impBind <|> expBind
 
 
@@ -542,7 +529,7 @@ caseExpr = do
     alts <- layout alt (return ())
     return $ Case e (bind y alts)
   where
-    alt :: LParser (Name, Bind [(Name, Epsilon)] Term)
+    alt :: LParser (TName, Bind [(TName, Epsilon)] Term)
     alt =
       do c <- constructor
          bds <- many impOrExpBind
