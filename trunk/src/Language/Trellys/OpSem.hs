@@ -25,19 +25,19 @@ import Data.Maybe
 
 -- | erasure function
 erase :: Term -> TcMonad ETerm
-erase (Var x)               = return $ EVar x
-erase (Con c)               = return $ ECon c
+erase (Var x)               = return $ EVar (translate x)
+erase (Con c)               = return $ ECon (translate c)
 erase (Type l)              = return $ EType l
 erase (Arrow th ep tyA bnd) =
   do (x, tyB) <- unbind bnd
      tyA' <- erase tyA
      tyB' <- erase tyB
-     return $ EArrow th ep tyA' $ bind x tyB'
+     return $ EArrow th ep tyA' $ bind (translate x) tyB'
 erase (Lam ep bnd)   =
   do (x,body) <- unbind bnd
      body' <- erase body
      if ep == Runtime
-       then return $ ELam (bind x body')
+       then return $ ELam (bind (translate x) body')
        else return body'
 erase (App Runtime a b) = liftM2 EApp (erase a) (erase b)
 erase (App Erased  a _) = erase a
@@ -48,14 +48,14 @@ erase (NatRec ep bnd)   =
   do ((f,x),body) <- unbind bnd
      body' <- erase body
      if ep == Runtime
-       then return $ ERecPlus (bind (f,x) body')
-       else return $ ERecMinus (bind f body')
+       then return $ ERecPlus (bind (translate f, translate x) body')
+       else return $ ERecMinus (bind (translate f) body')
 erase (Rec ep bnd)      =
   do ((f,x),body) <- unbind bnd
      body' <- erase body
      if ep == Runtime
-       then return $ ERecPlus (bind (f,x) body')
-       else return $ ERecMinus (bind f body')
+       then return $ ERecPlus (bind (translate f, translate x) body')
+       else return $ ERecMinus (bind (translate f) body')
 erase (Case a bnd)      =
   do a' <- erase a
      (_,mtchs) <- unbind bnd
@@ -65,7 +65,7 @@ erase (Let _ ep a bnd)       =
      body' <- erase body
      case ep of
        Runtime -> do a' <- erase a
-                     return $ ELet a' (bind x body')
+                     return $ ELet a' (bind (translate x) body')
        Erased  -> return body'
 erase (Conv a _ _)      = erase a
 erase (Contra _)        = return EContra
@@ -76,9 +76,9 @@ erase (Pos _ a)         = erase a
 eraseMatch :: Match -> TcMonad EMatch
 eraseMatch (c,bnd) =
   do (xs,body) <- unbind bnd
-     let xs' = map fst $ filter (((==) Runtime) . snd) xs
+     let xs' = map (translate . fst) $ filter (((==) Runtime) . snd) xs
      body' <- erase body
-     return (c, bind xs' body')
+     return (translate c, bind xs' body')
 
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
@@ -252,26 +252,23 @@ isEValue EContra          = False
 
 -- | Evaluation environments - a mapping between named values and
 -- | their definitions.
-type EEnv = [(Name,Term)]
+type EEnv = [(TName,Term)]
 
 -- | Convert a module into an evaluation environment (list of top level declarations)
 --makeModuleEnv :: Module -> EEnv
 --makeModuleEnv md = [(n,tm) | Val n tm <- moduleEntries md]
 
 -- | A monad to implement evaluation.
-newtype EvalMonad a = EvalMonad (StateT  Integer (Reader EEnv) a)
-      deriving (Monad, MonadState Integer, MonadReader EEnv)
-instance HasNext EvalMonad where
-  nextInteger = modify (+1) >> get
-  resetNext x = modify (const x)
+newtype EvalMonad a = EvalMonad (ReaderT EEnv FreshM a)
+      deriving (Monad, Fresh, MonadReader EEnv )
 
 -- | Execute the EvalMonad
 runEvalMonad :: EEnv -> EvalMonad t -> t
-runEvalMonad env (EvalMonad m) = runReader (evalStateT m 0) env
+runEvalMonad env (EvalMonad m) = runFreshM (runReaderT m env)
 
 -- Evaluation, directly
 -- | Large-step evaluation semantics
-eval :: (MonadReader [(Name, Term)] m, HasNext m) => Term -> m Term
+eval :: (MonadReader [(TName, Term)] m, Fresh m) => Term -> m Term
 eval (Paren t) = eval t
 eval (Pos _ t) = eval t
 eval (App Runtime e1 e2) = do

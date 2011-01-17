@@ -2,11 +2,14 @@
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
     UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
+module Language.Trellys.GenericBind 
+  (Fresh(..),LFresh(..),Alpha(..)
+  ,FreshM, runFreshM, FreshMT(..), runFreshMT
   ,AlphaCtx
-  ,Name,rName,name1,name2,name3,name4,name5
+  ,Name,AnyName(..),rName,name1,name2,name3,name4,name5
+  ,translate
   ,name2Integer,name2String,integer2Name,string2Name,makeName
-  ,binders,patfv,fv,swaps
+  ,binders,patfv,fv,fvAny,swaps
   ,aeq
   ,Bind,rBind,bind,unbind,unbind2,unbind3
   ,Rebind,rRebind,rebind,reopen
@@ -14,8 +17,7 @@ module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
   ,Subst(..), matchR1
   ,unsafeUnBind
   ,lunbind, lfreshen
-  ,abs_swaps',abs_fv',abs_freshen',abs_match'
-  ,abs_nthpatrec,abs_findpatrec,abs_close,abs_open  -- only for LocallyNameless
+
 --  ,subst,substs -- only for Nominal
   ,rSourcePos
 )  where
@@ -25,43 +27,13 @@ module Language.Trellys.GenericBind (Fresh(..),Alpha(..),HasNext(..), LFresh(..)
 -- (2) adjust the exports above  
 -- (3) change the Alpha and Subst instances for SourcePos below
 
-import Data.RepLib.Bind.LocallyNameless
+import Generics.RepLib.Bind.LocallyNameless
+import Generics.RepLib.Bind.Fresh
 
-import Data.RepLib hiding (Arrow)
+import Generics.RepLib hiding (Arrow)
 import Text.ParserCombinators.Parsec.Pos
 
--- We define an rSourcePos, which then allows us to use derive for
--- expressions that include SourcePos's directly.
-rSourcePos :: R a
-rSourcePos = Data (DT "SourcePos" MNil) [error "rSourcePos: SourcePos is abstract"]
-
-instance Rep SourcePos where rep = rSourcePos
-instance (Sat (ctx SourcePos)) => Rep1 ctx SourcePos where
-   rep1 = Data1 (DT "SourcePos" MNil) [error "rep1: SourcePos is abstract"]
-
-
-
--- Alpha for source positions (cannot be derived b/c type is abstract)
-instance Alpha SourcePos where
-  swaps'      = abs_swaps'
-  fv'         = abs_fv'
-  freshen'    = abs_freshen'
-  match'      = abs_match'
--- only for locally nameless
-  nthpatrec  = abs_nthpatrec
-  findpatrec = abs_findpatrec
-  close      = abs_close
-  open       = abs_open
-
-instance Subst b SourcePos where
-  isvar _ = Nothing
-{- --nominal version
-  lsubst _ _ s = return s
-  lsubsts _ _ s = return s
--}
-  -- locally nameless version 
-  subst _ _ s = s
-  substs _ _ s = s
-
-
-     
+-- Defining SourcePos abstractly means that they get ignored when comparing terms.
+$(derive_abstract [''SourcePos])
+instance Alpha SourcePos
+instance Subst b SourcePos

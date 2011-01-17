@@ -8,12 +8,18 @@
 -- LangLib package.
 module Language.Trellys.Syntax where
 
-import Data.RepLib hiding (Arrow,Con)
-import qualified Data.RepLib as RL
+import Generics.RepLib hiding (Arrow,Con)
+import qualified Generics.RepLib as RL
 
 import Language.Trellys.GenericBind
 
 import Text.ParserCombinators.Parsec.Pos
+
+type TName = Name Term
+type EName = Name ETerm
+-- really "Name Module", but since we never substitute for these, 
+-- this definition saves defining some typeclass instances:
+type MName = Name ()
 
 -- | Epsilon annotates whether an abstraction (resp. application) is implicit or
 -- explicit.
@@ -37,7 +43,7 @@ instance Ord Theta where
   _ <= Program = True
   _ <= _ = False
 
-(<:>) :: Name -> a -> (Name, Annot a)
+(<:>) :: TName -> a -> (TName, Annot a)
 x <:> t = (x, Annot t)
 
 
@@ -47,17 +53,7 @@ x <:> t = (x, Annot t)
 ------------------------------
 ------------------------------
 
-
--- The `Eq` instance for a `Bind`, found within Term, requires `Term`
--- be an instance of `Alpha`. This is the case, but it involves LangLib deriving
--- of a number of classes, which uses Template Haskell. If the deriving instance
--- (below) are declared in the `Term` definition, then we get a type error (No
--- instance for Alpha Term). The standalone deriving found below avoids the
--- problem.
-
 deriving instance Show Term
-deriving instance Eq Term
-
 
 -- | The 'Term' representation is derived from the Ott language definition. In
 -- the Trellys core, there is no distinction between types and terms. Moreover,
@@ -65,35 +61,35 @@ deriving instance Eq Term
 -- names of datatypes and constructors introduced via datatype definitions (and
 -- eliminated by case expressions) and variables introduced by lambda
 -- abstractions and dependent products).
-data Term = Var Name    -- | variables
-          | Con Name   -- | term and type constructors
+data Term = Var TName    -- | variables
+          | Con TName   -- | term and type constructors
           | Type Int   -- | The 'Type' terminal
           -- | Functions: @\x.e@ and @\[x].e@
           -- No type annotations since we are bidirectional
-          | Lam Epsilon (Bind Name Term)
+          | Lam Epsilon (Bind TName Term)
           -- | Applications, tagged with stage
           | App Epsilon Term Term
           -- | A let expressoin
-          | Let Theta Epsilon Term (Bind (Name, Name) Term)
+          | Let Theta Epsilon Term (Bind (TName, TName) Term)
           -- | Dependent functions: (x :^{th} A )_{ep} -> B
-          | Arrow Theta Epsilon Term (Bind Name Term)
+          | Arrow Theta Epsilon Term (Bind TName Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
-          | Case Term (Bind Name [Match])
+          | Case Term (Bind TName [Match])
           -- | The type of a proof that the two terms join, @a = b@
           | TyEq Term Term
           -- | The 'join' expression, written @join k1 k2@.  We 
           -- bidirectionally infer the terms
           | Join Int Int
           -- | @conv a by b at C@
-          | Conv Term [Term] (Bind [Name] Term)
+          | Conv Term [Term] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- | The @abort@ expression.
           | Abort
           -- | Recursive Definitions
           --  @recnat f x = body@ is represented as @(Bind (f,x) body)@
-          | Rec Epsilon (Bind (Name, Name) Term)
-          | NatRec Epsilon (Bind (Name, Name) Term)
+          | Rec Epsilon (Bind (TName, TName) Term)
+          | NatRec Epsilon (Bind (TName, TName) Term)
           -- | Annotated terms
           | Ann Term Term
           -- | 'Paren' is for a parenthesized term, useful for pretty printing.
@@ -101,9 +97,9 @@ data Term = Var Name    -- | variables
           -- | 'Pos' wraps a term with its source position.
           | Pos SourcePos Term
 
--- | A 'Match' is represents a case alternative. The first 'Name' is the
--- constructor name, the rest of the 'Name's are pattern variables
-type Match = (Name, Bind [(Name, Epsilon)] Term)
+-- | A 'Match' represents a case alternative. The first 'TName' is the
+-- constructor name, the rest of the 'TName's are pattern variables
+type Match = (TName, Bind [(TName, Epsilon)] Term)
 
 
 -- | This just deletes any top level Pos or Paren constructors from a term
@@ -115,32 +111,32 @@ delPosParen tm         = tm
 
 
 -- | A Module has a name, a list of imports, and a list of declarations
-data Module = Module { moduleName :: Name,
+data Module = Module { moduleName :: MName,
                        moduleImports :: [ModuleImport],
                        moduleEntries :: [Decl]
                      }
-            deriving (Show,Eq)
+            deriving (Show)
 
 -- | A ModuleImport is just a name (for now).
-newtype ModuleImport = ModuleImport Name
+newtype ModuleImport = ModuleImport MName
             deriving (Show,Eq)
 
 data Decl = Axiom Decl -- ^ Only Sigs expected as Axioms ...
-          | Sig Name Theta Term
-          | Def Name Term
-          | Data Name Telescope Theta Int [Constructor]
-          | AbsData Name Telescope Theta Int
-  deriving (Show,Eq)
+          | Sig TName Theta Term
+          | Def TName Term
+          | Data TName Telescope Theta Int [Constructor]
+          | AbsData TName Telescope Theta Int
+  deriving (Show)
 
 
 -- | A Constructor has a name and a type
-type Constructor = (Name,Term)
+type Constructor = (TName,Term)
 
 -------------
 -- Telescopes
 -------------
 -- | This definition of 'Telescope' should be replaced by the one from LangLib.
-type Telescope = [(Name,Term,Theta,Epsilon)]
+type Telescope = [(TName,Term,Theta,Epsilon)]
 
 -- | teleApp applies some term to all the variables in a telescope
 teleApp :: Term -> Telescope -> Term
@@ -152,15 +148,15 @@ telePi tele tyB =
   foldr (\(n,tm,th,ep) ret -> Arrow th ep tm (bind n ret))
         tyB tele
 
-domTeleMinus :: Telescope -> [Name]
+domTeleMinus :: Telescope -> [TName]
 domTeleMinus tele =
   map (\(n,_,_,_) -> n) $ filter (\(_,_,_,ep) -> ep == Erased) tele
 
-teleVars :: Telescope -> [Name]
+teleVars :: Telescope -> [TName]
 teleVars = map (\(v,_,_,_) -> v)
 
 -- FIXME horribly inefficient.
-swapTeleVars :: Telescope -> [Name] -> Telescope
+swapTeleVars :: Telescope -> [TName] -> Telescope
 swapTeleVars [] [] = []
 swapTeleVars ((v,a,th,ep):tele) (v':vs) =
   (v',a,th,ep):(subst v (Var v') $ swapTeleVars tele vs)
@@ -179,13 +175,13 @@ changeStage _ _ =
 --------------
 -- Basic query and manipulation functions on annotated terms
 --------------
-isVar :: Term -> Maybe Name
+isVar :: Term -> Maybe TName
 isVar (Pos _ t) = isVar t
 isVar (Paren t) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
-isCon :: Term -> Maybe Name
+isCon :: Term -> Maybe TName
 isCon (Pos _ t) = isCon t
 isCon (Paren t) = isCon t
 isCon (Con n)   = Just n
@@ -204,7 +200,7 @@ isTyEq (Paren t) = isTyEq  t
 isTyEq (TyEq ty0 ty1) = Just (ty0,ty1)
 isTyEq _ = Nothing
 
-isArrow :: Term -> Maybe (Theta, Epsilon, Term, Bind Name Term)
+isArrow :: Term -> Maybe (Theta, Epsilon, Term, Bind TName Term)
 isArrow (Pos _ t)            = isArrow t
 isArrow (Paren t)            = isArrow t
 isArrow (Arrow th ep tm bnd) = Just (th,ep,tm,bnd)
@@ -225,7 +221,7 @@ multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 
 -- splitPi pulls apart a dependent product returning all the arguments and
 -- the final return type
-splitPi :: (HasNext m, Fresh m) => Term -> m (Telescope,Term)
+splitPi :: (Fresh m) => Term -> m (Telescope,Term)
 splitPi tm = splitPi' tm []
   where
     splitPi' (Pos _ tm')          acc = splitPi' tm' acc
@@ -245,32 +241,30 @@ splitPi tm = splitPi' tm []
 ------------------------
 
 deriving instance Show ETerm
-deriving instance Eq ETerm
-
 
 -- ETerm for "erased" term
-data ETerm = EVar Name
-           | ECon Name
+data ETerm = EVar EName
+           | ECon EName
            | EType Int
-           | EArrow Theta Epsilon ETerm (Bind Name ETerm)
-           | ELam (Bind Name ETerm)
+           | EArrow Theta Epsilon ETerm (Bind EName ETerm)
+           | ELam (Bind EName ETerm)
            | EApp ETerm ETerm
            | ETyEq ETerm ETerm
            | EJoin
            | EAbort
-           | ERecPlus (Bind (Name, Name) ETerm)
-           | ERecMinus (Bind Name ETerm)
+           | ERecPlus (Bind (EName, EName) ETerm)
+           | ERecMinus (Bind EName ETerm)
            | ECase ETerm [EMatch]
-           | ELet ETerm (Bind Name ETerm)
+           | ELet ETerm (Bind EName ETerm)
            | EContra
 
-type EMatch = (Name, Bind [Name] ETerm)
+type EMatch = (EName, Bind [EName] ETerm)
 
-isEVar :: ETerm -> Maybe Name
+isEVar :: ETerm -> Maybe EName
 isEVar (EVar n)   = Just n
 isEVar _          = Nothing
 
-isECon :: ETerm -> Maybe Name
+isECon :: ETerm -> Maybe EName
 isECon (ECon n)   = Just n
 isECon _          = Nothing
 
@@ -312,23 +306,3 @@ instance Subst ETerm ETerm where
   isvar _ = Nothing
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta
-
--- -- Why do you need these instances?
-instance Subst Name Theta
-instance Subst Name Epsilon
-instance Subst Name Term where
-  isvar (Var m) = Just (m, Var)
-  isvar _ = Nothing
-instance Subst Name ETerm
-
-{-
-instance Pattern Telescope
-instance Pattern Term
-instance Pattern Theta
-instance Pattern Position
-instance Pattern Epsilon
-instance Pattern (Maybe Name)
-
--}
-
-

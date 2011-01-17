@@ -114,9 +114,7 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
   kc th a
 
   -- pull apart the bindings and make sure the epsilons agree
-  (x,body) <- unbind lbody
-  (y,tyB') <- unbind abody
-  let tyB = subst y x tyB'
+  Just (x,body,_,tyB) <- unbind2 lbody abody
 
   when (lep /= aep) $
        err ([DS "Lambda annotation", DD lep,
@@ -152,7 +150,7 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
   ((f,dumbvar),dumbbody) <- unbind binding
   -- to get the body "a" as it appears on paper, we must replace the
   -- extra variable we got from opening the binding
-  let a = subst dumbvar y dumbbody
+  let a = subst dumbvar (Var y) dumbbody
 
   -- next we must construct the type A.  we need new variables for x and z
   x <- fresh (string2Name "x")
@@ -189,7 +187,7 @@ ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
   (y, tyB) <- unbind abnd
   ((f,dumby),dumbbody) <- unbind binding
 
-  let a = subst dumby y dumbbody
+  let a = subst dumby (Var y) dumbbody
 
   extendCtx (Sig f Program fty) $
     extendCtx (Sig y ath tyA) $
@@ -488,7 +486,7 @@ ts tsTh tsTm =
 
 -- | Typecheck a collection of modules. Assumes that each modules appears after
 -- its dependencies.
-tcModules :: [Module] -> TcMonad [(Name,[Decl])]
+tcModules :: [Module] -> TcMonad [(Name (),[Decl])]
 tcModules mods = foldM tcM [] mods
   -- Check module m against modules in defs; add m's decls to assocs.
   where defs `tcM` m = do -- "M" is for "Module" not "monad"
@@ -499,7 +497,7 @@ tcModules mods = foldM tcM [] mods
 
 
 -- | Typecheck an entire module.
-tcModule :: [(Name, [Decl])] -- ^ Assoc list mapping Module names to their (checked) Decls.
+tcModule :: [(Name (), [Decl])] -- ^ Assoc list mapping Module names to their (checked) Decls.
          -> Module           -- ^ Module to check.
          -> TcMonad [Decl]   -- ^ Decls of the Module being checked.
 tcModule defs m' = env $ foldr tcE (return []) (moduleEntries m')
@@ -583,13 +581,13 @@ tcEntry dt@(Data t delta th lev cs) =
      ---- Premise 2 in two parts.
      ---- Part 1: make sure the return type of each constructor is right
      let
-       checkConRet :: Name -> Term -> TcMonad ()
+       checkConRet :: TName -> Term -> TcMonad ()
        checkConRet c tm =
          do (_,ret) <- splitPi tm
             let (t',tms) = splitApp ret
                 correctApps = map (\(v,_,_,_) -> (Var v,Runtime)) delta
-            unless (    (Con t == t')
-                     && (tms == correctApps)) $
+            unless (    (Con t `aeq` t')
+                     && (tms `aeq` correctApps)) $
               err [DS "Constructor", DD c,
                    DS "must have return type",
                    DD (multiApp (Con t) correctApps)]
@@ -624,7 +622,7 @@ isFirstOrder :: Term -> Bool
 isFirstOrder (TyEq _ _) = True
 isFirstOrder (Pos _ ty) = isFirstOrder ty
 isFirstOrder (Paren ty) = isFirstOrder ty
-isFirstOrder ty = ty == natType
+isFirstOrder ty = ty `aeq` natType
 
 --debug n v = when False (liftIO (putStr n) >> liftIO (print v))
 --debugNoReally n v = when True (liftIO (putStr n) >> liftIO (print v))

@@ -19,8 +19,9 @@ executable trellys
   Build-depends: base >=4,
                  parsec >= 3.1 && < 3.2,
                  pretty >= 1.0.1.0,
-                 RepLib >= 0.3,
-                 mtl, containers,
+                 RepLib >= 0.3.1,
+                 mtl, 
+                 containers,
                  directory, filepath
   Ghc-Options:     -main-is Trellys -Wall
 
