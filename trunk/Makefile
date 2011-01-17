@@ -43,6 +43,7 @@ sandbox-trellys:
 	cabal install capri
 	capri bootstrap
     # some trellys depend needs base < 4, and base < 4 needs syb
+	cabal install syb #so that we have something to clone.
 	capri clone syb 'base-3*'
 
 install: 
