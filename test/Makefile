@@ -16,13 +16,13 @@ SHELL=/bin/bash
 PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 typetest NatElimination Ott \
      OttAppend CastShiftTrick
 # FAIL are tests that *should* always fail.
-FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug
+FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug bad_datatype
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL= 
 # TODO_PASS are tests that *should* pass but currently fail.
 TODO_PASS=
 # stale?
-UNKNOWN=bad_datatype case_bug divtest jointest langlibbug recursion-examples
+UNKNOWN= case_bug divtest jointest langlibbug recursion-examples
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys
 # typecheck *quietly*
