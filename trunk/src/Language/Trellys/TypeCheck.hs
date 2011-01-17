@@ -16,7 +16,8 @@ import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 
 import Language.Trellys.GenericBind
-
+import Generics.RepLib.Lib(subtrees)
+import Generics.RepLib.R(Rep)
 import Text.PrettyPrint.HughesPJ
 
 import Control.Monad.Reader hiding (join)
@@ -67,7 +68,7 @@ ta th tm (Paren ty) = ta th tm ty
 -- rule T_join
 ta th (Join s1 s2) (TyEq a b) =
   do kc th (TyEq a b)
-     k1 <- ts Program a 
+     k1 <- ts Program a
      k2 <- ts Program b
      picky <- getFlag PickyEq
      when (picky && not (k1 `aeq` k2)) $
@@ -416,26 +417,26 @@ ts tsTh tsTm =
 --         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
 --         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
          (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\aty -> do
-              case isTyEq aty of 
+              case isTyEq aty of
                 Just (tyA1, tyA2) -> do
                  k1 <- ts Program tyA1
                  k2 <- ts Program tyA2
                  when (picky && (not (k1 `aeq` k2))) $ err
-                   [DS "Terms ", DD tyA1, DS "and", DD tyA2, 
-                    DS " must have the same type when used in conversion.",       
-                    DS "Here they have types: ", DD k1, DS "and", DD k2, 
+                   [DS "Terms ", DD tyA1, DS "and", DD tyA2,
+                    DS " must have the same type when used in conversion.",
+                    DS "Here they have types: ", DD k1, DS "and", DD k2,
                     DS "respectively."]
                  return (tyA1, tyA2, k1)
                 _ -> errMsg aty) atys
          let cA1 = substs xs tyA1s c
          let cA2 = substs xs tyA2s c
-         ta th b cA1  
-         if picky then         
+         ta th b cA1
+         if picky then
             -- check c with extended environment
             -- Don't know whether these should be logical or programmatic
             let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
               extendCtxs decls $ kc th c
-           else 
+           else
             -- check c after substitution
             kc th cA2
          return cA2
@@ -598,6 +599,9 @@ tcEntry dt@(Data t delta th lev cs) =
      extendCtx (AbsData t delta th lev) $
        mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
 
+     -- Premise 3: check that types are strictly positive.
+     mapM_ (positivityCheck t) cs
+
      ---- finally, add the datatype to the env and perform action m
      return $ Ctx [dt]
 
@@ -626,3 +630,53 @@ isFirstOrder ty = ty `aeq` natType
 
 --debug n v = when False (liftIO (putStr n) >> liftIO (print v))
 --debugNoReally n v = when True (liftIO (putStr n) >> liftIO (print v))
+
+
+-- Positivity Check
+
+-- | Determine if a data type only occurs in strictly positive positions in a
+-- constructor's arguments.
+
+positivityCheck
+  :: (Rep b, Fresh m, Disp d, MonadError Err m) =>
+     Name b -> (d, Term) -> m ()
+positivityCheck tName (cName,ty)  = do
+  (tele,_) <- splitPi ty
+  _ <- mapM checkBinding tele
+  return ()
+ `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
+  where checkBinding (_,teleTy,Logic,_) = occursPositive tName teleTy
+        checkBinding _ = return True
+        msg' = text "when checking the constructor" <+> disp cName
+
+occursPositive
+  :: (Rep b, Fresh m, MonadError Err m) => Name b -> Term -> m Bool
+occursPositive tName (Pos p ty) = do
+  occursPositive tName ty `catchError`
+         \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
+
+occursPositive tName (Paren ty) = occursPositive tName ty
+occursPositive tName aty@(Arrow _ _ _ _) = do
+  (tele,_) <- splitPi aty
+  let tys = [ty | (_,ty,_,_) <- tele]
+      vars = S.unions $ map fv tys
+      ok = not $ tName `S.member` vars
+  unless ok $ err [DD tName, DS "occurs in non-positive position"]
+  return True
+
+occursPositive tName ty = do
+  let children = subtrees ty
+  res <- mapM (occursPositive tName) children
+  return $ and res
+
+
+
+
+
+
+
+
+
+
+
+
