@@ -9,6 +9,11 @@
 #             to test/trellys (the only place you're expected to run
 #             `trellys`).
 #
+#             NB: if you have problems with capri, but it used to work, 
+#             you may need to `rm -rf ./.capri` before doing `make`.
+#             Upgrading ./.capri is time consuming (minutes) and rarely 
+#             necessary so it is not upgraded by default.
+#
 # make test:  runs all tests in ./test.
 #
 # make sandbox-trellys: 
