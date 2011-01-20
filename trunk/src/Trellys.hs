@@ -14,6 +14,8 @@ import System.Environment(getArgs)
 import System.Console.GetOpt
 import System.Exit
 
+import Data.List (delete)
+
 main :: IO ()
 main = do
   -- FIXME: This currently requires exactly one module. This should be fixed to
@@ -36,8 +38,22 @@ main = do
                           putStrLn "Type Error:"
                           putStrLn $ render $ disp typeError
                           exitFailure
-                 Right _ -> do
-                          putStrLn "Type check successful" -- putStrLn $ render $ disp defs
+                 Right defs ->
+                   if (Elaborate `elem` flags)
+                     then do
+                          putStrLn "Elaboration pass successful. Typechecking the core terms."
+                          --writeModules defs --can uncomment this line for debugging.
+                          contents' <- runTcMonad (emptyEnv (delete Elaborate flags)) (tcModules defs)
+                          case contents' of
+                            Left typeError -> do
+                                    putStrLn "Internal error, elaborated term fails type check:"
+                                    putStrLn $ render $ disp typeError
+                                    exitFailure
+                            Right _ -> do
+                              putStrLn "Type check successful. Writing elaborated terms."
+                              writeModules defs
+                     else do
+                          putStrLn "Type check successful"
 
 
 getOptions :: [String] -> IO ([Flag], [String])

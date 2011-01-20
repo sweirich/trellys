@@ -184,21 +184,30 @@ bindParens :: Epsilon -> Doc -> Doc
 bindParens Runtime d = d
 bindParens Erased  d = brackets d
 
+mandatoryBindParens :: Epsilon -> Doc -> Doc
+mandatoryBindParens Runtime d = parens d
+mandatoryBindParens Erased  d = brackets d
+
 instance Disp Module where
   disp m = text "module" <+> disp (moduleName m) <+> text "where" $$
            vcat (map disp (moduleImports m)) $$
            vcat (map disp (moduleEntries m))
 
 instance Disp Decl where
-  disp (Def _ r@(NatRec _ _)) = disp r
-  disp (Def _ r@(Rec _ _)) = disp r
+  disp (Def n r@(NatRec _ bnd)) | name2String(fst(fst(unsafeUnBind bnd)))==name2String n = disp r
+  disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnBind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
-  disp (Axiom s) = text "axiom" <+> disp s
   disp (Sig n ep ty) =
         disp n
     <+> (case ep of {Logic -> text ":"; Program -> text ":c"})
     <+> disp ty
+  disp (Axiom n ep ty) =
+        text "axiom"
+    <+> disp n
+    <+> (case ep of {Logic -> text ":"; Program -> text ":c"})
+    <+> disp ty
+
   disp (Data n params th lev constructors) =
     hang (text "data" <+> disp n <+> disp params
            <+> thetaArrow th <+> text "Type" <+> text (show lev)
@@ -222,7 +231,7 @@ instance Display Term where
      lunbind bnd $ \(n, b) -> do
         dn <- display n
         db <- display b
-        return $ (bindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
+        return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
 
   display (Lam ep b) =
     lunbind b $ \(n, body) -> do
@@ -332,8 +341,8 @@ instance Display ETerm where
      lunbind bnd $ \ (n,b) -> do
         dn <- display n
         db <- display b
-        return $ (bindParens ep (dn <+> text ":" <+> da) <+>
-                                (thetaArrow th) <+> db)
+        return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da) <+>
+                    (thetaArrow th) <+> db
   display (ELam  b) =
      lunbind b $ \ (n, body) -> do
        dn <- display n

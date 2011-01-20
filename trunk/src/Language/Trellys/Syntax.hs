@@ -121,8 +121,8 @@ data Module = Module { moduleName :: MName,
 newtype ModuleImport = ModuleImport MName
             deriving (Show,Eq)
 
-data Decl = Axiom Decl -- ^ Only Sigs expected as Axioms ...
-          | Sig TName Theta Term
+data Decl = Sig  TName Theta Term
+          | Axiom TName Theta Term
           | Def TName Term
           | Data TName Telescope Theta Int [Constructor]
           | AbsData TName Telescope Theta Int
