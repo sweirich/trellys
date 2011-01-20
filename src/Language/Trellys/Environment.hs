@@ -64,7 +64,8 @@ lookupTy :: (MonadReader Env m, MonadError Err m, MonadIO m)
          => TName -> m (Maybe (Theta,Term))
 lookupTy v = do
   ctx <- asks ctx
-  return $ listToMaybe [(th,ty) | Sig v' th ty <- ctx, v == v']  
+  return $ listToMaybe (   [(th,ty) | Sig   v' th ty <- ctx, v == v'] 
+                        ++ [(th,ty) | Axiom v' th ty <- ctx, v == v'])
 
 -- | Find a name's def in the context.
 lookupDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 
@@ -124,7 +125,7 @@ substDefs tm =
     substDef :: Term -> Decl -> Term
     substDef m (Def nm df)         = subst nm df m
     substDef m (Sig _ _ _)         = m
-    substDef m (Axiom (Sig _ _ _)) = m
+    substDef m (Axiom _ _ _)         = m
     substDef m (Data _ _ _ _ _)    = m
     substDef m (AbsData _ _ _ _)   = m
   in

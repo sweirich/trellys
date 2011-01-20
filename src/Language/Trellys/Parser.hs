@@ -1,3 +1,4 @@
+
 {-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts #-}
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
@@ -311,8 +312,8 @@ eitherArrow =     (reservedOp "->" >> return Logic)
 --- Top level declarations
 ---
 
-decl,dataDef,axiomDef,sigDef,valDef,recNatDef,recDef :: LParser Decl
-decl = dataDef <|> axiomDef <|> sigDef <|> valDef <|> recNatDef <|> recDef
+decl,dataDef,sigDef,valDef,recNatDef,recDef :: LParser Decl
+decl = dataDef <|> sigDef <|> valDef <|> recNatDef <|> recDef
 
 -- datatype declarations.
 dataDef = do
@@ -332,17 +333,16 @@ dataDef = do
             return $ (cname,ty)
           <?> "Constructor"
 
-axiomDef = do
-  Axiom <$> (reserved "axiom" >> sigDef)
-
 sigDef = do
+  axOrSig <- option Sig $ (reserved "axiom" >> return Axiom)
+
   theta <- option Logic $
              (reserved "prog" >> return Program) <|>
              (reserved "log" >> return Logic)
 
   n <- try (variable >>= \v -> colon >> return v)
   ty <- expr
-  return $ Sig n theta ty
+  return $ axOrSig n theta ty
 
 valDef = do
   n <- try (do {n <- variable; reservedOp "="; return n})
@@ -360,8 +360,6 @@ recDef = do
  r@(Rec _ b) <- rec
  let ((n,_),_) = unsafeUnBind b
  return $ Def n r
-
-
 
 ------------------------
 ------------------------

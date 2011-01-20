@@ -26,11 +26,14 @@ UNKNOWN= case_bug divtest jointest langlibbug recursion-examples
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys
 # typecheck *quietly*
-TYPECHECK=$(TRELLYS) -t 1>/dev/null 2>&1
+TYPECHECK=$(TRELLYS) -te 1>/dev/null 2>&1
 
 .PHONY: pass fail todo_pass todo_fail todo
 
 all: pass fail
+
+clean:
+	rm *.trellys-elaborated
 
 pass: $(foreach p,$(PASS),$(p).pass)
 fail: $(foreach f,$(FAIL),$(f).fail)

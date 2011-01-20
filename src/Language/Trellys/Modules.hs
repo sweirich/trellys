@@ -1,9 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Language.Trellys.Modules(getModules) where
+module Language.Trellys.Modules(getModules, writeModules) where
 
 import Language.Trellys.Syntax
 import Language.Trellys.Parser(parseModuleFile)
 
+import Language.Trellys.PrettyPrint
+import Text.PrettyPrint.HughesPJ (render)
 
 import Language.Trellys.GenericBind
 
@@ -45,8 +47,6 @@ topSort ms = reverse sorted -- gr -- reverse $ topSort' ms []
         lu' v = let (m,_,_) = lu v in m
         sorted = [lu' v | v <- Gr.topSort gr]
 
-
-
 instance Error ParseError
 
 -- | Find the file associated with a module. Currently very simple.
@@ -67,4 +67,10 @@ parseModule fname = do
     Left err -> throwError err
     Right v -> return v
 
+writeModules :: MonadIO m => [Module] -> m ()
+writeModules mods = mapM_ writeModule mods
 
+writeModule :: MonadIO m => Module -> m ()
+writeModule mod = do
+  basename <- getModuleFileName (moduleName mod)
+  liftIO $ writeFile (basename ++ "-elaborated") (render $ disp mod)  
