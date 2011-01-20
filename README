@@ -13,6 +13,17 @@ Do `make` to install trellys locally.  A trellys binary is linked to
 does *not* put a trellys binary on your $PATH, so if you have one,
 then it's probably out of date.
 
+Do `make install` to install trellys globally.  Plain `make` is 
+preferred, but `make install` should work on broken Cygwin setups where
+plain `make` fails.
+
+Install Trouble?
+================
+
+After major changes, e.g. a GHC version upgrade, you may have to delete 
+the ./.capri directory from your working copy before doing a fresh 
+`make install`.
+
 Dir Summary
 ===========
 
