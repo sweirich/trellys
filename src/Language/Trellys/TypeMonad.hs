@@ -21,9 +21,6 @@ runTcMonad env m = runErrorT $
              flip runReaderT env $
              runFreshMT m
 
-instance MonadIO m => MonadIO (FreshMT m) where
-  liftIO a =  FreshMT (liftIO a)
-
 instance MonadReader Env TcMonad where
   ask = FreshMT ask
   local f (FreshMT a) = FreshMT (local f a)
