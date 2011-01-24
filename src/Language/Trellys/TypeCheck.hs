@@ -135,10 +135,16 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
   when (lep == Erased && x `S.member` fv bodyE) $
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
-  when (th == Program && lep == Erased && (not $ isValue body)) $
-       err [DS "ta : The body of an implicit lambda must be a value",
-            DS "but here is:", DD body]
+
+  when (th == Program && lep == Erased) $ do
+    gen <- checkQ body
+    unless gen $
+        err [DS "ta : The body of an implicit lambda must be a quantifiable term",
+             DS "but here is:", DD body]
+
   return (Lam lep (bind x ebody))
+
+
 
 -- rules T_rnexp and T_rnimp
 ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
@@ -178,10 +184,14 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
   when (ep == Erased && y `S.member` fv aE) $
        err [DS "ta: In implicit recnat, variable", DD y,
             DS "appears free in body", DD a]
-  when (ep == Erased && (not $ isValue a)) $
-       err [DS "ta : The body of an implicit natrec must be a value",
-            DS "but here is:", DD a]
+
+  when (ep == Erased) $ do
+       chk <- checkQ a
+       unless chk $
+              err [DS "ta : The body of an implicit natrec must be quantifiable",
+                   DS "but here is:", DD a]
   return (NatRec ep (bind (f,y) ea))
+
 
 -- rules T_rexp and T_rimp
 ta Logic (Rec _ _) _ =
@@ -206,8 +216,10 @@ ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
   when (ep == Erased && y `S.member` fv aE) $
        err [DS "ta: In implicit rec, variable", DD y,
             DS "appears free in body", DD a]
-  when (ep == Erased && (not $ isValue a)) $
-       err [DS "ta : The body of an implicit rec must be a value",
+  when (ep == Erased) $ do
+    chk <- checkQ a
+    unless chk $
+       err [DS "ta : The body of an implicit rec must be quantifiable",
             DS "but here is:", DD a]
   return (Rec ep (bind (f,y) ea))
 
@@ -408,12 +420,15 @@ ts tsTh tsTm =
                     `catchError`
                       \e ->
                         if th' == Logic then throwError e else
-                          do unless (isValue b) $
-                                err [DS "When applying to a term with classifier",
-                                     DS "P, it must be a value, but",
-                                     DD b, DS "is not."]
+                          do tot <- isTotal Program b
+                             unless tot $
+                                    err [DS "When applying to a term with classifier",
+                                         DS "P, it must be classified Total, but",
+                                         DD b, DS "is not."]
+
                              ta Program b tyA)
              return (App ep ea eb, b_for_x_in_B)
+
 
     -- rule T_eq
     ts' _ (TyEq a b) = do
@@ -695,12 +710,72 @@ occursPositive tName ty = do
 
 
 
+-- Value restriction relaxation -- 'Q' and 'Total' Judgements
+
+-- 'Q m' Judgement
+-- Q_LAM
+
+
+checkQ :: (MonadError Err m, Fresh m) => Term -> m Bool
+checkQ (Pos p t) =
+  checkQ t `catchError`
+         \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
+checkQ (Paren t) = checkQ t
+
+checkQ (Lam _ _) = return True
+-- Q_REC
+checkQ (Rec Runtime _) = return True
+
+-- Q_RECM
+checkQ (Rec Erased binding) = do
+  ((_,_),body) <- unbind binding
+  checkQ body
+
+-- Q_CONS
+checkQ t@(App _ _ _) = do
+  case f of
+    Con _ -> do
+           qs <- mapM (\(arg,_) -> checkQ arg) args
+           return $ and qs
+    _ -> return False
+  where (f,args) = splitApp t
+
+
+checkQ _ = return False
 
 
 
+-- The 'TOTAL' judgement. In the draft core design, the 'total' does a check
+-- that the term that is to be check is well typed. It turns out that this has
+-- already been checked in those positions above where isTotal is called, so
+-- that check has been commented out for efficency. This is not a particularly
+-- safe decision.
 
+isTotal
+  :: Theta
+     -> Term -- Term to check
+     -> FreshMT (ReaderT Env (ErrorT Err IO)) Bool
+isTotal Logic _ = return True
+isTotal Program tm
+  | isValue tm = return True -- TOT_VAL
+  | otherwise =
+    case tm of
+      (Arrow _ _ tyA binding) -> do
+              (_, tyB) <- unbind binding
+              kc Program tm
+              kc Program tyA
+              kc Program tyB
+              totA <- isTotal Program tyA
+              totB <- isTotal Program tyB
+              return (totA && totB)
+      t@(App _ _ _) ->
+        let (f,args) = splitApp t
+        in case f of
+             Con _ -> do
+                    atots <- mapM (isTotal Program . fst) args
+                    return $ and atots
+             _ -> return False
 
-
-
+      _ -> return False
 
 
