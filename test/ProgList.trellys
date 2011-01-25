@@ -49,5 +49,12 @@ l1 = nil [Nat]
 l2 : Fix (L Nat)
 l2 = cons [Nat] 0 l1
 
--- TODO mcata 
+prog mcata : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
+             (phi : [a:Type 0] -> (x:a => c) => (y:f a) -> c) ->
+             Fix f => c
+mcata = \ [f] . \ [c] .
+  rec mcata' phi = \ t . case t [t_eq] of
+                           In x -> let prog mcata_phi [mm] = mcata' phi in
+                                     phi [Fix f] mcata_phi x
+
 
