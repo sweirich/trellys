@@ -50,11 +50,19 @@ l2 : Fix (L Nat)
 l2 = cons [Nat] 0 l1
 
 prog mcata : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
-             (phi : [a:Type 0] -> (x:a => c) => (y:f a) -> c) ->
+             (phi : [a:Type 0] -> (x:a => c) => (y:f a) => c) =>
              Fix f => c
 mcata = \ [f] . \ [c] .
   rec mcata' phi = \ t . case t [t_eq] of
                            In x -> let prog mcata_phi [mm] = mcata' phi in
                                      phi [Fix f] mcata_phi x
 
+prog phi_len : [l:Type 0] -> ((x:l) => Nat) => (t:L Nat l) => Nat
+phi_len = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> 0
+    C x xs -> let prog len_xs [n] = len' xs in Succ len_xs
+
+prog len : (t : Fix (L Nat)) => Nat
+len = mcata [L Nat] [Nat] phi_len
 
