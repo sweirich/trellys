@@ -299,12 +299,14 @@ instance Display Term where
   display (Conv a bs bnd) =
     lunbind bnd $ \(xs,c) -> do
       da <- display a
-      dbs <- mapM display bs
+      dbs <- mapM displayErased bs
       dxs <- mapM display xs
       dc <- display c
       return $ text "conv" <+> da <+> text "by" <+>
                sep (punctuate comma dbs) <+>
                text "at" <+> sep dxs  <+> text "." <+> dc
+      where displayErased (True,pf) = liftM brackets $ display pf
+            displayErased (False, pf) = display pf
 
 
   display (TyEq a b)   = do

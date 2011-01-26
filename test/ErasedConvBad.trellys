@@ -1,0 +1,39 @@
+module ErasedConv where
+
+import Prelude
+import Arithmetic
+
+
+prog zero : Nat
+zero = 0
+
+axiom atype : Type 0
+axiom a : atype
+
+axiom btype : Type 0
+axiom b : btype
+
+axiom f : Nat -> [t:Type 0] -> t -> Nat
+
+
+axiom p : a = b
+
+
+axiom x : Nat
+
+q : f x [atype] = f x [btype]
+q = join
+
+
+easy_goal : (f x [atype] a) = (f x [btype] b)
+easy_goal = conv (join : f x [atype] a = f x [atype] a)
+					      by q, p at g v . f x [atype] a = g v
+
+
+-- goal : ((\x . f x [atype] a) : Nat -> Nat) = ((\x . f x [btype] b) : Nat -> Nat)
+-- goal = join
+goal =  conv (join : ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] a) : Nat -> Nat))
+		    by [atype = btype], [p]
+        at t1 t2  . ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [t1] t2) : Nat -> Nat)
+
+

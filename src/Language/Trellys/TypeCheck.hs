@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, ExistentialQuantification, NamedFieldPuns, ParallelListComp, FlexibleContexts #-}
+{-# LANGUAGE TypeSynonymInstances, ExistentialQuantification, NamedFieldPuns, ParallelListComp, FlexibleContexts, ScopedTypeVariables #-}
 -- | The Trellys core typechecker, using a bi-directional typechecking algorithm
 -- to reduce annotations.
 module Language.Trellys.TypeCheck
@@ -65,7 +65,7 @@ ta th (Pos p t) ty = do
          \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
 ta th tm (Pos _ ty) = ta th tm ty
 
-ta th (Paren a) ty = liftM Paren $ ta th a ty  
+ta th (Paren a) ty = liftM Paren $ ta th a ty
 ta th tm (Paren ty) = ta th tm ty
 
 -- rule T_join
@@ -108,7 +108,7 @@ ta th (Contra a) b =
                      DS "Here it shows", DD tyA]
        _ -> err [DS "The argument to contra must be an equality proof.",
                  DS "Here its type is", DD tyA]
-       
+
 
 -- rule T_abort
 ta Logic Abort _ = err [DS "abort must be in P."]
@@ -294,7 +294,7 @@ ta th (Case b bnd) tyA = do
              return (c, bind deltai' eai)
   emtchs <- mapM checkBranch mtchs
   return (Case eb (bind y emtchs))
-  
+
 -- implements the checking version of T_let1 and T_let2
 ta th (Let th' ep a bnd) tyB =
  do -- begin by checking syntactic -/L requirement and unpacking binding
@@ -326,7 +326,7 @@ ta th (Let th' ep a bnd) tyB =
     return (Let th' ep ea (bind (x,y) eb))
 
 -- rule T_chk
-ta th a tyB = do 
+ta th a tyB = do
   (ea,tyA) <- ts th a
   subtype th tyA tyB
     `catchError`
@@ -353,7 +353,7 @@ ts tsTh tsTm =
       ts' th t `catchError`
          \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
 
-    ts' th (Paren a) = 
+    ts' th (Paren a) =
       do (ea,ty) <- ts' th a
          return (Paren ea, ty)
 
@@ -439,14 +439,34 @@ ts tsTh tsTm =
     -- rule T_conv
     ts' th (Conv b as bnd) =
       do (xs,c) <- unbind bnd
-         (eas,atys) <- liftM unzip (mapM (ts Logic) as)
+
+         erasedTerm <- erase c
+         let runtimeVars :: [EName]
+             runtimeVars = fv erasedTerm
+
+         let chkTy (False,pf) _ = do
+               (e,t) <- ts Logic pf
+               return ((False,e),t)
+             chkTy (True,pf) var = do
+               (e,_) <- ts Logic pf
+               -- TODO: Check to see if result is a Type 0?
+               when (translate var `elem` runtimeVars) $
+                   err [DS "Equality proof", DD pf, DS "is marked erased",
+                        DS "but the corresponding variable", DD var,
+                        DS "appears free in the erased term", DD erasedTerm]
+               return ((True,e),pf)
+
+         (eas,atys) <- liftM unzip $ zipWithM chkTy as xs
+
          picky <- getFlag PickyEq
          let errMsg aty =
                err $ [DS "The second arguments to conv must be equality proofs,",
                       DS "but here has type", DD aty]
 --         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
 --         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
-         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\aty -> do
+
+
+         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\ aty -> do
               case isTyEq aty of
                 Just (tyA1, tyA2) -> do
                  (_,k1) <- ts Program tyA1
@@ -456,8 +476,10 @@ ts tsTh tsTm =
                     DS " must have the same type when used in conversion.",
                     DS "Here they have types: ", DD k1, DS "and", DD k2,
                     DS "respectively."]
+
                  return (tyA1, tyA2, k1)
                 _ -> errMsg aty) atys
+
          let cA1 = substs xs tyA1s c
          let cA2 = substs xs tyA2s c
          eb <- ta th b cA1
@@ -640,8 +662,8 @@ duplicateTypeBindingCheck n ty = do
     -- We already have a type in the environment so fail.
     (_,ty'):_ ->
       let (Pos p  _) = ty
-          (Pos p' _) = ty' 
-          msg = disp [DS "Duplicate type signature ", DD ty, 
+          (Pos p' _) = ty'
+          msg = disp [DS "Duplicate type signature ", DD ty,
                       DS "for name ", DD n,
                       DS "Previous typing at", DD p',
                       DS "was", DD ty']
