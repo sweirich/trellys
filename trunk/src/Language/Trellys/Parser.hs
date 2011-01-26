@@ -24,13 +24,13 @@ import Data.Char
 import Data.List
 
 {- current concrete syntax for the annotated language:
- 
+
   levels:
      l ::= natural numbers
- 
+
   theta:
      th ::= prog | log
- 
+
   terms:
     a,b,A,B ::=
       Type l                   Universes
@@ -49,7 +49,7 @@ import Data.List
     | [x : A] -> B             Erased, logical pi
     | [x : A] => B             Erased, programmatic pi
     | case a [y] of            Case expressions, roughly
-        C1 [x] y z -> b1         
+        C1 [x] y z -> b1
         C2 x [y]   -> b2
     | a = b                    Equality type
     | join k                   Equality proof
@@ -61,11 +61,11 @@ import Data.List
     | recnat f x = a           Runtime natrec
     | recnat f [x] = a         Erased natrec
     | (a : A)                  Annotations
- 
- 
+
+
    equality contexts
      EqC ::= x. A
- 
+
   telescopes:
     D ::=
                                Empty
@@ -81,7 +81,7 @@ import Data.List
       foo = a
 
       or
-      
+
       log foo : A
       foo = a
 
@@ -94,24 +94,24 @@ import Data.List
       axiom prog foo : A -- programmatic
       axiom log  foo : A -- logical
       axiom foo : A      -- also logical
-    
+
     For logical datatype declarations:
 
        data T D -> Type l where
          C1 : A1
          ...
          Cn : An
-    
+
     For programmatic datatype declarations:
-    
+
        data T D => Type l where
          C1 : A1
          ...
          Cn : An
-    
- 
+
+
   Syntax sugar:
- 
+
    - You can collapse lambdas, like:
 
          \ x [y] z . a
@@ -131,7 +131,7 @@ parseModuleFile name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ runFreshM (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents) 
+  return $ runFreshM (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents)
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
 
@@ -145,7 +145,7 @@ parseModule input = do
 -- E.g., do
 --
 -- > testParser decl "axiom fix : (aTy : Type 0) -> (f : ((a:aTy) -> aTy)) -> aTy"
--- 
+--
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
 testParser parser str = runFreshM $ runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
@@ -193,6 +193,7 @@ trellysStyle = Token.LanguageDef
                   ,"let", "in"
                   ,"prog", "log"
                   ,"axiom"
+                  , "erased"
                   ]
                , Token.reservedOpNames =
                  ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_"]
@@ -209,16 +210,16 @@ whiteSpace :: LParser ()
 whiteSpace = Token.whiteSpace tokenizer
 
 variable :: LParser TName
-variable = 
+variable =
   do i <- identifier
      case i of
        [] -> fail "Internal Error: empty identifier"
-       (c : _) -> 
-         if isUpper c 
+       (c : _) ->
+         if isUpper c
            then fail "Expected a variable, but a constructor was found"
            else return $ string2Name i
 
-wildcard :: LParser TName 
+wildcard :: LParser TName
 wildcard = reservedOp "_" >> fresh (string2Name "_")
 
 variableOrWild :: LParser TName
@@ -229,8 +230,8 @@ constructor =
   do i <- identifier
      case i of
        [] -> fail "Internal Error: empty identifier"
-       (c : _) -> 
-         if isLower c 
+       (c : _) ->
+         if isLower c
            then fail "Expected a constructor, but a variable was found"
            else return $ string2Name i
 
@@ -240,7 +241,7 @@ varOrCon = do i <- identifier
               let n = string2Name i
               case i of
                 [] -> fail "Internal error: empty identifier"
-                (c:_) -> if isUpper c then return (Con n) 
+                (c:_) -> if isUpper c then return (Con n)
                                       else return (Var n)
 
 
@@ -267,8 +268,8 @@ commaSep1 = Token.commaSep1 tokenizer
 natenc :: LParser Term
 natenc =
   do n <- natural
-     return $ foldr (\a b -> Paren (App Runtime a b)) 
-                    (Con $ string2Name "Zero") 
+     return $ foldr (\a b -> Paren (App Runtime a b))
+                    (Con $ string2Name "Zero")
                     (replicate (fromInteger n) (Con $ string2Name "Succ"))
 
 moduleDef :: LParser Module
@@ -414,7 +415,7 @@ factor = choice [ varOrCon <?> "an identifier"
                 , convExpr  <?> "a conv"
                 , join      <?> "a join"
                 , impProd   <?> "an implicit function type"
-                , expProdOrAnnotOrParens 
+                , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"
                 ]
 
@@ -497,7 +498,7 @@ expProdOrAnnotOrParens =
     -- afterBinder picks up the arrow and the return type of a pi
     afterBinder :: LParser (Theta,Term)
     afterBinder = liftM2 (,) eitherArrow expr
-    
+
     -- before binder parses an expression in parens
     -- If it doesn't involve a colon, you get (Right tm)
     -- If it does, you get (Left tm1 tm2).  tm1 might be a variable,
@@ -506,7 +507,7 @@ expProdOrAnnotOrParens =
     beforeBinder = parens $
       choice [do e1 <- try (term >>= (\e1 -> colon >> return e1))
                  e2 <- expr
-                 return $ Left (e1,e2) 
+                 return $ Left (e1,e2)
              ,liftM Right expr]
   in
     do bd <- beforeBinder
@@ -543,12 +544,17 @@ convExpr = do
   reserved "conv"
   a <- expr
   reserved "by"
-  bs <- commaSep1 expr
+  bs <- commaSep1 erasedProof
   reserved "at"
   xs <- many1 variable
   dot
   c <- expr
   return $ Conv a bs (bind xs c)
+  where erasedProof = do tm <- brackets expr
+                         return (True,tm)
+                      <|>
+                      do tm <- expr
+                         return (False,tm)
 
 contra :: LParser Term
 contra = do

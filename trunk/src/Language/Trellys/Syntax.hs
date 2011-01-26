@@ -17,7 +17,7 @@ import Text.ParserCombinators.Parsec.Pos
 
 type TName = Name Term
 type EName = Name ETerm
--- really "Name Module", but since we never substitute for these, 
+-- really "Name Module", but since we never substitute for these,
 -- this definition saves defining some typeclass instances:
 type MName = Name ()
 
@@ -77,11 +77,11 @@ data Term = Var TName    -- | variables
           | Case Term (Bind TName [Match])
           -- | The type of a proof that the two terms join, @a = b@
           | TyEq Term Term
-          -- | The 'join' expression, written @join k1 k2@.  We 
+          -- | The 'join' expression, written @join k1 k2@.  We
           -- bidirectionally infer the terms
           | Join Int Int
           -- | @conv a by b at C@
-          | Conv Term [Term] (Bind [TName] Term)
+          | Conv Term [(Bool,Term)] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- | The @abort@ expression.
@@ -102,12 +102,14 @@ data Term = Var TName    -- | variables
 type Match = (TName, Bind [(TName, Epsilon)] Term)
 
 
+
+
 -- | This just deletes any top level Pos or Paren constructors from a term
 delPosParen :: Term -> Term
 delPosParen (Pos _ tm) = tm
 delPosParen (Paren tm) = tm
 delPosParen tm         = tm
-  
+
 
 
 -- | A Module has a name, a list of imports, and a list of declarations
@@ -160,16 +162,16 @@ swapTeleVars :: Telescope -> [TName] -> Telescope
 swapTeleVars [] [] = []
 swapTeleVars ((v,a,th,ep):tele) (v':vs) =
   (v',a,th,ep):(subst v (Var v') $ swapTeleVars tele vs)
-swapTeleVars _ _ = 
+swapTeleVars _ _ =
   error "Internal error: lengths don't match in swapTeleVars"
 
--- (changeStage args tele) changes the stage annotation of each term 
+-- (changeStage args tele) changes the stage annotation of each term
 -- in args to be the one given by the corresponding element of tele.
 -- This assumes the lists are the same length.
 changeStage :: [(Term,Epsilon)] -> Telescope -> [(Term,Epsilon)]
 changeStage [] [] = []
 changeStage ((t,_):args) ((_,_,_,ep):tele) = (t,ep):(changeStage args tele)
-changeStage _ _ = 
+changeStage _ _ =
   error "Internal error: lengths don't match in changeStage"
 
 --------------
@@ -278,7 +280,7 @@ splitEApp e = splitEApp' e []
 
 --------------------
 -- LangLib instances
---------------------  
+--------------------
 
 $(derive [''Epsilon, ''Theta, ''Term, ''ETerm])
 
