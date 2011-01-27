@@ -52,7 +52,7 @@ l2 = cons [Nat] 0 l1
 -- programmatic mendler iteration (the most basic version)
 prog mcata : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
              (phi : [a:Type 0] -> (x:a => c) => (y:f a) => c) =>
-             Fix f => c
+             (t:Fix f) => c
 mcata = \ [f] . \ [c] .
   rec mcata' phi = \ t . case t [t_eq] of
                            In x -> let prog mcata_phi [mm] = mcata' phi in
@@ -66,7 +66,6 @@ phi_len = \ [l] . \ len' . \ t .
 
 prog len : (t : Fix (L Nat)) => Nat
 len = mcata [L Nat] [Nat] phi_len
-
 
 -- logical phi operation for length function can be defined
 -- it is only that I don't know how to make a logical version of mcata,
@@ -85,6 +84,15 @@ axiom mcata' : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
 -- only then we can have a logical version of length
 len' : (t : Fix (L Nat)) -> Nat
 len' = mcata' [L Nat] [Nat] phi_len'
+
+phi_copy' : [l:Type 0] -> ((x:l) -> Fix (L Nat)) -> (t:L Nat l) -> Fix (L Nat)
+phi_copy' = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> nil [Nat]
+    C x xs -> let len_xs [n] = len' xs in cons [Nat] x len_xs
+
+copy' : (t : Fix (L Nat)) -> Fix (L Nat)
+copy' = mcata' [L Nat] [Fix (L Nat)] phi_copy'
 
 
 data FixNat [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] [a:Nat] ->
@@ -116,7 +124,7 @@ v2 = consv [Nat] 4 [1] v1
 prog mcataNat : [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] ->
                 [c : (n:Nat) -> Type 0] ->
             (phi : [x : (n:Nat) -> Type 0] ->
-                   (g:[m':Nat]->x m'=>c m') => [m:Nat] -> (t:f x m) => c m) =>
+                   (g:[m':Nat]->x m'=>c m') => [m:Nat] -> (t:f x m) -> c m) =>
             [n:Nat] ->
             FixNat f n => c n
 mcataNat = \ [f] . \ [c] .
@@ -139,7 +147,7 @@ nn = conv 0 by (join : Nat = (typeConst Nat 1)) at x.x
 
 prog phi_lenv : [x:(Nat) -> Type 0] ->
        (g:[m':Nat]->x m'=>typeConst Nat m') =>
-       [n:Nat] -> (t:V Nat x n) => typeConst Nat n
+       [n:Nat] -> (t:V Nat x n) -> typeConst Nat n
 phi_lenv = \ [x] . \ len' . \ [n] . \ t .
    case t [t_eq] of
      Nv [pf0]          -> conv 0 by (join : Nat = typeConst Nat n) at x.x
@@ -148,7 +156,53 @@ phi_lenv = \ [x] . \ len' . \ [n] . \ t .
          conv Succ (conv len_xs by (join : typeConst Nat m = Nat) at x.x)
            by (join : Nat = typeConst Nat n) at x.x
 
-prog lenv : [n:Nat] -> (t : FixNat (V Nat) n) => Nat
+prog lenv : [n:Nat] -> (t : FixNat (V Nat) n) -> Nat
 lenv = \ [n] . \t . conv mcataNat [V Nat] [typeConst Nat] phi_lenv [n] t
                       by (join : typeConst Nat n = Nat) at x.x
+
+-- assume that we can have a logical mendler iteration scheme
+axiom mcataNat' : [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] ->
+                  [c : (n:Nat) -> Type 0] ->
+            (phi : [x : (n:Nat) -> Type 0] ->
+                   (g:[m':Nat]->x m'->c m') -> [m:Nat] -> (t:f x m) -> c m) ->
+            [n:Nat] ->
+            FixNat f n -> c n
+
+phi_lenv' : [x:(Nat) -> Type 0] ->
+       (g:[m':Nat]->(a:x m')->typeConst Nat m') ->
+       [n:Nat] -> (t:V Nat x n) -> typeConst Nat n
+phi_lenv' = \ [x] . \ len' . \ [n] . \ t .
+   case t [t_eq] of
+     Nv [pf0]          -> conv 0 by (join : Nat = typeConst Nat n) at x.x
+     Cv [m] [pf1] x xs ->
+       let len_xs [nn] = len' [m] xs in
+         conv Succ (conv len_xs by (join : typeConst Nat m = Nat) at x.x)
+           by (join : Nat = typeConst Nat n) at x.x
+
+lenv' : [n:Nat] -> (t : FixNat (V Nat) n) -> Nat
+lenv' = \ [n] . \t . conv mcataNat' [V Nat] [typeConst Nat] phi_lenv' [n] t
+                       by (join : typeConst Nat n = Nat) at x.x
+
+
+pf0toV0 : [n:Nat] -> (pf:n=0) -> FixNat (V Nat) 0 = FixNat (V Nat) n
+pf0toV0 = \ [n] . \ pf .
+  let pf' [xx] = sym Nat Nat n 0 pf in
+    conv join by pf' at n.(FixNat (V Nat) 0 = FixNat (V Nat) n)
+
+pf1toV1 : [n:Nat] -> [m:Nat] -> (pf:n=Succ m) ->
+          FixNat (V Nat) (Succ m) = FixNat (V Nat) n
+pf1toV1 = \ [n] . \ [m] . \ pf .
+  let pf' [xx] = sym Nat Nat n (Succ m) pf in
+    conv join by pf' at n.(FixNat (V Nat) (Succ m) = FixNat (V Nat) n)
+
+
+phi_copyv' : [x:(Nat) -> Type 0] ->
+       (g:[m':Nat]->(a:x m')->FixNat (V Nat) m') ->
+       [n:Nat] -> (t:V Nat x n) -> FixNat (V Nat) n
+phi_copyv' = \ [x] . \ copy' . \ [n] . \ t .
+   case t [t_eq] of
+     Nv [pf0]          -> conv nilv [Nat] by pf0toV0 [n] pf0 at n.n
+     Cv [m] [pf1] x xs ->
+       let copy_xs [nn] = copy' [m] xs in
+         conv consv [Nat] x [m] copy_xs by pf1toV1 [n] [m] pf1 at x.x
 
