@@ -125,18 +125,30 @@ mcataNat = \ [f] . \ [c] .
                      InNat x -> let prog mcata_phi [mm] = mcata' phi in
                                   phi [FixNat f] mcata_phi [n] x
 
-typeConst : (a:Type 0) -> (Nat) -> Type 0
+typeConst : (a:Type 0) -> (n:Nat) -> Type 0
 typeConst = \ a . \ n . a
 
-prog phi_lenv : [x:(Nat) -> Type 0] -> [n:Nat] ->
-       (g:[m':Nat]->x m'=>typeConst Nat m') => (t:V Nat x n) => typeConst Nat n
-{-
-phi_len = \ [l] . \ len' . \ t .
-  case t [t_eq] of
-    N      -> 0
-    C x xs -> let prog len_xs [n] = len' xs in Succ len_xs
--}
+pftconst : [n:Nat] -> Nat = typeConst Nat n
+pftconst = \ [n] . join
+
+pp : Nat = typeConst Nat 1
+pp = join
+
+nn : typeConst Nat 1
+nn = conv 0 by (join : Nat = (typeConst Nat 1)) at x.x
+
+prog phi_lenv : [x:(Nat) -> Type 0] ->
+       (g:[m':Nat]->x m'=>typeConst Nat m') =>
+       [n:Nat] -> (t:V Nat x n) => typeConst Nat n
+phi_lenv = \ [x] . \ len' . \ [n] . \ t .
+   case t [t_eq] of
+     Nv [pf0]          -> conv 0 by (join : Nat = typeConst Nat n) at x.x
+     Cv [m] [pf1] x xs ->
+       let prog len_xs [nn] = len' [m] xs in
+         conv Succ (conv len_xs by (join : typeConst Nat m = Nat) at x.x)
+           by (join : Nat = typeConst Nat n) at x.x
 
 prog lenv : [n:Nat] -> (t : FixNat (V Nat) n) => Nat
-len = \ [n] . 0 -- mcataNat -- [V Nat] -- [Nat] [n] phi_lenv
+lenv = \ [n] . \t . conv mcataNat [V Nat] [typeConst Nat] phi_lenv [n] t
+                      by (join : typeConst Nat n = Nat) at x.x
 
