@@ -49,6 +49,7 @@ l1 = nil [Nat]
 l2 : Fix (L Nat)
 l2 = cons [Nat] 0 l1
 
+-- programmatic mendler iteration (the most basic version)
 prog mcata : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
              (phi : [a:Type 0] -> (x:a => c) => (y:f a) => c) =>
              Fix f => c
@@ -65,4 +66,77 @@ phi_len = \ [l] . \ len' . \ t .
 
 prog len : (t : Fix (L Nat)) => Nat
 len = mcata [L Nat] [Nat] phi_len
+
+
+-- logical phi operation for length function can be defined
+-- it is only that I don't know how to make a logical version of mcata,
+-- and I am not even sure whether it is not possible in the currunt system.
+phi_len' : [l:Type 0] -> ((x:l) -> Nat) -> (t:L Nat l) -> Nat
+phi_len' = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> 0
+    C x xs -> let len_xs [n] = len' xs in Succ len_xs
+
+-- assume that we can have a logical mendler iteration scheme
+axiom mcata' : [f : (x1:Type 0) -> Type 0] -> [c:Type 0] ->
+             (phi : [a:Type 0] -> (x:a -> c) -> (y:f a) -> c) ->
+             Fix f -> c
+
+-- only then we can have a logical version of length
+len' : (t : Fix (L Nat)) -> Nat
+len' = mcata' [L Nat] [Nat] phi_len'
+
+
+data FixNat [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] [a:Nat] ->
+          Type 0 where
+ InNat : (x: f (FixNat f) a) -> FixNat f a
+
+data V [a:Type 0] [c:(n:Nat) -> Type 0] [n:Nat] -> Type 0 where
+  Nv : [n=0] -> V a c n
+  Cv : [m:Nat] -> [pf:n=Succ m] -> (x:a) -> (y:c m) -> V a c n
+
+nilv : [a:Type 0] -> FixNat (V a) 0
+nilv = \ [a] . InNat [V a] [0] (Nv [a] [FixNat (V a)] [0] [join 0])
+
+consv : [a:Type 0] -> (x:a) -> [n:Nat] -> (xs:FixNat (V a) n) ->
+        FixNat (V a) (Succ n)
+consv = \ [a] .  \ x . \ [n] . \ xs .
+        InNat [V a] [Succ n] (Cv [a] [FixNat (V a)] [Succ n] [n] [join 0] x xs)
+
+v0 : FixNat (V Nat) 0
+v0 = nilv [Nat]
+
+v1 : FixNat (V Nat) 1
+v1 = consv [Nat] 3 [0] v0
+
+v2 : FixNat (V Nat) 2
+v2 = consv [Nat] 4 [1] v1
+
+-- programmatic mendler iteration for datatypes with natrual number index
+prog mcataNat : [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] ->
+                [c : (n:Nat) -> Type 0] ->
+            (phi : [x : (n:Nat) -> Type 0] ->
+                   (g:[m':Nat]->x m'=>c m') => [m:Nat] -> (t:f x m) => c m) =>
+            [n:Nat] ->
+            FixNat f n => c n
+mcataNat = \ [f] . \ [c] .
+  rec mcata' phi = \ [n] . \ t .
+                   case t [t_eq] of
+                     InNat x -> let prog mcata_phi [mm] = mcata' phi in
+                                  phi [FixNat f] mcata_phi [n] x
+
+typeConst : (a:Type 0) -> (Nat) -> Type 0
+typeConst = \ a . \ n . a
+
+prog phi_lenv : [x:(Nat) -> Type 0] -> [n:Nat] ->
+       (g:[m':Nat]->x m'=>typeConst Nat m') => (t:V Nat x n) => typeConst Nat n
+{-
+phi_len = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> 0
+    C x xs -> let prog len_xs [n] = len' xs in Succ len_xs
+-}
+
+prog lenv : [n:Nat] -> (t : FixNat (V Nat) n) => Nat
+len = \ [n] . 0 -- mcataNat -- [V Nat] -- [Nat] [n] phi_lenv
 
