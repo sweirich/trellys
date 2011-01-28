@@ -43,6 +43,9 @@ nil = \ [a] . In [L a] (N [a] [Fix (L a)])
 cons : [a:Type 0] -> (x:a) -> (xs:Fix (L a)) -> Fix (L a)
 cons = \ [a] . \ x . \ xs . In [L a] (C [a] [Fix (L a)] x xs)
 
+-- cons_ : [a:Type 0] -> (x:a) -> (xs:Fix (L a)) => Fix (L a)
+-- cons_ = \ [a] . \ x . \ xs . In [L a] (C [a] [Fix (L a)] x xs)
+
 l1 : Fix (L Nat)
 l1 = nil [Nat]
 
@@ -66,6 +69,34 @@ phi_len = \ [l] . \ len' . \ t .
 
 prog len : (t : Fix (L Nat)) => Nat
 len = mcata [L Nat] [Nat] phi_len
+
+phi_len_ : [l:Type 0] -> ((x:l) => Nat) -> (t:L Nat l) -> Nat
+phi_len_ = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> 0
+    C x xs -> let len_xs [n] = len' xs in Succ len_xs
+
+{- -- there doesn't seem to be a way to copy a logical list with programs
+prog phi_copy : [l:Type 0] -> ((x:l) => Fix (L Nat)) => (t:L Nat l) => Fix (L Nat)
+phi_copy = \ [l] . \ len' . \ t .
+  case t [t_eq] of
+    N      -> nil [Nat]
+    C x xs -> let prog len_xs [n] = len' xs in cons_ [Nat] x len_xs
+
+copy : (t : Fix (L Nat)) -> Fix (L Nat)
+copy = mcata [L Nat] [Fix (L Nat)] phi_copy
+-}
+
+-- instead we can only copy it to a programatic list
+prog phi_copy : [l:Type 0] -> ((x:l) => List Nat) => (t:L Nat l) => List Nat 
+phi_copy = \ [l] . \ copy . \ t .
+  case t [t_eq] of
+    N      -> Nil [Nat]
+    C x xs -> let prog copy_xs [n] = copy xs in Cons [Nat] x copy_xs
+
+prog copy : (t : Fix (L Nat)) => List Nat
+copy = mcata [L Nat] [List Nat] phi_copy
+
 
 -- logical phi operation for length function can be defined
 -- it is only that I don't know how to make a logical version of mcata,
@@ -160,6 +191,19 @@ prog lenv : [n:Nat] -> (t : FixNat (V Nat) n) -> Nat
 lenv = \ [n] . \t . conv mcataNat [V Nat] [typeConst Nat] phi_lenv [n] t
                       by (join : typeConst Nat n = Nat) at x.x
 
+-- cannot copy logical lists to logical lists. So, copy into programmatic list
+prog phi_copyv : [x:(Nat) -> Type 0] ->
+       (g:[m':Nat]->(a:x m')=>typeConst (List Nat) m') =>
+       [n:Nat] -> (t:V Nat x n) => typeConst (List Nat) n
+phi_copyv = \ [x] . \ copy . \ [n] . \ t .
+   case t [t_eq] of
+     Nv [pf0]          -> conv Nil [Nat] by (join : List Nat = typeConst (List Nat) n) at x.x
+     Cv [m] [pf1] x xs ->
+       let prog copy_xs [nn] = copy [m] xs in
+         conv ( Cons [Nat] x (conv copy_xs by (join : typeConst (List Nat) m = List Nat) at x.x) )
+           by (join : List Nat = typeConst (List Nat) n) at n.n
+
+
 -- assume that we can have a logical mendler iteration scheme
 axiom mcataNat' : [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] ->
                   [c : (n:Nat) -> Type 0] ->
@@ -205,4 +249,7 @@ phi_copyv' = \ [x] . \ copy' . \ [n] . \ t .
      Cv [m] [pf1] x xs ->
        let copy_xs [nn] = copy' [m] xs in
          conv consv [Nat] x [m] copy_xs by pf1toV1 [n] [m] pf1 at x.x
+
+copyv' : [n:Nat] -> (t : FixNat (V Nat) n) -> FixNat (V Nat) n
+copyv' = \ [n] . \ t . mcataNat' [V Nat] [FixNat (V Nat)] phi_copyv' [n] t
 
