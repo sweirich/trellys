@@ -30,7 +30,7 @@ main = do
              putStrLn $ show parseError
              exitFailure
     Right val -> do
-             when (TypeCheck `elem` flags) $ do
+             when (TypeCheck `elem` flags || Reduce `elem` flags) $ do
                putStrLn "TypeChecking"
                contents <- runTcMonad (emptyEnv flags) (tcModules val)
                case contents of
@@ -54,6 +54,9 @@ main = do
                               writeModules defs
                      else do
                           putStrLn "Type check successful"
+                          if (Reduce `elem` flags)
+                             then do print defs -- TODO get the last def from module and run it with reduce
+                             else return ()
 
 
 getOptions :: [String] -> IO ([Flag], [String])

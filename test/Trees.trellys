@@ -15,3 +15,6 @@ data Pair [a : Type 0] [b : Type 0] -> Type 0 where
 
 -- data Bin [a : Type 0] -> Type 0 where
 --   ForkB : (x:a) -> Bin (Pair a a) -> Bin a
+
+x : Nat
+x = 1
