@@ -12,7 +12,7 @@ module Language.Trellys.GenericBind
   ,binders,patfv,fv,fvAny,swaps
   ,aeq
   ,Bind,rBind,bind,unbind,unbind2,unbind3
-  ,Rebind,rRebind,rebind,reopen
+  ,Rebind,rRebind,rebind -- ,reopen
   ,Annot(..),rAnnot
   ,Subst(..), matchR1
   ,unsafeUnBind
