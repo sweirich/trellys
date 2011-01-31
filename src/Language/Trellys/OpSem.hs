@@ -3,8 +3,7 @@
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
-  (runEvalMonad,
-   join, reduce,isValue, isEValue, eval, erase)
+  (makeModuleEnv, join, isValue, isEValue, erase, cbvStep, cbvNSteps)
 where
 
 
@@ -100,6 +99,7 @@ join s1 s2 m n =
 
      return joined
 
+{-------------- not to be used.  use small step cbv
 -- | reduce a term to a normal form.  FIXME: This uses the large-step 'eval'
 -- semantics, so the parameter to limit depth is ignored for now.
 reduce :: (MonadReader Env m, MonadError Err m)
@@ -113,7 +113,7 @@ reduce _ t = do
                         vals
 
   return $ runEvalMonad vals' (eval t)
-
+---------}
 
 -- | Small-step semantics.
 cbvStep :: ETerm -> TcMonad (Maybe ETerm)
@@ -250,14 +250,15 @@ isEValue (ECase _ _)      = False
 isEValue (ELet _ _)       = False
 isEValue EContra          = False
 
+
 -- | Evaluation environments - a mapping between named values and
 -- | their definitions.
 type EEnv = [(TName,Term)]
 
 -- | Convert a module into an evaluation environment (list of top level declarations)
---makeModuleEnv :: Module -> EEnv
---makeModuleEnv md = [(n,tm) | Val n tm <- moduleEntries md]
-
+makeModuleEnv :: Module -> EEnv
+makeModuleEnv md = [(n,tm) | Def n tm <- moduleEntries md]
+{--------------- not to be used. use small step cbv
 -- | A monad to implement evaluation.
 newtype EvalMonad a = EvalMonad (ReaderT EEnv FreshM a)
       deriving (Monad, Fresh, MonadReader EEnv )
@@ -323,4 +324,4 @@ eval (Case dis bnd) = do
 eval t
   | isValue t = return t
   | otherwise = fail $  "eval: unhandled term " ++ show t
-
+-}
