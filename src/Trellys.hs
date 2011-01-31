@@ -5,6 +5,7 @@ import Language.Trellys.Options
 import Language.Trellys.Modules
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeCheck
+import Language.Trellys.OpSem
 import Control.Monad.Reader
 
 import Text.PrettyPrint.HughesPJ(render)
@@ -55,7 +56,16 @@ main = do
                      else do
                           putStrLn "Type check successful"
                           if (Reduce `elem` flags)
-                             then do print defs -- TODO get the last def from module and run it with reduce
+                             then do
+                                let eenv = concatMap makeModuleEnv defs
+                                -- print defs -- comment out for debuggging 
+                                res <- runTcMonad (emptyEnv flags)
+                                                  ( do { tcModules val;
+                                                         cbvNSteps 100 =<< erase (snd $ last eenv) } )
+                                case res of
+                                  Left err -> do putStrLn "Reduce Error:"
+                                                 putStrLn $ render $ disp err
+                                  Right x -> putStrLn $ render $ disp x
                              else return ()
 
 
