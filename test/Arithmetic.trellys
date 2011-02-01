@@ -240,4 +240,5 @@ plus_associates = recnat pa i = \j k .
                -- move the `Succ` inside both sides
                in conv (conv e1 by e2' at h . h = Succ (plus i' (plus j k))) by e3' at h . plus (plus i j) k = h
 
-
+main : Nat
+main = plus 2 3
