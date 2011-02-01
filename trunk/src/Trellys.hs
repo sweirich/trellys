@@ -2,10 +2,12 @@
 module Trellys where
 
 import Language.Trellys.Options
+import Language.Trellys.Syntax (moduleEntries)
 import Language.Trellys.Modules
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeCheck
 import Language.Trellys.OpSem
+import Language.Trellys.Environment
 import Control.Monad.Reader
 
 import Text.PrettyPrint.HughesPJ(render)
@@ -59,10 +61,9 @@ main = do
                              then do
                                 let eenv = concatMap makeModuleEnv defs
                                 -- print defs -- comment out for debuggging 
-                                res <- runTcMonad (emptyEnv flags)
-                                                  ( do { tcModules val;
-                                                         cbvNSteps 100 =<< erase (snd $ last eenv) } )
-                                case res of
+                                r <- runTcMonad (emptyEnv flags)
+                                                (extendCtxs (concatMap moduleEntries defs) (cbvNSteps 100 =<< erase =<< substDefs (snd $ last eenv)))
+                                case r of
                                   Left err -> do putStrLn "Reduce Error:"
                                                  putStrLn $ render $ disp err
                                   Right x -> putStrLn $ render $ disp x
