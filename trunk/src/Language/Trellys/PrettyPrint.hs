@@ -194,8 +194,8 @@ instance Disp Module where
            vcat (map disp (moduleEntries m))
 
 instance Disp Decl where
-  disp (Def n r@(NatRec _ bnd)) | name2String(fst(fst(unsafeUnBind bnd)))==name2String n = disp r
-  disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnBind bnd)))==name2String n = disp r
+  disp (Def n r@(NatRec _ bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
+  disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
   disp (Sig n ep ty) =

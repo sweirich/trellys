@@ -206,7 +206,7 @@ isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
 isValue (Arrow _ _ t1 b)  =
-  let (_,t2) = unsafeUnBind b in
+  let (_,t2) = unsafeUnbind b in
   isValue t1 && isValue t2
 isValue (Lam _ _)          = True
 isValue (App _ e1 e2)      =
@@ -220,7 +220,7 @@ isValue (NatRec ep _)      = ep == Runtime
 isValue (Rec ep _)         = ep == Runtime
 isValue (Case _ _)         = False
 isValue (Let _ Erased _ a) =
-  let (_,a') = unsafeUnBind a in
+  let (_,a') = unsafeUnbind a in
     isValue a'
 isValue (Let _ _ _ _)      = False
 isValue (Conv a _ _)       = isValue a
@@ -234,7 +234,7 @@ isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
 isEValue (EArrow _ _ t1 b) = 
-  let (_,t2) = unsafeUnBind b in
+  let (_,t2) = unsafeUnbind b in
    isEValue t1 && isEValue t2
 isEValue (ELam _)         = True
 isEValue (EApp e1 e2)     =

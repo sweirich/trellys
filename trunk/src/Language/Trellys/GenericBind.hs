@@ -10,12 +10,12 @@ module Language.Trellys.GenericBind
   ,translate
   ,name2Integer,name2String,integer2Name,string2Name,makeName
   ,binders,patfv,fv,fvAny,swaps
-  ,aeq
+  ,aeq, acompare
   ,Bind,rBind,bind,unbind,unbind2,unbind3
   ,Rebind,rRebind,rebind -- ,reopen
   ,Annot(..),rAnnot
   ,Subst(..), matchR1
-  ,unsafeUnBind
+  ,unsafeUnbind
   ,lunbind, lfreshen
 
 --  ,subst,substs -- only for Nominal
