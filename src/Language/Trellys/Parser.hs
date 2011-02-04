@@ -353,13 +353,13 @@ valDef = do
 -- recursive nat definitions
 recNatDef = do
   r@(NatRec _ b) <- recNat
-  let ((n,_),_) = unsafeUnBind b
+  let ((n,_),_) = unsafeUnbind b
   return $ Def n r
 
 -- recursive definitions
 recDef = do
  r@(Rec _ b) <- rec
- let ((n,_),_) = unsafeUnBind b
+ let ((n,_),_) = unsafeUnbind b
  return $ Def n r
 
 ------------------------
