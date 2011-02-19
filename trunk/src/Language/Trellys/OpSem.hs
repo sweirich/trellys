@@ -90,11 +90,11 @@ join s1 s2 m n =
      unless joined $
        do liftIO $ putStr "Join failure:\n  "
           liftIO $ print $ disp  m
-          liftIO $ putStr "reduces to\n  "
+          liftIO $ putStr $ "reduces in "++show s1++" steps to\n  "
           liftIO $ print $ disp m'
           liftIO $ putStr "and\n  "
           liftIO $ print $ disp n
-          liftIO $ putStr "reduces to\n  "
+          liftIO $ putStr $ "reduces in "++show s2++" steps to\n  "
           liftIO $ print $ disp n'
 
      return joined
