@@ -1,11 +1,33 @@
 module JoinTest where
 
-data Nat -> Type 0 where
-  Zero : Nat
-  Succ : (x : Nat) -> Nat
+import Prelude
 
-prog f : (n : Nat) => Nat
-f = \x . x
+-- * programmatic Nat identity
 
-prog g : (n : Nat) => f n = n
-g = \x . join 10000 (f x) x
+prog idNat : (n : Nat) => Nat
+idNat = \x . x
+
+prog g : (n : Nat) => idNat n = n
+g = \x . join
+
+-- * logical large elimination on Nat
+
+p : Type 0
+p = Nat
+
+h : Nat -> Type 0
+h = \n.p
+
+duh : (n:Nat) -> h n = p
+duh = \n.join
+
+-- * again, but all at once
+
+duh' : (p : Type 0) -> (n:Nat) -> (\n.p : Nat -> Type 0) n = p
+duh' = \p n . join
+
+-- * again, but here the join fails ???
+huh : (p : Type 0) -> (n:Nat) -> (\n.p : Nat -> Type 0) n = p
+huh = \p n .
+  let h [eq] = (\n.p : Nat -> Type 0) in
+  conv (join : h n = p) by eq at x.x n = p
