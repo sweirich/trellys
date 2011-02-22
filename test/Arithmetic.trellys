@@ -24,6 +24,10 @@ recnat minus n = \m .
                     Zero -> n
                     Succ mpred -> minus pred [cn] mpred
 
+pred : Nat -> Nat
+pred = \n . case n [_] of
+  Zero -> Zero
+  Succ n' -> n'
 
 -- 'x > y'
 gt : Nat -> Nat -> Bool

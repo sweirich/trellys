@@ -45,7 +45,7 @@ foldNat = \[p]. \base. \step. recnat pr n =
 --
 -- Is it easier to use (lt m n = True) ?
 data LT [m:Nat] [n:Nat] -> Type 0 where
-  LZ : [m = Zero] 
+  LZ : [Zero = m] -- [m = Zero] would be more consistent here, but this avoids a sym below
     -> [n':Nat] -> [n = Succ n'] 
     -> LT m n
   LS : [m':Nat] -> [m = Succ m']
@@ -58,12 +58,74 @@ lt_0__F = \[m] [p] . case p [_] of
   LZ [_] [_] [q]         -> contra q
   LS [_] [_] [_] [q] [_] -> contra q
 
-axiom lt__lteq : [m:Nat] -> [n:Nat] -> [LT m (Succ n)] 
-                    -- (m = n) is more natural, but then need sym below
-                    -- This is evidence of the usefulness of convrl
-        -> Or (LT m n) (n = m)
--- lt__lteq = induction n
+-- Poor man's inversion: use join and a projection function (pred).
+eqS__eq : (m:Nat) -> (n:Nat) -> (Succ m = Succ n) -> m = n
+eqS__eq = \m n sm_eq_Sn .
+  let pSm_eq_m [_]   = (join : pred (Succ m) = m) in
+  let pSn_eq_n [_]   = (join : pred (Succ n) = n) in
+  let pSm_eq_pSn [_] = (conv (join : pred (Succ m) = pred (Succ m)) 
+                        by sm_eq_Sn at h.pred (Succ m) = pred h) in
+  conv pSm_eq_pSn by pSm_eq_m, pSn_eq_n at hm hn.hm = hn
 
+-- An obvious fact with an exceptionally tedious proof ... anyone know
+-- a simple version?
+--
+-- Proof by induction on m.  Idea is
+--
+--   case m < S n of
+--     m = Z              -> easy case on n.
+--     m = S m' /\ m' < n -> case n of
+--       Z    -> contradiction.
+--       S n' -> IH on m' < S n' gives m' = n' \/ m' < n',
+--                               and in either case apply S to both sides.
+--
+-- details involve a few convs ...
+lt__lteq : [m:Nat] -> [n:Nat] -> [LT m (Succ n)] 
+                    -- (m = n) is more natural, but then need sym
+                    -- below in strongNat. This is evidence of the
+                    -- usefulness of convrl
+        -> Or (LT m n) (n = m)
+lt__lteq = recnat lt__lteq [m] = \[n] [m_lt_Sn] .
+  case m_lt_Sn [_] of
+    LZ [z_eq_m] [n'] [sn_eq_Sn']                   ->
+      let n_eq_n' [_] = eqS__eq n n' sn_eq_Sn' in
+      case n' [n'_eq] of
+        Zero -> InR [LT m n] [n = m]
+                (conv (join : n = n)
+                 by trans4' Nat Nat Nat  Nat 
+                            n   n'  Zero m 
+                            n_eq_n' n'_eq z_eq_m
+                 at h.n = h)
+        Succ n'' -> InL [LT m n] [n = m]
+                    (LZ [m] [n] [z_eq_m] [n'']
+                        [conv n'_eq
+                         by (sym Nat Nat n n' n_eq_n') -- convrl
+                         at h.h = Succ n''])
+    LS [m'] [m_eq_Sm'] [n'] [sn_eq_Sn'] [m'_lt_n'] ->
+      let n_eq_n' [_] = eqS__eq n n' sn_eq_Sn' in
+      let n'_eq_n [_] = sym Nat Nat n n' n_eq_n' in
+      case n' [n'_eq] of
+        Zero     -> poe [Or (LT m n) (n = m)] 
+                        [lt_0__F [m'] [conv m'_lt_n' by n'_eq at h.LT m' h]]
+        Succ n'' -> let n_eq_Sn'' [_] = (conv n'_eq by n'_eq_n at h.h = Succ n'') in
+                    case (lt__lteq [m'] [m_eq_Sm'] [n'']
+                                   [conv m'_lt_n' by n'_eq at h.LT m' h]) [_] of
+                      InL m'_lt_n'' ->
+                        InL [LT m n] [n = m]                                             
+                            (conv (LS [m] [n'] [m'] [m_eq_Sm'] [n''] [n'_eq] [m'_lt_n''])
+                             by n'_eq_n at h.LT m h)                                     
+                      InR n''_eq_m' ->
+                        InR [LT m n] [n = m]                                          
+                            (let e1 [_] = (join : Succ n'' = Succ n'') in                             
+                             let e2 [_] = conv e1 by (sym Nat Nat n' (Succ n'') n'_eq)               
+                                          at h.h = Succ n'' in                                       
+                             let e3 [_] = conv e2 by n'_eq_n at h.h = Succ n'' in                    
+                             let e4 [_] = conv e3 by n''_eq_m' at h.n = Succ h in                    
+                             conv e4 by (sym Nat Nat m (Succ m') m_eq_Sm') at h.n = h)
+
+-- Strong elimination / course-of-values induction / structural
+-- induction: allows recursion on any structural subterm, not just the
+-- predecessor.
 strongNat : [p:Nat -> Type 0]
          -> [(n:Nat) -> ((m:Nat) -> LT m n -> p m) -> p n]
          -> ((n:Nat) -> p n)
