@@ -1,0 +1,15 @@
+module Logic where
+
+import Prelude -- for Void
+
+data And [xT:Type 0] [yT:Type 0] -> Type 0 where
+  And : (x:xT) -> (y:yT) -> And xT yT
+
+data Or [xT:Type 0] [yT:Type 0] -> Type 0 where
+  InL : (x:xT) -> Or xT yT
+  InR : (y:yT) -> Or xT yT
+
+-- Principle of explosion / ex falso quodlibet
+axiom poe : [t:Type 0] -> [v:Void] -> t
+-- The following causes a parse error.  BUG???
+--poe = \[_] [v] . case v [_] of
