@@ -70,7 +70,56 @@ eqS__eq = \m n sm_eq_Sn .
 -- An obvious fact with an exceptionally tedious proof ... anyone know
 -- a simple version?
 --
--- Proof by induction on m.  Idea is
+-- (2nd) Proof by induction on m.  Idea is
+--
+--   case m of
+--     Z    -> easy case on n.
+--     S m' -> case m < S n of
+--       m = Z  -> contradiction.
+--       m = S m' /\ n = S n' /\ m' < n' -> case n' of
+--         Z     -> contradiction
+--         S n'' -> IH on m' < S n'' gives m' = n'' \/ m' < n'',
+--                                   and in either case apply S to both sides.
+-- details involve a few convs ...
+lt__lteq' : [m:Nat] -> [n:Nat] -> [LT m (Succ n)] 
+        -> Or (LT m n) (n = m)
+                    -- (m = n) is more natural, but then need sym
+                    -- below in strongNat. This is evidence of the
+                    -- usefulness of convrl
+lt__lteq' = recnat lt__lteq [m] = \[n] [m_lt_Sn] .
+  case m [m_eq] of
+    Zero    -> case n [n_eq] of
+      Zero    -> InR [LT m n] [n = m]
+                     (conv (join:0=0) by (sym Nat Nat n Zero n_eq), 
+                                         (sym Nat Nat m Zero m_eq) 
+                      at n m.n = m)
+      Succ n' -> InL [LT m n] [n = m]
+                     (LZ [m] [n] [sym Nat Nat m Zero m_eq] [n'] [n_eq])
+    Succ m' -> case m_lt_Sn [_] of
+      LZ [z_eq_m] [n'] [sn_eq_Sn']                   ->
+        contra (conv z_eq_m by m_eq at h.Zero = h)
+      LS [m'] [m_eq_Sm'] [n'] [sn_eq_Sn'] [m'_lt_n'] ->
+        case n' [n'_eq] of
+          Zero     -> poe [Or (LT m n) (n = m)] 
+                          [lt_0__F [m'] [conv m'_lt_n' by n'_eq at h.LT m' h]]
+          Succ n'' -> let n'_eq_n [_] = (sym Nat Nat n n' (eqS__eq n n' sn_eq_Sn')) in
+                      case (lt__lteq [m'] [m_eq_Sm'] [n'']                                 
+                                     [conv m'_lt_n' by n'_eq at h.LT m' h]) [_] of         
+                        InL m'_lt_n'' ->                                                   
+                          InL [LT m n] [n = m]                                             
+                              (conv (LS [m] [n'] [m'] [m_eq_Sm'] [n''] [n'_eq] [m'_lt_n''])
+                               by n'_eq_n at h.LT m h)                                     
+                        InR n''_eq_m' ->                                                   
+                          InR [LT m n] [n = m]
+                              (let e1 [_] = conv n'_eq by n'_eq_n at h.h = Succ n'' in
+                               let e2 [_] = conv e1 by n''_eq_m' at h.n = Succ h in                  
+                               conv e2 by (sym Nat Nat m (Succ m') m_eq_Sm') at h.n = h)   
+
+
+-- An obvious fact with an exceptionally tedious proof ... anyone know
+-- a simple version?
+--
+-- (1st) Proof by induction on m.  Idea is
 --
 --   case m < S n of
 --     m = Z              -> easy case on n.
