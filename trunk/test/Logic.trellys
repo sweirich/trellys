@@ -10,6 +10,6 @@ data Or [xT:Type 0] [yT:Type 0] -> Type 0 where
   InR : (y:yT) -> Or xT yT
 
 -- Principle of explosion / ex falso quodlibet
-axiom poe : [t:Type 0] -> [v:Void] -> t
+poe : [t:Type 0] -> [v:Void] -> t
 -- The following causes a parse error.  BUG???
---poe = \[_] [v] . case v [_] of
+poe = \[_] [v] . case v [_] of {}
