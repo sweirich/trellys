@@ -62,11 +62,8 @@ axiom lt__lteq : [m:Nat] -> [n:Nat] -> [LT m (Succ n)]
                     -- (m = n) is more natural, but then need sym below
                     -- This is evidence of the usefulness of convrl
         -> Or (LT m n) (n = m)
-lt__lteq = induction n
+-- lt__lteq = induction n
 
--- Strong elimination / course-of-values induction / structural
--- induction: allows recursion on any structural subterm, not just the
--- predecessor.
 strongNat : [p:Nat -> Type 0]
          -> [(n:Nat) -> ((m:Nat) -> LT m n -> p m) -> p n]
          -> ((n:Nat) -> p n)
