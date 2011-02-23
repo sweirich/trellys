@@ -43,8 +43,20 @@ foldNat = \[p]. \base. \step. recnat pr n =
 
 -- cf. Arithmetic.lt
 --
--- Is it easier to use (lt m n = True) ?
+-- Is it easier to use (lt m n = True) ?  And what about the alternate
+-- ADT characterization derived below in lemmas m_lt_Sm and lt_inc?
+-- I.e., what if we instead define
+{-
 data LT [m:Nat] [n:Nat] -> Type 0 where
+  LBase : [n = Succ m] -> LT m n
+  LStep : [n':Nat] -> [n = Succ n'] 
+       -> [LT m n'] -> LT m n
+-}
+-- and then derive the current LT constructors as lemmas?
+data LT [m:Nat] [n:Nat] -> Type 0 where
+                  -- There are now many syms ... this comment is
+                  -- retained for history:
+                  --
   LZ : [Zero = m] -- [m = Zero] would be more consistent here, but this avoids a sym below
     -> [n':Nat] -> [n = Succ n'] 
     -> LT m n
@@ -176,25 +188,121 @@ lt__lteq = recnat lt__lteq [m] = \[n] [m_lt_Sn] .
 -- induction: allows recursion on any structural subterm, not just the
 -- predecessor.
 strongNat : [p:Nat -> Type 0]
-         -> [(n:Nat) -> ((m:Nat) -> LT m n -> p m) -> p n]
+         -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
          -> ((n:Nat) -> p n)
-strongNat = \[p] [f] .
+strongNat = \[p] f .
   -- g n : (m:Nat) -> LT m n -> p m, and so proves p n via f
   let g [_] = ((recnat g n = case n [eq_n] of
     -- m < 0, a contradiction
-    Zero    -> \m lt_p . 
+    Zero    -> \m [lt_p] . 
       poe [p m] [lt_0__F [m] [conv lt_p by eq_n at h.LT m h]]
     -- m < S n' -> m < n' \/ m = n'
-    Succ n' -> \m lt_p .
+    Succ n' -> \m [lt_p] .
       case (lt__lteq [m] [n'] [conv lt_p by eq_n at h.LT m h]) [_] of
         -- m < n', so g n' recursively proves p m
-        InL lt_p'  -> g n' [eq_n] m lt_p'
+        InL lt_p'  -> g n' [eq_n] m [lt_p']
         -- n' = m, so f proves p m via g n'
         InR n_eq_m -> (conv (f n' (g n' [eq_n])) by n_eq_m at h.p h)
            -- this is g's type annotation, is there a better way to do
            -- this?
-           ): (n:Nat) -> ((m:Nat) -> (LT m n) -> p m))
+           ): (n:Nat) -> ((m:Nat) -> [LT m n] -> p m))
   in \n . f n (g n)
+
+-- The next two lemmas give an alternate characterization of LT
+
+-- Every number is less than its successor
+m_lt_Sm : (m:Nat) -> LT m (Succ m)
+recnat m_lt_Sm m = case m [m_eq] of
+  Zero    -> let m_eq' [_] = sym Nat Nat m Zero m_eq in
+             conv (LZ [m] [Succ Zero] [m_eq'] [Zero] [join])
+             by m_eq' at h.LT m (Succ h)
+  Succ m' -> let rec_ [_] = conv (m_lt_Sm m' [m_eq]) 
+                            by (sym Nat Nat m (Succ m') m_eq) 
+                            at h.LT m' h in 
+             LS [m] [Succ m] [m'] [m_eq] [m] [join] [rec_]
+
+-- m < n -> m < n+1
+lt_inc : (m:Nat) -> (n:Nat) -> LT m n -> LT m (Succ n)
+recnat lt_inc m = \n lt_p . case lt_p [_] of
+  LZ [z_eq_m] [_] [_]                           -> 
+    LZ [m] [Succ n] [z_eq_m] [n] [join]
+  LS [m'] [m_eq_Sm'] [n'] [n_eq_Sn'] [m'_lt_n'] ->
+    let m'_lt_n [_]   = conv (lt_inc m' [m_eq_Sm'] n' m'_lt_n')
+                        by (sym Nat Nat n (Succ n') n_eq_Sn')
+                        at h.LT m' h in
+    LS [m] [Succ n] [m'] [m_eq_Sm'] [n] [join] [m'_lt_n]
+
+-- (m+1) - (n+1) < m+1
+s_minus_s__lt : (m:Nat) -> (n:Nat) -> LT (minus (Succ m) (Succ n)) (Succ m)
+s_minus_s__lt = recnat s_minus_s__lt m = \n. case m [m_eq] of
+  Zero    -> let e1 [_] = (join : Zero = minus (Succ Zero) (Succ n)) in
+             LZ [minus (Succ m) (Succ n)] [Succ m]
+                [conv e1 by (sym Nat Nat m Zero m_eq) 
+                 at m.Zero = minus (Succ m) (Succ n)]
+                [m] [join]
+  Succ m' -> case n [n_eq] of
+    Zero    -> let e1 [_] = conv (join : minus m Zero = (minus (Succ m) (Succ Zero)))
+                            by (lemma_minus_zero_id m) at h.h = minus (Succ m) (Succ Zero) in
+               let e2 [_] = conv e1 by (sym Nat Nat n Zero n_eq)
+                            at h.m = (minus (Succ m) (Succ h)) in
+               conv (m_lt_Sm m) by e2 at h.LT h (Succ m)
+    Succ n' -> let e1 [_] = conv (s_minus_s__lt m' [m_eq] n') 
+                            by (sym Nat Nat m (Succ m') m_eq),
+                               (sym Nat Nat n (Succ n') n_eq)
+                            at m n.LT (minus m n) m in
+               let e2 [_] = (join : minus m n = minus (Succ m) (Succ n)) in
+               let e3 [_] = conv e1 by e2 at h.LT h m in 
+               lt_inc (minus (Succ m) (Succ n)) m e3
+--               LS [minus (Succ m) (Succ n)] [Succ m]
+--                  [m] [join] [n] [join] [e3]
+
+-- Logical division
+--
+-- cf. Arithmetic.div
+--
+-- m `div` n = \ceiling{ m / S n }
+div' : Nat -> Nat -> Nat
+div' = \m n .
+       let p [p_def] = (\w.Nat : Nat -> Type 0) in -- constNat
+       let f [f_def] = ((\m g . case m [m_eq] of
+         Zero    -> conv Zero by (join : Nat = p m) at h.h                        -- relies on let defs in context
+         Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n) 
+                                   by (sym Nat Nat m (Succ m') m_eq)
+                                   at m.LT ((minus (Succ m') (Succ n))) m in
+                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
+                                   by (join : p (minus (Succ m') (Succ n)) = Nat) -- relies on let defs in context
+                                   at h.h in
+                    conv (Succ recg) by (join : Nat = p m) at h.h                 -- relies on let defs in context
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [LT (m_minus_sn) m] -> p m_minus_sn) -> p m))
+       in conv (strongNat [p] f m) by (join : p m = Nat) at h.h                   -- relies on let defs in context
+
+test_div'1 : div' 0 0 = 0
+test_div'1 = join
+
+test_minus1 : minus 1 1 = 0
+test_minus1 = join                
+
+-- Gets stuck ???
+--test_div'2 : div' 1 0 = 1
+--test_div'2 = join
+
+{- TODO: better error msg:
+
+div' : Nat -> Nat -> Nat
+div' = \m n .
+       let p [p_def] = (\w.Nat : Nat -> Type 0) in -- constNat
+       let f [f_def] = ((\m g . case m [m_eq] of
+         Zero    -> conv Zero by (join : Nat = p m) at h.h
+         Succ m' -> Succ (g (minus (Succ m') (Succ n)) (s_minus_s__lt m' n))
+-- this causes error message unrelated to real problem.  modifying
+-- tc code to print first error reveals problem:
+--         Succ m' -> Succ (g (minus (Succ m') (Succ n)) (s_minus_s__lt m' n))
+-- this reveals real problem, even with orig tc code:
+--         Succ m' -> let recurse [_] = (g (minus (Succ m') (Succ n)) (s_minus_s__lt m' n)) in
+--                    Succ recurse
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> LT (m_minus_sn) m -> p m_minus_sn) -> p m))
+       in f
+-}
 
 -- Addition
 -- --------
