@@ -132,7 +132,35 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
 
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
-  when (lep == Erased && x `S.member` fv bodyE) $
+  -- The free variables function fv is ad-hoc polymorphic in its
+  -- return type
+  --
+  --   fv :: (Rep b, Alpha a) => a -> Set (Name b)
+  --
+  -- and returns the free (Name b)'s in its argument.  Now, here
+  --
+  --   a :: ETerm
+  --
+  -- and
+  --
+  --   x :: Name Term
+  --
+  -- and we need to check if there are any free (Name ETerm)s with
+  -- name x in a.  So, x needs to be converted into a (Name ETerm).
+  -- The translate function can do this, but it's also ad-hoc
+  -- polymorphic in its return type
+  --
+  --   translate :: (Rep b) => Name a -> Name b
+  --
+  -- so we fix the return type to avoid ambiguity:
+  let xE = translate x :: EName
+  -- Q: What happens if we instead do
+  --
+  --   x `S.member` fv bodyE
+  --
+  -- below? A: fv bodyE is always empty and the FV check always
+  -- passes!
+  when (lep == Erased && xE `S.member` fv bodyE) $
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
 
