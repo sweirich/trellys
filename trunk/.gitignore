@@ -1,0 +1,17 @@
+.capri/
+lib/replib-read-only
+src/dist/
+Append.trellys-elaborated
+Arithmetic.trellys-elaborated
+CastShiftTrick.trellys-elaborated
+ErasedConv.trellys-elaborated
+LetRebind.trellys-elaborated
+Lists.trellys-elaborated
+Ott.trellys-elaborated
+OttAppend.trellys-elaborated
+Prelude.trellys-elaborated
+ProgList.trellys-elaborated
+Trees.trellys-elaborated
+TypeTest.trellys-elaborated
+Vectors.trellys-elaborated
+trellys
