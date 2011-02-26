@@ -353,8 +353,18 @@ instance Display ETerm where
   display (EApp f x) = do
        df <- display f
        dx <- display x
-       let wrap = case x of EApp _ _ -> parens; _ -> id
-       return (df <+> wrap dx)
+       let wrapx = case x of
+                     EApp _ _  -> parens
+                     ELam _    -> parens
+                     ELet _ _  -> parens
+                     ECase _ _ -> parens
+                     _         -> id
+       let wrapf = case f of
+                     ELam _    -> parens
+                     ELet _ _  -> parens
+                     ECase _ _ -> parens
+                     _         -> id
+       return (wrapf df <+> wrapx dx)
   display (ETyEq e0 e1) = do
        de0 <- display e0
        de1 <- display e1
