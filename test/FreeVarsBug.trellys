@@ -1,0 +1,22 @@
+-- The free variables function fv from RepLib is not working.
+-- Experimentation shows that it's identically empty!
+module Bug where
+
+import Prelude
+
+-- E.g., n should be free in the erasure of all of these lambdas:
+t1 : [Nat] -> Nat
+t1 = \[n] . n
+
+t2 : [Nat] -> Nat
+t2 = \[n] . case n [_] of
+              Zero    -> Zero
+              Succ n' -> Zero
+
+t3 : [Nat] -> Nat
+t3 = \[n] . let n' [_] = n in n'
+
+-- and here the error message shows that n is indeed free in the
+-- erasure:
+j1 : t1 [Zero] = Zero
+j1 = join
