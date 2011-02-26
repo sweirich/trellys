@@ -389,7 +389,7 @@ instance Display ETerm where
   display (ECase dis matches) = do
     ddis <- display dis
     dmatches <- mapM display matches
-    return $ nest 2
+    return
       (text "case" <+> ddis <+> text "of" $$
         nest 2 (vcat dmatches))
   display (ELet val bnd) = do

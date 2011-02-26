@@ -15,6 +15,8 @@ import Language.Trellys.TypeMonad
 
 import Language.Trellys.GenericBind
 
+import Text.PrettyPrint.HughesPJ (nest)
+
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
 import Control.Monad.Reader hiding (join)
@@ -88,14 +90,15 @@ join s1 s2 m n =
      let joined = m' `aeq` n'
 
      unless joined $
-       do liftIO $ putStr "Join failure:\n  "
-          liftIO $ print $ disp  m
-          liftIO $ putStr $ "reduces in "++show s1++" steps to\n  "
-          liftIO $ print $ disp m'
-          liftIO $ putStr "and\n  "
-          liftIO $ print $ disp n
-          liftIO $ putStr $ "reduces in "++show s2++" steps to\n  "
-          liftIO $ print $ disp n'
+       do let p = print . nest 2 . disp
+          liftIO $ putStrLn "Join failure:"
+          liftIO $ p m
+          liftIO $ putStrLn $ "reduces in "++show s1++" steps to"
+          liftIO $ p m'
+          liftIO $ putStrLn "and"
+          liftIO $ p n
+          liftIO $ putStrLn $ "reduces in "++show s2++" steps to"
+          liftIO $ p n'
 
      return joined
 
