@@ -11,5 +11,4 @@ data Or [xT:Type 0] [yT:Type 0] -> Type 0 where
 
 -- Principle of explosion / ex falso quodlibet
 poe : [t:Type 0] -> [v:Void] -> t
--- The following causes a parse error.  BUG???
 poe = \[_] [v] . case v [_] of {}
