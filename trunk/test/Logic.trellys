@@ -11,4 +11,15 @@ data Or [xT:Type 0] [yT:Type 0] -> Type 0 where
 
 -- Principle of explosion / ex falso quodlibet
 poe : [t:Type 0] -> [v:Void] -> t
-poe = \[_] [v] . case v [_] of {}
+-- A direct case on v, e.g.
+--
+--   \[_] [v] . case v [_] of {}
+--
+-- won't work, because v is free in the body.  But using v in a place
+-- that's erased, to produce something that in turn produces t, works.
+-- E.g.
+--
+--   \[t] [v] . conv U by (case v [_] of {} : Unit = t) at t.t
+--
+-- or
+poe = \[_] [v] . contra (case v [_] of {} : 0 = 1)

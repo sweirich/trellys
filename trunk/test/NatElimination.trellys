@@ -65,10 +65,10 @@ data LT [m:Nat] [n:Nat] -> Type 0 where
     -> [LT m' n'] -> LT m n
 
 lt_0__F : [m:Nat] -> [LT m Zero] -> Void
-lt_0__F = \[m] [p] . case p [_] of
+lt_0__F = \[m] [p] . contra ((case p [_] of
   -- both cases have (Zero = Succ _)
   LZ [_] [_] [q]         -> contra q
-  LS [_] [_] [_] [q] [_] -> contra q
+  LS [_] [_] [_] [q] [_] -> contra q) : 0 = 1)
 
 -- Poor man's inversion: use join and a projection function (pred).
 eqS__eq : (m:Nat) -> (n:Nat) -> (Succ m = Succ n) -> m = n
