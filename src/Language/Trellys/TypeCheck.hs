@@ -782,14 +782,13 @@ checkQ (Rec Erased binding) = do
   checkQ body
 
 -- Q_CONS
-checkQ t@(App _ _ _) = do
-  case f of
-    Con _ -> do
-           qs <- mapM (\(arg,_) -> checkQ arg) args
-           return $ and qs
-    _ -> return False
-  where (f,args) = splitApp t
-
+--   base case: zero arguments
+checkQ (Con _) = return True
+--   step case: 1 or more arguments
+checkQ t@(App _ (Con _) _) = do
+  qs <- mapM (\(arg,_) -> checkQ arg) args
+  return $ and qs
+  where (_,args) = splitApp t
 
 checkQ _ = return False
 
