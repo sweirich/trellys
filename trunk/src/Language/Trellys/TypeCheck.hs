@@ -17,7 +17,6 @@ import Language.Trellys.TypeMonad
 
 import Language.Trellys.GenericBind
 import Generics.RepLib.Lib(subtrees)
-import Generics.RepLib.R(Rep)
 import Text.PrettyPrint.HughesPJ
 
 import Control.Monad.Reader hiding (join)
@@ -209,7 +208,7 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
           extendCtx (Sig y Logic natType) $ ta Logic a tyB
   -- in the case where ep is Erased, we have the two extra checks:
   aE <- erase a
-  when (ep == Erased && y `S.member` fv aE) $
+  when (ep == Erased && translate y `S.member` fv aE) $
        err [DS "ta: In implicit recnat, variable", DD y,
             DS "appears free in body", DD a]
 
@@ -241,7 +240,7 @@ ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
 
   -- perform the FV and value checks if in T_RecImp
   aE <- erase a
-  when (ep == Erased && y `S.member` fv aE) $
+  when (ep == Erased && translate y `S.member` fv aE) $
        err [DS "ta: In implicit rec, variable", DD y,
             DS "appears free in body", DD a]
   when (ep == Erased) $ do
@@ -313,7 +312,8 @@ ta th (Case b bnd) tyA = do
                       extendCtxTele subdeltai $ ta th ai tyA
              -- premise 6
              aE <- erase ai
-             let shouldBeNull = S.fromList (y : domTeleMinus delta) `S.intersection` fv aE
+             let yEs = map translate $ y : domTeleMinus delta
+             let shouldBeNull = S.fromList yEs `S.intersection` fv aE
              unless (S.null shouldBeNull) $
                err [DS "The constructor arguments ",
                     DS (show shouldBeNull),
@@ -339,11 +339,11 @@ ta th (Let th' ep a bnd) tyB =
     kc th tyB
     -- premises 4 and 5
     bE <- erase b
-    when (y `S.member` fv bE) $
+    when (translate y `S.member` fv bE) $
       err [DS "The equality variable bound in a let is not allowed to",
            DS "appear in the erasure of the body, but here", DD y,
            DS "appears in the erasure of", DD b]
-    when (ep == Erased && x `S.member` fv bE) $
+    when (ep == Erased && translate x `S.member` fv bE) $
       err [DS "The variables bound in an implicit let are not allowed to",
            DS "appear in the erasure of the body, but here", DD x,
            DS "appears in the erasure of", DD b]
@@ -469,8 +469,7 @@ ts tsTh tsTm =
       do (xs,c) <- unbind bnd
 
          erasedTerm <- erase c
-         let runtimeVars :: [EName]
-             runtimeVars = fv erasedTerm
+         let runtimeVars = fv erasedTerm
 
          let chkTy (False,pf) _ = do
                (e,t) <- ts Logic pf
@@ -478,7 +477,7 @@ ts tsTh tsTm =
              chkTy (True,pf) var = do
                (e,_) <- ts Logic pf
                -- TODO: Check to see if result is a Type 0?
-               when (translate var `elem` runtimeVars) $
+               when (translate var `S.member` runtimeVars) $
                    err [DS "Equality proof", DD pf, DS "is marked erased",
                         DS "but the corresponding variable", DD var,
                         DS "appears free in the erased term", DD erasedTerm]
@@ -542,11 +541,11 @@ ts tsTh tsTm =
         kc th tyB
         -- premises 4 and 5
         bE <- erase b
-        when (y `S.member` fv bE) $
+        when (translate y `S.member` fv bE) $
           err [DS "The equality variable bound in a let is not allowed to",
                DS "appear in the erasure of the body, but here", DD y,
                DS "appears in the erasure of", DD b]
-        when (ep == Erased && x `S.member` fv bE) $
+        when (ep == Erased && translate x `S.member` fv bE) $
           err [DS "The variables bound in an implicit let are not allowed to",
                DS "appear in the erasure of the body, but here", DD x,
                DS "appears in the erasure of", DD b]
@@ -727,8 +726,8 @@ isFirstOrder ty = ty `aeq` natType
 -- constructor's arguments.
 
 positivityCheck
-  :: (Rep b, Fresh m, Disp d, MonadError Err m) =>
-     Name b -> (d, Term) -> m ()
+  :: (Fresh m, Disp d, MonadError Err m) =>
+     Name Term -> (d, Term) -> m ()
 positivityCheck tName (cName,ty)  = do
   (tele,_) <- splitPi ty
   _ <- mapM checkBinding tele
@@ -739,7 +738,7 @@ positivityCheck tName (cName,ty)  = do
         msg' = text "when checking the constructor" <+> disp cName
 
 occursPositive
-  :: (Rep b, Fresh m, MonadError Err m) => Name b -> Term -> m Bool
+  :: (Fresh m, MonadError Err m) => Name Term -> Term -> m Bool
 occursPositive tName (Pos p ty) = do
   occursPositive tName ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
