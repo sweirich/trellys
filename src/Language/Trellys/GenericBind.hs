@@ -27,7 +27,10 @@ module Language.Trellys.GenericBind
 -- (2) adjust the exports above  
 -- (3) change the Alpha and Subst instances for SourcePos below
 
-import Generics.RepLib.Bind.LocallyNameless
+import Data.Set (Set)
+
+import Generics.RepLib.Bind.LocallyNameless hiding (fv)
+import qualified Generics.RepLib.Bind.LocallyNameless as LN
 import Generics.RepLib.Bind.Fresh
 
 import Generics.RepLib hiding (Arrow)
@@ -37,3 +40,6 @@ import Text.ParserCombinators.Parsec.Pos
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 instance Subst b SourcePos
+
+fv :: (Rep a, Alpha a) => a -> Set (Name a)
+fv = LN.fv
