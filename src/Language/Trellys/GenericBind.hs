@@ -41,5 +41,7 @@ $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 instance Subst b SourcePos
 
+-- Restrict the type of fv to avoid mistakes where we try to check for
+-- Terms free in ETerms.  See r108 for context.
 fv :: (Rep a, Alpha a) => a -> Set (Name a)
 fv = LN.fv
