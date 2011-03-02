@@ -253,8 +253,9 @@ instance Display Term where
       dn <- display n
       dx <- display x
       db <- display body
-      return $  text "rec" <+> dn <+> bindParens ep (dx) <+> text "="
-       <+> db
+      return $ parens $
+             text "rec" <+> dn <+> bindParens ep (dx) <+> text "=" $$
+                    (nest 2 db)
 
   display (App ep e1 e2) = do
      de1 <- display e1
@@ -273,7 +274,7 @@ instance Display Term where
      dy <- display y
      db <- display b
      return $  text "let" <+> tag <+> bindParens ep dx <+> brackets dy
-               <+> text "=" <+> da <+> text "in" <+> db
+               <+> text "=" <+> da <+> text "in" $$ db
      where
        tag = case th of {Logic -> text ""; Program -> text "prog"}
 
@@ -463,4 +464,8 @@ instance Disp [(Name Term,Term)] where
 
 instance Disp (Name Term,Term) where
   disp (n,t) = parens $ (disp n) <> comma <+> disp t
+
+instance Disp a => Disp (Maybe a) where
+  disp (Just a) = text "Just" <+> disp a
+  disp Nothing = text "Nothing"
 

@@ -8,6 +8,7 @@ module Language.Trellys.Environment
    emptyEnv, dumpEnv,
    lookupTy, lookupDef, lookupHint, lookupCon,
    getCtx, extendCtx, extendCtxTele, extendCtxs,
+   extendCtxMods,
    extendHints,
    substDefs
   ) where
@@ -110,9 +111,19 @@ extendCtxTele :: (MonadReader Env m) => Telescope -> m a -> m a
 extendCtxTele bds m = 
   foldr (\(x,tm,th,_) -> extendCtx (Sig x th tm)) m bds
 
+-- | Extend the context with a module
+extendCtxMod :: (MonadReader Env m) => Module -> m a -> m a
+extendCtxMod mod k = extendCtxs (reverse (moduleEntries mod)) k -- Note we must reverse the order.
+
+-- | Extend the context with a list of modules
+extendCtxMods :: (MonadReader Env m) => [Module] -> m a -> m a
+extendCtxMods mods k = foldr extendCtxMod k mods
+
+
 -- | Get the complete current context
 getCtx :: MonadReader Env m => m [Decl]
 getCtx = asks ctx
+
 
 -- | Add a type hint
 extendHints :: (MonadReader Env m) => Decl -> m a -> m a

@@ -581,7 +581,9 @@ tcModules mods = foldM tcM [] mods
 tcModule :: [Module] -- ^ List of already checked modules (including their Decls).
          -> Module           -- ^ Module to check.
          -> TcMonad Module   -- ^ The same module with all Decls checked and elaborated.
-tcModule defs m' = do checkedEntries <- extendCtxs importedDefs $ foldr tcE (return []) (moduleEntries m')
+tcModule defs m' = do checkedEntries <- extendCtxMods importedModules $
+                                          foldr tcE (return [])
+                                                  (moduleEntries m')
                       return m'{ moduleEntries = checkedEntries }
   where d `tcE` m = do
           -- Extend the Env per the current Decl before checking
@@ -592,7 +594,11 @@ tcModule defs m' = do checkedEntries <- extendCtxs importedDefs $ foldr tcE (ret
                            -- Add decls to the Decls to be returned
             AddCtx decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules (this is the env to check current module in)
-        importedDefs = concat [moduleEntries mod | mod <- defs, (ModuleImport (moduleName mod)) `elem` moduleImports m']
+        importedModules = filter (\mod -> (ModuleImport (moduleName mod)) `elem` moduleImports m') defs
+        -- importedModules =
+        --   [mod |
+        --    mod <- defs,
+        --           (ModuleImport (moduleName mod)) `elem` moduleImports m']
 
 -- | The Env-delta returned when type-checking a top-level Decl.
 data HintOrCtx = AddHint Decl
