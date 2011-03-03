@@ -273,10 +273,12 @@ instance Display Term where
      dx <- display x
      dy <- display y
      db <- display b
-     return $  text "let" <+> tag <+> bindParens ep dx <+> brackets dy
-               <+> text "=" <+> da <+> text "in" $$ db
+     return $  sep [text "let" <+> tag <+> bindParens ep dx
+                    <+> brackets dy <+> text "=" <+> da
+                    <+> text "in",
+                    db]
      where
-       tag = case th of {Logic -> text ""; Program -> text "prog"}
+       tag = case th of {Logic -> empty; Program -> text "prog"}
 
   display (Case d bnd) =
     lunbind bnd $ \ (y, alts) -> do
@@ -303,9 +305,9 @@ instance Display Term where
       dbs <- mapM displayErased bs
       dxs <- mapM display xs
       dc <- display c
-      return $ text "conv" <+> da <+> text "by" <+>
-               sep (punctuate comma dbs) <+>
-               text "at" <+> sep dxs  <+> text "." <+> dc
+      return $ fsep [text "conv" <+> da,
+                    text "by" <+> sep (punctuate comma dbs),
+                    text "at" <+> hsep dxs  <+> text "." <+> dc]
       where displayErased (True,pf) = liftM brackets $ display pf
             displayErased (False, pf) = display pf
 
@@ -398,8 +400,9 @@ instance Display ETerm where
     lunbind bnd $ \(n,body) -> do
       dn <- display n
       dbody <- display body
-      return (text "let" <+> dn <+> text "=" <+> dval $$
-             text "in" <+> dbody)
+      return $ sep [text "let" <+> dn <+> text "="
+                    <+> dval <+> text "in",
+                    dbody]
   display EContra = return $ text "contra"
 
 instance Display EMatch where
@@ -451,13 +454,16 @@ data D = DS String -- ^ String literal
 
 instance Disp D where
   disp (DS s) = text s
-  disp (DD d) = quotes $ disp d
+  disp (DD d) = nest 2 $ disp d -- might be a hack to do the nesting here???
 
 instance Disp [D] where
   disp dl = sep $ map disp dl
 
 instance Disp [Term] where
   disp = vcat . map disp
+
+instance Disp [Name ETerm] where
+  disp = sep . punctuate comma . map disp
 
 instance Disp [(Name Term,Term)] where
   disp = vcat . map disp
