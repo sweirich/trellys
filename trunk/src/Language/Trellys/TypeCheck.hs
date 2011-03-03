@@ -312,7 +312,7 @@ ta th (Case b bnd) tyA = do
                       extendCtxTele subdeltai $ ta th ai tyA
              -- premise 6
              aE <- erase ai
-             let yEs = map translate $ y : domTeleMinus delta
+             let yEs = map translate $ y : domTeleMinus deltai
              let shouldBeNull = S.fromList yEs `S.intersection` fv aE
              unless (S.null shouldBeNull) $
                err [DS "The constructor arguments ",
