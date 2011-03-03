@@ -17,11 +17,11 @@ instance Disp Err where
   disp (Err [] msg) = msg
   disp (Err [(p,term)] msg)  =
     disp p $$
-    nest 4 msg $$
-    nest 4 (text "In the expression " <+> disp term)
+    nest 2 msg $$
+    nest 2 (text "In the expression" $$ nest 2 (disp term))
   disp (Err ((_,term):ps) msg)  =
     disp (Err ps msg) $$
-    (nest 4 (text "In the expression " <+> disp term))
+    (nest 2 (text "In the expression" $$ nest 2 (disp term)))
 
 
 instance Error Err where

@@ -152,7 +152,7 @@ telePi tele tyB =
 
 domTeleMinus :: Telescope -> [TName]
 domTeleMinus tele =
-  map (\(n,_,_,_) -> n) $ filter (\(_,_,_,ep) -> ep == Erased) tele
+  [n | (n,_,_,ep) <- tele, ep == Erased]
 
 teleVars :: Telescope -> [TName]
 teleVars = map (\(v,_,_,_) -> v)

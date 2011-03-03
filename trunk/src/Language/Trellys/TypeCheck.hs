@@ -315,9 +315,10 @@ ta th (Case b bnd) tyA = do
              let yEs = map translate $ y : domTeleMinus deltai
              let shouldBeNull = S.fromList yEs `S.intersection` fv aE
              unless (S.null shouldBeNull) $
-               err [DS "The constructor arguments ",
-                    DS (show shouldBeNull),
-                    DS "should not appear in the erasure of ", DD ai,
+               err [DS "The constructor argument(s) and/or scrutinee equality proof",
+                    DD . S.toList $ shouldBeNull,
+                    DS "should not appear in the erasure", DD aE,
+                    DS "of the term", DD ai,
                     DS "because they bind compiletime variables."]
              return (c, bind deltai' eai)
   emtchs <- mapM checkBranch mtchs
@@ -623,7 +624,7 @@ tcEntry (Def n term) = do
                       return $ AddCtx [Sig n Logic ty, Def n eterm]
         Just (theta,ty) ->
           let handler (Err ps msg) = throwError $ Err (ps) (msg $$ msg')
-              msg' = disp [DS "when checking the term ", DD term,
+              msg' = disp [DS "When checking the term ", DD term,
                            DS "against the signature", DD ty]
           in do
             eterm <- ta theta term ty `catchError` handler
@@ -741,7 +742,7 @@ positivityCheck tName (cName,ty)  = do
  `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
   where checkBinding (_,teleTy,Logic,_) = occursPositive tName teleTy
         checkBinding _ = return True
-        msg' = text "when checking the constructor" <+> disp cName
+        msg' = text "When checking the constructor" <+> disp cName
 
 occursPositive
   :: (Fresh m, MonadError Err m) => Name Term -> Term -> m Bool
