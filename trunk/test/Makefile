@@ -18,7 +18,7 @@ PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 typetest NatElimin
 # FAIL are tests that *should* always fail.
 FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug\
      bad_datatype ErasedConvBad Test_T_Let_2_FV_1 Test_T_Rec2_FV Test_T_Let_1_FV\
-     Test_T_Let_2_FV_2  Test_T_RN2_FV FreeVarsBug
+     Test_T_Let_2_FV_2  Test_T_RN2_FV FreeVarsBug Bug_T_Case_FV
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
