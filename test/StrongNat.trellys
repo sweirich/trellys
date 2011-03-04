@@ -30,8 +30,69 @@ lt_0__F = \m p . case p [_] of
   LZ [_] _ [q]         -> contra q
   LS _ [_] _ [q] _ -> contra q
 
--- Nat transitivity is stronger than continuous transitivity
-axiom lt_trans_pred : (l:Nat) -> (m:Nat) -> (n':Nat) -> LT l m -> LT m (Succ n') -> LT l n'
+-- m < n -> exists n' . n = S n'
+--
+-- Trying to avoid doing this proof by contradiction over and over.
+-- Seems that abstracting this is more trouble than it's worth :P
+
+{-
+Problems include: annotations and fact that witness isn't erased
+
+-- Existential types.
+--  data Exists (a : Type 0) (p : (x:a) -> Type 0) -> Type 0 where
+--    Ex : [x : a] -> (witness : p x) -> Exists a p
+
+-- m < n -> exists n'. n = S n'
+--
+-- May be impossible to have this runtime due to inability to extract
+-- runtime equality proof from case deconstruction.
+lt__S : (m:Nat) -> (n:Nat) -> LT m n -> Exists Nat (\n'.n = Succ n' : Nat -> Type 0)
+lt__S = \m n m_lt_n . case n [n_eq] of
+  Zero    -> poe [Exists Nat (\n'.n = Succ n' : Nat -> Type 0)] [lt_0__F m (conv m_lt_n by n_eq at h.LT m h)]
+  Succ n' -> Ex [Nat] [((\n'.n = Succ n') : Nat -> Type 0)]
+                [n']  (conv n_eq by (join : (n = Succ n') = ((\n'.n = Succ n') : Nat -> Type 0) n') at h.h)
+-}
+lt__S : (m:Nat) -> (n:Nat) -> LT m n -> n = Succ (pred n)
+lt__S = \m n m_lt_n . case n [n_eq] of
+  Zero    -> poe [n = Succ (pred n)] [lt_0__F m (conv m_lt_n by n_eq at h.LT m h)]
+  Succ n' -> let e1 [_] = (conv (join : n' = pred (Succ n'))
+                           by (sym Nat Nat n (Succ n') n_eq)
+                           at h.n'= pred h
+                        : n' = pred n) in
+             let e2 [_] = (conv (join : n = n) by n_eq at h.n=h
+                        : n = Succ n') in -- same as [n_eq], but run-time :P
+             conv e2 by e1 at h.n = Succ h
+
+-- m + 1 < n + 1 -> m < n
+axiom ltSS__lt : (m:Nat) -> (n:Nat) -> LT (Succ m) (Succ n) -> LT m n
+
+-- l < m /\ m < S n' -> l < n'
+--
+-- Proof idea (P = pred):
+--
+--   l < m -> m = S (P m)
+-- so
+--   m < S n' = S (P m) < S n'
+-- and
+--   P m < n' -> n' = S (P n')
+-- now
+--   case l of
+--     Z    -> LZ using n' = S (P n')
+--     S l' -> then S l' < S (P m) -> l' < P m and so
+--             LS using (recursion on l' (P m) (P n'))
+
+lt_trans_pred : (l:Nat) -> (m:Nat) -> (n':Nat) -> LT l m -> LT m (Succ n') -> LT l n'
+recnat lt_trans_pred l = \m n' l_lt_m m_lt_Sn' .
+  let m_eq [_] = lt__S l m l_lt_m in -- m = S (P m)
+  let pm_lt_n' [_] = ltSS__lt (pred m) n' (conv m_lt_Sn' by m_eq at h.LT h (Succ n')) in -- P m < n'
+  let n'_eq [_] = lt__S (pred m) n' pm_lt_n' in -- n' = S (P n')
+  case l [l_eq] of
+    Zero    -> LZ [l] [n'] [l_eq] (pred n') [n'_eq]
+    Succ l' -> let l'_lt_pm [_]   = ltSS__lt l' (pred m) (conv l_lt_m by l_eq, m_eq at hl hm.LT hl hm) in -- l' < P m
+               let pm_lt_SPn' [_] = conv pm_lt_n' by n'_eq at h.LT (pred m) h in -- P m < S (P n')
+               let l'_lt_Pn' [_]  = lt_trans_pred l' [l_eq] (pred m) (pred n') l'_lt_pm pm_lt_SPn' in -- l' < P n'
+               LS [l] [n'] l' [l_eq] (pred n') [n'_eq] l'_lt_Pn'
+
 -- Strong elimination / course-of-values induction / structural
 -- induction: allows recursion on any structural subterm, not just the
 -- predecessor.
