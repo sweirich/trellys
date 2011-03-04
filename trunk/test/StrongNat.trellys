@@ -63,8 +63,28 @@ lt__S = \m n m_lt_n . case n [n_eq] of
                         : n = Succ n') in -- same as [n_eq], but run-time :P
              conv e2 by e1 at h.n = Succ h
 
+-- Poor man's inversion
+--
+-- S m = S n -> m = n
+--
+-- This strategy provides inversion for any trellys types: join and a
+-- projection function (here pred).
+eqS__eq : (m:Nat) -> (n:Nat) -> (Succ m = Succ n) -> m = n
+eqS__eq = \m n sm_eq_Sn .
+  let pSm_eq_m [_]   = (join : pred (Succ m) = m) in
+  let pSn_eq_n [_]   = (join : pred (Succ n) = n) in
+  let pSm_eq_pSn [_] = (conv (join : pred (Succ m) = pred (Succ m))
+                        by sm_eq_Sn at h.pred (Succ m) = pred h) in
+  conv pSm_eq_pSn by pSm_eq_m, pSn_eq_n at hm hn.hm = hn
+
 -- m + 1 < n + 1 -> m < n
-axiom ltSS__lt : (m:Nat) -> (n:Nat) -> LT (Succ m) (Succ n) -> LT m n
+ltSS__lt : (m:Nat) -> (n:Nat) -> LT (Succ m) (Succ n) -> LT m n
+ltSS__lt = \m n sm_lt_Sn . case sm_lt_Sn [_] of
+  LZ [m_eq] _ [_] -> contra m_eq
+  -- The need for conversion here surprised me.
+  LS m' [m_eq] n' [n_eq] lt -> let [m'_eq_m] [_] = sym Nat Nat m m' (eqS__eq m m' m_eq) in
+                               let [n'_eq_n] [_] = sym Nat Nat n n' (eqS__eq n n' n_eq) in
+                               conv lt by m'_eq_m, n'_eq_n at hm hn.LT hm hn
 
 -- l < m /\ m < S n' -> l < n'
 --
