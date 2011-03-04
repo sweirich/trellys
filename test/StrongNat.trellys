@@ -1,0 +1,97 @@
+module StrongNat where
+
+import Prelude
+import Arithmetic
+import Logic
+
+data LT [m:Nat] [n:Nat] -> Type 0 where
+  LZ : [m = Zero]
+    -> (n':Nat) -> [n = Succ n']
+    -> LT m n
+  LS : (m':Nat) -> [m = Succ m']
+    -> (n':Nat) -> [n = Succ n']
+    -> (LT m' n') -> LT m n
+
+-- Every number is less than its successor
+m_lt_Sm : (m:Nat) -> LT m (Succ m)
+recnat m_lt_Sm m = case m [m_eq] of
+  Zero    -> let [m_eq'] [_] = sym Nat Nat m Zero m_eq in
+             conv (LZ [m] [Succ Zero] [m_eq] Zero [join])
+             by m_eq' at h.LT m (Succ h)
+  Succ m' -> let rec_ [_] = conv (m_lt_Sm m' [m_eq])
+                            by (sym Nat Nat m (Succ m') m_eq)
+                            at h.LT m' h in
+             LS [m] [Succ m] m' [m_eq] m [join] rec_
+
+-- No number is less than zero
+lt_0__F : (m:Nat) -> (LT m Zero) -> Void
+lt_0__F = \m p . case p [_] of
+  -- both cases have (Zero = Succ _)
+  LZ [_] _ [q]         -> contra q
+  LS _ [_] _ [q] _ -> contra q
+
+-- Nat transitivity is stronger than continuous transitivity
+axiom lt_trans_pred : (l:Nat) -> (m:Nat) -> (n':Nat) -> LT l m -> LT m (Succ n') -> LT l n'
+-- Strong elimination / course-of-values induction / structural
+-- induction: allows recursion on any structural subterm, not just the
+-- predecessor.
+strongNat : [p:Nat -> Type 0]
+         -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
+         -> ((n:Nat) -> p n)
+strongNat = \[p] f .
+  -- g _ _ n : (m:Nat) -> LT m n -> p m, and so proves p n via f
+  let g [_] = ((recnat g i = \n [n_lt_i] m [m_lt_n] . case i [eq_i] of
+    -- n < 0, a contradiction
+    Zero    ->
+      poe [p m] [lt_0__F n (conv n_lt_i by eq_i at h.LT n h)]
+    -- n < S i' /\ m < n -> m < i' and we can recurse on i'
+    Succ i' ->
+      let [n_lt_Si'] [_] = conv n_lt_i by eq_i at h.LT n h in
+      let [m_lt_i'] [_] = lt_trans_pred m n i' m_lt_n n_lt_Si' in
+      f m (g i' [eq_i] m [m_lt_i'])
+           -- making i erased would disallow the case on i above and
+           -- probably complicate things considerably ...
+           ): (i:Nat) -> (n:Nat) -> [LT n i] -> ((m:Nat) -> [LT m n] -> p m))
+  in \n . f n (g (Succ n) n [m_lt_Sm n])
+
+
+-- Subtraction makes things smaller
+axiom s_minus_s__lt : (m:Nat) -> (n:Nat) -> LT (minus (Succ m) (Succ n)) (Succ m)
+-- Logical division
+--
+-- cf. Arithmetic.div
+--
+-- m `div` n = \ceiling{ m / S n }
+p : Nat -> Type 0
+p = \w.Nat
+
+div' : Nat -> Nat -> Nat
+div' = \m n .
+--       let p [p_def] = (\w.Nat : Nat -> Type 0) in -- constNat
+       let f [f_def] = ((\m g . case m [m_eq] of
+         Zero    -> conv Zero by (join : Nat = p m) at h.h                        -- relies on let defs in context
+         Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n)
+                                   by (sym Nat Nat m (Succ m') m_eq)
+                                   at m.LT ((minus (Succ m') (Succ n))) m in
+                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
+                                   by (join : p (minus (Succ m') (Succ n)) = Nat) -- relies on let defs in context
+                                   at h.h in
+                    conv (Succ recg) by (join : Nat = p m) at h.h                 -- relies on let defs in context
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [LT (m_minus_sn) m] -> p m_minus_sn) -> p m))
+       in conv (strongNat [p] f m) by (join : p m = Nat) at h.h                   -- relies on let defs in context
+
+-- Tests
+test_div'1 : div' 0 0 = 0
+test_div'1 = join
+
+test_div'2 : div' 1 0 = 1
+test_div'2 = join
+
+test_div'3 : div' 10 1 = 5
+test_div'3 = join 1000
+
+test_div'4 : div' 10 2 = 4
+test_div'4 = join
+
+test_div'5 : div' 10 3 = 3
+test_div'5 = join
