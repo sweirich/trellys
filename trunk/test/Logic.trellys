@@ -10,6 +10,15 @@ data Or [xT:Type 0] [yT:Type 0] -> Type 0 where
   InR : (y:yT) -> Or xT yT
 
 -- Principle of explosion / ex falso quodlibet
+--
+-- NB: THIS IS REALLY STUPID: DON'T USE IT:
+--
+-- Notice that the body of poe simply invokes contra with *no type
+-- annotation*.  The point is that contra *is* POE, except it's better
+-- than this implementation, because the type checker can infer the
+-- type you want, whereas POE requires the type as an argument.
+--
+-- Wherever you used Void and POE, use (0=1) and contra instead.
 poe : [t:Type 0] -> [v:Void] -> t
 -- A direct case on v, e.g.
 --
