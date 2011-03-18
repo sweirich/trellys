@@ -1,0 +1,166 @@
+module LessThanLib_LT where
+
+import Prelude
+import Arithmetic
+import Logic
+
+-- * Less-than relation on Nat
+--   -------------------------
+
+-- cf. Arithmetic.lt
+--
+-- Is it easier to use (lt m n = True) ?  And what about the alternate
+-- ADT characterization derived below in lemmas m_lt_Sm and lt_inc?
+-- I.e., what if we instead define
+{-
+data LT [m:Nat] [n:Nat] -> Type 0 where
+  LBase : [n = Succ m] -> LT m n
+  LStep : [n':Nat] -> [n = Succ n']
+       -> [LT m n'] -> LT m n
+-}
+-- and then derive the current LT constructors as lemmas?
+data LT [m:Nat] [n:Nat] -> Type 0 where
+  LZ : [m = Zero]
+    -> (n':Nat) -> [n = Succ n']
+    -> LT m n
+  LS : (m':Nat) -> [m = Succ m']
+    -> (n':Nat) -> [n = Succ n']
+    -> (LT m' n') -> LT m n
+
+ltT : Nat -> Nat -> Type 0
+ltT = \m n . LT m n
+
+-- * Less-than lemmas
+--   ----------------
+--
+-- Lemmas with names like lem_LT are version of lem specialized to LT.
+-- The amount of conversion code needed to convert lem_LT to lem makes
+-- me doubt this whole abstraction thing was such a great idea ...
+--
+-- The abstract interface for a less-than relation ltT that I've come
+-- up with (based on need) is
+{-
+-- Abstraction of the LT constructor and the Arithmetic.lt function
+z_lt_Sn          : (n : Nat) -> ltT Zero (Succ n)
+m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
+
+-- Abstraction of structural less-than.  This can be generalized to
+-- arbitrary datatypes, whereas LT above is specific to Nat.
+m_lt_Sm          : (m:Nat) -> ltT m (Succ m)
+m_lt_n__m_lt_Sn  : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
+
+-- Nothing is less than zero
+lt_0__contra     : (m:Nat) -> (ltT m Zero) -> (0 = 1)
+
+-- Less-than has an inversion like property
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+-}
+
+-- The first two lemmas give an abstract version of LT
+
+z_lt_Sn_LT : (n : Nat) -> LT Zero (Succ n)
+z_lt_Sn_LT = \n .  LZ [Zero] [Succ n] [join] n [join]
+
+z_lt_Sn : (n : Nat) -> ltT Zero (Succ n)
+z_lt_Sn = \n . conv (z_lt_Sn_LT n)
+               by (join : LT Zero (Succ n) = ltT Zero (Succ n)) at h.h
+
+m_lt_n__Sm_lt_Sn_LT : (m : Nat) -> (n : Nat) -> LT m n -> LT (Succ m) (Succ n)
+m_lt_n__Sm_lt_Sn_LT = \m n m_lt_n . LS [Succ m] [Succ n] m [join] n [join] m_lt_n
+
+m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
+m_lt_n__Sm_lt_Sn = \m n m_lt_n .
+  let m_lt_n_LT [_] = conv m_lt_n by (join : ltT m n = LT m n) at h.h in
+  conv (m_lt_n__Sm_lt_Sn_LT m n m_lt_n_LT)
+  by (join : LT (Succ m) (Succ n) = ltT (Succ m) (Succ n)) at h.h
+
+-- The next two lemmas give an alternate characterization of LT
+
+-- m < S m
+--
+-- Every number is less than its successor
+--
+-- GENERIC (but easier for lt)
+m_lt_Sm : (m:Nat) -> ltT m (Succ m)
+recnat m_lt_Sm m = case m [m_eq] of
+  Zero    -> conv (z_lt_Sn Zero)
+             by (sym Nat Nat m Zero m_eq)
+             at m.ltT m (Succ m)
+  Succ m' -> conv (m_lt_n__Sm_lt_Sn m' (Succ m') (m_lt_Sm m' [m_eq]))
+             by (sym Nat Nat m (Succ m') m_eq)
+             at m.ltT m (Succ m)
+
+-- m < n -> m < n+1
+--
+-- This can be made generic given an LT fold; doubt the Arithmetic.lt
+-- version is any easier ... but see sm_lt_Sn__m_lt_n below for how
+-- complicated the fold is (not clear anything would be gained).
+m_lt_n__m_lt_Sn_LT : (m:Nat) -> (n:Nat) -> LT m n -> LT m (Succ n)
+recnat m_lt_n__m_lt_Sn_LT m = \n lt_p . case lt_p [_] of
+  LZ [z_eq_m] _ [_]                       ->
+--  LZ [m] [Succ n] [z_eq_m] n [join]
+    conv (z_lt_Sn_LT n)
+    by (sym Nat Nat m Zero z_eq_m)
+    at m.LT m (Succ n)
+  LS m' [m_eq_Sm'] n' [n_eq_Sn'] m'_lt_n' ->
+    let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn_LT m' [m_eq_Sm'] n' m'_lt_n' in
+--  LS [m] [Succ n] m' [m_eq_Sm'] n [join] m'_lt_n
+    conv (m_lt_n__Sm_lt_Sn_LT m' (Succ n') m'_lt_Sn')
+    by (sym Nat Nat m (Succ m') m_eq_Sm'),
+       (sym Nat Nat n (Succ n') n_eq_Sn')
+    at m n.LT m (Succ n)
+
+m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
+m_lt_n__m_lt_Sn = \m n m_lt_n .
+  let m_lt_n_LT [_] = conv m_lt_n by (join : ltT m n = LT m n) at h.h in
+  conv (m_lt_n__m_lt_Sn_LT m n m_lt_n_LT)
+  by (join : LT m (Succ n) = ltT m (Succ n)) at h.h
+
+-- not (m < 0)
+--
+-- No number is less than zero
+lt_0__contra : (m:Nat) -> (ltT m Zero) -> (0 = 1)
+lt_0__contra = \m p . case (conv p by (join : ltT m Zero = LT m Zero) at h.h) [_] of
+  -- both cases have (Zero = Succ _)
+  LZ [_] _ [q]     -> contra q
+  LS _ [_] _ [q] _ -> contra q
+
+-- m + 1 < n + 1 -> m < n
+--
+-- This can be made generic given an LT fold (but that requires
+-- (*,[])), but an Arithmetic.lt based ltT allows an easier proof by
+-- join.
+--
+-- In fact, this lemma is equivalent to an Arithmetic.lt-fold in the
+-- LT style: consider (less-than-Type Elimination specialized to Arithmetic.lt)
+--
+--   ltTE_lt : (m n : Nat) -> (lt m n = True)
+--          -> (p : Nat -> Nat -> Type 0)
+--          -> ((m = Zero) -> p m n)
+--          -> ((m = Succ (pred m)) -> (n = Succ (pred n)) -> (lt (pred m) (pred n) = True) -> p m n)
+--          -> p m n
+--   -- I don't promise this type checks ...
+--   ltTE_lt = \m n m_lt_n p lz ls . case n [n_eq] of
+--     Z    -> contra (lt_0__contra _ (conv m_lt_n by n_eq at m.lt m n = True))
+--     S n' -> case m [m_eq] of
+--               Z    -> lz (uneraseEq _ _ _ _ m_eq)
+--               S n' -> let [m_eq_SPm] [_] = n_eq_Sn'__n_eq_SPn m m' m_eq in
+--                       let [n_eq_SPn] [_] = n_eq_Sn'__n_eq_SPn n n' n_eq in
+--                       -- THIS IS THE LEMMA WE'RE HYPOTHETICALLY GOING TO PROVE VIA THIS ltTE_lt :P
+--                       let lt_eq [_]    = (join : lt (S (pred m)) (S (pred n)) = lt (pred m) (pred n)) in
+--                       let pm_lt_Pn [_] = conv (conv m_lt_n by m_eq_SPm, n_eq_SPn at m n.lt m n = True)
+--                                          by lt_eq at l.l=True in
+--                       ls m_eq_SPm n_eq_SPn pm_lt_Pn
+sm_lt_Sn__m_lt_n_LT : (m:Nat) -> (n:Nat) -> LT (Succ m) (Succ n) -> LT m n
+sm_lt_Sn__m_lt_n_LT = \m n sm_lt_Sn . case sm_lt_Sn [_] of
+  LZ [m_eq] _ [_] -> contra m_eq
+  -- The need for conversion here surprised me.
+  LS m' [m_eq] n' [n_eq] lt -> let [m'_eq_m] [_] = sym Nat Nat m m' (sm_eq_Sn__m_eq_n m m' m_eq) in
+                               let [n'_eq_n] [_] = sym Nat Nat n n' (sm_eq_Sn__m_eq_n n n' n_eq) in
+                               conv lt by m'_eq_m, n'_eq_n at hm hn.LT hm hn
+
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+sm_lt_Sn__m_lt_n = \m n sm_lt_Sn .
+  let sm_lt_Sn_LT [_] = conv sm_lt_Sn by (join : ltT (Succ m) (Succ n) = LT (Succ m) (Succ n)) at h.h in
+  conv (sm_lt_Sn__m_lt_n_LT m n sm_lt_Sn_LT)
+  by (join : LT m n = ltT m n) at h.h
