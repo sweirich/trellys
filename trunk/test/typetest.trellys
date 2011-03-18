@@ -71,11 +71,6 @@ id = \ [aTy] a . a
 
 z = id [Nat] Zero
 
-pred : (x : Nat) -> Nat
-pred = \x . case x [y] of
-               Zero -> Zero
-               Succ n -> n
-
 
 v2 = pred 0 -- (VNil [Nat])
 
