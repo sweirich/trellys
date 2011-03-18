@@ -230,13 +230,13 @@ lenv' = \ [n] . \t . conv mcataNat' [V Nat] [typeConst Nat] phi_lenv' [n] t
 
 pf0toV0 : [n:Nat] -> (pf:n=0) -> FixNat (V Nat) 0 = FixNat (V Nat) n
 pf0toV0 = \ [n] . \ pf .
-  let pf' [xx] = sym Nat Nat n 0 pf in
+  let [pf'] [xx] = sym Nat Nat n 0 pf in
     conv join by pf' at n.(FixNat (V Nat) 0 = FixNat (V Nat) n)
 
 pf1toV1 : [n:Nat] -> [m:Nat] -> (pf:n=Succ m) ->
           FixNat (V Nat) (Succ m) = FixNat (V Nat) n
 pf1toV1 = \ [n] . \ [m] . \ pf .
-  let pf' [xx] = sym Nat Nat n (Succ m) pf in
+  let [pf'] [xx] = sym Nat Nat n (Succ m) pf in
     conv join by pf' at n.(FixNat (V Nat) (Succ m) = FixNat (V Nat) n)
 
 
