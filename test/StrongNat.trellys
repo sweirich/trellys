@@ -2,7 +2,7 @@ module StrongNat where
 
 import Prelude
 import Arithmetic
-import LessThanLib_lt
+import LessThanNat_lt
 
 -- The first two lemmas give an abstract version of Arithmetic.lt and
 -- LessThanLib_LT.LT based less-than relations.

@@ -1,4 +1,4 @@
-module LessThanLib_lt where
+module LessThanNat_lt where
 
 import Prelude
 import Arithmetic
