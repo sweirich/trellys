@@ -48,17 +48,9 @@ sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
 z_lt_Sn_LT : (n : Nat) -> lt Zero (Succ n) = True
 z_lt_Sn_LT = \n . join
 
-z_lt_Sn : (n : Nat) -> ltT Zero (Succ n)
-z_lt_Sn = \n . conv (z_lt_Sn_LT n) by (sg Zero (Succ n)) at h.h
-
 m_lt_n__Sm_lt_Sn_LT : (m : Nat) -> (n : Nat) -> lt m n = True -> lt (Succ m) (Succ n) = True
 m_lt_n__Sm_lt_Sn_LT = \m n m_lt_n . let lt_eq [_] = (join : lt m n = lt (Succ m) (Succ n)) in
   conv m_lt_n by lt_eq at h.h=True
-
-m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
-m_lt_n__Sm_lt_Sn = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn_LT m n
-                                       (conv m_lt_n by (gs m n) at h.h))
-                                 by (sg (Succ m) (Succ n)) at h.h
 
 -- not (m < 0)
 --
@@ -66,26 +58,6 @@ m_lt_n__Sm_lt_Sn = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn_LT m n
 lt_0__contra_LT : (m:Nat) -> (n:Nat) -> [n = Zero] -> (lt m n = True) -> (0 = 1)
 lt_0__contra_LT = \m n [n_eq] m_lt_n . let lt_0_F [_] = (join : lt m Zero = False) in
   contra (conv lt_0_F by (conv m_lt_n by n_eq at n.lt m n = True) at h.h=False)
-
-lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n) -> (0 = 1)
-lt_0__contra = \m n [n_eq] m_lt_n .
-  lt_0__contra_LT m n [n_eq] (conv m_lt_n by (gs m n) at h.h)
-
--- The next two lemmas give an alternate characterization of LT
-
--- m < S m
---
--- Every number is less than its successor
---
--- GENERIC (and can be moved to StrongNat)
-m_lt_Sm : (m:Nat) -> ltT m (Succ m)
-recnat m_lt_Sm m = case m [m_eq] of
-  Zero    -> conv (z_lt_Sn Zero)
-             by (sym Nat Nat m Zero m_eq)
-             at m.ltT m (Succ m)
-  Succ m' -> conv (m_lt_n__Sm_lt_Sn m' (Succ m') (m_lt_Sm m' [m_eq]))
-             by (sym Nat Nat m (Succ m') m_eq)
-             at m.ltT m (Succ m)
 
 -- m + 1 < n + 1 -> m < n
 --
@@ -117,57 +89,3 @@ sm_lt_Sn__m_lt_n_LT : (m:Nat) -> (n:Nat) -> lt (Succ m) (Succ n) = True -> lt m 
 sm_lt_Sn__m_lt_n_LT = \m n sm_lt_Sn .
   let pred_eq [_] = (join : lt (Succ m) (Succ n) = lt m n) in
   conv sm_lt_Sn by pred_eq at h.h = True
-
-sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
-sm_lt_Sn__m_lt_n = \m n sm_lt_Sn .
-  conv (sm_lt_Sn__m_lt_n_LT m n
-        (conv sm_lt_Sn by (gs (Succ m) (Succ n)) at h.h))
-  by (sg m n) at h.h
-
--- m < n -> m < n+1
---
--- This can be made generic given an LT fold; doubt the Arithmetic.lt
--- version is any easier ... but see sm_lt_Sn__m_lt_n below for how
--- complicated the fold is (not clear anything would be gained).
---
--- GENERIC!!!
-m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
-recnat m_lt_n__m_lt_Sn m = \n m_lt_n . case m [m_eq] of
-  -- ??? CAN THIS JOIN BE UNTYPED?
-  Zero    -> conv (z_lt_Sn n)
-             by (sym Nat Nat m Zero m_eq)
-             at m.ltT m (Succ n)
-             -- would like to use m_lt_n__n_eq_SPn to avoid case on n
-             -- but I that's in StrongNat now :P
-  Succ m' -> case n [n_eq] of
-    Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
-    Succ n' -> let m'_lt_n' [_]  = sm_lt_Sn__m_lt_n m' n'
-                                   (conv m_lt_n by m_eq, n_eq at m n.ltT m n) in
-               let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn m' [m_eq] n' m'_lt_n' in
-               conv (m_lt_n__Sm_lt_Sn m' (Succ n') m'_lt_Sn')
-               by (sym Nat Nat m (Succ m') m_eq),
-                  (sym Nat Nat n (Succ n') n_eq)
-               at m n.ltT m (Succ n)
-
-{-
-
-  LZ [z_eq_m] _ [_]                       ->
---  LZ [m] [Succ n] [z_eq_m] n [join]
-    conv (z_lt_Sn_LT n)
-    by (sym Nat Nat m Zero z_eq_m)
-    at m.LT m (Succ n)
-  LS m' [m_eq_Sm'] n' [n_eq_Sn'] m'_lt_n' ->
-    let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn_LT m' [m_eq_Sm'] n' m'_lt_n' in
---  LS [m] [Succ n] m' [m_eq_Sm'] n [join] m'_lt_n
-    conv (m_lt_n__Sm_lt_Sn_LT m' (Succ n') m'_lt_Sn')
-    by (sym Nat Nat m (Succ m') m_eq_Sm'),
-       (sym Nat Nat n (Succ n') n_eq_Sn')
-    at m n.LT m (Succ n)
--}
-{-
-m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
-m_lt_n__m_lt_Sn = \m n m_lt_n .
-  conv (m_lt_n__m_lt_Sn_LT m n
-        (conv m_lt_n by (gs m n) at h.h))
-  by (sg (Succ m) (Succ n)) at h.h
--}
