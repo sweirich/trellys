@@ -2,256 +2,120 @@ module StrongNat where
 
 import Prelude
 import Arithmetic
-import LessThanNat_lt
-
--- The first two lemmas give an abstract version of Arithmetic.lt and
--- LessThanLib_LT.LT based less-than relations.
-
-z_lt_Sn : (n : Nat) -> ltT Zero (Succ n)
-z_lt_Sn = \n . conv (z_lt_Sn_LT n) by (sg Zero (Succ n)) at h.h
-
-m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
-m_lt_n__Sm_lt_Sn = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn_LT m n
-                                       (conv m_lt_n by (gs m n) at h.h))
-                                 by (sg (Succ m) (Succ n)) at h.h
-
--- m + 1 < n + 1 -> m < n
-sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
-sm_lt_Sn__m_lt_n = \m n sm_lt_Sn .
-  conv (sm_lt_Sn__m_lt_n_LT m n
-        (conv sm_lt_Sn by (gs (Succ m) (Succ n)) at h.h))
-  by (sg m n) at h.h
-
--- not (m < 0)
---
--- No number is less than zero
-lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n) -> (0 = 1)
-lt_0__contra = \m n [n_eq] m_lt_n .
-  lt_0__contra_LT m n [n_eq] (conv m_lt_n by (gs m n) at h.h)
-
--- m < n -> exists n' . n = S n'
---
--- Trying to avoid doing this proof by contradiction over and over.
--- Abstracting it was more trouble than expected :P
---
--- Using pred as a skolem function to compute n' in terms of n leads
--- to much more usable lemma (the second version).
---
--- Proof idea:
---
--- n = 0 is contradictory so n = S n'.
-
--- Not sure how usable this version is: annotations and conv ...
---
--- THIS VERSION IS NOT USED: so no NoLaw datatype restriction concerns
-m_lt_n__n_eq_SPn' : (m:Nat) -> (n:Nat) -> ltT m n -> Exists Nat (\n'.n = Succ n' : Nat -> Type 0)
-m_lt_n__n_eq_SPn' = \m n m_lt_n . case n [n_eq] of
-  Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
-  Succ n' -> let eq [_] = uneraseEq [Nat] [Nat] [n] [Succ n'] [n_eq] in
-             Ex [Nat] [((\n'.n = Succ n') : Nat -> Type 0)]
-                [n']  (conv eq by (join : (n = Succ n') = ((\n'.n = Succ n') : Nat -> Type 0) n') at h.h)
-
--- This version works well.
-m_lt_n__n_eq_SPn : (m:Nat) -> (n:Nat) -> ltT m n -> n = Succ (pred n)
-m_lt_n__n_eq_SPn = \m n m_lt_n . case n [n_eq] of
-  Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
-  Succ n' -> let e1 [_] = (conv (join : n' = pred (Succ n'))
-                           by (sym Nat Nat n (Succ n') n_eq)
-                           at h.n'= pred h
-                        : n' = pred n) in
-             let e2 [_] = uneraseEq [Nat] [Nat] [n] [Succ n'] [n_eq] in
-             conv e2 by e1 at h.n = Succ h
-
--- The next two lemmas give an alternate characterization of
--- less-than
-
--- m < S m
---
--- Every number is less than its successor
-m_lt_Sm : (m:Nat) -> ltT m (Succ m)
-recnat m_lt_Sm m = case m [m_eq] of
-  Zero    -> conv (z_lt_Sn Zero)
-             by (sym Nat Nat m Zero m_eq)
-             at m.ltT m (Succ m)
-  Succ m' -> conv (m_lt_n__Sm_lt_Sn m' (Succ m') (m_lt_Sm m' [m_eq]))
-             by (sym Nat Nat m (Succ m') m_eq)
-             at m.ltT m (Succ m)
-
--- m < n -> m < n+1
---
--- Proof idea:
---
--- case m of
---   0    -> z_lt_Sn
---   S m' -> m < n implies n = S (P n)
---           so m' < P n by sm_lt_Sn__m_lt_n
---           so m' < n   by IH
---           so m  < S n by m_lt_n__Sm_lt_Sn
-m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
-recnat m_lt_n__m_lt_Sn m = \n m_lt_n . case m [m_eq] of
-  Zero    -> conv (z_lt_Sn n)
-             by (sym Nat Nat m Zero m_eq)
-             at m.ltT m (Succ n)
-  Succ m' -> let n_eq_SPn [_]  = m_lt_n__n_eq_SPn m n m_lt_n in
-             let m'_lt_Pn [_]  = sm_lt_Sn__m_lt_n m' (pred n)
-                                 (conv m_lt_n by m_eq, n_eq_SPn at m n.ltT m n) in
-             let m'_lt_SPn [_] = m_lt_n__m_lt_Sn m' [m_eq] (pred n) m'_lt_Pn in
-             conv (m_lt_n__Sm_lt_Sn m' (Succ (pred n)) m'_lt_SPn)
-             by (sym Nat Nat m (Succ m') m_eq),
-                (sym Nat Nat n (Succ (pred n)) n_eq_SPn)
-             at m n.ltT m (Succ n)
-
--- l < m /\ m < S n' -> l < n'
---
--- Proof idea (P = pred):
---
---   l < m -> m = S (P m)
--- so
---   m < S n' = S (P m) < S n'
--- and
---   P m < n' -> n' = S (P n')
--- now
---   case l of
---     Z    -> LZ using n' = S (P n')
---     S l' -> then S l' < S (P m) -> l' < P m and so
---             LS using (recursion on l' (P m) (P n'))
-lt_trans_pred' : (l:Nat) -> (m:Nat) -> (n':Nat) -> ltT l m -> ltT m (Succ n') -> ltT l n'
-recnat lt_trans_pred' l = \m n' l_lt_m m_lt_Sn' .
-  let m_eq [_]     = m_lt_n__n_eq_SPn l m l_lt_m in -- m = S (P m)
-  let pm_lt_n' [_] = sm_lt_Sn__m_lt_n (pred m) n'
-                     (conv m_lt_Sn' by m_eq at h.ltT h (Succ n')) in -- P m < n'
-  let n'_eq [_]    = m_lt_n__n_eq_SPn (pred m) n' pm_lt_n' in -- n' = S (P n')
-  case l [l_eq] of
-    Zero    -> conv (z_lt_Sn (pred n'))
-               by (sym Nat Nat l Zero l_eq),
-                  (sym Nat Nat n' (Succ (pred n')) n'_eq)
-               at l n'.ltT l n'
-    Succ l' -> let l'_lt_pm [_]   = sm_lt_Sn__m_lt_n l' (pred m)
-                                    (conv l_lt_m by l_eq, m_eq at hl hm.ltT hl hm) in -- l' < P m
-               let pm_lt_SPn' [_] = conv pm_lt_n' by n'_eq at h.ltT (pred m) h in -- P m < S (P n')
-               let l'_lt_Pn' [_]  = lt_trans_pred' l' [l_eq] (pred m) (pred n') l'_lt_pm pm_lt_SPn' in -- l' < P n'
-               conv (m_lt_n__Sm_lt_Sn l' (pred n') l'_lt_Pn')
-               by (sym Nat Nat l  (Succ l') l_eq),
-                  (sym Nat Nat n' (Succ (pred n')) n'_eq)
-               at l n'.ltT l n'
---               LS [l] [n'] l' [l_eq] (pred n') [n'_eq] l'_lt_Pn'
-
-lt_trans_pred : (l:Nat) -> (m:Nat) -> (n:Nat) -> ltT l m -> ltT m n -> ltT l (pred n)
-lt_trans_pred = \l m n l_lt_m m_lt_n .
-  lt_trans_pred' l m (pred n)
-                 l_lt_m
-                 (conv m_lt_n by (m_lt_n__n_eq_SPn m n m_lt_n) at h.ltT m h) -- LT m (pred n)
-
-{- This wasn't used in second version of StrongNat, so it was never
-   ported, but I'll keep it around to port later ...
-
--- One of
---
--- m < S n -> m < n \/ m = n
---
--- m < n -> m < pred n \/ m = pred n
---
--- m < n -> m <= pred n                (for some relation (<=))
-
--- An obvious fact with an exceptionally tedious proof ... anyone know
--- a simple version?
---
--- Proof by induction on m.  Idea is
---
---   case m of
---     Z    -> easy case on n.
---     S m' -> case m < S n of
---       m = Z  -> contradiction.
---       m = S m' /\ n = S n' /\ m' < n' -> case n' of
---         Z     -> contradiction
---         S n'' -> IH on m' < S n'' gives m' = n'' \/ m' < n'',
---                                   and in either case apply S to both sides.
--- details involve a few convs ...
-
---   case m of
---     Z    -> easy case on n.
---     S m' -> case m < S n of
---       m = Z  -> contradiction.
---       m = S m' /\ n = S n' /\ m' < n' -> case n' of
---         Z     -> contradiction
---         S n'' -> IH on m' < S n'' gives m' = n'' \/ m' < n'',
---                                   and in either case apply S to both sides.
-
-
-lt__lteq' : [m:Nat] -> [n:Nat] -> [LT m (Succ n)]
-        -> Or (LT m n) (n = m)
-                    -- (m = n) is more natural, but then need sym
-                    -- below in strongNat. This is evidence of the
-                    -- usefulness of convrl
-lt__lteq' = recnat lt__lteq [m] = \[n] [m_lt_Sn] .
-  case m [m_eq] of
-    Zero    -> case n [n_eq] of
-      Zero    -> InR [LT m n] [n = m]
-                     (conv (join:0=0) by (sym Nat Nat n Zero n_eq),
-                                         (sym Nat Nat m Zero m_eq)
-                      at n m.n = m)
-      Succ n' -> InL [LT m n] [n = m]
-                     (LZ [m] [n] [sym Nat Nat m Zero m_eq] [n'] [n_eq])
-    Succ m' -> case m_lt_Sn [_] of
-      LZ [z_eq_m] [n'] [sn_eq_Sn']                   ->
-        contra (conv z_eq_m by m_eq at h.Zero = h)
-      LS [m'] [m_eq_Sm'] [n'] [sn_eq_Sn'] [m'_lt_n'] ->
-        case n' [n'_eq] of
-          Zero     -> poe [Or (LT m n) (n = m)]
-                          [lt_0__F [m'] [conv m'_lt_n' by n'_eq at h.LT m' h]]
-          Succ n'' -> let n'_eq_n [_] = (sym Nat Nat n n' (sm_eq_Sn__m_eq_n n n' sn_eq_Sn')) in
-                      case (lt__lteq [m'] [m_eq_Sm'] [n'']
-                                     [conv m'_lt_n' by n'_eq at h.LT m' h]) [_] of
-                        InL m'_lt_n'' ->
-                          InL [LT m n] [n = m]
-                              (conv (LS [m] [n'] [m'] [m_eq_Sm'] [n''] [n'_eq] [m'_lt_n''])
-                               by n'_eq_n at h.LT m h)
-                        InR n''_eq_m' ->
-                          InR [LT m n] [n = m]
-                              (let e1 [_] = conv n'_eq by n'_eq_n at h.h = Succ n'' in
-                               let e2 [_] = conv e1 by n''_eq_m' at h.n = Succ h in
-                               conv e2 by (sym Nat Nat m (Succ m') m_eq_Sm') at h.n = h)
-
-{- And here's the earlier version of StrongNat -}
-
--- Strong elimination / course-of-values induction / structural
--- induction: allows recursion on any structural subterm, not just the
--- predecessor.
-strongNat : [p:Nat -> Type 0]
-         -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
-         -> ((n:Nat) -> p n)
-strongNat = \[p] f .
-  -- g n : (m:Nat) -> LT m n -> p m, and so proves p n via f
-  let g [_] = ((recnat g n = case n [eq_n] of
-    -- m < 0, a contradiction
-    Zero    -> \m [lt_p] .
-      poe [p m] [lt_0__F [m] [conv lt_p by eq_n at h.LT m h]]
-    -- m < S n' -> m < n' \/ m = n'
-    Succ n' -> \m [lt_p] .
-      case (lt__lteq [m] [n'] [conv lt_p by eq_n at h.LT m h]) [_] of
-        -- m < n', so g n' recursively proves p m
-        InL lt_p'  -> g n' [eq_n] m [lt_p']
-        -- n' = m, so f proves p m via g n'
-        InR n_eq_m -> (conv (f n' (g n' [eq_n])) by n_eq_m at h.p h)
-           -- this is g's type annotation, is there a better way to do
-           -- this?
-           ): (n:Nat) -> ((m:Nat) -> [LT m n] -> p m))
-  in \n . f n (g n)
--}
-
+import LessThanNat
+import LessThanNat_lt -- ??? I guess trellys imports are not transitive ???
 
 -- * Strong induction
 --   ----------------
 
--- Strong elimination / course-of-values induction / structural
+-- Strong elimination / course-of-values (cov) induction / structural
 -- induction: allows recursion on any structural subterm, not just the
 -- predecessor.
 --
--- Took a few iterations, but I'm quite happy with the current
--- version: strongNat erases to
+--   cov : [p:Nat -> Type 0]
+--      -> ((n:Nat) -> ((m:Nat) -> [m < n] -> p m) -> p n)
+--      -> ((n:Nat) -> p n)
+
+-- The index trick used to implement cov
+-- -------------------------------------
 --
---   sn := \ f . let g = (rec g . \ n . \ m . f m (g m))
---               in                     \ n . f n (g n)
+-- This cov implementatoin depends on a (general) index trick [1] that
+-- captures the relation between weak and strong recursion.  You use
+-- cov when you want to write a recursive function r from Nat to some
+-- rng type T
+--
+--   r : (n:Nat) -> T
+--
+-- where (r n) may recurse on values smaller than (pred n), and so
+-- weak recursion won't work.  The /index trick/ is to instead define
+-- an r' by weak induction on i
+--
+--   r' : [i:Nat] -> (n:Nat) -> [n < i] -> T
+--
+-- where i is a dummy index used to make the weak induction work.
+-- Then r is defined in terms of r' by
+--
+--   r = \n . r' [S n] n [proof that n < S n]
+--
+-- So, how does r' work?  Well, since we assume that whenever (r n)
+-- recurses, say on n', that n' is less than n, say
+--
+--   r n = ... r n' and n' < n ...
+--
+-- we can make (r' [i] n [_]) recurse on a proof that n' < pred i,
+-- since integer less-than satisfies a strong transitivity law
+--
+--   n' < n /\ n < i -> n' < pred i
+--
+-- I.e., r' is defined by
+--
+--   r [i] n [i_lt_n] = ... r' [pred i] n' [proof that n' < pred i from n' < n at n < i] ...
+--
+-- where the "..." is same as in r.
+--
+-- [1] like dummy Nat indices on datatypes as suggested by Aaron to
+--     work around the fact that we don't generate induction
+--     principles for each datatype.
+
+-- How the index trick is used in cov
+-- ----------------------------------
+--
+-- Recall the type of cov
+--
+--   cov : [p:Nat -> Type 0]
+--      -> ((n:Nat) -> ((m:Nat) -> [m < n] -> p m) -> p n)
+--      -> ((n:Nat) -> p n)
+--
+-- The second argument, f say, is a recursive template [2]
+--
+--   f : (n:Nat) -> ((m:Nat) -> [ltT m n] -> p m) -> p n
+--
+-- and f's second argument, gn say, is the recursion
+--
+--   gn : (m:Nat) -> [ltT m n] -> p m
+--
+-- The strategy of cov is to build the recursion gn and pass it to f
+-- to compute (p n).  The obvious approach is to define
+--
+--   g : (n:Nat) -> (m:Nat) -> [ltT m n] -> p m
+--
+-- by recursion on n and hence gn is (g n).  That was my first
+-- approach (commented out below), but my implementation had to case
+-- match on the less-than proof, meaning the less-than proof would
+-- have to made run-time [3], which is sloppy.
+--
+-- The index trick provides a better version of g.  We instead define
+-- g by recursion on a dummy index i
+--
+--   g : [i:Nat] -> (n:Nat) -> [ltT n i] -> ((m:Nat) -> [ltT m n] -> p m)
+--
+-- where gn is (g _ n _).  The implementation of g is easy.  Roughly
+--
+--   g = \[i] n [n_lt_i] m [m_lt_n] .
+--       f m (g [pred i] m [proof that m < pred i])
+--
+-- or erased, roughly
+--
+--   |g| = \n m . |f| m (|g| m)
+--
+-- which is quite nice :)
+--
+-- [2] cf. the recursive templates of type ((a -> b) -> (a -> b))
+--     passed to a Y-combinator).  For cov we have, roughly, a
+--     template of type (a -> (a -> b) -> b), and this connection is
+--     explored next.
+--
+-- [3] Like eliminating Prop to produce Set in Coq, which is not
+--     allowed there for the same reason my first cov implementation
+--     doesn't type check when the less-than proofs are erased.
+
+-- Our cov corresponds to (Y o flip) in LC
+-- ---------------------------------------
+--
+-- cov erases to
+--
+--   sn := |cov| = \ f . let g = (rec g . \ n . \ m . f m (g m))
+--                       in                     \ n . f n (g n)
 --
 -- which is "equivalent", as an untyped lambda term, to
 --
@@ -294,10 +158,10 @@ strongNat = \[p] f .
 -- assuming the equivalence of fixed points, we get
 --
 --   sn = Y o flip.
-strongNat : [p:Nat -> Type 0]
+cov : [p:Nat -> Type 0]
          -> ((n:Nat) -> ((m:Nat) -> [ltT m n] -> p m) -> p n)
          -> ((n:Nat) -> p n)
-strongNat = \[p] f .
+cov = \[p] f .
   -- g _ n _ : (m:Nat) -> LT m n -> p m, and so proves p n via f
   let g [_] = ((recnat g [i] = \n [n_lt_i] m [m_lt_n] .
     let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in                  -- i = S i'
@@ -306,33 +170,36 @@ strongNat = \[p] f .
            ): [i:Nat] -> (n:Nat) -> [ltT n i] -> ((m:Nat) -> [ltT m n] -> p m))
   in \n . f n (g [Succ n] n [m_lt_Sm n])
 
+{- And here's the first version of StrongNat.
 
--- * Less-than + arithmetic lemmas
---   -----------------------------
+   It's totally broken as is, because it cases on the erased LT proof
+   (like eliminating Prop to produce Set in Coq).  Making the LT proof
+   run-time should fix it, but the above second version is much nicer.
 
--- (m+1) - (n+1) < m+1
-s_minus_s__lt : (m:Nat) -> (n:Nat) -> ltT (minus (Succ m) (Succ n)) (Succ m)
-recnat s_minus_s__lt m = \n. case m [m_eq] of
-  Zero    -> let e1 [_] = conv (join : Zero = minus (Succ Zero) (Succ n))
-                          by (sym Nat Nat m Zero m_eq)
-                          at m.Zero = minus (Succ m) (Succ n) in
-             conv (z_lt_Sn m)
-             by e1
-             at minus_Sm_Sn.ltT minus_Sm_Sn (Succ m)
-  Succ m' -> case n [n_eq] of
-    Zero    -> let e1 [_] = conv (join : minus m Zero = (minus (Succ m) (Succ Zero)))
-                            by (lemma_minus_zero_id m) at h.h = minus (Succ m) (Succ Zero) in
-               let e2 [_] = conv e1 by (sym Nat Nat n Zero n_eq)
-                            at h.m = (minus (Succ m) (Succ h)) in
-               conv (m_lt_Sm m) by e2 at h.ltT h (Succ m)
-    Succ n' -> let e1 [_] = conv (s_minus_s__lt m' [m_eq] n')
-                            by (sym Nat Nat m (Succ m') m_eq),
-                               (sym Nat Nat n (Succ n') n_eq)
-                            at m n.ltT (minus m n) m in
-               let e2 [_] = (join : minus m n = minus (Succ m) (Succ n)) in
-               let e3 [_] = conv e1 by e2 at h.ltT h m in
-               m_lt_n__m_lt_Sn (minus (Succ m) (Succ n)) m e3
-
+-- Strong elimination / course-of-values induction / structural
+-- induction: allows recursion on any structural subterm, not just the
+-- predecessor.
+strongNat : [p:Nat -> Type 0]
+         -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
+         -> ((n:Nat) -> p n)
+strongNat = \[p] f .
+  -- g n : (m:Nat) -> LT m n -> p m, and so proves p n via f
+  let g [_] = ((recnat g n = case n [eq_n] of
+    -- m < 0, a contradiction
+    Zero    -> \m [lt_p] .
+      poe [p m] [lt_0__F [m] [conv lt_p by eq_n at h.LT m h]]
+    -- m < S n' -> m < n' \/ m = n'
+    Succ n' -> \m [lt_p] .
+      case (lt__lteq [m] [n'] [conv lt_p by eq_n at h.LT m h]) [_] of
+        -- m < n', so g n' recursively proves p m
+        InL lt_p'  -> g n' [eq_n] m [lt_p']
+        -- n' = m, so f proves p m via g n'
+        InR n_eq_m -> (conv (f n' (g n' [eq_n])) by n_eq_m at h.p h)
+           -- this is g's type annotation, is there a better way to do
+           -- this?
+           ): (n:Nat) -> ((m:Nat) -> [LT m n] -> p m))
+  in \n . f n (g n)
+-}
 
 -- * Logical division
 --   ----------------
@@ -358,7 +225,7 @@ div' = \m n .
                                    at h.h in
                     conv (Succ recg) by (join : Nat = p m) at h.h
                    ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m] -> p m_minus_sn) -> p m))
-       in conv (strongNat [p] f m) by (join : p m = Nat) at h.h
+       in conv (cov [p] f m) by (join : p m = Nat) at h.h
 
 -- Tests
 test_div'1 : div' 0 0 = 0

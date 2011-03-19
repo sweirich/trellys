@@ -1,0 +1,320 @@
+module LessThanNat where
+
+import Prelude
+import Arithmetic
+import LessThanNat_lt
+-- Or
+-- import LessThanNat_LT
+
+-- * Less-than relation on Nat
+--   -------------------------
+
+-- This lib is generic in the less-than relation (like a parameterized
+-- module / type-class based implementation).  I started with a
+-- LessThanNat_LT.LT based less-than and then moved to an
+-- Arithmetic.lt based less-than but both less-thans are very
+-- similar. This lib captures the generic part, while
+-- LessThanLib_{LT,lt} implement the specific parts.
+--
+-- The specific implementations provide conversion functions that
+-- allow moving between the internal representation and the generic
+-- name ltT.  E.g., for the Arithmetic.lt specific version the
+-- conversions are:
+{-
+-- make the abstract ltT concrete
+ltT : Nat -> Nat -> Type 0
+ltT = \m n . lt m n = True
+
+-- generic to specific conversion
+gs : (m:Nat) -> (n:Nat) -> (ltT m n = (lt m n = True))
+
+-- specific to generic conversion
+sg : (m:Nat) -> (n:Nat) -> ((lt m n = True) = ltT m n)
+-}
+
+-- * Less-than lemmas composing a minimal complete definition
+--   --------------------------------------------------------
+
+-- The abstract interface ("minimal complete definition") for a
+-- less-than relation ltT that I've come up with (based on need) is:
+{-
+-- Abstraction of the LT constructor and the Arithmetic.lt function
+z_lt_Sn          : (n : Nat) -> ltT Zero (Succ n)
+m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
+
+-- No number is less than zero
+lt_0__contra     : (m:Nat) -> (ltT m Zero) -> (0 = 1)
+
+-- Less-than has an inversion like property
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+-}
+
+-- But, I think that an alternate "minimal complete definition" would
+-- be:
+{-
+-- Abstraction of structural less-than.  This can be generalized
+-- to arbitrary datatypes, whereas LT above is specific to Nat.
+m_lt_Sm          : (m:Nat) -> ltT m (Succ m)
+m_lt_n__m_lt_Sn  : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
+
+-- No number is less than zero
+lt_0__contra     : (m:Nat) -> (ltT m Zero) -> (0 = 1)
+
+-- Less-than has an inversion like property
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+-}
+-- I.e., interface I use, but with the constructor abstractions
+-- replaced by the abstractions corresponding to structural less-than.
+
+-- * Wrapped versions of implementation-specific lemmas
+--   --------------------------------------------------
+
+-- For each lemma lem in the minimal complete set the implementation
+-- provides lem_LT which is wrapped here to produce lem.  The amount
+-- of conversion code needed to convert lem_LT to lem makes me doubt
+-- this whole abstraction thing was such a great idea ... but the gs
+-- and sg functions eliminate some pain.
+
+-- 0 < S n
+z_lt_Sn : (n : Nat) -> ltT Zero (Succ n)
+z_lt_Sn = \n . conv (z_lt_Sn_LT n) by (sg Zero (Succ n)) at h.h
+
+-- m < n -> S m < S n
+m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
+m_lt_n__Sm_lt_Sn = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn_LT m n
+                                       (conv m_lt_n by (gs m n) at h.h))
+                                 by (sg (Succ m) (Succ n)) at h.h
+
+-- S m < S n -> m < n
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+sm_lt_Sn__m_lt_n = \m n sm_lt_Sn .
+  conv (sm_lt_Sn__m_lt_n_LT m n
+        (conv sm_lt_Sn by (gs (Succ m) (Succ n)) at h.h))
+  by (sg m n) at h.h
+
+-- not (m < 0)
+lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n) -> (0 = 1)
+lt_0__contra = \m n [n_eq] m_lt_n .
+  lt_0__contra_LT m n [n_eq] (conv m_lt_n by (gs m n) at h.h)
+
+-- * Generic less-than lemmas
+--   ------------------------
+
+-- The following lemmas are don't depend on the specific
+-- implementation.
+
+-- ** Just less-than
+--    --------------
+
+-- m < n -> exists n' . n = S n'
+--
+-- Trying to avoid doing this proof by contradiction over and over.
+-- Abstracting it was more trouble than expected :P
+--
+-- Using pred as a skolem function to compute n' in terms of n leads
+-- to much more usable lemma (the second version).
+--
+-- Proof idea:
+--
+-- n = 0 is contradictory so n = S n'.
+
+-- Not sure how usable this version is: annotations and conv ...
+--
+-- THIS VERSION IS NOT USED: so no NoLaw datatype restriction concerns
+m_lt_n__n_eq_SPn' : (m:Nat) -> (n:Nat) -> ltT m n -> Exists Nat (\n'.n = Succ n' : Nat -> Type 0)
+m_lt_n__n_eq_SPn' = \m n m_lt_n . case n [n_eq] of
+  Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
+  Succ n' -> let eq [_] = uneraseEq [Nat] [Nat] [n] [Succ n'] [n_eq] in
+             Ex [Nat] [((\n'.n = Succ n') : Nat -> Type 0)]
+                [n']  (conv eq by (join : (n = Succ n') = ((\n'.n = Succ n') : Nat -> Type 0) n') at h.h)
+
+-- This version works well.
+m_lt_n__n_eq_SPn : (m:Nat) -> (n:Nat) -> ltT m n -> n = Succ (pred n)
+m_lt_n__n_eq_SPn = \m n m_lt_n . case n [n_eq] of
+  Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
+  Succ n' -> let e1 [_] = (conv (join : n' = pred (Succ n'))
+                           by (sym Nat Nat n (Succ n') n_eq)
+                           at h.n'= pred h
+                        : n' = pred n) in
+             let e2 [_] = uneraseEq [Nat] [Nat] [n] [Succ n'] [n_eq] in
+             conv e2 by e1 at h.n = Succ h
+
+-- The next two lemmas give an alternate characterization of
+-- less-than
+
+-- m < S m
+--
+-- Every number is less than its successor
+m_lt_Sm : (m:Nat) -> ltT m (Succ m)
+recnat m_lt_Sm m = case m [m_eq] of
+  Zero    -> conv (z_lt_Sn Zero)
+             by (sym Nat Nat m Zero m_eq)
+             at m.ltT m (Succ m)
+  Succ m' -> conv (m_lt_n__Sm_lt_Sn m' (Succ m') (m_lt_Sm m' [m_eq]))
+             by (sym Nat Nat m (Succ m') m_eq)
+             at m.ltT m (Succ m)
+
+-- m < n -> m < n+1
+--
+-- Proof idea:
+--
+-- case m of
+--   0    -> z_lt_Sn
+--   S m' -> m < n implies n = S (P n)
+--           so m' < P n by sm_lt_Sn__m_lt_n
+--           so m' < n   by IH
+--           so m  < S n by m_lt_n__Sm_lt_Sn
+m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
+recnat m_lt_n__m_lt_Sn m = \n m_lt_n . case m [m_eq] of
+  Zero    -> conv (z_lt_Sn n)
+             by (sym Nat Nat m Zero m_eq)
+             at m.ltT m (Succ n)
+  Succ m' -> let n_eq_SPn [_]  = m_lt_n__n_eq_SPn m n m_lt_n in
+             let m'_lt_Pn [_]  = sm_lt_Sn__m_lt_n m' (pred n)
+                                 (conv m_lt_n by m_eq, n_eq_SPn at m n.ltT m n) in
+             let m'_lt_SPn [_] = m_lt_n__m_lt_Sn m' [m_eq] (pred n) m'_lt_Pn in
+             conv (m_lt_n__Sm_lt_Sn m' (Succ (pred n)) m'_lt_SPn)
+             by (sym Nat Nat m (Succ m') m_eq),
+                (sym Nat Nat n (Succ (pred n)) n_eq_SPn)
+             at m n.ltT m (Succ n)
+
+-- l < m /\ m < S n' -> l < n'
+--
+-- This is the key lemma for an index-trick-based StrongNat.
+--
+-- Proof idea (P = pred):
+--
+--   l < m -> m = S (P m)
+-- so
+--   m < S n' = S (P m) < S n'
+-- and
+--   P m < n' -> n' = S (P n')
+-- now
+--   case l of
+--     Z    -> LZ using n' = S (P n')
+--     S l' -> then S l' < S (P m) -> l' < P m and so
+--             LS using (recursion on l' (P m) (P n'))
+lt_trans_pred' : (l:Nat) -> (m:Nat) -> (n':Nat) -> ltT l m -> ltT m (Succ n') -> ltT l n'
+recnat lt_trans_pred' l = \m n' l_lt_m m_lt_Sn' .
+  let m_eq [_]     = m_lt_n__n_eq_SPn l m l_lt_m in -- m = S (P m)
+  let pm_lt_n' [_] = sm_lt_Sn__m_lt_n (pred m) n'
+                     (conv m_lt_Sn' by m_eq at h.ltT h (Succ n')) in -- P m < n'
+  let n'_eq [_]    = m_lt_n__n_eq_SPn (pred m) n' pm_lt_n' in -- n' = S (P n')
+  case l [l_eq] of
+    Zero    -> conv (z_lt_Sn (pred n'))
+               by (sym Nat Nat l Zero l_eq),
+                  (sym Nat Nat n' (Succ (pred n')) n'_eq)
+               at l n'.ltT l n'
+    Succ l' -> let l'_lt_pm [_]   = sm_lt_Sn__m_lt_n l' (pred m)
+                                    (conv l_lt_m by l_eq, m_eq at hl hm.ltT hl hm) in -- l' < P m
+               let pm_lt_SPn' [_] = conv pm_lt_n' by n'_eq at h.ltT (pred m) h in -- P m < S (P n')
+               let l'_lt_Pn' [_]  = lt_trans_pred' l' [l_eq] (pred m) (pred n') l'_lt_pm pm_lt_SPn' in -- l' < P n'
+               conv (m_lt_n__Sm_lt_Sn l' (pred n') l'_lt_Pn')
+               by (sym Nat Nat l  (Succ l') l_eq),
+                  (sym Nat Nat n' (Succ (pred n')) n'_eq)
+               at l n'.ltT l n'
+--               LS [l] [n'] l' [l_eq] (pred n') [n'_eq] l'_lt_Pn'
+
+lt_trans_pred : (l:Nat) -> (m:Nat) -> (n:Nat) -> ltT l m -> ltT m n -> ltT l (pred n)
+lt_trans_pred = \l m n l_lt_m m_lt_n .
+  lt_trans_pred' l m (pred n)
+                 l_lt_m
+                 (conv m_lt_n by (m_lt_n__n_eq_SPn m n m_lt_n) at h.ltT m h) -- LT m (pred n)
+
+{- This was the key lemma in the first version of StrongNat.  It
+   wasn't used in second version of StrongNat, so it was never
+   ported, but I'll keep it around to port later ...
+
+-- One of
+--
+-- m < S n -> m < n \/ m = n
+--
+-- m < n -> m < pred n \/ m = pred n
+--
+-- m < n -> m <= pred n                (for some relation (<=))
+
+-- An obvious fact with an exceptionally tedious proof ... anyone know
+-- a simple version?
+--
+-- Proof by induction on m.  Idea is
+--
+--   case m of
+--     Z    -> easy case on n.
+--     S m' -> case m < S n of
+--       m = Z  -> contradiction.
+--       m = S m' /\ n = S n' /\ m' < n' -> case n' of
+--         Z     -> contradiction
+--         S n'' -> IH on m' < S n'' gives m' = n'' \/ m' < n'',
+--                                   and in either case apply S to both sides.
+-- details involve a few convs ...
+
+--   case m of
+--     Z    -> easy case on n.
+--     S m' -> case m < S n of
+--       m = Z  -> contradiction.
+--       m = S m' /\ n = S n' /\ m' < n' -> case n' of
+--         Z     -> contradiction
+--         S n'' -> IH on m' < S n'' gives m' = n'' \/ m' < n'',
+--                                   and in either case apply S to both sides.
+
+
+lt__lteq' : [m:Nat] -> [n:Nat] -> [LT m (Succ n)]
+        -> Or (LT m n) (n = m)
+                    -- (m = n) is more natural, but then need sym
+                    -- below in strongNat. This is evidence of the
+                    -- usefulness of convrl
+lt__lteq' = recnat lt__lteq [m] = \[n] [m_lt_Sn] .
+  case m [m_eq] of
+    Zero    -> case n [n_eq] of
+      Zero    -> InR [LT m n] [n = m]
+                     (conv (join:0=0) by (sym Nat Nat n Zero n_eq),
+                                         (sym Nat Nat m Zero m_eq)
+                      at n m.n = m)
+      Succ n' -> InL [LT m n] [n = m]
+                     (LZ [m] [n] [sym Nat Nat m Zero m_eq] [n'] [n_eq])
+    Succ m' -> case m_lt_Sn [_] of
+      LZ [z_eq_m] [n'] [sn_eq_Sn']                   ->
+        contra (conv z_eq_m by m_eq at h.Zero = h)
+      LS [m'] [m_eq_Sm'] [n'] [sn_eq_Sn'] [m'_lt_n'] ->
+        case n' [n'_eq] of
+          Zero     -> poe [Or (LT m n) (n = m)]
+                          [lt_0__F [m'] [conv m'_lt_n' by n'_eq at h.LT m' h]]
+          Succ n'' -> let n'_eq_n [_] = (sym Nat Nat n n' (sm_eq_Sn__m_eq_n n n' sn_eq_Sn')) in
+                      case (lt__lteq [m'] [m_eq_Sm'] [n'']
+                                     [conv m'_lt_n' by n'_eq at h.LT m' h]) [_] of
+                        InL m'_lt_n'' ->
+                          InL [LT m n] [n = m]
+                              (conv (LS [m] [n'] [m'] [m_eq_Sm'] [n''] [n'_eq] [m'_lt_n''])
+                               by n'_eq_n at h.LT m h)
+                        InR n''_eq_m' ->
+                          InR [LT m n] [n = m]
+                              (let e1 [_] = conv n'_eq by n'_eq_n at h.h = Succ n'' in
+                               let e2 [_] = conv e1 by n''_eq_m' at h.n = Succ h in
+                               conv e2 by (sym Nat Nat m (Succ m') m_eq_Sm') at h.n = h)
+-}
+
+-- ** Less-than + arithmetic
+--    ----------------------
+
+-- (m+1) - (n+1) < m+1
+s_minus_s__lt : (m:Nat) -> (n:Nat) -> ltT (minus (Succ m) (Succ n)) (Succ m)
+recnat s_minus_s__lt m = \n. case m [m_eq] of
+  Zero    -> let e1 [_] = conv (join : Zero = minus (Succ Zero) (Succ n))
+                          by (sym Nat Nat m Zero m_eq)
+                          at m.Zero = minus (Succ m) (Succ n) in
+             conv (z_lt_Sn m)
+             by e1
+             at minus_Sm_Sn.ltT minus_Sm_Sn (Succ m)
+  Succ m' -> case n [n_eq] of
+    Zero    -> let e1 [_] = conv (join : minus m Zero = (minus (Succ m) (Succ Zero)))
+                            by (lemma_minus_zero_id m) at h.h = minus (Succ m) (Succ Zero) in
+               let e2 [_] = conv e1 by (sym Nat Nat n Zero n_eq)
+                            at h.m = (minus (Succ m) (Succ h)) in
+               conv (m_lt_Sm m) by e2 at h.ltT h (Succ m)
+    Succ n' -> let e1 [_] = conv (s_minus_s__lt m' [m_eq] n')
+                            by (sym Nat Nat m (Succ m') m_eq),
+                               (sym Nat Nat n (Succ n') n_eq)
+                            at m n.ltT (minus m n) m in
+               let e2 [_] = (join : minus m n = minus (Succ m) (Succ n)) in
+               let e3 [_] = conv e1 by e2 at h.ltT h m in
+               m_lt_n__m_lt_Sn (minus (Succ m) (Succ n)) m e3
