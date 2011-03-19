@@ -28,9 +28,7 @@ recnat minus n = \m .
 gt : Nat -> Nat -> Bool
 recnat gt x = \y.
    case x [xpf] of
-        Zero -> case y [_] of
-                     Zero -> False
-                     Succ y' -> False
+        Zero    -> False
         Succ x' -> case y [_] of
                    Zero -> True
                    Succ y' -> gt x' [xpf] y' 
