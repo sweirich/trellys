@@ -3,7 +3,7 @@ module StrongNat where
 import Prelude
 import Arithmetic
 import Logic
-import LessThanLib_LT
+import LessThanLib_lt
 
 -- m < n -> exists n' . n = S n'
 --
