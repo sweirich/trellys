@@ -2,7 +2,6 @@ module LessThanLib_LT where
 
 import Prelude
 import Arithmetic
-import Logic
 
 -- * Less-than relation on Nat
 --   -------------------------
@@ -29,6 +28,15 @@ data LT [m:Nat] [n:Nat] -> Type 0 where
 
 ltT : Nat -> Nat -> Type 0
 ltT = \m n . LT m n
+
+-- generic to specific
+gs : (m:Nat) -> (n:Nat) -> (ltT m n = LT m n)
+gs = \m n . join
+
+-- specific to generic
+sg : (m:Nat) -> (n:Nat) -> (LT m n = ltT m n)
+sg = \m n . join
+
 
 -- * Less-than lemmas
 --   ----------------
@@ -80,7 +88,7 @@ m_lt_n__Sm_lt_Sn = \m n m_lt_n .
 --
 -- Every number is less than its successor
 --
--- GENERIC (but easier for lt)
+-- GENERIC (and can be moved to StrongNat)
 m_lt_Sm : (m:Nat) -> ltT m (Succ m)
 recnat m_lt_Sm m = case m [m_eq] of
   Zero    -> conv (z_lt_Sn Zero)
@@ -95,6 +103,8 @@ recnat m_lt_Sm m = case m [m_eq] of
 -- This can be made generic given an LT fold; doubt the Arithmetic.lt
 -- version is any easier ... but see sm_lt_Sn__m_lt_n below for how
 -- complicated the fold is (not clear anything would be gained).
+--
+-- TODO: convert back to data-type version once this is generalized in StrongNat
 m_lt_n__m_lt_Sn_LT : (m:Nat) -> (n:Nat) -> LT m n -> LT m (Succ n)
 recnat m_lt_n__m_lt_Sn_LT m = \n lt_p . case lt_p [_] of
   LZ [z_eq_m] _ [_]                       ->
@@ -119,11 +129,15 @@ m_lt_n__m_lt_Sn = \m n m_lt_n .
 -- not (m < 0)
 --
 -- No number is less than zero
-lt_0__contra : (m:Nat) -> (ltT m Zero) -> (0 = 1)
-lt_0__contra = \m p . case (conv p by (join : ltT m Zero = LT m Zero) at h.h) [_] of
+lt_0__contra_LT : (m:Nat) -> (n:Nat) -> [n = Zero] -> LT m n -> (0 = 1)
+lt_0__contra_LT = \m n [n_eq] m_lt_n . case (conv m_lt_n by n_eq at n.LT m n) [_] of
   -- both cases have (Zero = Succ _)
   LZ [_] _ [q]     -> contra q
   LS _ [_] _ [q] _ -> contra q
+
+lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n) -> (0 = 1)
+lt_0__contra = \m n [n_eq] m_lt_n .
+  lt_0__contra_LT m n [n_eq] (conv m_lt_n by (gs m n) at h.h)
 
 -- m + 1 < n + 1 -> m < n
 --
