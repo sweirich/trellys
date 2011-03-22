@@ -101,6 +101,24 @@ lemma_minus_zero_id =
         by (sym Nat Nat n (Succ n') eq_n)
 	at hole.(minus hole 0 = hole)
 
+lemma_minus_plus_id' : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
+recnat lemma_minus_plus_id' m = \n .
+  case m [m_eq] of
+     Zero -> conv (conv lemma_minus_zero_id n by (join : n = plus 0 n) at hole.(minus hole 0) = n)
+               by (sym Nat Nat m 0 m_eq)
+               at hole.((minus (plus hole n) hole) = n)
+     Succ m' -> let e1 [_] = (join : minus (plus (Succ m') n) (Succ m') = minus (plus m' n) m') in
+                let e2 [_] = conv e1 by (lemma_minus_plus_id' m' [m_eq] n)
+                             at h . minus (plus (Succ m') n) (Succ m') = h in
+                conv e2 by (sym Nat Nat m (Succ m') m_eq)
+                at m. ((minus (plus m n) m) = n)
+{-
+log div_mult' : (n : Nat) -> (m : Nat) ->
+    (n = div (mult n (Succ m)) m)
+recnat div_mult n = \m .
+  case n [n_eq] of
+-}
+
 lemma_minus_plus_id : (n : Nat) -> (m : Nat) -> ((minus (plus m n) m) = n)
 lemma_minus_plus_id = \n. recnat ih m =
    case m [eq_m] of 
@@ -113,7 +131,7 @@ lemma_minus_plus_id = \n. recnat ih m =
             (let p [eq_p] = plus m' n in
                conv --  == minus (Succ p) (Succ m')
                  (conv --  == minus p m'
-                    (conv  --  == minus (plus m' n) m'                      
+                    (conv  --  == minus (plus m' n) m'
                       (ih m' [eq_m]) --  = n  (by IH)
                       by (sym Nat Nat p (plus m' n) eq_p)
                       at hole.minus hole m' = n)
