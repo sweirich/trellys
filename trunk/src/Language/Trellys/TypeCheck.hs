@@ -451,9 +451,11 @@ ts tsTh tsTm =
                         if th' == Logic then throwError e else
                           do tot <- isTotal Program b
                              unless tot $
-                                    err [DS "When applying to a term with classifier",
-                                         DS "P, it must be classified Total, but",
-                                         DD b, DS "is not."]
+                                    err [DS "When applying to a term with classifier P,",
+                                         DS "the term must be classified Total, but",
+                                         DD b, DS "is not.",
+                                         DS "This is the dreaded value restriction:",
+                                         DS "use a let-binding to make the term a value."]
 
                              ta Program b tyA)
              return (App ep ea eb, b_for_x_in_B)
