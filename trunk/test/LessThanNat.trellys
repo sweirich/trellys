@@ -65,6 +65,15 @@ sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
 -}
 -- I.e., interface I use, but with the constructor abstractions
 -- replaced by the abstractions corresponding to structural less-than.
+-- The datatype for the structural less than (which can be generalized
+-- to arbitrary datatypes) is
+{-
+data LT [m:Nat] [n:Nat] -> Type 0 where
+  LBase : [n = Succ m] -> LT m n
+  LStep : [n':Nat] -> [n = Succ n']
+       -> [LT m n'] -> LT m n
+-}
+
 
 -- * Wrapped versions of implementation-specific lemmas
 --   --------------------------------------------------

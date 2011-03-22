@@ -1,23 +1,11 @@
+-- Datatype based LessThanNat implementation.  See LessThanNat.trellys
+-- general discussion.
 module LessThanNat_LT where
 
 import Prelude
 import Arithmetic
 
--- * Less-than relation on Nat
---   -------------------------
-
--- cf. Arithmetic.lt
---
--- Is it easier to use (lt m n = True) ?  And what about the alternate
--- ADT characterization derived below in lemmas m_lt_Sm and lt_inc?
--- I.e., what if we instead define
-{-
-data LT [m:Nat] [n:Nat] -> Type 0 where
-  LBase : [n = Succ m] -> LT m n
-  LStep : [n':Nat] -> [n = Succ n']
-       -> [LT m n'] -> LT m n
--}
--- and then derive the current LT constructors as lemmas?
+-- less-than relation
 data LT [m:Nat] [n:Nat] -> Type 0 where
   LZ : [m = Zero]
     -> (n':Nat) -> [n = Succ n']
@@ -36,33 +24,6 @@ gs = \m n . join
 -- specific to generic
 sg : (m:Nat) -> (n:Nat) -> (LT m n = ltT m n)
 sg = \m n . join
-
-
--- * Less-than lemmas
---   ----------------
---
--- Lemmas with names like lem_LT are version of lem specialized to LT.
--- The amount of conversion code needed to convert lem_LT to lem makes
--- me doubt this whole abstraction thing was such a great idea ...
---
--- The abstract interface for a less-than relation ltT that I've come
--- up with (based on need) is
-{-
--- Abstraction of the LT constructor and the Arithmetic.lt function
-z_lt_Sn          : (n : Nat) -> ltT Zero (Succ n)
-m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
-
--- Abstraction of structural less-than.  This can be generalized to
--- arbitrary datatypes, whereas LT above is specific to Nat.
-m_lt_Sm          : (m:Nat) -> ltT m (Succ m)
-m_lt_n__m_lt_Sn  : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
-
--- Nothing is less than zero
-lt_0__contra     : (m:Nat) -> (ltT m Zero) -> (0 = 1)
-
--- Less-than has an inversion like property
-sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
--}
 
 -- The first two lemmas give an abstract version of LT
 
