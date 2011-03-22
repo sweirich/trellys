@@ -448,16 +448,17 @@ ts tsTh tsTm =
              eb <- ((kc th b_for_x_in_B >> ta Logic b tyA)
                     `catchError`
                       \e ->
-                        if th' == Logic then throwError e else
-                          do tot <- isTotal Program b
-                             unless tot $
-                                    err [DS "When applying to a term with classifier P,",
-                                         DS "the term must be classified Total, but",
-                                         DD b, DS "is not.",
-                                         DS "This is the dreaded value restriction:",
-                                         DS "use a let-binding to make the term a value."]
-
-                             ta Program b tyA)
+                        if th' == Logic then throwError e else do
+                          when (th == Logic || ep == Erased) $
+                            do tot <- isTotal Program b
+                               liftIO $ putStrLn $ "th is: "++show th++"; ep is: "++show ep
+                               unless tot $
+                                      err [DS "When applying to a term with classifier P,",
+                                           DS "the term must be classified Total, but",
+                                           DD b, DS "is not.",
+                                           DS "This is the dreaded value restriction:",
+                                           DS "use a let-binding to make the term a value."]
+                          ta Program b tyA)
              return (App ep ea eb, b_for_x_in_B)
 
 
