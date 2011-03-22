@@ -91,7 +91,7 @@ recnat minus_same_zero n =
              by n_eq_sym
  				     at hole.(minus hole hole = 0)
 
-
+-- n - 0 = n
 lemma_minus_zero_id : (n : Nat) -> (minus n 0 = n)
 lemma_minus_zero_id =
   \n . case n [eq_n] of 
@@ -101,129 +101,49 @@ lemma_minus_zero_id =
         by (sym Nat Nat n (Succ n') eq_n)
 	at hole.(minus hole 0 = hole)
 
-lemma_minus_plus_id' : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
-recnat lemma_minus_plus_id' m = \n .
+-- (m + n) - m = n
+lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
+recnat lemma_minus_plus_id m = \n .
   case m [m_eq] of
      Zero -> conv (conv lemma_minus_zero_id n by (join : n = plus 0 n) at hole.(minus hole 0) = n)
                by (sym Nat Nat m 0 m_eq)
                at hole.((minus (plus hole n) hole) = n)
-     Succ m' -> let e1 [_] = (join : minus (plus (Succ m') n) (Succ m') = minus (plus m' n) m') in
-                let e2 [_] = conv e1 by (lemma_minus_plus_id' m' [m_eq] n)
-                             at h . minus (plus (Succ m') n) (Succ m') = h in
+     Succ m' -> let e1 [_] = (join : minus (plus (Succ m') n) (Succ m')
+                                   = minus (plus m' n) m') in
+                --                 = n    (by (a + b) - a = b)
+                let e2 [_] = (conv e1 by (lemma_minus_plus_id m' [m_eq] n)
+                             at h . minus (plus (Succ m') n) (Succ m') = h) in
                 conv e2 by (sym Nat Nat m (Succ m') m_eq)
                 at m. ((minus (plus m n) m) = n)
-{-
-log div_mult' : (n : Nat) -> (m : Nat) ->
-    (n = div (mult n (Succ m)) m)
-recnat div_mult n = \m .
-  case n [n_eq] of
--}
 
-lemma_minus_plus_id : (n : Nat) -> (m : Nat) -> ((minus (plus m n) m) = n)
-lemma_minus_plus_id = \n. recnat ih m =
-   case m [eq_m] of 
-     Zero -> conv (conv lemma_minus_zero_id n by (join 10 : n = plus 0 n) at hole.(minus hole 0) = n)
-               by (sym Nat Nat m 0 eq_m)
-	       at hole.((minus (plus hole n) hole) = n)
-     Succ m' -> 
-       conv -- (minus (plus m n) m) == (minus (plus (Succ m') n) (Succ m'))
-         (conv -- == (minus (Succ (plus m' n) (Succ m')))
-            (let p [eq_p] = plus m' n in
-               conv --  == minus (Succ p) (Succ m')
-                 (conv --  == minus p m'
-                    (conv  --  == minus (plus m' n) m'
-                      (ih m' [eq_m]) --  = n  (by IH)
-                      by (sym Nat Nat p (plus m' n) eq_p)
-                      at hole.minus hole m' = n)
-                    by (join 10 : minus p m' = minus (Succ p) (Succ m'))
-                    at hole.hole = n)
-		 by eq_p
-		 at hole.minus (Succ hole) (Succ m') = n)
-	    by (join 10 : (Succ (plus m' n)) = (plus (Succ m') n))
-            at hole.minus hole (Succ m') = n)
-         by (sym Nat Nat m (Succ m') eq_m)
-	 at hole.minus (plus hole n) hole = n
-
--- n = n*(m+1) / m
-log div_mult : (n : Nat) -> (m : Nat) ->
-    (n = div (mult n (Succ m)) m)
-recnat div_mult n = \m .
-  case n [n_eq] of
-    Zero ->
-            let zc [zc_eq] = (join : 0 = div (mult 0 (Succ m)) m) in
-						 -- 0 = div (mult 0 (Succ m)) m
-						let [n_eq_sym] [_] = (sym Nat Nat n 0 n_eq) in
-						-- 0 = n
-						conv zc
-						  by n_eq_sym
-              at hole.(hole = div (mult hole (Succ m)) m)
-    Succ pred ->
-		  -- A couple of aliases for controlling normalization under join
-      let [p1] [p1_eq] = mult pred (Succ m) in
-			let [p2] [p2_eq] = (plus m p1) in
-
-
-			let n1 [n1_eq] = (join : (let prog rc [rc_eq] = div (minus p2 m) m in Succ rc) = div (Succ p2) m) in
-
-			--*  The left hand side (reducing to n)
-
-			-- { expand the definition of p2 }
-			let l1 [l1_eq] = conv n1 by p2_eq at hole.((let prog rc [rc_eq] = div (minus hole m) m in Succ rc) = div (Succ hole) m) in
-			--> let prog rc [rc_eq] = div (minus (plus m p1)) m in Succ rc = div (Succ (plus m p1)) m
-
-
-			-- { apply the minus/plus cancellation lemma }
-			let l2 [_] = conv l1
-			       by (lemma_minus_plus_id p1 m)
-			       at hole.(let prog rc [rc_eq] = div hole m in Succ rc) = div (Succ (plus m p1)) m in
-      --> let prog rc [rc_eq] = div p1 m in Succ rc = div (Succ (plus m p1)) m
-
-			-- { expand the def. of p1 }
-			let l3 [_] = conv l2
-			       by p1_eq
-						 at hole.(let prog rc [rc_eq] = div hole m in Succ rc) = div (Succ (plus m p1)) m in
-      --> (let prog rc [rc_eq] = div (mult pred (Succ m)) m in Succ rc) = div (Succ (plus m p1)) m
-
-			-- { Apply the induction hypothesis }
- 			let [ih] [_] = conv (join : pred = pred)
-			                      by (div_mult pred [n_eq] m)
-														at hole.(hole = pred) in
-      --> div (mult pred (Succ m)) m = pred
-			let l4 [_] = conv l3 by ih at
-			   hole.(let prog rc [rc_eq] = hole in Succ rc) = div (Succ (plus m p1)) m in
-      --> let prog rc [rc_eq] = pred in Succ rc = div (Succ (plus m p1)) m
-
-			-- { Convert 'let prog rc [rc_eq] = pred in Succ rc' to 'Succ pred', then to 'n' }
-			let l5 [_] = conv l4
-                        by (join : (let prog rc [rc_eq] = pred in Succ rc) = Succ pred)
-												at hole.(hole = div (Succ (plus m p1)) m) in
-      let l6 [_] = conv l5
-                         by (sym Nat Nat n (Succ pred) n_eq)
-												 at hole.(hole = div (Succ (plus m p1)) m) in
-      --> n = div (Succ (plus m p1)) m
-
-			-- * The right-hand side (converting to 'div (mult n (Succ m)) m'
-
-			-- { Rewrite (Succ (plus m p1)) to plus (Succ m) p1
-			let [plus_inv] [_] = (join : Succ (plus m p1) = (plus (Succ m) p1)) in
-
-			let l7 [_] = conv l6 by plus_inv at hole.(n = div hole m) in
-			--> n = div (plus (Succ m) p1) m'
-
-			-- { Expand the definition of 'p1' }
-			let l8 [_] = conv l7 by p1_eq at hole.(n = div (plus (Succ m) hole) m) in
-			--> n = div (plus (Succ m) (mult pred (Succ m))) m
-
-			-- { Rewrite 'plus (Succ m) (mult pred (Succ m))' to 'mult (Succ pred) (Succ m)'
-			let mult_inv [_] =
-			  (join : plus (Succ m) (mult pred (Succ m)) = mult (Succ pred) (Succ m)) in
-
-      -- { Apply the mult. inv. rule -}
-			let l9 [_] = conv l8 by mult_inv at hole.(n = div hole m) in
-			--> n = div (mult (Succ pred) (Succ m)) m
-
-			-- { Apply the n = Succ pred rule }
-			conv l9 by (sym Nat Nat n (Succ pred) n_eq) at hole.(n = div (mult hole (Succ m)) m)
+-- m*(n+1) / n = m
+log div_mult : (m : Nat) -> (n : Nat) ->
+    (div (mult m (Succ n)) n = m)
+recnat div_mult m = \n .
+  case m [m_eq] of
+    Zero -> conv (join : div (mult Zero (Succ n)) n = Zero)
+            by (sym Nat Nat m Zero m_eq)
+            at m . div (mult m (Succ n)) n = m
+               -- (S m' * S n) / n = (let r = ((n + (m' * S n)) - n) / n in S r)
+    Succ m' -> let e1 [_]    = (join: div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = div (minus (plus n (mult m' (Succ n))) n) n
+                                       in Succ r))
+               --                  = (let r = (m' * S n) / n in S r)    (by (a + b) - a = b)
+               in let e2 [_] = conv e1 by (lemma_minus_plus_id n (mult m' (Succ n)))
+                               at h . div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = div h n
+                                       in Succ r)
+               --                  = (let r = m' in S r)                (by IH)
+               in let e3 [_] = conv e2 by (div_mult m' [m_eq] n)
+                               at h . div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = h
+                                       in Succ r)
+               --                  = S m'
+               in let e4 [_] = conv e3
+                               by (join : (let prog r [_] = m' in Succ r) = Succ m')
+                               at h . div (mult (Succ m') (Succ n)) n = h
+               in conv e4 by (sym Nat Nat m (Succ m') m_eq)
+                  at m . (div (mult m (Succ n)) n) = m
 
 plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates = recnat pa i = \j k .
