@@ -1,0 +1,8 @@
+-- Test second TLet_2 FV check
+module Test where
+
+import Prelude
+
+-- Should fail: n is free.
+t1 : Nat -> Nat
+t1 = \n . let [n] [n_eq] = 0 in n

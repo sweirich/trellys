@@ -1,0 +1,5 @@
+module DuplicateDefinition where
+
+id : [a:Type 0] -> (x:a) -> a
+id = \[a] . \x . x
+id = \[a] . \x . x

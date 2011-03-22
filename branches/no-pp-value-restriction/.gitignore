@@ -1,0 +1,9 @@
+.capri/
+lib/replib-read-only
+src/dist/
+*.trellys-elaborated
+trellys
+TAGS
+*.hi
+*.o
+

@@ -1,0 +1,13 @@
+-- Test Q_Cons in ET_RImp: bodies below are checked against Q_Cons.
+module Test where
+
+import Prelude
+
+-- Should pass: Zero is a nullary constructor application
+prog t1 : [Nat] -> Nat
+rec t1 [n] = Zero
+
+-- Should pass: Succ Zero is a constructor application all of whose
+-- arguments are Q
+prog t2 : [Nat] -> Nat
+rec t2 [n] = Succ Zero

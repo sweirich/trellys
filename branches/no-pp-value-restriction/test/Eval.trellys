@@ -1,0 +1,12 @@
+module Eval where
+
+import Prelude
+
+plus : Nat -> Nat -> Nat
+recnat plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [cw] m)
+
+main : Nat
+main = plus 3 2
