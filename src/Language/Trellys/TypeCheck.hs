@@ -451,7 +451,6 @@ ts tsTh tsTm =
                         if th' == Logic then throwError e else do
                           when (th == Logic || ep == Erased) $
                             do tot <- isTotal Program b
-                               liftIO $ putStrLn $ "th is: "++show th++"; ep is: "++show ep
                                unless tot $
                                       err [DS "When applying to a term with classifier P,",
                                            DS "the term must be classified Total, but",

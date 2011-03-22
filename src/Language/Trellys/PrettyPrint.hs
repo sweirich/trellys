@@ -257,10 +257,23 @@ instance Display Term where
              text "rec" <+> dn <+> bindParens ep (dx) <+> text "=" $$
                     (nest 2 db)
 
-  display (App ep e1 e2) = do
-     de1 <- display e1
-     de2 <- display e2
-     return $ de1 <+> (bindParens ep de2)
+  display (App ep f x) = do
+     df <- display f
+     dx <- display x
+     -- NC copied this wrapper code from display EApp below without
+     -- much thought or testing ... it works pretty well down there
+     let wrapx = case x of
+                   App _ _ _   -> parens
+                   Lam _ _     -> parens
+                   Let _ _ _ _ -> parens
+                   Case _ _    -> parens
+                   _           -> id
+     let wrapf = case f of
+                   Lam _ _     -> parens
+                   Let _ _ _ _ -> parens
+                   Case _ _    -> parens
+                   _           -> id
+     return $ wrapf df <+> wrapx (bindParens ep dx)
   display (Paren e) = do
      de <- display e
      return $ (parens de)
