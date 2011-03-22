@@ -37,18 +37,12 @@ lt : Nat -> Nat -> Bool
 lt = \x.\y.gt y x
 
 -- 'x >= y'
-gte : Nat -> Nat -> Bool
-gte = \x.\y.case (minus x y) [_] of 
-            Zero -> case x [_] of
-                    Zero -> case y [_] of
-                            Zero -> True
-                            Succ y' -> False
-                    Succ x' -> False
-            Succ z -> True
+ge : Nat -> Nat -> Bool
+ge = \x y . gt (Succ x) y
 
 -- 'x <= y'
-lte : Nat -> Nat -> Bool
-lte = \x.\y.gte y x
+le : Nat -> Nat -> Bool
+le = \x.\y.ge y x
 
 -- 'x = y'
 eq : Nat -> Nat -> Bool
