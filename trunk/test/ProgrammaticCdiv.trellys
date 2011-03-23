@@ -7,6 +7,9 @@
 -- NB: this proof is compatible with the PP value restriction and may
 -- allow the bound proofs to go through with the PP value restriction
 -- in place (which I thought was impossible) ...
+--
+-- ... does indeed allow my simplified thm to be proven.  See
+-- TerminationAsValueRestrictionWorkaround.
 module ProgrammaticCdiv where
 import Prelude
 import Arithmetic
