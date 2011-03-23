@@ -111,6 +111,10 @@ delPosParen (Paren tm) = tm
 delPosParen tm         = tm
 
 
+-- delPosParenDeep :: Term -> Term
+delPosParenDeep :: Rep a => a -> a
+delPosParenDeep = everywhere (mkT delPosParen)
+
 
 -- | A Module has a name, a list of imports, and a list of declarations
 data Module = Module { moduleName :: MName,
@@ -285,26 +289,23 @@ splitEApp e = splitEApp' e []
 $(derive [''Epsilon, ''Theta, ''Term, ''ETerm])
 
 
-instance Alpha Term where
-  match' pol  (Pos _ t1) t2 = match' pol t1 t2
-  match' pol  t1 (Pos _ t2) = match' pol t1 t2
-  match' pol (Paren t1) t2 = match' pol t1 t2
-  match' pol t1 (Paren t2) = match' pol t1 t2
-  match' pol t1 t2 = matchR1 rep1 pol t1 t2
+instance Alpha Term
 
 instance Alpha Theta
 instance Alpha Epsilon
 
 instance Subst Term Term where
-  isvar (Var m) = Just (m,id)
+  isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
+
 instance Subst Term Epsilon
 instance Subst Term Theta
 
 
 instance Alpha ETerm
 instance Subst ETerm ETerm where
-  isvar (EVar m) = Just (m,id)
+  isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
+
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta

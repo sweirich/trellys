@@ -2,10 +2,10 @@
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
     UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Language.Trellys.GenericBind 
+module Language.Trellys.GenericBind
   (Fresh(..),LFresh(..),Alpha(..)
   ,FreshM, runFreshM, FreshMT(..), runFreshMT
-  ,AlphaCtx
+  {-- ,AlphaCtx --}
   ,Name,AnyName(..),rName,name1,name2,name3,name4,name5
   ,translate
   ,name2Integer,name2String,integer2Name,string2Name,makeName
@@ -14,7 +14,7 @@ module Language.Trellys.GenericBind
   ,Bind,rBind,bind,unbind,unbind2,unbind3
   ,Rebind,rRebind,rebind -- ,reopen
   ,Annot(..),rAnnot
-  ,Subst(..), matchR1
+  ,Subst(..),SubstName(..) {--,  matchR1 --}
   ,unsafeUnbind
   ,lunbind, lfreshen
 
@@ -24,14 +24,13 @@ module Language.Trellys.GenericBind
 
 -- To switch between LocallyNameless and Nominal versions of the binding library:
 -- (1) change the import statement below from LocallyNameless to Nominal
--- (2) adjust the exports above  
+-- (2) adjust the exports above
 -- (3) change the Alpha and Subst instances for SourcePos below
 
 import Data.Set (Set)
 
 import Generics.RepLib.Bind.LocallyNameless hiding (fv)
 import qualified Generics.RepLib.Bind.LocallyNameless as LN
-import Generics.RepLib.Bind.Fresh
 
 import Generics.RepLib hiding (Arrow)
 import Text.ParserCombinators.Parsec.Pos

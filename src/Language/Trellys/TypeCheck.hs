@@ -73,7 +73,7 @@ ta th (Join s1 s2) (TyEq a b) =
      (_,k1) <- ts Program a
      (_,k2) <- ts Program b
      picky <- getFlag PickyEq
-     when (picky && not (k1 `aeq` k2)) $
+     when (picky && not (k1 `aeqSimple` k2)) $
          err [DS "Cannot join terms of different types:", DD a,
          DS "has type", DD k1, DS "and", DD b, DS "has type", DD k2]
      t1E <- erase =<< substDefs a
@@ -181,7 +181,7 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
     err [DS "ta: recnat defines a function which takes a logical argument,",
          DS "here a computational argument was specified"]
 
-  unless (nat `aeq` natType) $
+  unless (nat `aeqSimple` natType) $
      err [DS "ta: expecting argument of recnat to be Nat got ", DD nat]
 
   unless (ep == aep) $
@@ -305,7 +305,7 @@ ta th (Case b bnd) tyA = do
                 err [DS "wrong epsilons on argument variables for constructor",
                      DD c, DS "in pattern match."]
              let deltai = swapTeleVars dumbdeltai (map fst deltai')
-                 subdeltai = substs (teleVars delta) (map fst bbar) deltai
+                 subdeltai = substs (zip (teleVars delta) (map fst bbar)) deltai
                  eqtype = TyEq b (teleApp (multiApp (Con c) bbar) deltai)
              -- premise 5
              eai <- extendCtx (Sig y Logic eqtype) $
@@ -501,7 +501,7 @@ ts tsTh tsTm =
                 Just (tyA1, tyA2) -> do
                  (_,k1) <- ts Program tyA1
                  (_,k2) <- ts Program tyA2
-                 when (picky && (not (k1 `aeq` k2))) $ err
+                 when (picky && (not (k1 `aeqSimple` k2))) $ err
                    [DS "Terms ", DD tyA1, DS "and", DD tyA2,
                     DS " must have the same type when used in conversion.",
                     DS "Here they have types: ", DD k1, DS "and", DD k2,
@@ -510,8 +510,8 @@ ts tsTh tsTm =
                  return (tyA1, tyA2, k1)
                 _ -> errMsg aty) atys
 
-         let cA1 = substs xs tyA1s c
-         let cA2 = substs xs tyA2s c
+         let cA1 = substs (zip xs tyA1s) c
+         let cA2 = substs (zip xs tyA2s) c
          eb <- ta th b cA1
          if picky then
             -- check c with extended environment
@@ -597,7 +597,7 @@ tcModule defs m' = do checkedEntries <- extendCtxMods importedModules $
                            -- Add decls to the Decls to be returned
             AddCtx decls -> liftM (decls++) (extendCtxs decls m)
         -- Get all of the defs from imported modules (this is the env to check current module in)
-        importedModules = filter (\mod -> (ModuleImport (moduleName mod)) `elem` moduleImports m') defs
+        importedModules = filter (\aMod -> (ModuleImport (moduleName aMod)) `elem` moduleImports m') defs
         -- importedModules =
         --   [mod |
         --    mod <- defs,
@@ -655,8 +655,8 @@ tcEntry dt@(Data t delta th lev cs) =
          do (_,ret) <- splitPi tm
             let (t',tms) = splitApp ret
                 correctApps = map (\(v,_,_,_) -> (Var v,Runtime)) delta
-            unless (    (Con t `aeq` t')
-                     && (tms `aeq` correctApps)) $
+            unless (    (Con t `aeqSimple` t')
+                     && (tms `aeqSimple` correctApps)) $
               err [DS "Constructor", DD c,
                    DS "must have return type",
                    DD (multiApp (Con t) correctApps)]
@@ -716,14 +716,16 @@ subtype Logic (Type l1) (Type l2) =
     err [DS "In the logical fragment,", DD (Type l1),
          DS "is not a subtype of", DD (Type l2)]
 subtype _ a b =
-  unless (a `aeq` b) $
+  unless (a' `aeqSimple` b') $
     err [DD a, DS "is not a subtype of", DD b]
+  where a' = delPosParenDeep a
+        b' = delPosParenDeep b
 
 isFirstOrder :: Term -> Bool
 isFirstOrder (TyEq _ _) = True
 isFirstOrder (Pos _ ty) = isFirstOrder ty
 isFirstOrder (Paren ty) = isFirstOrder ty
-isFirstOrder ty = ty `aeq` natType
+isFirstOrder ty = ty `aeqSimple` natType
 
 --debug n v = when False (liftIO (putStr n) >> liftIO (print v))
 --debugNoReally n v = when True (liftIO (putStr n) >> liftIO (print v))
@@ -836,3 +838,6 @@ isTotal Program tm
       _ -> return False
 
 
+-- Alpha equality, dropping parens and source positions.
+aeqSimple :: Alpha t => t -> t -> Bool
+aeqSimple x y = delPosParenDeep x `aeq` delPosParenDeep y
