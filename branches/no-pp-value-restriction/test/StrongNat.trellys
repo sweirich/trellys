@@ -327,16 +327,96 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
 
 -- unsure about the plusP vs plus and minusP vs minus here ... need to prove these
 axiom minus_plus_id : (m:Nat) => (n:Nat) => [lt m n = False] -> m = (plusP n (minus m n))
-axiom plus_le : (m:Nat) => (n:Nat) => (k:Nat) => leP (plusP k m) (plusP k n) = leP m n
-axiom plus_le_specialized : (m:Nat) => (n:Nat) =>
+m_lt_n__Sm_lt_Sn' : (m : Nat) -> (n : Nat) -> lt m n = True -> lt (Succ m) (Succ n) = True
+m_lt_n__Sm_lt_Sn' = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn m n
+                                        (conv m_lt_n by (sg m n) at t.t))
+                                  by (gs (Succ m) (Succ n))
+                                  at t.t
+
+plus_le : (m:Nat) -> (n:Nat) -> (k:Nat) -> leP (plusP k m) (plusP k n) = leP m n
+plus_le = \m n . recnat plus_le k = case k [k_eq] of
+  Zero    -> conv join by (sym Nat Nat k Zero k_eq)
+             at k . leP (plusP k m) (plusP k n) = leP m n
+  Succ k' -> let ih [_] = plus_le k' [k_eq]
+             in let step [_] = (join : leP (plusP k' m) (plusP k' n)
+                                     = leP (plusP (Succ k') m) (plusP (Succ k') n))
+             in let step' [_] = conv step
+                                by (sym Nat Nat k (Succ k') k_eq)
+                                at k . leP (plusP k' m) (plusP k' n)
+                                     = leP (plusP k m) (plusP k n)
+             in conv ih by step' at h . h = leP m n
+
+-- plus_le isn't directly applicable due to LP value restriction and
+-- it can't prove the specializing via let because of the let-P-in-L
+-- restriction :P
+plus_le_P : (m:Nat) => (n:Nat) => (k:Nat) -> leP (plusP k m) (plusP k n) = leP m n
+plus_le_P = \m n k . plus_le m n k
+
+-- LP restriction trouble
+-- ----------------------
+{-
+plus_le_specialized : (m:Nat) => (n:Nat) =>
   leP (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n)))
       (plusP (Succ n) (minus m (Succ n)))
   =
   leP (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
       (minus m (Succ n))
+-}
+-- LP value restriction proof
+{-
+plus_le_specialized = \m n .
+  plus_le_P (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+            (minus m (Succ n))
+            (Succ n)
+-}
+-- let-P-in-L proof
+--
+-- Results in:
+--
+--     Program variables can't be bound with let expressions in
+--     Logical contexts because they would be normalized when the
+--
+-- Is this a concern here?  I.e., I'm producing an equality, and
+-- equalities are already normalized (they're values by definition).
+{-
+plus_le_specialized = \m n . let prog d [d_eq] = (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  in conv (plus_le_P d (minus m (Succ n)) (Succ n)) by d_eq at
+     h . leP (plusP (Succ n) h) (plusP (Succ n) (minus m (Succ n))) = leP h (minus m (Succ n))
+-}
+-- For now I will attempt to adapt the proof of plus_le :P
+
+plus_le_specialized : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  leP (plusP k (multP (fdiv m n) n))
+      (plusP k m)
+  =
+  leP (multP (fdiv m n) n)
+      m
+plus_le_specialized = \m n . recnat plus_le k = case k [k_eq] of
+  Zero    -> conv join by (sym Nat Nat k Zero k_eq)
+             at k . leP (plusP k (multP (fdiv m n) n))
+                        (plusP k m)
+                    =
+                    leP (multP (fdiv m n) n)
+                        m
+  Succ k' -> let ih [_] = plus_le k' [k_eq]
+             in let step [_] = (join : leP (plusP k' (multP (fdiv m n) n))
+                                           (plusP k' m)
+                                     = leP (plusP (Succ k') (multP (fdiv m n) n))
+                                           (plusP (Succ k') m))
+             in let step' [_] = conv step
+                                by (sym Nat Nat k (Succ k') k_eq)
+                                at k . leP (plusP k' (multP (fdiv m n) n))
+                                           (plusP k' m)
+                                     = leP (plusP k (multP (fdiv m n) n))
+                                           (plusP k m)
+             in conv ih by step' at h . h = leP (multP (fdiv m n) n) m
+
 axiom not_lt_S__pred : (m:Nat) => (n:Nat) => [lt m (Succ n) = False] -> m = Succ (pred m)
 -- this is just s_minus_s__lt specialized to ltT = lt
-axiom s_minus_s__lt' : (m:Nat) -> (n:Nat) -> lt (minus (Succ m) (Succ n)) (Succ m) = True
+s_minus_s__lt' : (m:Nat) -> (n:Nat) -> lt (minus (Succ m) (Succ n)) (Succ m) = True
+s_minus_s__lt' = \m n . conv (s_minus_s__lt m n)
+                        by (gs (minus (Succ m) (Succ n)) (Succ m))
+                        at t.t
 
 fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False]
               -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
@@ -361,7 +441,7 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
                   at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
                        = h
   -}
-  in let e4 [_] = conv e3 by (plus_le_specialized m n)
+  in let e4 [_] = conv e3 by (plus_le_specialized (minus m (Succ n)) (Succ n) (Succ n))
                   at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
                        = h
   in let m_eq [_] = not_lt_S__pred m n [m_lt_Sn]
