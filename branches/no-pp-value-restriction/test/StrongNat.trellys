@@ -300,6 +300,10 @@ fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
 
 fdiv_ub_p : (m:Nat) -> Type 0
 fdiv_ub_p = \m . (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_p_red : (m:Nat) ->
+    (fdiv_ub_p m
+  = ((n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True))
+fdiv_ub_p_red = \m . join
 
 fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
               -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
@@ -311,7 +315,8 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
                           = leP (multP h (Succ n)) m)
 
   in conv e2 by e1 at h. leP (multP (fdiv m (Succ n)) (Succ n)) m = h
-{-
+{- LP value restiction kills this (the fdiv):
+
   in transP Bool Bool Bool
             (leP (multP (fdiv m (Succ n)) (Succ n)) m)
             (leP (multP Zero (Succ n)) Zero)
@@ -320,8 +325,18 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
             e2
 -}
 
-axiom minus_plus_id : (m:Nat) => (n:Nat) => [lt m n = False] -> m = (plus n (minus m n))
+-- unsure about the plusP vs plus and minusP vs minus here ... need to prove these
+axiom minus_plus_id : (m:Nat) => (n:Nat) => [lt m n = False] -> m = (plusP n (minus m n))
 axiom plus_le : (m:Nat) => (n:Nat) => (k:Nat) => leP (plusP k m) (plusP k n) = leP m n
+axiom plus_le_specialized : (m:Nat) => (n:Nat) =>
+  leP (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n)))
+      (plusP (Succ n) (minus m (Succ n)))
+  =
+  leP (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+      (minus m (Succ n))
+axiom not_lt_S__pred : (m:Nat) => (n:Nat) => [lt m (Succ n) = False] -> m = Succ (pred m)
+-- this is just s_minus_s__lt specialized to ltT = lt
+axiom s_minus_s__lt' : (m:Nat) -> (n:Nat) -> lt (minus (Succ m) (Succ n)) (Succ m) = True
 
 fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False]
               -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
@@ -338,13 +353,36 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
   in let e3 [_] = conv e2 by (minus_plus_id m (Succ n) [m_lt_Sn])
                   at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
                        = leP (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) h
+  {-
   -- (L P) value restriction here ... maybe I can specialize the lemma?
   in let e4 [_] = conv e3 by (plus_le (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
                                       (minus m (Succ n))
                                       (Succ n))
                   at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
                        = h
-  in e4
+  -}
+  in let e4 [_] = conv e3 by (plus_le_specialized m n)
+                  at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
+                       = h
+  in let m_eq [_] = not_lt_S__pred m n [m_lt_Sn]
+  in let m_eq' [_] = sym Nat Nat m (Succ (pred m)) m_eq
+  in let e5 [_] = conv e4 by m_eq at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
+     = leP (multP (fdiv (minus h (Succ n)) (Succ n)) (Succ n)) (minus h (Succ n))
+  in let ih1 [_] = gm (minus m (Succ n))
+                     [conv (s_minus_s__lt' (pred m) n) by m_eq'
+                      at m . lt (minus m (Succ n)) m = True]
+  -- couldn't get fdiv_ub_p to join here, but introduce it as lemma
+  -- fdiv_ub_p_red above worked ???
+  in let ih2 [_] = conv ih1 by (fdiv_ub_p_red (minus m (Succ n))) at t.t
+{-
+                   by (join 1000: fdiv_ub_p (minus m (Succ n))
+                            = ((k:Nat) -> leP (multP (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
+                                             (minus m (Succ n)) = True))
+
+                   at t.t
+-}
+  in let ih [_] = ih2 n
+  in conv e4 by ih at h . leP (multP (fdiv m (Succ n)) (Succ n)) m = h
 
 fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k) -> fdiv_ub_p m
 
