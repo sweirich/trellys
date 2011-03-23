@@ -2,7 +2,7 @@ module LessThanNat where
 
 import Prelude
 import Arithmetic
-import LessThanNat_lt
+import LessThanNat_lt_eq_True
 -- Or
 -- import LessThanNat_LT
 

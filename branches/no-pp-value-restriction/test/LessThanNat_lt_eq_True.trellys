@@ -1,6 +1,6 @@
 -- Function based LessThanNat implementation.  See LessThanNat.trellys
 -- general discussion.
-module LessThanNat_lt where
+module LessThanNat_lt_eq_True where
 
 import Prelude
 import Arithmetic
