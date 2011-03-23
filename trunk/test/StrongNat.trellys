@@ -3,7 +3,7 @@ module StrongNat where
 import Prelude
 import Arithmetic
 import LessThanNat
-import LessThanNat_lt -- ??? I guess trellys imports are not transitive ???
+import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive ???
 
 -- * Strong induction
 --   ----------------
