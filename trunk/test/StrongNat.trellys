@@ -332,6 +332,8 @@ fdiv_ub_lhs_def_s3_step : (m:Nat) -> (n:Nat) ->
     in mult d (Succ n))
 fdiv_ub_lhs_def_s3_step = \_ _ . join
 
+{- Stuck here due to PP value restriction ... now wondering if I can
+   work around this via a termination proof and rewriting ...
 
 fdiv_ub_lhs_def_s4_step : (m:Nat) -> (n:Nat) ->
     (let prog d [_] =
@@ -343,7 +345,7 @@ fdiv_ub_lhs_def_s4_step : (m:Nat) -> (n:Nat) ->
                   (fdiv (minus m (Succ n)) (Succ n)) -- value restriction!
     in (mult (Succ r) (Succ n)))
 fdiv_ub_lhs_def_s4_step = \m n . join
-
+-}
 
 {-
 fdiv_ub_lhs_base : (m:Nat) -> (n:Nat) -> [lt m n = True] ->
@@ -351,7 +353,7 @@ fdiv_ub_lhs_base : (m:Nat) -> (n:Nat) -> [lt m n = True] ->
 fdiv_ub_lhs_base = \n . dummy
 -}
 fdiv_ub_lhs_base : (m:Nat) -> (n:Nat) -> [lt m n = True] -> (fdiv_ub_lhs m n = Zero)
-fdiv_ub_lhs_base = \m n [m_lt_n] . dummy
+-- fdiv_ub_lhs_base = \m n [m_lt_n] . dummy
 --  let e0 [_] = (join : fdiv_ub_lhs_base m n = d
 
 
@@ -364,12 +366,16 @@ fdiv_ub_p = \m . (n:Nat)
 -- idea : m < n so fdiv m (S n)
 fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
               -> fdiv_ub_p m
-fdiv_ub_f_base = \m n [m_lt_n] . dummy
+-- fdiv_ub_f_base = \m n [m_lt_n] . dummy
 
 fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> fdiv_ub_p m
 -- doesn't seem to work to annotate the \n . ... with fdiv_ub_p m.
 -- try again when body is finished. (that is, it seems trellys can't
 -- check that something has type fdiv_ub_p m for some reason)
+--
+-- UPDATE: see the ProgrammaticCdiv for possible work around the
+-- inference trouble.
+{-
 fdiv_ub_f = \m g . (\n . case (lt m n) [m_lt_n] of
   True  -> let z_lt_Sm [_] = (join : lt Zero (Succ m) = True) in
            let fdiv_ub_lhs_eq_Z [_] =
@@ -386,6 +392,7 @@ fdiv_ub_f = \m g . (\n . case (lt m n) [m_lt_n] of
               -> (let prog lhs [_] = fdiv_ub_lhs m n in
                   lt lhs (Succ m))
                   = True)
+-}
 {-
   ((\n . case (lt m n) [m_lt_n] of
            True -> Nat
@@ -393,7 +400,7 @@ fdiv_ub_f = \m g . (\n . case (lt m n) [m_lt_n] of
    : fdiv_ub_p m)
 -}
 fdiv_ub : (m:Nat) -> fdiv_ub_p m
-fdiv_ub = cov [fdiv_ub_p] fdiv_ub_f
+--fdiv_ub = cov [fdiv_ub_p] fdiv_ub_f
 
 {-
 -- fdiv specs
