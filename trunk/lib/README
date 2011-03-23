@@ -1,1 +1,4 @@
 replib-read-only: an copy of the externally maintained RepLib; pulled in with svn:externals
+
+See https://code.google.com/p/trellys/wiki/ExternalReplib for
+instructions on maintaining the svn:externals.
