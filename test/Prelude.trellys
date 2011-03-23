@@ -44,8 +44,8 @@ sm_eq_Sn__m_eq_n = \m n sm_eq_Sn .
 
 -- SCW: I don't think that we care whether the arguments to sym/trans
 -- etc are compiletime or runtime. All equality proofs are irrelevant
--- as the definition of irr below shows. (i.e. even if you use trans'
--- to produce an equality proof, you can still erase it with irr
+-- as the definition of uneraseEq below shows. (i.e. even if you use trans'
+-- to produce an equality proof, you can still erase it with uneraseEq
 -- below.) So I think we should just use runtime only arguments for
 -- simplicity.
 
@@ -84,7 +84,6 @@ trans' = \ aTy bTy cTy a b c p q .
                by (conv p by q at h.a = h)
                at h.a = h
 
-
 trans4' : (aTy : Type 0) -> (bTy : Type 0) -> (cTy : Type 0) -> (dTy : Type 0) -> 
          (a : aTy) -> (b : bTy) -> (c : cTy) -> (d : dTy) -> 
 				(p : a = b) -> (q : b = c) -> (r : c = d) -> (a = d)
@@ -102,11 +101,6 @@ trans4' = \ aTy bTy cTy dTy a b c d p q r .
 
 uneraseEq : [aTy:Type 0] -> [bTy:Type 0] -> [a:aTy] -> [b:bTy] -> [a = b] -> (a = b)
 uneraseEq = \ [_][_][a][b][eq] . conv join by eq at x . a = x
-
-
---uneraseEq : (aTy:Type 0) -> (bTy:Type 0) -> (a:aTy) -> (b:bTy) -> [a = b] -> a = b
---uneraseEq = \_ _ a b [eq] . conv (join : a = a) by eq at h. a = h
-
 
 -- Existential types.
 
