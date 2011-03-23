@@ -411,7 +411,12 @@ plus_le_specialized = \m n . recnat plus_le k = case k [k_eq] of
                                            (plusP k m)
              in conv ih by step' at h . h = leP (multP (fdiv m n) n) m
 
-axiom not_lt_S__pred : (m:Nat) => (n:Nat) => [lt m (Succ n) = False] -> m = Succ (pred m)
+not_lt_S__pred : (m:Nat) => (n:Nat) => [lt m (Succ n) = False] -> m = Succ (pred m)
+not_lt_S__pred = \m n [m_lt_n] . case m [m_eq] of
+  Zero    -> let [e1] [_] = (conv m_lt_n by m_eq at m . lt m (Succ n) = False)
+             in contra (conv e1 by (join : lt Zero (Succ n) = True) at h . h = False)
+  -- need to do this more often: join's type can be inferred from the context
+  Succ m' -> conv join by (sym Nat Nat m (Succ m') m_eq) at m . m = Succ (pred m)
 -- this is just s_minus_s__lt specialized to ltT = lt
 s_minus_s__lt' : (m:Nat) -> (n:Nat) -> lt (minus (Succ m) (Succ n)) (Succ m) = True
 s_minus_s__lt' = \m n . conv (s_minus_s__lt m n)
