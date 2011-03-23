@@ -12,7 +12,7 @@ import Prelude
 import Arithmetic
 import StrongNat
 import LessThanNat
-import LessThanNat_lt
+import LessThanNat_lt_eq_True
 
 prog cdivP : Nat => Nat => Nat
 rec cdivP m = \n . case m [m_eq] of
