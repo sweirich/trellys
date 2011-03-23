@@ -206,39 +206,39 @@ strongNat = \[p] f .
 
 -- cf. Arithmetic.div
 --
--- m `div` n = \ceiling{ m / S n }
+-- m `cdiv` n = \ceiling{ m / S n }
 
 -- Define the predicate here to avoid need for let defs in context
-p : Nat -> Type 0
-p = \w.Nat
+cdiv_p : Nat -> Type 0
+cdiv_p = \w.Nat  -- NatElimination.constNat
 
-div' : Nat -> Nat -> Nat
-div' = \m n .
---       let p [p_def] = (\w.Nat : Nat -> Type 0) in -- constNat
+cdiv : Nat -> Nat -> Nat
+cdiv = \m n .
        let f [f_def] = ((\m g . case m [m_eq] of
-         Zero    -> conv Zero by (join : Nat = p m) at h.h
+         Zero    -> conv Zero by (join : Nat = cdiv_p m) at h.h
          Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n)
                                    by (sym Nat Nat m (Succ m') m_eq)
                                    at m.ltT ((minus (Succ m') (Succ n))) m in
                     let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
-                                   by (join : p (minus (Succ m') (Succ n)) = Nat)
+                                   by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
                                    at h.h in
-                    conv (Succ recg) by (join : Nat = p m) at h.h
-                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m] -> p m_minus_sn) -> p m))
-       in conv (cov [p] f m) by (join : p m = Nat) at h.h
+                    conv (Succ recg) by (join : Nat = cdiv_p m) at h.h
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m] -> cdiv_p m_minus_sn) -> cdiv_p m))
+       in conv (cov [cdiv_p] f m) by (join : cdiv_p m = Nat) at h.h
 
 -- Tests
-test_div'1 : div' 0 0 = 0
-test_div'1 = join
+test_cdiv1 : cdiv 0 0 = 0
+test_cdiv1 = join
 
-test_div'2 : div' 1 0 = 1
-test_div'2 = join
+test_cdiv2 : cdiv 1 0 = 1
+test_cdiv2 = join
 
-test_div'3 : div' 10 1 = 5
-test_div'3 = join 1000
+test_cdiv3 : cdiv 10 1 = 5
+test_cdiv3 = join 1000
 
-test_div'4 : div' 10 2 = 4
-test_div'4 = join
+test_cdiv4 : cdiv 10 2 = 4
+test_cdiv4 = join
 
-test_div'5 : div' 10 3 = 3
-test_div'5 = join
+test_cdiv5 : cdiv 10 3 = 3
+test_cdiv5 = join
+
