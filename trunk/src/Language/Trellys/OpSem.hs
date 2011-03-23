@@ -6,11 +6,8 @@ module Language.Trellys.OpSem
   (makeModuleEnv, join, isValue, isEValue, erase, cbvStep, cbvNSteps)
 where
 
-
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
-import Language.Trellys.Environment
-import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 
 import Language.Trellys.GenericBind
@@ -19,8 +16,6 @@ import Text.PrettyPrint.HughesPJ (nest)
 
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
-import Control.Monad.Reader hiding (join)
-import Control.Monad.Error hiding (join)
 
 import Data.Maybe
 
@@ -130,7 +125,7 @@ cbvStep (EArrow th ep a bnd) = do
     Just a'     -> return $ Just $ EArrow th ep a' bnd
     Nothing     ->
       if not (isEValue a) then return Nothing
-       else do 
+       else do
          (x,b) <- unbind bnd
          stpb <- cbvStep b
          case stpb of
@@ -139,7 +134,7 @@ cbvStep (EArrow th ep a bnd) = do
            Nothing ->
              if isEValue b
                then return $ Just $ (EArrow th ep a (bind x b))
-               else return Nothing           
+               else return Nothing
 cbvStep (ELam _)         = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
@@ -183,7 +178,7 @@ cbvStep (ECase b mtchs) =
                Just bnd ->
                  do (delta,mtchbody) <- unbind bnd
                     if (length delta /= length tms) then return Nothing
-                      else return $ Just $ substs delta tms mtchbody
+                      else return $ Just $ substs (zip delta tms) mtchbody
            _ -> return Nothing
 cbvStep (ELet m bnd)   =
   do stpm <- cbvStep m
@@ -236,7 +231,7 @@ isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
-isEValue (EArrow _ _ t1 b) = 
+isEValue (EArrow _ _ t1 b) =
   let (_,t2) = unsafeUnbind b in
    isEValue t1 && isEValue t2
 isEValue (ELam _)         = True
