@@ -296,14 +296,23 @@ transP : (aTy:Type 0) -> (bTy:Type 0) -> (cTy:Type 0) ->
 transP = \aTy bTy cTy a b c [a_eq_b] [b_eq_c] .
   conv join by (conv a_eq_b by b_eq_c at h.a=h) at h.a=h
 
-fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+-- fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
 
 fdiv_ub_p : (m:Nat) -> Type 0
 fdiv_ub_p = \m . (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+-- expand the definition of fdiv_ub_p: the expanded version helps the
+-- type checker, and doing this join with particular values of m
+-- inserted doesn't always work (but it works here because abstract m
+-- is a value).
 fdiv_ub_p_red : (m:Nat) ->
     (fdiv_ub_p m
   = ((n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True))
 fdiv_ub_p_red = \m . join
+-- other direction
+fdiv_ub_p_red' : (m:Nat) ->
+    ((n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True)
+  = fdiv_ub_p m
+fdiv_ub_p_red' = \m . join
 
 fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
               -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
@@ -508,8 +517,34 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
   in let ih [_] = ih2 n
   in conv e4 by ih at h . leP (multP (fdiv m (Succ n)) (Succ n)) m = h
 
-fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k) -> fdiv_ub_p m
+-- combine base and step
+fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
+         -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f' = \m gm n . case (lt m (Succ n)) [m_lt_n] of
+  True  -> fdiv_ub_f_base m n [m_lt_n]
+  False -> fdiv_ub_f_step m n [m_lt_n] gm
 
+-- massage lt=True into ltT
+fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k)
+         -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f'' = \m gm .
+  let gm' [_] = (\k [k_lt_m] .
+                 gm k [conv k_lt_m by (sg k m) at t.t]
+              : (k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
+  in fdiv_ub_f' m gm'
+
+-- massage return types into fdiv_ub_p
+fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> fdiv_ub_p m
+fdiv_ub_f = \m . conv (fdiv_ub_f'' m) by (fdiv_ub_p_red' m)
+                 at t . ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> t
+
+-- prove fdiv_ub by cov
+fdiv_ub' : (m:Nat) -> fdiv_ub_p m
+fdiv_ub' = cov [fdiv_ub_p] fdiv_ub_f
+
+-- expand fdiv_ub_p to get human-friendly (ha) version
+fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub = \m . conv (fdiv_ub' m) by (fdiv_ub_p_red m) at t.t
 
 {-
 
