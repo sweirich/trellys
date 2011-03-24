@@ -445,7 +445,8 @@ ts tsTh tsTm =
              -- substitution.  If either fails, we would have to use
              -- App2.  In that case, th' must be Program and the argument
              -- must be a value.
-             eb <- ((kc th b_for_x_in_B >> ta Logic b tyA)
+             kc th b_for_x_in_B
+             eb <- (ta Logic b tyA
                     `catchError`
                       \e ->
                         if th' == Logic then throwError e else do
