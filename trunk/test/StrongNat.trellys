@@ -45,17 +45,115 @@ import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive 
 -- we can make (r' [i] n [_]) recurse on a proof that n' < pred i,
 -- since integer less-than satisfies a strong transitivity law
 --
---   n' < n /\ n < i -> n' < pred i
+--   strans : n' < n /\ n < i -> n' < pred i
 --
 -- I.e., r' is defined by
 --
---   r [i] n [i_lt_n] = ... r' [pred i] n' [proof that n' < pred i from n' < n at n < i] ...
+--   r' [i] n [n_lt_i] = ... r' [pred i] n' [strans (_:n' < n) (n_lt_i:n < i) : n' < pred i] ...
 --
--- where the "..." is same as in r.
+-- where the "..." is same as in r, and (_:n' < n) is some proof that
+-- n' < n (which exists by assumption).  Note that r' need not case on
+-- i directly, which is good, since doing so might require that i
+-- *not* be erased.
+--
+-- Note that the above generic index-trick transformation gives rise
+-- to a derived rule:
+--
+--   C, n:Nat, r': (m:Nat) -> [m < n] -> T |- e:T
+--   -------------------------------------------- StrongNatRec
+--   C |- r' n . e : Nat -> T
 --
 -- [1] like dummy Nat indices on datatypes as suggested by Aaron to
 --     work around the fact that we don't generate induction
 --     principles for each datatype.
+
+-- Some index-trick examples
+-- -------------------------
+--
+-- Below we show how to define cov via the index trick.  Here we give
+-- examples (fib, div) of using the index trick to define recursive
+-- functions directly.  These examples can also be implemented via
+-- cov, but these examples are less abstract than the descriptions of
+-- the index trick (above) and the cov implementation (below).
+--
+-- Fibonacci
+-- ~~~~~~~~~
+--
+-- Fibonacci (fib) is problematic because fib n recurses on n-1 and
+-- n-2.  We show how to define fib in two ways: using the index trick,
+-- and using tuples and the fact that |n - m| is uniformly bounded
+-- (here by 2) across all recursions fib m in fib n.
+--
+-- Index trick: we want
+--
+--   fib : Nat -> Nat
+--   fib = \n . case n of
+--              Z    -> Z
+--              S n' -> case n' of
+--                      Z     -> S Z
+--                      S n'' -> fib n' + fib n''
+--
+-- but the recursion fib n'' is not allowed .  But, we can use the
+-- index trick and first define
+--
+--   fib' : [i:Nat] -> (n:Nat) -> [n < i] -> Nat
+--   fib' = \[i] n [nlti] . case n of
+--              Z    -> Z
+--              S n' -> case n' of
+--                      Z     -> S Z
+--                      S n'' -> fib' [pred i] n'  [strans (_:n'  < n) n_lt_i]
+--                             + fib' [pred i] n'' [strans (_:n'' < n) n_lt_i]
+--
+-- and then
+--
+--   fib = \n . fib' [S n] n [_:n < S n].
+--
+-- Tuple trick: instead define
+--
+--   fib' : Nat -> (Nat,Nat) -- \n . (fib (n-1), fib (n-2))
+--   fib' = \n . case n of
+--               Z    -> (Z,Z)
+--               S n' -> case n' of
+--                       Z     -> (S Z, Z)
+--                       S n'' -> let (fn', fn'') = fib' n' in
+--                                (fn' + fn'', fn')
+--
+-- and then
+--
+--   fib = fst . fib'.
+--
+-- Note that this trick works for any function with uniformly bounded
+-- recursion (in particular, any function which uses nested
+-- case-matches and recurses only on pattern-bound names): if f n
+-- recurses on m, for |n - m| <= k uniformly, then the helper function
+-- f' returns a k-tuple of (f n, ..., f (n-k+1)).  This is the same
+-- trick used in the solution of linear recurrences by linear
+-- combinations of powers of eigen values.
+--
+-- Division
+-- ~~~~~~~~
+--
+-- Ceiling division (div) is problematic because div m n recurses on
+-- (m - S n).  Since |m - (m - S n)| is not uniformly bounded, the
+-- tuple trick won't work, but the index trick will: we want
+--
+--   -- div m n = \ceiling{m/S n}
+--   div : Nat -> Nat -> Nat
+--   div = \m n . case m of
+--                Z -> Z
+--                S m' -> S (div (m - S n) n)
+--
+-- so we define
+--
+--   div' : [i:Nat] -> (n:Nat) -> [n < i] -> Nat -> Nat
+--   div' = \[i] n [n_lt_i] m .
+--          case n of
+--          Z    -> Z
+--          S m' -> S (div' [pred i] (m - S n) [strans (_:m - S n < m) n_lt_i])
+--
+-- and then
+--
+--   div = \m . div' [S m] m [_:m < S m].
 
 -- How the index trick is used in cov
 -- ----------------------------------
