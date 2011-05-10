@@ -325,15 +325,15 @@ ta th (Case b bnd) tyA = do
   return (Case eb (bind y emtchs))
 
 -- implements the checking version of T_let1 and T_let2
-ta th (Let th' ep a bnd) tyB =
+ta th (Let th' ep bnd) tyB =
  do -- begin by checking syntactic -/L requirement and unpacking binding
     when (ep == Erased && th' == Program) $
        err [DS "Implicit lets must bind logical terms."]
-    ((x,y),b) <- unbind bnd
+    ((x,y,a),b) <- unbind bnd
     -- premise 1
-    (ea,tyA) <- ts th' a
+    (ea,tyA) <- ts th' (unembed a)
     -- premise 2
-    eb <- extendCtx (Sig y Logic (TyEq (Var x) a)) $
+    eb <- extendCtx (Sig y Logic (TyEq (Var x) (unembed a))) $
             extendCtx (Sig x th' tyA) $
               ta th b tyB
     -- premise 3
@@ -352,7 +352,7 @@ ta th (Let th' ep a bnd) tyB =
       err [DS "Program variables can't be bound with let expressions in",
            DS "Logical contexts because they would be normalized when the",
            DS "expression is."]
-    return (Let th' ep ea (bind (x,y) eb))
+    return (Let th' ep (bind (x,y,embed ea) eb))
 
 -- rule T_chk
 ta th a tyB = do
@@ -529,15 +529,15 @@ ts tsTh tsTm =
          return (Ann ea tyA, tyA)
 
     -- the synthesis version of rules T_let1 and T_let2
-    ts' th (Let th' ep a bnd) =
+    ts' th (Let th' ep bnd) =
      do -- begin by checking syntactic -/L requirement and unpacking binding
         when (ep == Erased && th' == Program) $
           err [DS "Implicit lets must bind logical terms."]
-        ((x,y),b) <- unbind bnd
+        ((x,y,a),b) <- unbind bnd
         -- premise 1
-        (ea,tyA) <- ts th' a
+        (ea,tyA) <- ts th' (unembed a)
         -- premise 2
-        (eb,tyB) <- extendCtx (Sig y Logic (TyEq (Var x) a)) $
+        (eb,tyB) <- extendCtx (Sig y Logic (TyEq (Var x) (unembed a))) $
                       extendCtx (Sig x th' tyA) $
                         ts th b
         -- premise 3
@@ -556,7 +556,7 @@ ts tsTh tsTm =
           err [DS "Program variables can't be bound with let expressions in",
                DS "Logical contexts because they would be normalized when the",
                DS "expression is."]
-        return (Let th' ep ea (bind (x,y) eb), tyB)
+        return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
     ts' _ tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
                       DS "Please add an annotation."]
