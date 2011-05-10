@@ -23,7 +23,7 @@ executable trellys
                  mtl,
                  containers,
                  directory, filepath,
-                 unbound
+                 unbound == 0.2.3
   Ghc-Options:     -main-is Trellys -Wall
 
 
