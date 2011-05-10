@@ -226,9 +226,9 @@ instance Display Term where
   display (Con n) = display n
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
-  display (Arrow th ep a bnd) = do
-     da <- display a
-     lunbind bnd $ \(n, b) -> do
+  display (Arrow th ep bnd) = do
+     lunbind bnd $ \((n,a), b) -> do
+        da <- display (unembed a)
         dn <- display n
         db <- display b
         return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db

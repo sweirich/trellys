@@ -24,9 +24,9 @@ erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
 erase (Con c)               = return $ ECon (translate c)
 erase (Type l)              = return $ EType l
-erase (Arrow th ep tyA bnd) =
-  do (x, tyB) <- unbind bnd
-     tyA' <- erase tyA
+erase (Arrow th ep bnd) =
+  do ((x,tyA), tyB) <- unbind bnd
+     tyA' <- erase (unembed tyA)
      tyB' <- erase tyB
      return $ EArrow th ep tyA' $ bind (translate x) tyB'
 erase (Lam ep bnd)   =
@@ -203,9 +203,9 @@ isValue :: Term -> Bool
 isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
-isValue (Arrow _ _ t1 b)  =
-  let (_,t2) = unsafeUnbind b in
-  isValue t1 && isValue t2
+isValue (Arrow _ _ b)  =
+  let ((_,t1),t2) = unsafeUnbind b in
+  isValue (unembed t1) && isValue t2
 isValue (Lam _ _)          = True
 isValue (App _ e1 e2)      =
   isValue e2 &&

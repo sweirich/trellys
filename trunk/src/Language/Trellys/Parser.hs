@@ -393,7 +393,7 @@ expr = do
         ifix  assoc op f = Infix (reservedOp op >> return f) assoc
         ifixM assoc op f = Infix (reservedOp op >> f) assoc
         mkArrow th = do x <- fresh (string2Name "_")
-                        return $ \tyA tyB -> Arrow th Runtime tyA (bind x tyB)
+                        return $ \tyA tyB -> Arrow th Runtime (bind (x,embed tyA) tyB)
 
 term = do -- This eliminates left-recursion in (<expr> := <expr> <expr>)
   f <- factor
@@ -485,7 +485,7 @@ impProd =
                           <|> (liftM2 (,) (fresh (string2Name "_")) expr))
      th <- eitherArrow
      tyB <- expr
-     return $ Arrow th Erased tyA (bind x tyB)
+     return $ Arrow th Erased  (bind (x,embed tyA) tyB)
 
 --FIXME: add wildcard
 
@@ -515,7 +515,7 @@ expProdOrAnnotOrParens =
          Left (Var x,a) ->
            option (Ann (Var x) a)
                   (do (th,b) <- afterBinder
-                      return $ Arrow th Runtime a (bind x b))
+                      return $ Arrow th Runtime (bind (x,embed a) b))
          Left (a,b) -> return $ Ann a b
          Right a    -> return $ Paren a
 

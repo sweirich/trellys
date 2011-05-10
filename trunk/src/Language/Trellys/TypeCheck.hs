@@ -114,20 +114,20 @@ ta Logic Abort _ = err [DS "abort must be in P."]
 ta Program Abort tyA = do kc Program tyA ; return Abort
 
 -- Rules T_lam1 and T_lam2
-ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
+ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
 
   -- First check the arrow type for well-formedness
   kc th a
 
   -- pull apart the bindings and make sure the epsilons agree
-  Just (x,body,_,tyB) <- unbind2 lbody abody
+  Just (x,body,(_,tyA),tyB) <- unbind2 lbody abody
 
   when (lep /= aep) $
        err ([DS "Lambda annotation", DD lep,
              DS "does not match arrow annotation", DD aep])
 
   -- typecheck the function body
-  ebody <- extendCtx (Sig x ath tyA) (ta th body tyB)
+  ebody <- extendCtx (Sig x ath (unembed tyA)) (ta th body tyB)
 
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
@@ -174,20 +174,21 @@ ta th (Lam lep lbody) a@(Arrow ath aep tyA abody) = do
 
 
 -- rules T_rnexp and T_rnimp
-ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
-  kc Logic (Arrow ath aep nat abnd)
+ta _ (NatRec ep binding) arr@(Arrow ath aep abnd) = do
+  kc Logic arr
 
   unless (ath == Logic) $
     err [DS "ta: recnat defines a function which takes a logical argument,",
          DS "here a computational argument was specified"]
 
-  unless (nat `aeqSimple` natType) $
-     err [DS "ta: expecting argument of recnat to be Nat got ", DD nat]
-
   unless (ep == aep) $
      err [DS "ta : expecting argument of recnat to be", DD aep,
           DS "got", DD ep]
-  (dumbvar,dumbbody) <- unbind abnd
+
+  ((dumbvar,nat),dumbbody) <- unbind abnd
+  unless (unembed nat `aeqSimple` natType) $
+     err [DS "ta: expecting argument of recnat to be Nat got ", DD (unembed nat)]
+
   ((f,y),a) <- unbind binding
   -- to get the body "tyB" as it appears on paper, we must replace the
   -- extra variable we got from opening the binding
@@ -200,8 +201,8 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
       eqType = TyEq (Var y)
                     (App Runtime (Con $ string2Name "Succ") (Var x))
 
-      tyA = Arrow Logic ep natType (bind x
-                  (Arrow Logic Erased eqType (bind z
+      tyA = Arrow Logic ep (bind (x,embed natType)
+                  (Arrow Logic Erased (bind (z,embed eqType)
                          xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
   ea <- extendCtx (Sig f Logic tyA) $
@@ -224,18 +225,18 @@ ta _ (NatRec ep binding) (Arrow ath aep nat abnd) = do
 ta Logic (Rec _ _) _ =
   err [DS "rec must be P."]
 
-ta Program (Rec ep binding) fty@(Arrow ath aep tyA abnd) = do
-  kc Program (Arrow ath aep tyA abnd)
+ta Program (Rec ep binding) fty@(Arrow ath aep abnd) = do
+  kc Program fty
   unless (ep == aep) $
          err [DS "ta : expecting argument of rec to be",
               DD aep, DS ", got", DD ep]
 
-  (dumby,dumbbody) <- unbind abnd
+  ((dumby,tyA),dumbbody) <- unbind abnd
   ((f,y),a) <- unbind binding
   let tyB = subst dumby (Var y) dumbbody
 
   ea <- extendCtx (Sig f Program fty) $
-          extendCtx (Sig y ath tyA) $
+          extendCtx (Sig y ath (unembed tyA)) $
             ta Program a tyB
 
   -- perform the FV and value checks if in T_RecImp
@@ -401,15 +402,15 @@ ts tsTh tsTm =
     ts' _ (Type l) = return (Type l,  Type (l + 1))
 
     -- Rules T_pi and T_pi_impred
-    ts' th (Arrow th' ep tyA body) =
-      do (x, tyB) <- unbind body
-         (etyA, tytyA) <- ts th tyA
-         (etyB, tytyB) <- extendCtx (Sig x th' tyA) $ ts th tyB
+    ts' th (Arrow th' ep body) =
+      do ((x,tyA), tyB) <- unbind body
+         (etyA, tytyA) <- ts th (unembed tyA)
+         (etyB, tytyB) <- extendCtx (Sig x th' (unembed tyA)) $ ts th tyB
          case (isType tytyA, isType tytyB) of
-           (Just _, Just 0) -> return $ (Arrow th' ep etyA (bind x etyB), Type 0)
-           (Just n, Just m) -> return $ (Arrow th' ep etyA (bind x etyB), Type (max n m))
+           (Just _, Just 0) -> return $ (Arrow th' ep  (bind (x,embed etyA) etyB), Type 0)
+           (Just n, Just m) -> return $ (Arrow th' ep  (bind (x,embed etyA) etyB), Type (max n m))
            (Just _, _)      -> err [DD tyB, DS "is not a type."]
-           (_,_)            -> err [DD tyA, DS "is not a type."]
+           (_,_)            -> err [DD (unembed tyA), DS "is not a type."]
 
     -- Rules T_tcon, T_acon and T_dcon
     ts' th (Con c) =
@@ -433,8 +434,8 @@ ts tsTh tsTm =
          case isArrow tyArr of
            Nothing -> err [DS "ts: expected arrow type, for term ", DD a,
                            DS ". Instead, got", DD tyArr]
-           Just (th',epArr,tyA,bnd) -> do
-             (x,tyB) <- unbind bnd
+           Just (th',epArr,bnd) -> do
+             ((x,tyA),tyB) <- unbind bnd
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
                     DS "doesn't match arrow annotation", DD epArr]
@@ -445,7 +446,7 @@ ts tsTh tsTm =
              -- substitution.  If either fails, we would have to use
              -- App2.  In that case, th' must be Program and the argument
              -- must be a value.
-             eb <- ((kc th b_for_x_in_B >> ta Logic b tyA)
+             eb <- ((kc th b_for_x_in_B >> ta Logic b (unembed tyA))
                     `catchError`
                       \e ->
                         if th' == Logic then throwError e else
@@ -457,7 +458,7 @@ ts tsTh tsTm =
                                          DS "This is the dreaded value restriction:",
                                          DS "use a let-binding to make the term a value."]
 
-                             ta Program b tyA)
+                             ta Program b (unembed tyA))
              return (App ep ea eb, b_for_x_in_B)
 
 
@@ -755,7 +756,7 @@ occursPositive tName (Pos p ty) = do
          \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
 
 occursPositive tName (Paren ty) = occursPositive tName ty
-occursPositive tName aty@(Arrow _ _ _ _) = do
+occursPositive tName aty@(Arrow _ _  _) = do
   (tele,_) <- splitPi aty
   let tys = [ty | (_,ty,_,_) <- tele]
       vars = S.unions $ map fv tys
@@ -819,12 +820,12 @@ isTotal Program tm
   | isValue tm = return True -- TOT_VAL
   | otherwise =
     case tm of
-      (Arrow _ _ tyA binding) -> do
-              (_, tyB) <- unbind binding
+      (Arrow _ _ binding) -> do
+              ((_,tyA), tyB) <- unbind binding
               kc Program tm
-              kc Program tyA
+              kc Program (unembed tyA)
               kc Program tyB
-              totA <- isTotal Program tyA
+              totA <- isTotal Program (unembed tyA)
               totB <- isTotal Program tyB
               return (totA && totB)
       t@(App _ _ _) ->
