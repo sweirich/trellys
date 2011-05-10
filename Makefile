@@ -1,7 +1,7 @@
 # Main Rules
 # ==========
 #
-# make [all]: does a sandboxed install of RepLib and trellys-core.
+# make [all]: does a sandboxed install of trellys-core.
 #             Assumes you have Cabal installed, and that the default
 #             Cabal install dir is on your path (~/.cabal/bin for
 #             default "per-user" setup).  A trellys binary will be
@@ -9,36 +9,31 @@
 #             to test/trellys (the only place you're expected to run
 #             `trellys`).
 #
-#             NB: if you have problems with capri, but it used to work, 
+#             NB: if you have problems with capri, but it used to work,
 #             you may need to `rm -rf ./.capri` before doing `make`.
-#             Upgrading ./.capri is time consuming (minutes) and rarely 
+#             Upgrading ./.capri is time consuming (minutes) and rarely
 #             necessary so it is not upgraded by default.
 #
 # make test:  runs all tests in ./test.
 #
-# make sandbox-trellys: 
+# make sandbox-trellys:
 #             does a sandboxed install or trellys-core.  Quicker than
-#             `make all`. Assumes you ran `make all` previously, and
-#             that your sandboxed RepLib is up to date.
-#
-# make install: does a `cabal install` of RepLib and trellys-core.
+#             `make all`. Assumes you ran `make all` previously.
+# make install: does a `cabal install` of trellys-core.
 
-.PHONY: all sandbox-install sandbox-uninstall sandbox-replib sandbox-trellys \
-	    install uninstall clean test 
+.PHONY: all sandbox-install sandbox-uninstall sandbox-trellys \
+	    install uninstall clean test
 
 all: sandbox-install
 
-sandbox-install: sandbox-replib sandbox-trellys
+sandbox-install: sandbox-trellys
 
 sandbox-uninstall:
 	-rm -rf .capri
 
-sandbox-replib: .capri 
-	capri import lib/replib-read-only
-
 # This has no dependencies to allow `make sandbox-trellys` to run
 # quickly.
-sandbox-trellys:
+sandbox-trellys: .capri
 	capri import src
 	ln -fs `pwd`/.capri/install/bin/trellys test
 
@@ -47,23 +42,18 @@ sandbox-trellys:
 .capri:
 	cabal install capri
 	capri bootstrap
-    # some trellys depend needs base < 4, and base < 4 needs syb
-	cabal install syb #so that we have something to clone.
-	capri clone syb 'base-3*'
 
-install: 
-	cd lib/replib-read-only && cabal install
+install:
+	cabal install
 	cd src && cabal install
 
 uninstall:
 	-ghc-pkg unregister `ghc-pkg list | grep trellys`
-	-ghc-pkg unregister `ghc-pkg list | grep RepLib`
 	@echo
 	@echo You need to manually delete any trellys binaries on your path.
 	@echo You can find them with \`which trellys\`
 
 clean:
-	-rm -rf lib/replib-read-only/dist
 	-rm -rf src/dist
 
 test:
