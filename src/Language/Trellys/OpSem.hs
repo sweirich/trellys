@@ -56,11 +56,11 @@ erase (Case a bnd)      =
   do a' <- erase a
      (_,mtchs) <- unbind bnd
      liftM (ECase a') (mapM eraseMatch mtchs)
-erase (Let _ ep a bnd)       =
-  do ((x,_),body) <- unbind bnd
+erase (Let _ ep bnd)       =
+  do ((x,_,a),body) <- unbind bnd
      body' <- erase body
      case ep of
-       Runtime -> do a' <- erase a
+       Runtime -> do a' <- erase (unembed a)
                      return $ ELet a' (bind (translate x) body')
        Erased  -> return body'
 erase (Conv a _ _)      = erase a
@@ -217,10 +217,10 @@ isValue Abort              = False
 isValue (NatRec ep _)      = ep == Runtime
 isValue (Rec ep _)         = ep == Runtime
 isValue (Case _ _)         = False
-isValue (Let _ Erased _ a) =
+isValue (Let _ Erased a) =
   let (_,a') = unsafeUnbind a in
     isValue a'
-isValue (Let _ _ _ _)      = False
+isValue (Let _ _ _)      = False
 isValue (Conv a _ _)       = isValue a
 isValue (Contra _)         = False
 isValue (Ann a _)          = isValue a

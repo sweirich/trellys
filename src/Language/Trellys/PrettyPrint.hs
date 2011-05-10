@@ -267,9 +267,10 @@ instance Display Term where
 
   display (Pos _ e) = display e
 
-  display (Let th ep a bnd) = do
-    da <- display a
-    lunbind bnd $ \ ((x,y) , b) -> do
+  display (Let th ep bnd) = do
+
+    lunbind bnd $ \ ((x,y,a) , b) -> do
+     da <- display (unembed a)
      dx <- display x
      dy <- display y
      db <- display b

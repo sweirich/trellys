@@ -475,7 +475,7 @@ letExpr =
      boundExp <- expr
      reserved "in"
      body <- expr
-     return $ (Let th ep boundExp (bind (x,y) body))
+     return $ (Let th ep (bind (x,y, embed boundExp) body))
 
 -- impProd - implicit dependent products
 -- These have the syntax [x:a]->b or [a]->b .

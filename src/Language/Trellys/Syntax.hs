@@ -43,8 +43,8 @@ instance Ord Theta where
   _ <= Program = True
   _ <= _ = False
 
-(<:>) :: TName -> a -> (TName, Annot a)
-x <:> t = (x, Annot t)
+-- (<:>) :: TName -> a -> (TName, Annot a)
+-- x <:> t = (x, Annot t)
 
 
 ------------------------------
@@ -69,8 +69,8 @@ data Term = Var TName    -- | variables
           | Lam Epsilon (Bind TName Term)
           -- | Applications, tagged with stage
           | App Epsilon Term Term
-          -- | A let expressoin
-          | Let Theta Epsilon Term (Bind (TName, TName) Term)
+          -- | A let expression (bound name, equality name, value)
+          | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
           -- | Dependent functions: (x :^{th} A )_{ep} -> B
           | Arrow Theta Epsilon Term (Bind TName Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
