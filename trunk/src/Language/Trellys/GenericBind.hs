@@ -6,17 +6,18 @@ module Language.Trellys.GenericBind
   (Fresh(..),LFresh(..),Alpha(..)
   ,FreshM, runFreshM, FreshMT(..), runFreshMT
   {-- ,AlphaCtx --}
-  ,Name,AnyName(..),rName,name1,name2,name3,name4,name5
+  ,Name,AnyName(..),rName
   ,translate
   ,name2Integer,name2String,integer2Name,string2Name,makeName
   ,binders,patfv,fv,fvAny,swaps
   ,aeq, acompare
   ,Bind,rBind,bind,unbind,unbind2,unbind3
+  ,Embed,embed,unembed
+  ,Rec
   ,Rebind,rRebind,rebind -- ,reopen
-  ,Annot(..),rAnnot
   ,Subst(..),SubstName(..) {--,  matchR1 --}
-  ,unsafeUnbind
   ,lunbind, lfreshen
+  ,unsafeUnbind
 
 --  ,subst,substs -- only for Nominal
   ,rSourcePos
@@ -29,8 +30,9 @@ module Language.Trellys.GenericBind
 
 import Data.Set (Set)
 
-import Generics.RepLib.Bind.LocallyNameless hiding (fv)
-import qualified Generics.RepLib.Bind.LocallyNameless as LN
+import Unbound.LocallyNameless hiding (fv)
+import qualified Unbound.LocallyNameless as LN
+import Unbound.LocallyNameless.Ops(unsafeUnbind)
 
 import Generics.RepLib hiding (Arrow)
 import Text.ParserCombinators.Parsec.Pos
