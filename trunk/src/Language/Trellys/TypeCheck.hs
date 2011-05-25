@@ -404,7 +404,7 @@ ts tsTh tsTm =
     -- Rules T_pi and T_pi_impred
     ts' th (Arrow th' ep body) =
       do ((x,tyA), tyB) <- unbind body
-         (etyA, tytyA) <- ts th (unembed tyA)
+         (etyA, tytyA) <- ts th' (unembed tyA)
          (etyB, tytyB) <- extendCtx (Sig x th' (unembed tyA)) $ ts th tyB
          case (isType tytyA, isType tytyB) of
            (Just _, Just 0) -> return $ (Arrow th' ep  (bind (x,embed etyA) etyB), Type 0)
