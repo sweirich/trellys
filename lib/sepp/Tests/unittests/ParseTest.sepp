@@ -1,0 +1,104 @@
+module ParseTest where
+
+
+theorem idprog : forall (a : Type).forall (x : a).(x = x)
+proof idprog = \(a:Type) => \(x:a) => join 1 1
+
+theorem plus_right_unit : forall (a:Nat).plus x Z = x
+proof plus_right_unit = \(x:Nat) =>
+  termcase x {p} of
+     | abort -> joinAbort p (appabort p) : flip (+) 0 x = x
+		 | ! -> e2
+
+
+
+
+
+-- theorem idprog : ∀(a:Type).∀(x:a).x = x
+-- proof idprog = Λ(a:Type).Λ(x:a). join 1 1
+
+{-
+
+prog a : (x:b) -> a
+def a = c
+
+
+theorem a : (y: Formula 0) -> (Formula 1 = Formula 2)!
+proof a = a
+
+
+theorem a : Formula
+proof a = \(x:Formula) => x
+
+theorem a : Formula
+proof a = \(x:Formula) -> x
+
+theorem a : Formula
+proof a = \[x:Formula] => x
+
+theorem a : Formula
+proof a = \[x:Type] -> x
+
+
+theorem b : Formula
+proof b = case a {aEq} b of
+   | Cons x xs -> c
+   | Nil -> d
+
+theorem b : Formula
+proof b = case a {aEq}  of
+    | Cons x xs -> c a b [c] [d] e
+    | Nil -> d
+
+
+theorem c : Formula
+proof c = termcase a {pf} of
+      | abort -> c
+      | ! -> d
+
+
+
+theorem c : Formula
+proof c = join 1 1 : a b c = defue b
+
+
+theorem e : Formula
+proof e = contra a b c
+
+theorem e : Formula
+proof e = contraabort a b c using f
+
+
+theorem e : Formula
+proof e = conv C a b c by a, [b], c at a b c. d
+
+
+theorem e : Formula
+proof e = ind f (x:int) [u] -> g h i j
+
+prog e : Type
+def e = rec f (x:int) -> g h i j
+
+data A : a where
+  | A : (b:A) -> (c:B) -> d
+  | B : (a:Type) -> A
+
+
+-- Predicates
+-- The notation \(x:A) => t (with a double arrow =>) corresponds to a capital lambda
+theorem predLam : \(x:A) => x
+proof predLam = \(x:A) => x
+
+theorem predLamUni : Λ(x:A) . x
+proof predLamUni = Λ(x:A) . x
+
+
+theorem covProof : ∀(P : (∀(n:Nat).Formula)).
+		P Z =>
+		(∀(n : Nat).(∀(m : Nat). (m < n) -> P m) ->  P n) ->
+		(∀(n : Nat) . P n)
+proof covProof = P
+
+
+
+-}
