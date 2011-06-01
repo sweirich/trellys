@@ -5,11 +5,12 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
   Stage(..),Kind(..),
   TName, ModName,
-  splitApp) where
+  splitApp, isStrictContext) where
 
 import Unbound.LocallyNameless hiding (Con)
 import Unbound.LocallyNameless.Alpha(aeqR1)
 import Text.Parsec.Pos
+import Control.Monad(mplus)
 
 import Data.Typeable
 
@@ -96,6 +97,9 @@ data Term = Var TName                                 -- Term, Proof
 
           | Let (Bind (TName,TName,Embed Term) Term)
 
+          | Strict Term
+          | Sym Term -- Should be a derived form
+
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
           | Parens Term    -- Meta
           | Pos SourcePos Term
@@ -130,3 +134,20 @@ splitApp (App t0 _ t1) = splitApp' t0 [t1]
   where splitApp' (App s0 _ s1) acc = splitApp' s0 (s1:acc)
         splitApp' s acc = s:(reverse acc)
 splitApp t = []
+
+isStrictContext (Parens t) = isStrictContext t
+isStrictContext (Pos _ t) = isStrictContext t
+isStrictContext (Escape e) = Just (e,id)
+isStrictContext (App e1 stage e2) =
+ case isStrictContext e1 of
+   Just (e,k1) -> Just (e,\v -> App (k1 v) stage e2)
+   Nothing ->  case isStrictContext e2 of
+                 Just (e,k2) -> Just (e,\v -> App e1 stage (k2 v))
+                 Nothing -> Nothing
+
+isStrictContext (Case e bs) = case isStrictContext e of
+                               Just (e',k) -> Just (e',\v -> Case (k v) bs)
+
+
+isStrictContext _ = Nothing
+
