@@ -117,6 +117,14 @@ S (mult (div x (S y)) (S y) lte x
 For example, use ord to construct a less-than proof. Use ind to consume a
 less-than proof.
 
+*** Terminates
+*** Ord
+*** Join
+
+
+** Prove termination of a recursive function.
+
+
 ** Derived ord over equalities/implicit conv
 
 ** Context representations
