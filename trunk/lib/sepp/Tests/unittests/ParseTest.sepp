@@ -1,18 +1,42 @@
 module ParseTest where
 
 
+
+data Nat : Type where
+  | Z : Nat
+  | S : Nat -> Nat
+
+
 theorem idprog : forall (a : Type).forall (x : a).(x = x)
 proof idprog = \(a:Type) => \(x:a) => join 1 1
 
-theorem plus_right_unit : forall (a:Nat).plus x Z = x
+
+
+prog plus : (x:Nat) -> (y:Nat) -> Nat
+def plus = rec plus (x:Nat) . \(y:Nat) ->
+  case x {xeq} of
+    Z -> y
+    (S x') -> S (plus x' y)
+
+theorem plus_right_unit : forall (x:Nat).plus x Z = x
 proof plus_right_unit = \(x:Nat) =>
-  termcase x {p} of
-     | abort -> joinAbort p (appabort p) : flip (+) 0 x = x
-		 | ! -> e2
+  termcase x {xterm} of -- abort = x
+     | abort -> strict (plus ~xterm Z) -- convert abort = x to  (x + 0) = abort
+		                            -- convert x = abort to (x + 0) = x
 
-
-
-
+     | ! -> (ind f (n:Nat) [u] .
+		          case n {n_eq} u of -- n_eq = Z = n
+                Z -> conv join 0 0 at (plus ~n_eq Z = ~n_eq)
+							        -- convert Z + Z = Z to
+    								  -- n + Z = n
+                S n' ->  -- n_eq = (S n') = n
+								         -- ord n_eq : (n' < n)
+                   let ih [ih_eq] = f n' (ord n_eq) in -- plus n' 0 = n'
+									 let x [xa] =  conv (join 0 1: plus (S n') Z = S(plus n' Z))
+                                   at plus ~n_eq Z = S ~ih  in
+									 -- x: plus n Z = S n'
+									 conv x at plus n Z = ~n_eq -- plus n Z = n
+									 ) x xterm
 
 -- theorem idprog : ∀(a:Type).∀(x:a).x = x
 -- proof idprog = Λ(a:Type).Λ(x:a). join 1 1
@@ -102,3 +126,4 @@ proof covProof = P
 
 
 -}
+

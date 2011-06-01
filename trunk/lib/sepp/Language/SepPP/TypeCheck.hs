@@ -28,8 +28,9 @@ typecheck mod = do
 
 -- The typing context contains a mapping from variable names to types, with
 -- an additional boolean indicating if it the variable is a value.
-data Env = Env { gamma :: [(TName,(Term,Bool))] }
-emptyEnv = Env {gamma = []}
+data Env = Env { gamma :: [(TName,(Term,Bool))]
+               , sigma :: [()] }
+emptyEnv = Env {gamma = [], sigma = []}
 
 -- | Add a new binding to an environment
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
@@ -64,6 +65,11 @@ typecheckModule (Module n decls) = do
   liftIO $ putStrLn "Typecheck passed"
   return ()
 
+
+data DefRes = DataResult TName Term
+            | ProofResult TName Term Bool
+            | ProgResult TName Term Bool
+
 -- | Typecheck a single definition
 checkDef (ProofDecl nm theorem proof) = do
   lk <- predSynth theorem
@@ -72,20 +78,56 @@ checkDef (ProofDecl nm theorem proof) = do
          err $ "Theorem is not a well-formed logical kind " ++ show nm
 
   proofAnalysis proof theorem
-  return (nm,theorem,False)
+  return $ ProofResult nm theorem False
 
 checkDef (ProgDecl nm ty prog) = do
-  err $ "Can't typecheck program " ++ show nm
+  typeAnalysis ty Type
+  typeAnalysis prog ty
+  return $ ProgResult nm ty False
 
-checkDef (DataDecl nm _ _) = do
-  err $ "Can't typecheck data decl " ++ show nm
+checkDef (DataDecl (Con nm) ty cs) = do
+  ran <- arrowRange ty
+  unless (ran `aeq` Type) $
+         err $ "The datatype decl " ++ show nm ++
+               " must have range Type."
 
+  -- Make sure that the type constructor is a well-formed type.
+  typeAnalysis ty Type
+
+  extendBinding nm ty True $
+                mapM chkConstructor cs
+
+
+  return (DataResult nm Type)
+
+
+  where arrowRange (Pi _ binding) = do
+          ((n,_),body) <- unbind binding
+          arrowRange body
+        arrowRange ty = return ty
+
+        appHead (App t0 _ _) = appHead t0
+        appHead (Parens t) = appHead t
+        appHead t = t
+
+
+        chkConstructor (c,ty) = do
+           typeAnalysis ty Type
+           ran <- arrowRange ty
+           let Con tc = appHead ran
+           unless (tc == nm) $
+                  err $ "In constructor " ++ show c ++
+                        " result type does not match declared data type."
 
 
 checkDefs [] = return ()
 checkDefs (d:ds) = do
-  (n,ty,v) <- checkDef d
-  extendBinding n ty v (checkDefs ds)
+  d <- checkDef d
+  extendBinding' d (checkDefs ds)
+
+  where extendBinding' (ProofResult n ty v) = extendBinding n ty v
+        extendBinding' (ProgResult n ty v) = extendBinding n ty v
+        extendBinding' (DataResult n ty) = extendBinding n ty True
 
 
 
@@ -181,7 +223,7 @@ predSynth (App t0 Static t1) = do -- Pred_App rule
   form <- predSynth t0
   case form of
     Forall binding -> do
-              ((n,ty),body) <- unbind binding
+              ((n,Embed ty),body) <- unbind binding
               guardLK body
               typeAnalysis t1 ty
               return $ subst n t1 body
@@ -259,10 +301,75 @@ typeSynth Type = return Type
 typeSynth (Var n) = do
   (ty,_) <- lookupBinding n
   return ty
+typeSynth (Con n) = do
+  (ty,_) <- lookupBinding n
+  return ty
+
+
 typeSynth t = err $ "TODO: typeSynth: " ++ show t
 
 
-typeAnalysis t ty = err "TODO: typeAnalysis"
+typeAnalysis Type Type = return Type -- Term_Type
+typeAnalysis (Pi _ binding) Type = do -- Term_Pi
+  ((n,Embed ty),body) <- unbind binding
+  extendBinding n ty False $ typeAnalysis body Type
+
+typeAnalysis (Ann t ty) ty' = do
+  typeAnalysis t ty'
+  unless (ty `aeq` ty') $
+         err "Ascribed type does not match required type."
+  return ty
+
+typeAnalysis (Con t) ty = do -- Term_Var
+  (ty',_) <- lookupBinding t
+  unless (ty' `aeq` ty) $
+         err $ "Constructor " ++ show t ++ " has type " ++ show ty'  ++ ", whichdoesn't match expected type " ++ show ty
+
+  return ty
+
+
+typeAnalysis (Rec progBinding) res@(Pi Dynamic piBinding) = do -- Term_Rec
+  -- FIXME: This is a hack, because there are different number of binders in the
+  -- Rec and Pi forms.
+  (p1@(f,_),body) <- unbind progBinding
+  (p2,piBody) <- unbind piBinding
+  Just ((f,(arg,Embed ty)),body,(_,(piArg,Embed piTy)),piBody)
+    <- unbind2 (bind p1 body) (bind (f,p2) piBody)
+
+  unless (ty `aeq` piTy) $
+         err $ "Type " ++ show ty ++ " ascribed to lambda bound variable " ++
+               " does not match type " ++ show piTy ++
+               " ascribed to pi-bound variable."
+
+  extendBinding f res True $
+    extendBinding arg ty True $ typeAnalysis body piBody
+  return res
+
+
+
+typeAnalysis (Lambda Program progStage progBinding) ty@(Pi piStage piBinding) = do
+  unless (progStage == piStage) $
+         err $ "Lambda stage annotation " ++ show progStage ++ " does not " ++
+               "match arrow annotation " ++ show piStage
+
+
+
+  ((progName,Embed progTy), progBody) <- unbind progBinding
+  ((piName,Embed piTy), piBody) <- unbind piBinding
+
+  -- TODO: Several side conditions on stage annotations
+  extendBinding progName progTy True $ typeAnalysis progBody piBody
+
+typeAnalysis (Case s binding) res = do
+  ((eqName,termProof),alts) <- unbind binding
+  unless (termProof == Nothing) $
+    err "Can't introduce termination proof in a programmatic case-split."
+  sTy <- typeSynth s
+  return res
+
+
+
+typeAnalysis t ty = err $ "TODO: typeAnalysis" ++ show t ++ "\n" ++ show ty
 
 
 -- FIXME: This needs to try to synthesize (analyze) a type for everything in the b
@@ -310,14 +417,18 @@ isProof (Lambda Form  Static binding) = isB ty && isProof body
 isProof (App t0 Static t1) = isProof t0 && is_b t1
 isProof (Join _ _) = True
 isProof (Conv p ps binding) = isProof p &&
-                              and [is_q t | (_,t) <- ps] &&
+                              and [is_q t | t <- ps] &&
                               is_a body
   where (_,body) = unsafeUnbind binding
 isProof (Val t) = isTerm t
-isProof (Ord t0 t1) = isTerm t0 && isTerm t1
-isProof (Case scrutinee cpf (Just tpf) alts) =
-  isTerm scrutinee && and (map chkAlt alts)
+isProof (Ord t0) = isTerm t0
+isProof (Case scrutinee binding) =
+  isTerm scrutinee && ok
  where chkAlt a = let ((c,as),alt) = unsafeUnbind a in isProof alt
+       ok = case unsafeUnbind binding of
+              ((cpf,Just tpf),alts) -> and (map chkAlt alts)
+              _ -> False
+
 isProof (TerminationCase scrutinee binding) =
     isTerm scrutinee && isProof p0 && isProof p1
   where (pf,(p0,p1)) = unsafeUnbind binding
@@ -340,7 +451,7 @@ isTerm (Pi _ binding) = isA ty && isTerm body
 isTerm (Lambda Program _ binding) = isA ty && isTerm body
   where ((n,Embed ty),body) = unsafeUnbind binding
 isTerm (Conv t ts binding) = isTerm t &&
-                             and [is_q t | (_,t) <- ts] &&
+                             and [is_q t | t <- ts] &&
                              isTerm body
   where (_,body) = unsafeUnbind binding
 isTerm (App t0 _ t1) = isTerm t0 && is_a t1
@@ -374,8 +485,6 @@ require p cls t =
   unless (p t) $
          err $ show t ++ " is not the proper syntactic class (" ++
                cls ++ ")."
-
-
 
 
 

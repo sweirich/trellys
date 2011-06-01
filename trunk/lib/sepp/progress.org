@@ -32,11 +32,36 @@ The name in quotes indicates the production that generates the constructor.
 [x] Rec (recExpr)
 [x] Ann (within expr table)
 [x] Parens (within term)
-
+[x] Escape (expr table)
+[ ] Let
 
 * Pretty Printer
-
-All done
+[x] Var
+[x] Con
+[x] Formula
+[x] Type
+[x] Pi
+[x] Forall
+[x] App
+[x] Lambda
+[x] Case
+[x] TermCase
+[x] Join
+[x] Equal
+[x] Val
+[x] Terminates
+[x] Contra
+[x] ContraAbort
+[x] Abort
+[x] Conv
+[x] Ord
+[x] IndTL
+[x] Ind
+[x] Rec
+[x] Ann
+[x] Parens
+[x] Escape
+[x] Let
 
 
 * Type Judgements
@@ -70,12 +95,36 @@ Done, except need to check to make make sure that the quantifier type is of the
 *** Multi arity functions and foralls and pis
 *** Reuse binders in signatures and definitions
 
+
+
 * Example Programs
 
 ** Lemma instantiation
 
+l: Forall x, x = x.
+
+y = l (f 0) -- Value restriction, fails with current trellys core.
+
+Alternatively, in seppp we could:
+
+1. prove l, using tcase
+2. prove l', \forall x, x' -> x = x and then do a tcase before instantiating l'.
+
+S (mult (div x (S y)) (S y) lte x
+
+** Use axiom schemes in positive and negative ways.
+
+For example, use ord to construct a less-than proof. Use ind to consume a
+less-than proof.
+
 ** Derived ord over equalities/implicit conv
+
 ** Context representations
+
+
+** Proof of termination of a recursive function.
+
+
 ** Reverse order of case-generated equalites to be C xi = y
 ** Context representations for convs and 'joinabort'
 ** the abort context corresponds to a cbv evaluation context.
@@ -88,5 +137,6 @@ Done, except need to check to make make sure that the quantifier type is of the
     f = abort
     -————————-
       f x = abort
+
 
 

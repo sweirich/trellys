@@ -1,7 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable #-}
 module Language.SepPP.Parser where
 
-
 import Language.SepPP.Syntax
 
 import Unbound.LocallyNameless hiding (name,Infix,Val,Con)
@@ -88,17 +87,21 @@ sepDataDecl = do
   reserved "data"
   e <- expr
   reserved "where"
-  cs <- alts (expr <?> "Constructor declaration")
+  cs <- alts (cons <?> "Constructor declaration")
   case e of
     Ann t1@(Con _) t2 -> do
-       cons <- mapM getCons cs
-       return $ DataDecl t1 t2 cons
+       return $ DataDecl t1 t2 cs
     _ -> fail "Data type declaration"
 
   where isCon (Con _) = True
         isCon _ = False
         getCons (Ann (Con a) b) = return (a,b)
         getCons _ = fail "Expecting constructor declaration"
+        cons = do
+                Con c <- constructor
+                colon
+                t <- expr
+                return (c,t)
 
 
 
@@ -116,7 +119,9 @@ sepPPStyle = haskellStyle {
             "rec", "ind",
             "prog","def", "theorem", "proof",
             "val",
-            "LogicalKind","Form", "Type"
+            "LogicalKind","Form", "Type",
+            "ord",
+            "let","in"
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -208,7 +213,7 @@ caseExpr = do
   termWitness <- option Nothing (Just <$> termName)
   reserved "of"
   alts <- alts (alt <?> "case alternative")
-  return $ Case scrutinee consEq termWitness alts
+  return $ Case scrutinee (bind (consEq,termWitness) alts)
   where alt = do cons <- identifier
                  unless (isUpper (head cons)) $
                    fail "Pattern requires an uppercase constructor name"
@@ -268,22 +273,27 @@ abortExpr = do
   Abort <$> expr
 
 
+
+
 convExpr = do
   reserved "conv"
   a <- expr
-  reserved "by"
-  bs <- commaSep1 erasedProof
-  reserved "at"
-  xs <- many1 termName
-  dot
-  c <- expr
-  return $ Conv a bs (bind xs c)
+  (convBasic a <|> convContext a)
  <?> "Conv expression"
-  where erasedProof = do tm <- brackets expr
-                         return (True,tm)
-                      <|>
-                      do tm <- expr
-                         return (False,tm)
+  -- Basic-style conversion syntax, where the proofs and holes are separate.
+  where convBasic a = do
+             reserved "by"
+             bs <- commaSep1 expr
+             reserved "at"
+             xs <- many1 termName
+             dot
+             c <- expr
+             return $ Conv a bs (bind xs c)
+         -- Context-style conversion syntax
+        convContext a = do
+             reserved "at"
+             ctx <- expr
+             return $ ConvCtx a ctx
 
 
 recExpr = do
@@ -291,7 +301,7 @@ recExpr = do
   f <- termName
   (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
   -- u <- brackets termName
-  reservedOp "->"
+  reservedOp "."
   body <- expr
   return $ Rec (bind (f,(x,Embed ty)) body)
  <?> "Rec expression"
@@ -302,10 +312,28 @@ indExpr = do
   f <- termName
   (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
   u <- brackets termName
-  reservedOp "->"
+  reservedOp "."
   body <- expr
   return $ Ind (bind (f,(x,Embed ty),u) body)
  <?> "Rec expression"
+
+
+
+letExpr = do
+  reserved "let"
+  x <- string2Name <$> identifier
+  y <- brackets (string2Name <$> identifier)
+  reservedOp "="
+  z <- expr
+  reserved "in"
+  body <- expr
+  return $ Let (bind (x,y,Embed z) body)
+
+
+escapeExpr = do
+  reservedOp "~"
+  Escape <$> expr
+
 
 -- Term Productions
 
@@ -332,7 +360,7 @@ formula = reserved "Form" >> (Formula <$> option 0 integer)
 sepType = reserved "Type" >> return Type
 
 -- FIXME: Relatively certain this will cause the parser to choke.
-ordExpr = reserved "ord" >> Ord <$> expr <*> expr
+ordExpr = reserved "ord" >> Ord <$> expr
 
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
@@ -352,6 +380,8 @@ term = choice [sepType <?> "Type"
               ,recExpr
               ,valExpr
               ,ordExpr
+              ,letExpr
+              ,escapeExpr
               ,varOrCon <?> "Identifier"
               ,Parens <$> parens expr <?> "Parenthesized Expression"
               ]
@@ -360,8 +390,8 @@ factor = do
   f <- term
   args <- many arg
   return $ foldl mkApp f args
-  where arg = ((,) Static <$> brackets expr) <|>
-              ((,) Dynamic <$> expr)
+  where arg = ((,) Static <$> brackets term) <|>
+              ((,) Dynamic <$> term)
         mkApp f (s,a) = App f s a
 
 expr = buildExpressionParser table factor
@@ -373,9 +403,11 @@ expr = buildExpressionParser table factor
                           (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))]
                 ,[binOp AssocRight "=>"
                           (\d r -> Pi Static (bind (wildcard,Embed d) r))]
-
-                 ]
+                ]
         binOp assoc op f = Infix (reservedOp op >> return f) assoc
         postOp op f = Postfix (reservedOp op >> return f)
+        preOp op f = Prefix (reservedOp op >> return f)
         wildcard = string2Name "_"
+
+
 
