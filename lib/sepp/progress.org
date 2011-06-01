@@ -122,6 +122,7 @@ less-than proof.
 *** Join
 
 
+
 ** Prove termination of a recursive function.
 
 

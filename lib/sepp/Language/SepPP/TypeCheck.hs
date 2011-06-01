@@ -306,6 +306,27 @@ typeSynth (Con n) = do
   return ty
 
 
+
+typeSynth (App t0 stage t1) = do
+  ty0 <- typeSynth t0
+  case ty0 of
+    Pi piStage binding -> do
+             unless (piStage == stage) $ do
+              err $ "Stage " ++ show piStage ++  " for arrow " ++
+                    "does not match stage for application " ++ show stage
+
+             ((x,Embed dom),body) <- unbind binding
+             argTy <- typeAnalysis t1 dom
+             requireA argTy
+             require_a t1
+             let sub = subst x t1 body
+             return sub
+
+
+    _ -> err $ "Can't apply a term " ++ show t0 ++
+               " with type " ++ show ty0
+
+
 typeSynth t = err $ "TODO: typeSynth: " ++ show t
 
 
@@ -367,7 +388,39 @@ typeAnalysis (Case s binding) res = do
   sTy <- typeSynth s
   return res
 
+typeAnalysis (App t0 stage t1) ty = do
+  ty0 <- typeSynth t0
 
+  -- FIXME: Do something with the stage.
+
+  case ty0 of
+    Pi piStage binding -> do
+             unless (piStage == stage) $ do
+              err $ "Stage " ++ show piStage ++  " for arrow " ++
+                    "does not match stage for application " ++ show stage
+
+             ((x,Embed dom),body) <- unbind binding
+             argTy <- typeAnalysis t1 dom
+             requireA argTy
+             require_a t1
+             let sub = subst x t1 body
+             unless (sub `aeq` ty) $ err $
+                    "Actual type " ++ show sub ++
+                    " does not match expected type " ++
+                    show sub
+             return ty
+
+
+    _ -> err $ "Can't apply a term " ++ show t0 ++
+               " with type " ++ show ty0
+
+
+typeAnalysis tm@(Var x) ty = do
+  ty' <- typeSynth tm
+  unless (ty `aeq` ty') $ do
+    err $ "Variable " ++ show x ++ " has type " ++ show ty' ++
+          " but type " ++ show ty ++ " was expected."
+  return ty
 
 typeAnalysis t ty = err $ "TODO: typeAnalysis" ++ show t ++ "\n" ++ show ty
 
@@ -475,6 +528,7 @@ requireA = require isA "A"
 requireQ = require isQ "Q"
 requireB = require isB "B"
 requirePred = require isPred "P"
+require_a = require is_a "a"
 
 
 require p cls (Var n) = do

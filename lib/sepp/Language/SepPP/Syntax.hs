@@ -8,6 +8,8 @@ module Language.SepPP.Syntax (
   splitApp) where
 
 import Unbound.LocallyNameless hiding (Con)
+import Unbound.LocallyNameless.Alpha(aeqR1)
+import Text.Parsec.Pos
 
 import Data.Typeable
 
@@ -96,12 +98,23 @@ data Term = Var TName                                 -- Term, Proof
 
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
           | Parens Term    -- Meta
+          | Pos SourcePos Term
           deriving (Show,Typeable)
 
 type Alt = Bind (String, [TName]) Term
+$(derive_abstract [''SourcePos])
+instance Alpha SourcePos
+
 $(derive [''Term, ''Module, ''Decl, ''Stage, ''Kind])
 
-instance Alpha Term
+
+instance Alpha Term where
+  aeq' c (Pos _ t1) t2 = t1 `aeq` t2
+  aeq' c t1 (Pos _ t2) = t1 `aeq` t2
+  aeq' c (Parens t1) t2 = t1 `aeq` t2
+  aeq' c t1 (Parens t2) = t1 `aeq` t2
+  aeq' c t1 t2 = aeqR1 rep1 c t1 t2
+
 instance Alpha Stage
 instance Alpha Kind
 instance Subst Term Term where
@@ -110,6 +123,7 @@ instance Subst Term Term where
 
 instance Subst Term Stage
 instance Subst Term Kind
+instance Subst Term SourcePos
 
 
 splitApp (App t0 _ t1) = splitApp' t0 [t1]
