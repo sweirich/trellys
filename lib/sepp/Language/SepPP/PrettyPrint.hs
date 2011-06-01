@@ -72,7 +72,8 @@ instance Disp Term where
     where absOp Form = text "=>"
           absOp Program = text "->"
 
-  disp (Case scrutinee consEq termWitness alts) = do
+  disp (Case scrutinee binding) = do
+    ((consEq,termWitness),alts) <- unbind binding
     dScrutinee <- disp scrutinee
     dConsEq <- braces <$> disp consEq
     dTermWitness <- maybe (return empty) (\v -> brackets <$> disp v) termWitness
@@ -137,22 +138,28 @@ instance Disp Term where
     dVars <- mapM disp vars
     dTy <- disp ty
     dt <- disp t
-    dPfs <- mapM (\(erased,t) -> ann erased <$> disp t) pfs
+    dPfs <- mapM disp pfs
     return $ sep ([text "conv", dt, text "by"] ++
                   (punctuate comma dPfs) ++
                   [text "at"] ++
                   dVars ++
                   [text ".", dTy])
 
+  -- Context-style conversions
+  disp (ConvCtx t ctx) = do
+    dt <- disp t
+    dctx <- disp ctx
+    return $ sep [text "conv", dt,text "at", dctx]
 
-   where ann True = brackets
-         ann False = id
+
+  disp (Escape t) = do
+    dt <- disp t
+    return $ text "~" <> dt
 
 
-  disp (Ord t0 t1) = do
+  disp (Ord t0) = do
     d0 <- disp t0
-    d1 <- disp t1
-    return $ text "ord" <+> d0 <+> d1
+    return $ text "ord" <+> d0
 
   disp (IndLT t0 t1) = do
      d0 <- disp t0
@@ -170,7 +177,7 @@ instance Disp Term where
     du <- disp u
     return $
       sep [text "ind" <+> df <+> parens (dx <+> colon <+> dTy) <+>
-           brackets du <+> text "->",
+           brackets du <+> text ".",
            nest 2 dBody]
 
 
@@ -182,8 +189,18 @@ instance Disp Term where
     dBody <- disp body
     return $
       sep [text "rec" <+> df <+> parens (dx <+> colon <+> dTy) <+>
-           text "->",
+           text ".",
            nest 2 dBody]
+
+
+  disp (Let binding) = do
+    ((x,y,Embed z),body) <- unbind binding
+    dx <- disp x
+    dy <- disp y
+    dz <- disp z
+    db <- disp body
+    return $ sep
+      [text "let", dx, dy, text "=", dz, text "in", db]
 
 
   disp (Ann t0 t1) = do
@@ -227,6 +244,7 @@ instance Disp Decl where
             dc <- disp c
             dt <- disp t
             return $ dc <+> colon <+> dt
+
 
 instance Disp Module where
   disp (Module n bindings) = do

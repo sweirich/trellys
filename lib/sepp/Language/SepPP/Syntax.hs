@@ -45,10 +45,7 @@ data Term = Var TName                                 -- Term, Proof
             -- document. We combine these two, with the extra termination proof
             -- argument wrapped in Maybe.
 
-           -- FIXME: The binding structure is also messed up here; the
-           -- constructor witness and the (maybe) termination proof should be
-           -- bound over all of the alts.
-          | Case Term TName (Maybe TName) [Alt]       -- Proof, Term
+          | Case Term (Bind (TName, (Maybe TName)) [Alt])       -- Proof, Term
 
 
           | TerminationCase Term (Bind TName (Term,Term))    -- Proof
@@ -77,12 +74,13 @@ data Term = Var TName                                 -- Term, Proof
           -- type occurs in an erased position. If it does, then the term should
           -- be an equality proof. If it doesn't then the term should be some
           -- value with the a type that is an equality proof.
-          | Conv Term [(Bool,Term)] (Bind [TName] Term)  -- Proof, Term
+          | Conv Term [Term] (Bind [TName] Term)  -- Proof, Term
+          | ConvCtx Term Term -- Simple quote style contexts
 
 
           -- For inductive proofs we have an ordering. The argument is the
           -- witness to the equality that demonstrates the equality.
-          | Ord Term Term                             -- Proof
+          | Ord Term                                  -- Proof
                                                       -- intros a
           | IndLT Term Term                           -- Pred
 
@@ -90,6 +88,11 @@ data Term = Var TName                                 -- Term, Proof
           | Ind (Bind (TName, (TName, Embed Term), TName) Term) -- proof
           | Rec (Bind (TName, (TName, Embed Term)) Term) -- term
 
+          -- In a conversion context, the 'Escape' term splices in an equality
+          -- proof (or an expression that generates an equality proof).
+          | Escape Term
+
+          | Let (Bind (TName,TName,Embed Term) Term)
 
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
           | Parens Term    -- Meta
