@@ -210,6 +210,7 @@ instance Disp Term where
 
 
   disp (Parens p) = parens <$> disp p
+  disp (Pos _ t) = disp t
 
   disp e = error $ "disp: " ++ show e
 

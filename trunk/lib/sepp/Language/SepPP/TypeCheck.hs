@@ -108,16 +108,19 @@ checkDef (DataDecl (Con nm) ty cs) = do
 
         appHead (App t0 _ _) = appHead t0
         appHead (Parens t) = appHead t
+        appHead (Pos _ t) = appHead t
         appHead t = t
 
 
         chkConstructor (c,ty) = do
            typeAnalysis ty Type
            ran <- arrowRange ty
-           let Con tc = appHead ran
-           unless (tc == nm) $
+           case appHead ran of
+             Con tc -> do
+               unless (tc == nm) $
                   err $ "In constructor " ++ show c ++
                         " result type does not match declared data type."
+             h -> err $ "Constructor head is " ++ show h
 
 
 checkDefs [] = return ()
@@ -296,6 +299,7 @@ proofAnalysis p pred = do
 
 
 -- * Judgements on program fragment
+typeSynth (Pos _ t) = typeSynth t
 typeSynth (Parens t) = typeSynth t
 typeSynth Type = return Type
 typeSynth (Var n) = do
@@ -330,6 +334,7 @@ typeSynth (App t0 stage t1) = do
 typeSynth t = err $ "TODO: typeSynth: " ++ show t
 
 
+typeAnalysis (Pos _ t) ty = typeAnalysis t ty
 typeAnalysis Type Type = return Type -- Term_Type
 typeAnalysis (Pi _ binding) Type = do -- Term_Pi
   ((n,Embed ty),body) <- unbind binding
