@@ -203,6 +203,9 @@ instance Disp Term where
       [text "let", dx, dy, text "=", dz, text "in", db]
 
 
+  disp (Strict c) = do
+    dc <- disp c
+    return $ text "strict" <+> dc
   disp (Ann t0 t1) = do
     d0 <- disp t0
     d1 <- disp t1
@@ -211,6 +214,9 @@ instance Disp Term where
 
   disp (Parens p) = parens <$> disp p
   disp (Pos _ t) = disp t
+  disp (Sym x) = do
+    dx <- disp x
+    return $ text "sym" <+> dx
 
   disp e = error $ "disp: " ++ show e
 
@@ -247,6 +253,8 @@ instance Disp Decl where
             return $ dc <+> colon <+> dt
 
 
+
+
 instance Disp Module where
   disp (Module n bindings) = do
     dn <- disp n
@@ -257,3 +265,12 @@ instance Disp Module where
 
 instance Disp a => Disp (Embed a) where
   disp (Embed e) = disp e
+
+
+
+-- instance Show TypeError where
+--     show e = render $ disp e
+
+
+
+runDisp t = render $ runFreshM (disp t)

@@ -7,7 +7,7 @@ data Nat : Type where
 
 
 
-{-
+
 theorem idprog : forall (a : Type).forall (x : a).(x = x)
 proof idprog = \(a:Type) => \(x:a) => join 1 1
 
@@ -19,11 +19,13 @@ def plus = rec plus (x:Nat) . \(y:Nat) ->
     Z -> y
     (S x') -> S (plus x' y)
 
-theorem plus_right_unit : forall (x:Nat).plus x Z = x
+theorem plus_right_unit : forall (x:Nat). plus x Z = x
 proof plus_right_unit = \(x:Nat) =>
-  termcase x {xterm} of -- abort = x
-     | abort -> strict (plus ~xterm Z) -- convert abort = x to  (x + 0) = abort
-		                            -- convert x = abort to (x + 0) = x
+  termcase x {xterm} of
+     | abort -> -- strict (plus ~xterm Z)
+                sym (conv strict (plus ~xterm Z) at ~xterm = plus x Z)
+		              -- convert abort = x to  (x + 0) = abort
+		              -- convert x = abort to (x + 0) = x
 
      | ! -> (ind f (n:Nat) [u] .
 		          case n {n_eq} u of -- n_eq = Z = n
@@ -128,4 +130,3 @@ proof covProof = P
 
 -}
 
--}

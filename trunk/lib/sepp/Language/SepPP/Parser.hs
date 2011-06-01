@@ -120,7 +120,8 @@ sepPPStyle = haskellStyle {
             "val",
             "LogicalKind","Form", "Type",
             "ord",
-            "let","in"
+            "let","in",
+            "strict", "sym"
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -271,7 +272,9 @@ abortExpr = do
   reserved "abort"
   Abort <$> expr
 
-
+symExpr = do
+  reserved "sym"
+  Sym <$> expr
 
 
 convExpr = do
@@ -331,9 +334,11 @@ letExpr = do
 
 escapeExpr = do
   reservedOp "~"
-  Escape <$> expr
+  Escape <$> (variable <|> parens expr)
 
-
+strictExpr = do
+  reserved "strict"
+  Strict <$> expr
 -- Term Productions
 
 variable = do
@@ -382,6 +387,8 @@ term = wrapPos $
               ,ordExpr
               ,letExpr
               ,escapeExpr
+              ,strictExpr
+                ,symExpr
               ,varOrCon <?> "Identifier"
               ,Parens <$> parens expr <?> "Parenthesized Expression"
               ] <?> "term")

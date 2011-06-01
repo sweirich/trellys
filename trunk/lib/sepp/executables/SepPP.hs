@@ -1,9 +1,11 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 module Main where
 
 import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
 
+import Text.PrettyPrint(render)
 
 import System.Console.CmdArgs
 import Data.Typeable
@@ -18,7 +20,12 @@ main = do
 
   -- Typecheck the module
   tcres <- typecheck ast
-  _ <- liftEither tcres
+  case tcres of
+    Left err -> fail $ runDisp err
+    Right val -> return ()
+
+
+  -- _ <- liftEither tcres
 
   print dast
 

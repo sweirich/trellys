@@ -3,15 +3,20 @@
 module Language.SepPP.TypeCheck where
 
 import Language.SepPP.Syntax
+import Language.SepPP.PrettyPrint
+
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 
+import Text.PrettyPrint
 
 import Data.Typeable
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
+import Text.Parsec.Pos
+
 
 -- * The typechecking monad
 
@@ -25,12 +30,17 @@ typecheck mod = do
   runErrorT $ runFreshMT $ runReaderT (runTCMonad (typecheckModule mod)) emptyEnv
 
 -- ** The Environment
+data EscapeContext = LeftContext | RightContext | StrictContext | NoContext
+withEscapeContext c = local (\env -> env { escapeContext = c })
 
 -- The typing context contains a mapping from variable names to types, with
 -- an additional boolean indicating if it the variable is a value.
 data Env = Env { gamma :: [(TName,(Term,Bool))]
-               , sigma :: [()] }
-emptyEnv = Env {gamma = [], sigma = []}
+               , sigma :: [()]
+               , escapeContext :: EscapeContext }
+emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
+
+
 
 -- | Add a new binding to an environment
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
@@ -48,13 +58,32 @@ extendBinding n ty isVal m = do
 
 -- ** Error handling
 
-data TypeError = TypeError String deriving (Typeable,Show)
+data TypeError = ErrMsg [(SourcePos,Term)] String deriving (Show,Typeable)
+
 instance Error TypeError where
-  strMsg s = TypeError s
-  noMsg = TypeError "<gack>"
+  strMsg s = ErrMsg [] s
+  noMsg = strMsg "<unknown>"
+
+
 instance Exception TypeError
 
-err msg = throwError (TypeError msg)
+instance Disp TypeError where
+  disp (ErrMsg [] msg) = return
+          (nest 2 (text "Type Error" $$
+              text msg))
+
+  disp (ErrMsg ps msg) = return
+     (start $$
+      nest 2 (text "Type Error" $$
+              text msg))
+    where (p,t) = last ps
+          start = text (show p)
+
+
+
+addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
+
+err msg = throwError (strMsg msg)
 
 
 -- * Running the typechecker.
@@ -66,7 +95,7 @@ typecheckModule (Module n decls) = do
   return ()
 
 
-data DefRes = DataResult TName Term
+data DefRes = DataResult TName Term [(TName,Term)]
             | ProofResult TName Term Bool
             | ProgResult TName Term Bool
 
@@ -94,16 +123,18 @@ checkDef (DataDecl (Con nm) ty cs) = do
   -- Make sure that the type constructor is a well-formed type.
   typeAnalysis ty Type
 
-  extendBinding nm ty True $
-                mapM chkConstructor cs
+  conTypes <- extendBinding nm ty True $
+              mapM chkConstructor cs
 
 
-  return (DataResult nm Type)
+  return (DataResult nm Type conTypes)
 
 
   where arrowRange (Pi _ binding) = do
           ((n,_),body) <- unbind binding
           arrowRange body
+        arrowRange (Pos _ t) = arrowRange t
+        arrowRange (Parens t) = arrowRange t
         arrowRange ty = return ty
 
         appHead (App t0 _ _) = appHead t0
@@ -120,7 +151,10 @@ checkDef (DataDecl (Con nm) ty cs) = do
                unless (tc == nm) $
                   err $ "In constructor " ++ show c ++
                         " result type does not match declared data type."
-             h -> err $ "Constructor head is " ++ show h
+               return (c,ty)
+             h -> do
+               hd <- disp h
+               err $ "Constructor head is " ++ render hd
 
 
 checkDefs [] = return ()
@@ -128,9 +162,11 @@ checkDefs (d:ds) = do
   d <- checkDef d
   extendBinding' d (checkDefs ds)
 
-  where extendBinding' (ProofResult n ty v) = extendBinding n ty v
-        extendBinding' (ProgResult n ty v) = extendBinding n ty v
-        extendBinding' (DataResult n ty) = extendBinding n ty True
+  where extendBinding' (ProofResult n ty v) comp = extendBinding n ty v comp
+        extendBinding' (ProgResult n ty v) comp = extendBinding n ty v comp
+        extendBinding' (DataResult n ty cs) comp =
+          extendBinding n ty True $
+                        foldr (\(n,ty) m -> extendBinding n ty True m) comp cs
 
 
 
@@ -164,15 +200,17 @@ lkJudgment (Forall binding) = do
 
 guardLK t = do
   lk <- lkJudgment t
-  unless lk $ err $ show t ++ " is not a valid logical kind."
+  td <- disp t
+  unless lk $ err $ render td ++ " is not a valid logical kind."
 
 
 -- The S,G |- P : LK judgment
 predSynth (Parens p) = predSynth p
+predSynth (Pos p t) = predSynth t `catchError` addErrorPos p t
 predSynth (Forall binding) = do
   ((n,Embed t),body) <- unbind binding
   -- We need to do a syntactic case-split on ty. Going to use backtracking for now.
-  case t of
+  case down t of
     Formula i -> do  -- Pred_Forall3 rule
            form <- extendBinding n t False (predSynth body)
            (Formula j) <- guardFormula form
@@ -186,11 +224,12 @@ predSynth (Forall binding) = do
 
       -- * ty is a term or pred. just handling term for now
       ty <- typeSynth t
+      dty <- disp ty
       unless (ty `aeq` Type) $
-             err $ "Expecting a type for " ++ show ty
+             err $ "Expecting a type for " ++ render dty
 
 
-      form <- extendBinding n ty False (predSynth body)
+      form <- extendBinding n t False (predSynth body)
       guardFormula form
 
 
@@ -217,7 +256,8 @@ predSynth (Lambda Form Static binding) = do -- Pred_Lam rule
   -- Second Premise
   form <- extendBinding n ty False (predSynth body)
   lk <- lkJudgment form
-  unless lk $ err (show form ++ " is not a valid logical kind.")
+  dform <- disp form
+  unless lk $ err (render dform ++ " is not a valid logical kind.")
 
   return (Forall (bind (n,Embed ty) form))
 
@@ -230,12 +270,16 @@ predSynth (App t0 Static t1) = do -- Pred_App rule
               guardLK body
               typeAnalysis t1 ty
               return $ subst n t1 body
-    _ -> err ("Can't apply non-quantified predicate " ++ show t0)
+    _ -> do
+      d0 <- disp t0
+      err ("Can't apply non-quantified predicate " ++ render d0)
 
 
 predSynth p = do
-  err $ show p ++ " is not a valid predicate."
+  d <- disp p
+  err $ render d ++ " is not a valid predicate."
 
+proofSynth (Pos p t) = proofSynth t `catchError` addErrorPos p t
 
 proofSynth (Var x) = do         -- Prf_Var
   (ty,_) <- lookupBinding x
@@ -259,10 +303,30 @@ proofSynth (Parens p) = proofSynth p
 proofSynth (Ann p pred) = do
   proofAnalysis p pred
   return pred
-proofSynth t = err $ "TODO: proofSynth: " ++ show t
+
+proofSynth (ConvCtx p ctx) = do
+  l <- copy LeftContext ctx
+  lty <- withEscapeContext LeftContext $ predSynth l
+  proofAnalysis p l
+  r <- copy RightContext ctx
+  rty <- withEscapeContext RightContext $ predSynth r
+  return r
+
+proofSynth (Sym t) = do
+  ty <- proofSynth  t
+  case down ty of
+     (Equal t1 t0)-> return (Equal t0 t1)
+     _  ->
+       throwError $ strMsg "Sym's argument must have the type of an equality proof"
 
 
 
+proofSynth t = do
+  dt <- disp t
+  err $ "TODO: proofSynth: " ++ render dt
+
+proofAnalysis t (Pos p ty) = proofAnalysis t ty
+proofAnalysis (Pos p t) ty = proofAnalysis t ty `catchError` addErrorPos p t
 -- FIXME: This is a stopgap, while waiting on the new split rules for
 -- Prf_Forall.  FIXME: The static/dynamic argument should always be static
 -- (since this is a proof) but the concrete syntax doesn't handle this right, it
@@ -277,7 +341,9 @@ proofAnalysis (Lambda Form _ pfBinding)
   -- unless (pfTy `aeq` predTy  && proofName == predName) $
   --        err "PA domerr"
 
-  requireQ pfTy
+  --sort <- getSort pfTy
+  pfKind <- typeSynth pfTy
+  requireQ pfKind
 
   -- Whether the var should be marked value or not is sort of up in the air...
   extendBinding proofName pfTy False (proofAnalysis pfBody predBody)
@@ -293,13 +359,66 @@ proofAnalysis (Join _ _) eq@(Equal t0 t1) = do
   join t0 t1
   return eq
 
-proofAnalysis p pred = do
-  err $ "TODO: proofAnalysis: " ++ show  (Ann p pred)
+-- FIXME: check to see that ty and ty' are alpha-equivalent
+proofAnalysis (Ann t ty') ty = proofAnalysis t ty
+
+proofAnalysis (TerminationCase s binding) ty = do
+  dty <- disp ty
+  liftIO $ putStrLn $ "looking for " ++ render dty
+  sty <- typeSynth s
+  (w,(abort,terminates)) <- unbind binding
+  extendBinding w (Equal (Abort sty) s) True (proofAnalysis abort ty)
+  extendBinding w (Terminates s) True (proofAnalysis terminates ty)
+  return ty
+
+proofAnalysis (Strict c) ty = withEscapeContext StrictContext $ do
+  cty <- typeSynth c
+  case isStrictContext c of
+    Nothing -> throwError $ strMsg "Not a strict context"
+    Just (e,f) -> do
+      eqTy <- typeSynth e
+      case down eqTy of
+        (Equal (Abort t) e2) -> do
+           let ty' = Equal (Abort t) (f e2)
+           dty' <- disp ty'
+           dty <- disp ty
+           unless  (ty' `aeq` ty) $
+                   err $ "In strict, actual type " ++ render dty' ++
+                         " does not match expected type " ++ render dty
+           return ty
+        _ -> throwError $ strMsg
+               "In strict, the context hole is not of the proper form abort = e"
+
+
+proofAnalysis (ConvCtx p ctx) ty = do
+  l <- copy LeftContext ctx
+  lty <- withEscapeContext LeftContext $ predSynth l
+  proofAnalysis p l
+  r <- copy RightContext ctx
+  rty <- withEscapeContext RightContext $ predSynth r
+  unless (ty `aeq` r) $ do
+    dty <- disp ty
+    dr <- disp r
+    throwError $ strMsg $ "RHS of conv " ++ render dr ++ " does not match " ++
+               "expected type " ++ render dty
+
+  return r
+
+
+
+proofAnalysis (Sym t) ty@(Equal t0 t1) = do
+  proofAnalysis t (Equal t1 t0)
+  return ty
+
+
+proofAnalysis proof pred = do
+  d <- disp (Ann proof pred)
+  err $ "TODO: proofAnalysis: " ++ render d
 
 
 
 -- * Judgements on program fragment
-typeSynth (Pos _ t) = typeSynth t
+typeSynth (Pos p t) = typeSynth t `catchError` addErrorPos p t
 typeSynth (Parens t) = typeSynth t
 typeSynth Type = return Type
 typeSynth (Var n) = do
@@ -313,8 +432,9 @@ typeSynth (Con n) = do
 
 typeSynth (App t0 stage t1) = do
   ty0 <- typeSynth t0
-  case ty0 of
+  case down ty0 of
     Pi piStage binding -> do
+
              unless (piStage == stage) $ do
               err $ "Stage " ++ show piStage ++  " for arrow " ++
                     "does not match stage for application " ++ show stage
@@ -327,14 +447,62 @@ typeSynth (App t0 stage t1) = do
              return sub
 
 
-    _ -> err $ "Can't apply a term " ++ show t0 ++
-               " with type " ++ show ty0
+    _ -> do
+      dt0 <- disp t0
+      dty0 <- disp ty0
+      err $ "Can't apply a term " ++ render dt0 ++
+               " with type " ++ render dty0
 
+typeSynth (Escape t) = do
+  escctx <- asks escapeContext
+  case escctx of
+    NoContext -> throwError $ strMsg "Can't have an escape outside of a context."
+    LeftContext -> do
+       ty <- typeSynth t
+       case down ty of
+         (Equal l _) -> return l
+         _ -> throwError $ strMsg "Can't cast by something not an equality proof."
+
+    RightContext -> do
+       ty <- typeSynth t
+       case down ty of
+         (Equal _ r) -> return r
+         _ -> throwError $ strMsg "Can't cast by something not an equality proof."
+    StrictContext -> do
+      ty <- typeSynth t
+      dty <- disp ty
+      dt <- disp t
+      liftIO $ putStrLn $ "ty is " ++ render dty ++ "\n ++ t is " ++ render dt
+      case down ty of
+        Equal (Abort _) e -> return e -- typeSynth e
+        _ -> do
+          dty <- disp ty
+          throwError $
+               strMsg $ "In strict context, witness of abort" ++
+                      render dty ++ " equality is ill-formed."
+
+typeSynth (ConvCtx t ctx) = do
+  l <- copy LeftContext ctx
+  lty <- withEscapeContext LeftContext $ typeSynth l
+  proofAnalysis t l
+  r <- copy RightContext ctx
+  rty <- withEscapeContext RightContext $ typeSynth r
+  return r
+
+
+typeSynth (Ann t ty) = do
+  typeAnalysis t ty
+  return ty
+
+typeSynth (Abort t) = do
+  typeAnalysis t Type
+  return t
 
 typeSynth t = err $ "TODO: typeSynth: " ++ show t
 
-
-typeAnalysis (Pos _ t) ty = typeAnalysis t ty
+typeAnalysis t (Pos p ty) = typeAnalysis t ty
+typeAnalysis (Pos p t) ty =
+  typeAnalysis t ty `catchError` addErrorPos p t
 typeAnalysis Type Type = return Type -- Term_Type
 typeAnalysis (Pi _ binding) Type = do -- Term_Pi
   ((n,Embed ty),body) <- unbind binding
@@ -362,9 +530,11 @@ typeAnalysis (Rec progBinding) res@(Pi Dynamic piBinding) = do -- Term_Rec
   Just ((f,(arg,Embed ty)),body,(_,(piArg,Embed piTy)),piBody)
     <- unbind2 (bind p1 body) (bind (f,p2) piBody)
 
+  dty <- disp ty
+  dPiTy <- disp piTy
   unless (ty `aeq` piTy) $
-         err $ "Type " ++ show ty ++ " ascribed to lambda bound variable " ++
-               " does not match type " ++ show piTy ++
+         err $ "Type " ++ render dty ++ " ascribed to lambda bound variable " ++
+               " does not match type " ++ render dPiTy ++
                " ascribed to pi-bound variable."
 
   extendBinding f res True $
@@ -398,7 +568,7 @@ typeAnalysis (App t0 stage t1) ty = do
 
   -- FIXME: Do something with the stage.
 
-  case ty0 of
+  case down ty0 of
     Pi piStage binding -> do
              unless (piStage == stage) $ do
               err $ "Stage " ++ show piStage ++  " for arrow " ++
@@ -409,10 +579,12 @@ typeAnalysis (App t0 stage t1) ty = do
              requireA argTy
              require_a t1
              let sub = subst x t1 body
+             dsub <- disp sub
+             dty <- disp ty
              unless (sub `aeq` ty) $ err $
-                    "Actual type " ++ show sub ++
+                    "Actual type " ++ render dsub ++
                     " does not match expected type " ++
-                    show sub
+                    render dty
              return ty
 
 
@@ -423,9 +595,53 @@ typeAnalysis (App t0 stage t1) ty = do
 typeAnalysis tm@(Var x) ty = do
   ty' <- typeSynth tm
   unless (ty `aeq` ty') $ do
-    err $ "Variable " ++ show x ++ " has type " ++ show ty' ++
-          " but type " ++ show ty ++ " was expected."
+    dx <- disp x
+    dty' <- disp ty'
+    dty <- disp ty
+    err $ "Variable " ++ render dx ++ " has type '" ++ render dty' ++
+          "' but type '" ++ render dty ++ "' was expected."
   return ty
+
+
+typeAnalysis (Escape t) ty = do
+  ty <- typeSynth t
+  dty <- disp ty
+  dt <- disp t
+  liftIO $ putStrLn $ "ty is " ++ render dty ++ "\n ++ t is " ++ render dt
+  escctx <- asks escapeContext
+  case escctx of
+    NoContext -> throwError $ strMsg "Can't have an escape outside of a context."
+    LeftContext -> throwError $ strMsg "Wait for it"
+    RightContext -> throwError $ strMsg "Wait for it"
+    StrictContext -> do
+      ty <- typeSynth t
+      case down ty of
+        Equal (Abort _) e -> return e -- typeAnalysis e ty
+        _ -> do
+          dty <- disp ty
+          throwError $
+               strMsg $ "In strict context, witness of abort" ++
+                      render dty ++ " equality is ill-formed."
+
+
+
+
+typeAnalysis (ConvCtx t ctx) ty = do
+  l <- copy LeftContext ctx
+  lty <- withEscapeContext LeftContext $ typeSynth l
+  proofAnalysis t l
+  r <- copy RightContext ctx
+  rty <- withEscapeContext RightContext $ typeSynth r
+
+  unless (ty `aeq` r) $ do
+    dty <- disp ty
+    dr <- disp r
+    throwError $ strMsg $ "RHS of conv " ++ render dr ++ " does not match " ++
+               "expected type " ++ render dty
+  return r
+
+
+
 
 typeAnalysis t ty = err $ "TODO: typeAnalysis" ++ show t ++ "\n" ++ show ty
 
@@ -440,15 +656,24 @@ bAnalysis t = typeAnalysis t
 isA t = isTerm t || isPred t
 isB t = isTerm t || isPred t || isLK t
 
+-- isB t = do
+--   c <- getClassification t
+--   return $ c `elem` [SortType
+
 isW Type = True
 isW (Formula _) = True
+isW (Pos _ t) = isW t
+isW (Parens t) = isW t
+
 isW _ = False
 
 isQ Type = True
 isQ (Formula _) = True
+isQ (Pos _ t) = isQ t
+isQ (Parens t) = isQ t
 isQ t = isLK t
 
-
+isLK (Pos _ t) = isLK t
 isLK (Formula _) = True
 isLK (Forall binding) = isA ty && isLK body
   where ((n,Embed ty),body) = unsafeUnbind binding
@@ -466,6 +691,7 @@ isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
 isPred (Terminates t) = isTerm t
 isPred (Ann p t) = isPred p && isLK t
 isPred (Parens p) = isPred p
+isPred (Pos _ t) = isPred t
 isPred _ = False
 
 
@@ -497,6 +723,7 @@ isProof (Contra p) = isProof p
 isProof (ContraAbort p0 p1) = isProof p0 && isProof p1
 isProof (Ann p pred) = isProof p && isPred pred
 isProof (Parens p) = isProof p
+isProof (Pos _ t) = isProof t
 isProof t = False
 
 
@@ -518,6 +745,8 @@ isTerm (Rec binding) = isTerm ty &&  isTerm body
   where ((f,(n,Embed ty)),body) = unsafeUnbind binding
 isTerm (Ann t0 t1) = isTerm t0 && isTerm t1
 isTerm (Parens t) = isTerm t
+isTerm (Pos _ t) = isTerm t
+isTerm (Escape t) = isTerm t
 isTerm t = False
 
 
@@ -536,6 +765,8 @@ requirePred = require isPred "P"
 require_a = require is_a "a"
 
 
+require p cls (Parens t) = require p cls t
+require p cls (Pos _ t) = require p cls t
 require p cls (Var n) = do
   (v,_) <- lookupBinding n
   require p cls v
@@ -549,3 +780,55 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join t1 t2 = unless (t1 `aeq` t2) $ err "Terms not joinable"
+
+
+
+down (Pos _ t) = down t
+down (Parens t) = down t
+down t = t
+
+-- Get the classification of a classifier (Type,Predicate,LogicalKind)
+data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
+getClassification (Pos _ t) = getClassification t
+getClassification (Parens t) = getClassification t
+getClassification t = do
+  ta `comb` pa `comb` la `comb` end
+  where ta = typeAnalysis t Type >> return SortType
+        pa = do sort <- predSynth t
+                unless (isLK (down sort)) $
+                  throwError (strMsg "not a predicate")
+                return SortPred
+        la = do unless (isLK t) (throwError (strMsg "Could not classify classifier"))
+                return SortLK
+        comb a b = a `catchError` (\_ -> b)
+        end = do dt <- disp t
+                 throwError $ strMsg $ "Can't classify " ++ render dt
+
+
+
+
+copy b (Equal l r) = do
+  l' <- copy b l
+  r' <- copy b r
+  return $ Equal l' r'
+
+copy b (App t0 s t1) = do
+  t0' <- copy b t0
+  t1' <- copy b t1
+  return $ App t0' s t1'
+
+copy b (Var x)  = return (Var x)
+copy b (Con x)  = return (Con x)
+copy b (Escape t) = do
+  ty <- typeSynth t
+  case down ty of
+    (Equal l r) -> case b of
+                     LeftContext -> return l
+                     RightContext -> return r
+                     _ -> throwError $ strMsg $ "Copy can't reach this."
+    _ -> throwError $ strMsg $ "Can't escape to something not an equality"
+
+
+copy b (Parens t) = Parens <$> copy b t
+copy b (Pos p t) = Pos p <$>  copy b t
+copy b t = error $ show t
