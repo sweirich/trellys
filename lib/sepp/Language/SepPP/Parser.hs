@@ -85,13 +85,12 @@ sepProofDecl = do
 
 sepDataDecl = do
   reserved "data"
+  n <- name
+  colon
   e <- expr
   reserved "where"
-  cs <- alts (cons <?> "Constructor declaration")
-  case e of
-    Ann t1@(Con _) t2 -> do
-       return $ DataDecl t1 t2 cs
-    _ -> fail "Data type declaration"
+  cs <- sepBy cons (reservedOp "|")  <?> "Constructor declaration"
+  return $ DataDecl (Con n) e cs
 
   where isCon (Con _) = True
         isCon _ = False
@@ -365,7 +364,7 @@ ordExpr = reserved "ord" >> Ord <$> expr
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
 term = wrapPos $
-        choice [sepType <?> "Type"
+        (choice [sepType <?> "Type"
               ,formula <?> "Form"
               ,abstraction
               ,quantification
@@ -385,7 +384,7 @@ term = wrapPos $
               ,escapeExpr
               ,varOrCon <?> "Identifier"
               ,Parens <$> parens expr <?> "Parenthesized Expression"
-              ]
+              ] <?> "term")
 
 factor = do
   f <- term

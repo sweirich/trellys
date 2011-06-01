@@ -1,12 +1,13 @@
 module ParseTest where
 
 
-
 data Nat : Type where
-  | Z : Nat
-  | S : Nat -> Nat
+  Z : Nat
+| S : Nat -> Nat
 
 
+
+{-
 theorem idprog : forall (a : Type).forall (x : a).(x = x)
 proof idprog = \(a:Type) => \(x:a) => join 1 1
 
@@ -21,25 +22,25 @@ def plus = rec plus (x:Nat) . \(y:Nat) ->
 theorem plus_right_unit : forall (x:Nat).plus x Z = x
 proof plus_right_unit = \(x:Nat) =>
   termcase x {xterm} of -- abort = x
-     | abort -> -- xterm: abort = x
-                conv (strict (plus ~xterm Z): plus x Z = abort) at (plus x Z = ~xterm)  
-                                       
-     | ! -> (ind f (n:Nat) [u] .
-	      case n {n_eq} u of 
-		     -- n_eq = Z = n
-                Z -> conv (join 0 0 : plus Z Z = Z) at (plus ~n_eq Z = ~n_eq) 
-                     -- convert Z + Z = Z to
-    		     -- n + Z = n
-                S n' ->  -- n_eq = (S n') = n 
-                         -- ord n_eq : (n' < n)
-                   let ih [ih_eq] = f n' (ord n_eq) -- plus n' 0 = n' 
-                   in let x [xa] = conv (join 0 1: plus (S n') Z = S(plus n' Z))
-                                   at plus ~n_eq Z = S ~ih     -- x: plus n Z = S n'
-                      in conv x at plus n Z = ~n_eq -- plus n Z = n
-            ) x xterm
+     | abort -> strict (plus ~xterm Z) -- convert abort = x to  (x + 0) = abort
+		                            -- convert x = abort to (x + 0) = x
 
--- theorem idprog : ?(a:Type).?(x:a).x = x
--- proof idprog = ?(a:Type).?(x:a). join 1 1
+     | ! -> (ind f (n:Nat) [u] .
+		          case n {n_eq} u of -- n_eq = Z = n
+                Z -> conv join 0 0 at (plus ~n_eq Z = ~n_eq)
+							        -- convert Z + Z = Z to
+    								  -- n + Z = n
+                S n' ->  -- n_eq = (S n') = n
+								         -- ord n_eq : (n' < n)
+                   let ih [ih_eq] = f n' (ord n_eq) in -- plus n' 0 = n'
+									 let x [xa] =  conv (join 0 1: plus (S n') Z = S(plus n' Z))
+                                   at plus ~n_eq Z = S ~ih  in
+									 -- x: plus n Z = S n'
+									 conv x at plus n Z = ~n_eq -- plus n Z = n
+									 ) x xterm
+
+-- theorem idprog : ∀(a:Type).∀(x:a).x = x
+-- proof idprog = Λ(a:Type).Λ(x:a). join 1 1
 
 {-
 
@@ -113,17 +114,18 @@ data A : a where
 theorem predLam : \(x:A) => x
 proof predLam = \(x:A) => x
 
-theorem predLamUni : ?(x:A) . x
-proof predLamUni = ?(x:A) . x
+theorem predLamUni : Λ(x:A) . x
+proof predLamUni = Λ(x:A) . x
 
 
-theorem covProof : ?(P : (?(n:Nat).Formula)).
+theorem covProof : ∀(P : (∀(n:Nat).Formula)).
 		P Z =>
-		(?(n : Nat).(?(m : Nat). (m < n) -> P m) ->  P n) ->
-		(?(n : Nat) . P n)
+		(∀(n : Nat).(∀(m : Nat). (m < n) -> P m) ->  P n) ->
+		(∀(n : Nat) . P n)
 proof covProof = P
 
 
 
 -}
 
+-}
