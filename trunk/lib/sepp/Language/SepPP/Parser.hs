@@ -364,7 +364,8 @@ ordExpr = reserved "ord" >> Ord <$> expr
 
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
-term = choice [sepType <?> "Type"
+term = wrapPos $
+        choice [sepType <?> "Type"
               ,formula <?> "Form"
               ,abstraction
               ,quantification
@@ -394,7 +395,7 @@ factor = do
               ((,) Dynamic <$> term)
         mkApp f (s,a) = App f s a
 
-expr = buildExpressionParser table factor
+expr = wrapPos $ buildExpressionParser table factor
   where table = [[binOp AssocLeft "=" Equal]
                 ,[binOp AssocNone "<" IndLT]
                 ,[postOp "!" Terminates]
@@ -411,3 +412,4 @@ expr = buildExpressionParser table factor
 
 
 
+wrapPos p = Pos <$> getPosition <*> p
