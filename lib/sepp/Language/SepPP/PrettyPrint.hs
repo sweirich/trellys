@@ -72,8 +72,8 @@ instance Disp Term where
     where absOp Form = text "=>"
           absOp Program = text "->"
 
-  disp (Case scrutinee binding) = do
-    ((consEq,termWitness),alts) <- unbind binding
+  disp (Case scrutinee termWitness binding) = do
+    (consEq,alts) <- unbind binding
     dScrutinee <- disp scrutinee
     dConsEq <- braces <$> disp consEq
     dTermWitness <- maybe (return empty) (\v -> brackets <$> disp v) termWitness
