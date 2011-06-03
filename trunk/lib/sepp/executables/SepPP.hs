@@ -4,6 +4,8 @@ module Main where
 import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
+import Language.SepPP.Syntax(Term(..),var,app,Stage(..))
+import Unbound.LocallyNameless(Embed(..),bind,string2Name)
 
 import Text.PrettyPrint(render)
 
@@ -50,3 +52,11 @@ liftEither (Right val) = return val
 go s = withArgs ["--file="++s] main
 
 testcase = "Tests/unittests/ParseTest.sepp"
+
+
+--------------------------------------
+
+less1 = IndLT (var "x") (var "y")
+eq1 = Equal (var "x") (var "y")
+
+test p s =  putStrLn(runDisp (parse2 p s))

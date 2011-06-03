@@ -16,9 +16,18 @@ display d = runFreshMT $ runReaderT (disp d) 0
 
 class Disp a where
   disp :: (Functor m, Fresh m) => a -> m Doc
+  precedence :: a -> Int
+  precedence x = 0
+
+dParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+dParen level x = 
+   if level >= (precedence x) 
+      then do { d <- disp x; return(parens d)}
+      else disp x
 
 -- Set the precedence to i. If this is < than the current precedence, then wrap
 -- this with parens.
+-- withPrec:: Int -> m
 withPrec i m = do
   dm <- local (const i) m
   cur <- ask
@@ -53,9 +62,9 @@ instance Disp Term where
     dran <- disp ran
     return $ text "forall" <+> parens (dn <+> colon <+> dty) <+> text "." <+> dran
 
-  disp (App t0 stage t1) = do
-    d0 <- disp t0
-    d1 <- disp t1
+  disp (t@(App t0 stage t1)) = do
+    d0 <- dParen (precedence t - 1) t0
+    d1 <- dParen (precedence t) t1
     return $ d0 <+> ann stage d1
    where ann Static = brackets
          ann Dynamic = id
@@ -104,34 +113,32 @@ instance Disp Term where
     return $ text "join" <+> integer i0 <+> integer i1
 
 
-  disp (Equal t0 t1) = do
-                     d0 <- disp t0
-                     d1 <- disp t1
+  disp (t@(Equal t0 t1)) = do
+                     d0 <- dParen (precedence t) t0
+                     d1 <- dParen (precedence t) t1
                      return $ d0 <+> text "=" <+> d1
 
-  disp (Val t) = do
-    d <- disp t
+  disp (w@(Val t)) = do
+    d <- dParen (precedence w) t
     return $ text "val" <+> d
 
-  disp (Terminates t) = do
-                     dt <- disp t
+  disp (w@(Terminates t)) = do
+                     dt <- dParen (precedence w) t
                      return $ dt <+> text "!"
 
 
-  disp (Contra t0) = do
-    d0 <- disp t0
+  disp (t@(Contra t0)) = do
+    d0 <- dParen (precedence t) t0
     return $ text "contra" <+> d0
 
-  disp (ContraAbort t0 t1) = do
-    d0 <- disp t0
-    d1 <- disp t1
-    return $ text "contraabort" <+> d0 <+> text "using" <+> d1
+  disp (t@(ContraAbort t0 t1)) = do
+    d0 <- dParen (precedence t) t0
+    d1 <- dParen (precedence t) t1
+    return $ text "contraabort" <+> d0 <+> d1
 
-
-  disp (Abort t) = do
-    d <- disp t
+  disp (w@(Abort t)) = do
+    d <- dParen (precedence w) t
     return $ text "abort" <+> d
-
 
   disp (Conv t pfs binding) = do
     (vars,ty) <- unbind binding
@@ -139,7 +146,7 @@ instance Disp Term where
     dTy <- disp ty
     dt <- disp t
     dPfs <- mapM disp pfs
-    return $ sep ([text "conv", dt, text "by"] ++
+    return $ sep ([text "conv" <+> dt, text "by"] ++
                   (punctuate comma dPfs) ++
                   [text "at"] ++
                   dVars ++
@@ -149,7 +156,7 @@ instance Disp Term where
   disp (ConvCtx t ctx) = do
     dt <- disp t
     dctx <- disp ctx
-    return $ sep [text "conv", dt,text "at", dctx]
+    return $ sep [text "conv" <+> nest 5 dt,text "at" <+> nest 3 dctx]
 
 
   disp (Escape t) = do
@@ -157,13 +164,13 @@ instance Disp Term where
     return $ text "~" <> dt
 
 
-  disp (Ord t0) = do
-    d0 <- disp t0
+  disp (t@(Ord t0)) = do
+    d0 <- dParen (precedence t) t0
     return $ text "ord" <+> d0
 
-  disp (IndLT t0 t1) = do
-     d0 <- disp t0
-     d1 <- disp t1
+  disp (t@(IndLT t0 t1)) = do
+     d0 <- dParen (precedence t) t0
+     d1 <- dParen (precedence t) t1
      return (d0 <+> text "<" <+> d1)
 
 
@@ -193,32 +200,67 @@ instance Disp Term where
            nest 2 dBody]
 
 
-  disp (Let binding) = do
-    ((x,y,Embed z),body) <- unbind binding
-    dx <- disp x
-    dy <- disp y
-    dz <- disp z
+  disp (t@(Let binding)) = do
+    (ds,body) <- linearizeLet t
+    let f (x,y,Embed z) =
+         do dx <- disp x
+            dy <- disp y
+            dz <- disp z
+            return(sep [dx <+> brackets dy <+> text "=",nest 3 dz])
+    docs <- mapM f ds
     db <- disp body
     return $ sep
-      [text "let", dx, dy, text "=", dz, text "in", db]
+      [text "let" <+> nest 4 (sep (punctuate (text ";") docs)), text "in" <+> db]
 
 
-  disp (Strict c) = do
-    dc <- disp c
+  disp (t@(Strict c)) = do
+    dc <- dParen (precedence t) c
     return $ text "strict" <+> dc
-  disp (Ann t0 t1) = do
-    d0 <- disp t0
-    d1 <- disp t1
+  disp (t@(Ann t0 t1)) = do
+    d0 <- dParen (precedence t) t0
+    d1 <- dParen (precedence t) t1
     return $ d0 <+> colon <+> d1
 
 
-  disp (Parens p) = parens <$> disp p
+  disp (Parens p) = disp p -- parens <$> disp p
   disp (Pos _ t) = disp t
-  disp (Sym x) = do
-    dx <- disp x
+  disp (t@(Sym x)) = do
+    dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
 
   disp e = error $ "disp: " ++ show e
+ 
+  precedence (Parens t) = precedence t -- 100
+  precedence (Pos _ t) = precedence t
+  precedence (Var _) = 12 
+  precedence (Con _) = 12
+  precedence (Type) = 12
+  precedence (Escape _) = 11
+  precedence (App _ _ _) = 10
+  precedence (Equal _ _) = 9
+  precedence (IndLT _ _) = 8
+  precedence (Terminates _) = 7
+  precedence (Ann _ _) = 6
+  
+  precedence (Contra _) = 5
+  precedence (Val _ ) = 5
+  precedence (ContraAbort _ _) = 5
+  precedence (Ord _) = 5
+  precedence (Strict _) = 5
+  precedence (Sym _) = 5
+  
+  precedence (Pi Dynamic _) = 4
+  precedence (Pi Static _) = 4
+  precedence _ = 0
+  
+
+linearizeLet (Pos _ t) = linearizeLet t
+linearizeLet (Parens t) = linearizeLet t
+linearizeLet (Let binding) =
+  do (triple,body) <- unbind binding
+     (ds,b) <- linearizeLet body
+     return(triple:ds,b)     
+linearizeLet x = return ([],x)
 
 -- bindingWrap adds the correct stage annotation for an abstraction binding.
 bindingWrap Dynamic = parens
@@ -230,7 +272,7 @@ instance Disp Decl where
     dty <- disp ty
     dval <- disp val
     return $ text "prog" <+> dn <+> text ":" <+> dty <> semi $$
-             text "def" <+> dn <+> text "=" <+> dval <> semi
+             cat[text "def" <+> dn <+> text "=", nest 3 $ dval <> semi] $$ text ""
 
 
   disp (ProofDecl n ty val) = do
@@ -238,7 +280,7 @@ instance Disp Decl where
     dty <- disp ty
     dval <- disp val
     return $ text "theorem" <+> dn <+> text ":" <+> dty <> semi $$
-             text "proof" <+> dn <+> text "=" <+> dval <> semi
+             cat[text "proof" <+> dn <+> text "=",nest 3 $ dval <> semi] $$ text ""
 
 
   disp (DataDecl t1 t2 cs) = do
@@ -246,7 +288,7 @@ instance Disp Decl where
      d2 <- disp t2
      dcs <- mapM dispCons cs
      return $ hang (text "data" <+> d1 <+> colon <+> d2 <+> text "where") 2
-                       (vcat (punctuate semi dcs))
+                       (vcat (punctuate semi dcs)) $$ text ""
     where dispCons (c,t) = do
             dc <- disp c
             dt <- disp t
@@ -274,3 +316,4 @@ instance Disp a => Disp (Embed a) where
 
 
 runDisp t = render $ runFreshM (disp t)
+
