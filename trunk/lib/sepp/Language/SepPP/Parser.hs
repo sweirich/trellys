@@ -210,13 +210,13 @@ caseExpr = do
   reserved "case"
   scrutinee <- expr
   consEq <- braces termName
-  termWitness <- option Nothing (Just <$> termName)
+  termWitness <- option Nothing (Just <$> expr)
   reserved "of"
   alts <- alts (alt <?> "case alternative")
-  return $ Case scrutinee (bind (consEq,termWitness) alts)
+  return $ Case scrutinee termWitness (bind consEq alts)
   where alt = do cons <- identifier
                  unless (isUpper (head cons)) $
-                   fail "Pattern requires an uppercase constructor name"
+                   unexpected "Pattern requires an uppercase constructor name"
                  vars <- many termName
                  reservedOp "->"
                  body <- expr
@@ -388,7 +388,7 @@ term = wrapPos $
               ,letExpr
               ,escapeExpr
               ,strictExpr
-                ,symExpr
+              ,symExpr
               ,varOrCon <?> "Identifier"
               ,Parens <$> parens expr <?> "Parenthesized Expression"
               ] <?> "term")

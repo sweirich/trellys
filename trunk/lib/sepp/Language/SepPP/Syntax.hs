@@ -3,7 +3,7 @@
   UndecidableInstances  #-}
 module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
-  Stage(..),Kind(..),
+  Stage(..),Kind(..),Alt,
   TName, ModName,
   splitApp, isStrictContext) where
 
@@ -48,7 +48,7 @@ data Term = Var TName                                 -- Term, Proof
             -- document. We combine these two, with the extra termination proof
             -- argument wrapped in Maybe.
 
-          | Case Term (Bind (TName, (Maybe TName)) [Alt])       -- Proof, Term
+          | Case Term (Maybe Term) (Bind TName [Alt])       -- Proof, Term
 
 
           | TerminationCase Term (Bind TName (Term,Term))    -- Proof
@@ -145,8 +145,9 @@ isStrictContext (App e1 stage e2) =
                  Just (e,k2) -> Just (e,\v -> App e1 stage (k2 v))
                  Nothing -> Nothing
 
-isStrictContext (Case e bs) = case isStrictContext e of
-                               Just (e',k) -> Just (e',\v -> Case (k v) bs)
+
+isStrictContext (Case e term bs) = case isStrictContext e of
+                               Just (e',k) -> Just (e',\v -> Case (k v) term bs)
 
 
 isStrictContext _ = Nothing
