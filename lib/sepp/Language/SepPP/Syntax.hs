@@ -5,7 +5,7 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
   Stage(..),Kind(..),Alt,
   TName, ModName,
-  splitApp, isStrictContext) where
+  splitApp, isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
 import Unbound.LocallyNameless.Alpha(aeqR1)
@@ -31,6 +31,7 @@ data Decl =  ProgDecl TName Term Term
 data Stage = Dynamic | Static deriving (Eq,Show)
 data Kind = Form | Program deriving (Eq,Show)
 -- | The representation of SepPP expressions.
+
 data Term = Var TName                                 -- Term, Proof
           | Con TName                                 -- Term
           | Formula Integer                           -- LogicalKind
@@ -105,6 +106,9 @@ data Term = Var TName                                 -- Term, Proof
           | Pos SourcePos Term
           deriving (Show,Typeable)
 
+
+---------------------------------------------------------
+
 type Alt = Bind (String, [TName]) Term
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
@@ -151,4 +155,7 @@ isStrictContext (Case e term bs) = case isStrictContext e of
 
 
 isStrictContext _ = Nothing
+
+var s = Var (string2Name s)
+app f x = App f Dynamic x
 

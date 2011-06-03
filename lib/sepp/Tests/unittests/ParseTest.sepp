@@ -56,7 +56,7 @@ def copy = rec copy (x:Nat) .
 theorem f : forall (n : Nat). forall (p:((S (copy n))) !) . (copy n) !
 proof f = \(n:Nat) => \(p:(S (copy n)) !) =>
   termcase copy n {u} of
-    | abort -> contraabort (strict (S ~u)) using p
+    | abort -> contraabort (strict (S ~u)) p
     |	! -> u
 
 
@@ -69,8 +69,8 @@ proof f = \(n:Nat) => \(p:(S (copy n)) !) =>
 
 
 
--- theorem idprog : ∀(a:Type).∀(x:a).x = x
--- proof idprog = Λ(a:Type).Λ(x:a). join 1 1
+-- theorem idprog : ?(a:Type).?(x:a).x = x
+-- proof idprog = ?(a:Type).?(x:a). join 1 1
 
 {-
 
@@ -144,14 +144,14 @@ data A : a where
 theorem predLam : \(x:A) => x
 proof predLam = \(x:A) => x
 
-theorem predLamUni : Λ(x:A) . x
-proof predLamUni = Λ(x:A) . x
+theorem predLamUni : ?(x:A) . x
+proof predLamUni = ?(x:A) . x
 
 
-theorem covProof : ∀(P : (∀(n:Nat).Formula)).
+theorem covProof : ?(P : (?(n:Nat).Formula)).
 		P Z =>
-		(∀(n : Nat).(∀(m : Nat). (m < n) -> P m) ->  P n) ->
-		(∀(n : Nat) . P n)
+		(?(n : Nat).(?(m : Nat). (m < n) -> P m) ->  P n) ->
+		(?(n : Nat) . P n)
 proof covProof = P
 
 

@@ -70,12 +70,12 @@ Library
 
 Executable sep
   Main-is: SepPP.hs
-  Build-depends: base, seppp, cmdargs, pretty
-  Hs-source-dirs: executables
+  Build-depends: base, cmdargs, pretty, mtl, unbound, parsec >= 3
+  Hs-source-dirs: executables, .
   Extensions: DeriveDataTypeable
 
 
-Test-suite test-parser
-  type: exitcode-stdio-1.0
-  main-is: Tests/Parser.hs
-  Build-depends: base, Cabal >= 1.10
+--Test-suite test-parser
+--  type: exitcode-stdio-1.0
+--  main-is: Tests/Parser.hs
+--  Build-depends: base, Cabal >= 1.10

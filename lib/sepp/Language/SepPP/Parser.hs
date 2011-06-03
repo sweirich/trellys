@@ -17,6 +17,12 @@ import Control.Applicative hiding ((<|>),many)
 import Control.Monad.Identity
 import Control.Exception(Exception)
 import Data.Char
+import Text.PrettyPrint(render)
+
+parse2 p s =
+   case parse p "Input" s of
+     Left d -> error(show d)
+     Right e -> e
 
 -- | Parse a string to module.
 parseModule :: String -> String -> Either ParseError Module
@@ -141,6 +147,7 @@ semiSep = Token.semiSep tokenizer
 braces = Token.braces tokenizer
 dot = Token.dot tokenizer
 commaSep1 = Token.commaSep1 tokenizer
+semiSep1 = Token.semiSep1 tokenizer
 --sepBy = Token.sepBy tokenizer
 
 
@@ -185,8 +192,8 @@ asciiAbstraction = do
 
 
 unicodeAbstraction = do
-  kind <- (reservedOp "λ" >> return Program) <|>
-         (reservedOp "Λ" >> return Form)
+  kind <- (reservedOp "?" >> return Program) <|>
+         (reservedOp "?" >> return Form)
   (stage,(n,ty)) <- absBinding
   reservedOp "."
   body <- expr
@@ -194,7 +201,7 @@ unicodeAbstraction = do
 
 
 quantification = do
-  reservedOp "∀" <|> reservedOp "forall"
+  reservedOp "?" <|> reservedOp "forall"
   (n,ty) <- quantBinding
   reservedOp "."
   body <- expr
@@ -252,20 +259,20 @@ joinExpr = do
   return $ Join i0 i1
 
 
-valExpr = reserved "val" >> Val <$> expr
+valExpr = reserved "val" >> Val <$> term
 
 
 -- FIXME: I think the 'at' annotations are unnecessary, if we have annotations.
 contraExpr = do
   reserved "contra"
-  t <- expr
+  t <- term
   return $ Contra t
 
 contraAbortExpr = do
   reserved "contraabort"
-  t1 <- expr
-  reserved "using"
-  t2 <- expr
+  t1 <- term
+  -- reserved "using"
+  t2 <- term
   return $ ContraAbort t1 t2
 
 abortExpr = do
@@ -274,7 +281,7 @@ abortExpr = do
 
 symExpr = do
   reserved "sym"
-  Sym <$> expr
+  Sym <$> term
 
 
 convExpr = do
@@ -320,16 +327,25 @@ indExpr = do
  <?> "Rec expression"
 
 
+letdecls = 
+  semiSep1 (do x <- string2Name <$> identifier
+               y <- brackets (string2Name <$> identifier)
+               reservedOp "="
+               z <- expr
+               return(x,y,z))
 
 letExpr = do
   reserved "let"
-  x <- string2Name <$> identifier
-  y <- brackets (string2Name <$> identifier)
-  reservedOp "="
-  z <- expr
+  ds <- letdecls
+  -- x <- string2Name <$> identifier
+  -- y <- brackets (string2Name <$> identifier)
+  -- reservedOp "="
+  -- z <- expr
   reserved "in"
   body <- expr
-  return $ Let (bind (x,y,Embed z) body)
+  let letnest [] e = e
+      letnest ((x,y,z):ds) e = Let (bind (x,y,Embed z) (letnest ds e))
+  return $ letnest ds body -- Let (bind (x,y,Embed z) body)
 
 
 escapeExpr = do
@@ -338,7 +354,7 @@ escapeExpr = do
 
 strictExpr = do
   reserved "strict"
-  Strict <$> expr
+  Strict <$> term
 -- Term Productions
 
 variable = do
@@ -364,7 +380,7 @@ formula = reserved "Form" >> (Formula <$> option 0 integer)
 sepType = reserved "Type" >> return Type
 
 -- FIXME: Relatively certain this will cause the parser to choke.
-ordExpr = reserved "ord" >> Ord <$> expr
+ordExpr = reserved "ord" >> Ord <$> term
 
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
@@ -402,20 +418,19 @@ factor = do
         mkApp f (s,a) = App f s a
 
 expr = wrapPos $ buildExpressionParser table factor
-  where table = [[binOp AssocLeft "=" Equal]
+  where table = [[binOp AssocNone "=" Equal]
                 ,[binOp AssocNone "<" IndLT]
                 ,[postOp "!" Terminates]
                 ,[binOp AssocLeft ":" Ann]
                 ,[binOp AssocRight "->"
-                          (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))]
-                ,[binOp AssocRight "=>"
+                          (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))
+                 ,binOp AssocRight "=>"
                           (\d r -> Pi Static (bind (wildcard,Embed d) r))]
                 ]
         binOp assoc op f = Infix (reservedOp op >> return f) assoc
         postOp op f = Postfix (reservedOp op >> return f)
         preOp op f = Prefix (reservedOp op >> return f)
         wildcard = string2Name "_"
-
 
 
 wrapPos p = Pos <$> getPosition <*> p
