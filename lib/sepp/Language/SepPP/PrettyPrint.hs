@@ -24,6 +24,12 @@ dParen level x =
    if level >= (precedence x) 
       then do { d <- disp x; return(parens d)}
       else disp x
+      
+termParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+termParen level x = 
+   if level <= (precedence x) 
+      then do { d <- disp x; return(parens d)}
+      else disp x      
 
 -- Set the precedence to i. If this is < than the current precedence, then wrap
 -- this with parens.
@@ -119,21 +125,21 @@ instance Disp Term where
                      return $ d0 <+> text "=" <+> d1
 
   disp (w@(Val t)) = do
-    d <- dParen (precedence w) t
-    return $ text "val" <+> d
+    d <- termParen (precedence w) t
+    return $ text "value" <+> d
 
   disp (w@(Terminates t)) = do
-                     dt <- dParen (precedence w) t
+                     dt <- termParen (precedence w) t
                      return $ dt <+> text "!"
 
 
   disp (t@(Contra t0)) = do
-    d0 <- dParen (precedence t) t0
+    d0 <- termParen (precedence t) t0
     return $ text "contra" <+> d0
 
   disp (t@(ContraAbort t0 t1)) = do
-    d0 <- dParen (precedence t) t0
-    d1 <- dParen (precedence t) t1
+    d0 <- termParen (precedence t) t0
+    d1 <- termParen (precedence t) t1
     return $ text "contraabort" <+> d0 <+> d1
 
   disp (w@(Abort t)) = do
@@ -165,7 +171,7 @@ instance Disp Term where
 
 
   disp (t@(Ord t0)) = do
-    d0 <- dParen (precedence t) t0
+    d0 <- termParen (precedence t) t0
     return $ text "ord" <+> d0
 
   disp (t@(IndLT t0 t1)) = do
@@ -228,7 +234,7 @@ instance Disp Term where
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
 
-  disp e = error $ "disp: " ++ show e
+  -- disp e = error $ "disp: " ++ show e
  
   precedence (Parens t) = precedence t -- 100
   precedence (Pos _ t) = precedence t

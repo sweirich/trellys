@@ -320,10 +320,10 @@ proofSynth (Ann p pred) = do
   return pred
 
 proofSynth (ConvCtx p ctx) = do
-  l <- copy LeftContext ctx
+  l <- copyEqualInEsc LeftContext ctx
   lty <- withEscapeContext LeftContext $ predSynth l
   proofAnalysis p l
-  r <- copy RightContext ctx
+  r <- copyEqualInEsc RightContext ctx
   rty <- withEscapeContext RightContext $ predSynth r
   return r
 
@@ -348,6 +348,9 @@ proofSynth (Aborts c) = withEscapeContext StrictContext $ do
         _ -> throwError $ strMsg
                "In strict, the context hole is not of the proper form abort = e"
 
+proofSynth (Con n) = do
+  (ty,_) <- lookupBinding n
+  return ty
 
 
 proofSynth t = do
@@ -412,6 +415,23 @@ proofAnalysis (App p _ b) res = do
              unless (snb `aeq` res) $
                     err "proofAnalysis app: not the expected type"
              return snb
+    Pi Static binding -> do
+             ((n,Embed ty),body) <- unbind binding
+             requireB ty
+             requirePred body
+             bty <- bAnalysis b ty
+             let snb = subst n b body
+             unless (snb `aeq` res) $
+                    err "proofAnalysis app: not the expected type"
+             return snb  
+    (w@(Pi Dynamic b)) -> 
+           do d <- disp p
+              t <- disp w
+              err ("function in proof application: "++render d++"\nhas a dynamic function type: "++render t)
+             
+    rng -> do d <- disp p
+              t <- disp rng
+              err ("function in application: "++render d++"\ndoes not have a function type: "++render t)
 
 
 proofAnalysis (TerminationCase s binding) ty = do
@@ -443,10 +463,10 @@ proofAnalysis (Aborts c) ty = withEscapeContext StrictContext $ do
 
 
 proofAnalysis (ConvCtx p ctx) ty = do
-  l <- copy LeftContext ctx
+  l <- copyEqualInEsc LeftContext ctx
   lty <- withEscapeContext LeftContext $ predSynth l
   proofAnalysis p l
-  r <- copy RightContext ctx
+  r <- copyEqualInEsc RightContext ctx
   rty <- withEscapeContext RightContext $ predSynth r
 
   dr <- disp r
@@ -572,8 +592,8 @@ proofAnalysis (Var n) ty = do
   unless (ty `aeq` ty') $ do
          dty <- disp ty
          dty' <- disp ty'
-         err $ "Var inferred typed " ++ render dty' ++
-             " doesn't match expected type " ++ render dty
+         err $ "Var inferred typed '" ++ render dty' ++
+             "' doesn't match expected type '" ++ render dty++"'"
 
   return ty
 proofAnalysis (Con n) ty = do
@@ -615,8 +635,8 @@ proofAnalysis (ContraAbort taborts tterminates) ty = do
        unless (down s `aeq` down s') $ do
           ds <- disp s
           ds' <- disp s'
-          err $ "Can't use contrabort" ++ render ds ++ " doesn't match " ++
-              render ds'
+          err $ "Can't use contrabort'" ++ render ds ++ "' doesn't match '" ++
+              render ds' ++"'"  -- ++ \n   "++show (down s)++"\n   "++show (down s')
        return ty
     _ -> do
       da <- disp aborts
@@ -625,6 +645,19 @@ proofAnalysis (ContraAbort taborts tterminates) ty = do
               render dt ++ " are the wrong form."
 
 
+proofAnalysis (t@(Val x)) ty =
+  do let f t = do ty <- typeSynth t
+                  case down ty of
+                   (Terminates x) -> return x
+                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"  
+     term <- escCopy f x
+     typeSynth term
+     stub <- escCopy (\ x -> return Type) x
+     b <- synValue stub
+     if b
+        then return (Terminates term)
+        else  do d <- disp t
+                 err $ "Non Value: " ++ render d
 
 
 proofAnalysis proof pred = do
@@ -699,10 +732,10 @@ typeSynth (Escape t) = do
                       render dty ++ " equality is ill-formed."
 
 typeSynth (ConvCtx t ctx) = do
-  l <- copy LeftContext ctx
+  l <- copyEqualInEsc LeftContext ctx
   lty <- withEscapeContext LeftContext $ typeSynth l
   proofAnalysis t l
-  r <- copy RightContext ctx
+  r <- copyEqualInEsc RightContext ctx
   rty <- withEscapeContext RightContext $ typeSynth r
   return r
 
@@ -724,10 +757,10 @@ typeSynth (Pi _ binding)  = do -- Term_Pi
   extendBinding n ty False $ typeSynth body 
   return Type
 
-
 typeSynth t =  do
   dt <- disp t
   err $ "TODO: typeSynth: " ++ render dt
+
 
 typeAnalysis (Parens t) ty = typeAnalysis t ty
 typeAnalysis t (Pos p ty) = typeAnalysis t ty
@@ -888,10 +921,10 @@ typeAnalysis (Escape t) ty = do
 
 
 typeAnalysis (ConvCtx t ctx) ty = do
-  l <- copy LeftContext ctx
+  l <- copyEqualInEsc LeftContext ctx
   lty <- withEscapeContext LeftContext $ typeSynth l
   proofAnalysis t l
-  r <- copy RightContext ctx
+  r <- copyEqualInEsc RightContext ctx
   rty <- withEscapeContext RightContext $ typeSynth r
 
   unless (ty `aeq` r) $ do
@@ -1081,37 +1114,64 @@ getClassification t = do
                  -- liftIO  $ mapM print env
                  throwError $ strMsg $ "Can't classify " ++ render dt
 
+-----------------------------------------------
+-- Generic function for copying a term and 
+-- handling the escape clause in a specific manner
 
-
-copy b (Equal l r) = do
-  l' <- copy b l
-  r' <- copy b r
-  return $ Equal l' r'
-
-copy b (App t0 s t1) = do
-  t0' <- copy b t0
-  t1' <- copy b t1
-  return $ App t0' s t1'
-
-copy b (Var x)  = return (Var x)
-copy b (Con x)  = return (Con x)
-copy b (Escape t) = do
-  ty <- typeSynth t
-  case down ty of
-    (Equal l r) -> case b of
-                     LeftContext -> return l
-                     RightContext -> return r
-                     _ -> throwError $ strMsg $ "Copy can't reach this."
-    _ -> throwError $ strMsg $ "Can't escape to something not an equality"
-
-
-copy b (Pi stage binding) = do
+escCopy f (Var x) = return(Var x)
+escCopy f (Con x) = return(Con x)
+escCopy f (Formula n) = return(Formula n)
+escCopy f Type = return Type
+escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
+  where app x y = App x s y
+escCopy f (Pi stage binding) = do
   ((n,Embed ty),body) <- unbind binding
-  ty' <- copy b ty
-  body' <- copy b body
-  return $ Pi stage (bind (n,Embed ty') body')
+  ty' <- escCopy f ty
+  body' <- escCopy f body
+  return $ Pi stage (bind (n,Embed ty') body')  
+escCopy f (Ann x y) = lift2 Ann (escCopy f x) (escCopy f y)
+escCopy f (Equal x y) = lift2 Equal (escCopy f x) (escCopy f y)
+escCopy f (Parens x) = escCopy f x
+escCopy f (Pos x t) = lift2 Pos (return x) (escCopy f t)
+escCopy f (Escape t) = f t
+escCopy f t = 
+  do td <- disp t
+     error ("Not implemented yet in escCopy: "++render td)
+  
+copyEqualInEsc b x = escCopy f x 
+ where f t  = do ty <- typeSynth t
+                 case down ty of
+                  (Equal l r) -> 
+                     case b of
+                       LeftContext -> return l
+                       RightContext -> return r
+                       _ -> throwError $ strMsg $ "Copy can't reach this."
+                  _ -> throwError $ strMsg $ "Can't escape to something not an equality"
+
+-------------------------------------
+-- syntactic Value
+
+lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
+
+synValue (Var x) = 
+  do (term,valuep) <- lookupBinding x
+     return valuep
+synValue (Con c) = return True
+synValue (Formula n) = return True
+synValue Type = return True
+synValue (Pi stg bdngs) = return True
+synValue (Lambda k stg bndgs) = return True
+synValue (Pos n t) = synValue t
+synValue (Parens t) = synValue t
+synValue (Ann t typ) = synValue t
+synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+  where constrApp (Con c) = return True
+        constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+        constrApp (Parens t) = constrApp t
+        constrApp (Pos x t) = constrApp t
+        constrApp _ = return False
+        
+synValue x = return False 
 
 
-copy b (Parens t) = Parens <$> copy b t
-copy b (Pos p t) = Pos p <$>  copy b t
-copy b t = error $  "copy: " ++ show t
+

@@ -434,4 +434,6 @@ expr = wrapPos $ buildExpressionParser table factor
         wildcard = string2Name "_"
 
 
-wrapPos p = Pos <$> getPosition <*> p
+wrapPos p = pos <$> getPosition <*> p
+  where pos x (Pos y e) | x==y = (Pos y e)
+        pos x y = Pos x y
