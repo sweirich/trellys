@@ -352,6 +352,20 @@ proofSynth (Con n) = do
   (ty,_) <- lookupBinding n
   return ty
 
+proofSynth (t@(Val x)) =
+  do let f t = do ty <- typeSynth t
+                  case down ty of
+                   (Terminates x) -> return x
+                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"  
+     term <- escCopy f x
+     typeSynth term
+     stub <- escCopy (\ x -> return Type) x
+     b <- synValue stub
+     if b
+        then return(Terminates (down term))
+        else  do d <- disp t
+                 err $ "Non Value: " ++ render d
+
 
 proofSynth t = do
   dt <- disp t
@@ -655,7 +669,14 @@ proofAnalysis (t@(Val x)) ty =
      stub <- escCopy (\ x -> return Type) x
      b <- synValue stub
      if b
-        then return (Terminates term)
+        then do let ans = Terminates (down term)
+                unless (ans `aeq` down ty) $ do
+                   xd <- disp x
+                   ansd <- disp ans
+                   tyd <- disp ty
+                   err $ "In (value " ++ render xd ++ ") the type\n   " ++render ansd++
+                         "\ndoesn't match the expexted type\n   "++ render tyd
+                return ans
         else  do d <- disp t
                  err $ "Non Value: " ++ render d
 
@@ -1118,19 +1139,33 @@ getClassification t = do
 -- Generic function for copying a term and 
 -- handling the escape clause in a specific manner
 
+
+lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
+lift1 f c1 = do { x<-c1; return(f x)}
+
 escCopy f (Var x) = return(Var x)
 escCopy f (Con x) = return(Con x)
 escCopy f (Formula n) = return(Formula n)
 escCopy f Type = return Type
-escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
-  where app x y = App x s y
 escCopy f (Pi stage binding) = do
   ((n,Embed ty),body) <- unbind binding
   ty' <- escCopy f ty
   body' <- escCopy f body
   return $ Pi stage (bind (n,Embed ty') body')  
+escCopy f (Forall binding) = do
+  ((n,Embed ty),body) <- unbind binding
+  ty' <- escCopy f ty
+  body' <- escCopy f body
+  return $ Forall (bind (n,Embed ty') body')  
+escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
+  where app x y = App x s y
 escCopy f (Ann x y) = lift2 Ann (escCopy f x) (escCopy f y)
 escCopy f (Equal x y) = lift2 Equal (escCopy f x) (escCopy f y)
+escCopy f (Terminates x) = lift1 Terminates (escCopy f x)
+escCopy f (Val x) = lift1 Val (escCopy f x)
+escCopy f (Abort x) = lift1 Abort (escCopy f x)
+escCopy f (Contra x) = lift1 Contra (escCopy f x)
+escCopy f (ConvCtx x y) = lift2 ConvCtx (escCopy f x) (escCopy f y)
 escCopy f (Parens x) = escCopy f x
 escCopy f (Pos x t) = lift2 Pos (return x) (escCopy f t)
 escCopy f (Escape t) = f t
@@ -1150,8 +1185,6 @@ copyEqualInEsc b x = escCopy f x
 
 -------------------------------------
 -- syntactic Value
-
-lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
 
 synValue (Var x) = 
   do (term,valuep) <- lookupBinding x
