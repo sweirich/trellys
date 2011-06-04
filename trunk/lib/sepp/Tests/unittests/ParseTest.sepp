@@ -58,7 +58,20 @@ proof f = \(n:Nat) => \(p:(S (copy n)) !) =>
   termcase copy n {u} of
     | abort -> contraabort (aborts (S ~u)) p
     |	! -> u
-
+    
+theorem finv : forall (n : Nat). forall (p:((copy n)!)) . (S(copy n)) !
+proof finv = \(n:Nat) => \(p:((copy n) !)) =>
+  termcase copy n {u} of
+    | abort -> contraabort (aborts ~u) p
+    |	! -> value (S ~u)
+    
+    {-
+theorem bad : forall (n : Nat). forall  (p: n!) . (copy n)!
+proof bad = \ (n:Nat) => \ (p: n!) => 
+   case n {n_eq} p of -- n_eq = Z = n
+       Z -> value (copy n)
+     | S n' -> bad n' p
+-}
 
 theorem funTerm : forall (tT:Type).
                   forall (t'T:tT -> Type).
