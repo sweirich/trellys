@@ -13,24 +13,27 @@ import System.Console.CmdArgs
 import Data.Typeable
 import Control.Exception
 import System.Environment
+import System.IO(withFile,hGetContents,IOMode(..),hClose,openFile)
 
 main = do
   opts <- cmdArgs sepPPArgs
-  cnts <- readFile (file opts)
+  -- cnts <- withFile (file opts) ReadMode hGetContents            
+  bracket (openFile (file opts)ReadMode ) hClose $ \ h ->
+     do cnts <- hGetContents h
   -- Parse the module
-  ast <- liftEither $  parseModule (file opts) cnts
-  dast <- display ast
+        ast <- liftEither $  parseModule (file opts) cnts
+        dast <- display ast
 
   -- Typecheck the module
-  tcres <- typecheck ast
-  case tcres of
-    Left err -> fail $ runDisp err
-    Right val -> return ()
+        tcres <- typecheck ast
+        case tcres of
+         Left err -> fail $ runDisp err
+         Right val -> return ()
 
 
   -- _ <- liftEither tcres
 
-  print dast
+        putStrLn "Success!"
 
 
 data SepPPOpts = SepPPOpts {
@@ -51,7 +54,7 @@ liftEither (Right val) = return val
 
 go s = withArgs ["--file="++s] main
 
-testcase = "Tests/unittests/ParseTest.sepp"
+testcase = "../Tests/unittests/ParseTest.sepp"
 
 
 --------------------------------------

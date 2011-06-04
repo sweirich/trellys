@@ -335,7 +335,7 @@ proofSynth (Sym t) = do
        throwError $ strMsg "Sym's argument must have the type of an equality proof"
 
 
-proofSynth (Strict c) = withEscapeContext StrictContext $ do
+proofSynth (Aborts c) = withEscapeContext StrictContext $ do
   cty <- typeSynth c
   case isStrictContext c of
     Nothing -> throwError $ strMsg "Not a strict context"
@@ -423,7 +423,7 @@ proofAnalysis (TerminationCase s binding) ty = do
   extendBinding w (Terminates s) True (proofAnalysis terminates ty)
   return ty
 
-proofAnalysis (Strict c) ty = withEscapeContext StrictContext $ do
+proofAnalysis (Aborts c) ty = withEscapeContext StrictContext $ do
   cty <- typeSynth c
   case isStrictContext c of
     Nothing -> throwError $ strMsg "Not a strict context"
@@ -690,7 +690,8 @@ typeSynth (Escape t) = do
       dt <- disp t
       -- liftIO  $ putStrLn $ "ty is " ++ render dty ++ "\n ++ t is " ++ render dt
       case down ty of
-        Equal (Abort _) e -> return e -- typeSynth e
+        Equal (Abort _) e -> -- return e 
+                              typeSynth e
         _ -> do
           dty <- disp ty
           throwError $
@@ -717,6 +718,12 @@ typeSynth (Abort t) = do
 typeSynth (Terminates t) = do
   typeSynth t
   return $ Formula 0
+
+typeSynth (Pi _ binding)  = do -- Term_Pi
+  ((n,Embed ty),body) <- unbind binding
+  extendBinding n ty False $ typeSynth body 
+  return Type
+
 
 typeSynth t =  do
   dt <- disp t
