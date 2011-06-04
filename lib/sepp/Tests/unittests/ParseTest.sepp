@@ -65,13 +65,23 @@ proof finv = \(n:Nat) => \(p:((copy n) !)) =>
     | abort -> contraabort (aborts ~u) p
     |	! -> value (S ~u)
     
-    {-
-theorem bad : forall (n : Nat). forall  (p: n!) . (copy n)!
-proof bad = \ (n:Nat) => \ (p: n!) => 
+
+theorem copyStrictAndTerminating : forall (n : Nat). forall  (p: n!) . (copy n)!
+proof copyStrictAndTerminating = ind f (n:Nat) [p] .
    case n {n_eq} p of -- n_eq = Z = n
-       Z -> value (copy n)
-     | S n' -> bad n' p
--}
+       Z -> let x0 [p0] = value Z;                      -- Z! 
+                x1 [p1] = join 1 1 : (Z = copy Z);      -- Z = copy Z
+                x2 [p2] = conv x1 at (Z = copy ~n_eq);  -- Z = copy n
+                x3 [p3] = conv x0 at (~x2)!             -- (copy n)!
+            in x3
+     | S n' ->  -- n_eq : (S n') = n
+            let ih [ih_eq] = f n' (ord n_eq);       -- (copy n')!
+                x1 [p1] = value (S ~ih);            -- (S(copy n'))!
+                x2 [p2] = ((join 1 1):                 (S(copy n') = copy(S n'))) ;
+                x3 [p3] = conv x1 at (~x2 !);        -- copy(S n')!
+                x4 [p4] = conv x3 at ((copy ~n_eq)!)
+            in x4
+
 
 theorem funTerm : forall (tT:Type).
                   forall (t'T:tT -> Type).
