@@ -123,11 +123,12 @@ sepPPStyle = haskellStyle {
             "data", "where",
             "rec", "ind",
             "prog","def", "theorem", "proof",
-            "val",
+            "value", "values",
+            "abort","aborts",
             "LogicalKind","Form", "Type",
             "ord",
             "let","in",
-            "strict", "sym"
+            "sym"
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -259,7 +260,7 @@ joinExpr = do
   return $ Join i0 i1
 
 
-valExpr = reserved "val" >> Val <$> term
+valExpr = reserved "value" >> Val <$> term
 
 
 -- FIXME: I think the 'at' annotations are unnecessary, if we have annotations.
@@ -353,8 +354,8 @@ escapeExpr = do
   Escape <$> (variable <|> parens expr)
 
 strictExpr = do
-  reserved "strict"
-  Strict <$> term
+  reserved "aborts"
+  Aborts <$> term
 -- Term Productions
 
 variable = do

@@ -98,7 +98,7 @@ data Term = Var TName                                 -- Term, Proof
 
           | Let (Bind (TName,TName,Embed Term) Term)
 
-          | Strict Term
+          | Aborts Term
           | Sym Term -- Should be a derived form
 
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)

@@ -37,8 +37,8 @@ proof plus_right_unit_term = ind f (n:Nat) [u] .
 theorem plus_right_unit : forall (x:Nat). plus x Z = x
 proof plus_right_unit = \(x:Nat) =>
   termcase x {xterm} of
-     | abort -> -- strict (plus ~xterm Z)
-                sym (conv strict (plus ~xterm Z) at ~xterm = plus x Z)
+     | abort -> -- aborts (plus ~xterm Z)
+                sym (conv aborts (plus ~xterm Z) at ~xterm = plus x Z)
 		              -- convert abort = x to  (x + 0) = abort
 		              -- convert x = abort to (x + 0) = x
      | ! -> plus_right_unit_term x xterm
@@ -56,8 +56,29 @@ def copy = rec copy (x:Nat) .
 theorem f : forall (n : Nat). forall (p:((S (copy n))) !) . (copy n) !
 proof f = \(n:Nat) => \(p:(S (copy n)) !) =>
   termcase copy n {u} of
-    | abort -> contraabort (strict (S ~u)) p
+    | abort -> contraabort (aborts (S ~u)) p
     |	! -> u
+
+
+theorem funTerm : forall (tT:Type).
+                  forall (t'T:tT -> Type).
+                  forall (e1 : (t:tT) -> t'T t).
+                  forall (e2: tT).
+                  forall (p: (e1 e2) !) . e1 !
+proof funTerm = \ (tT:Type) => \(t'T:tT -> Type) => \(e1 : (t:tT) -> t'T t)=> \(e2: tT) => \ (p: (e1 e2) !) =>
+    termcase e1 {u} of
+      | abort -> contraabort (aborts (~u e2)) p
+      |	! -> u
+      
+theorem argTerm : forall (tT:Type).
+                  forall (t'T:tT -> Type).
+                  forall (e1 : (t:tT) -> t'T t).
+                  forall (e2: tT).
+                  forall (p: (e1 e2) !) . e2 !
+proof argTerm = \ (tT:Type) => \(t'T:tT -> Type) => \(e1 : (t:tT) -> t'T t)=> \(e2: tT) => \ (p: (e1 e2) !) =>
+    termcase e2 {u} of
+      | abort -> contraabort (aborts (e1 ~u)) p
+      |	! -> u      
 
 
 

@@ -213,9 +213,9 @@ instance Disp Term where
       [text "let" <+> nest 4 (sep (punctuate (text ";") docs)), text "in" <+> db]
 
 
-  disp (t@(Strict c)) = do
+  disp (t@(Aborts c)) = do
     dc <- dParen (precedence t) c
-    return $ text "strict" <+> dc
+    return $ text "aborts" <+> dc
   disp (t@(Ann t0 t1)) = do
     d0 <- dParen (precedence t) t0
     d1 <- dParen (precedence t) t1
@@ -246,7 +246,7 @@ instance Disp Term where
   precedence (Val _ ) = 5
   precedence (ContraAbort _ _) = 5
   precedence (Ord _) = 5
-  precedence (Strict _) = 5
+  precedence (Aborts _) = 5
   precedence (Sym _) = 5
   
   precedence (Pi Dynamic _) = 4
