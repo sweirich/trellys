@@ -1,5 +1,5 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
-  NamedFieldPuns #-}
+  NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances #-}
 module Language.SepPP.TypeCheck where
 
 import Language.SepPP.Syntax
@@ -84,6 +84,37 @@ addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
 
 err msg = throwError (strMsg msg)
 
+ensure p m = do
+  unless p $ m >>= (err . render)
+
+die m = do
+  m >>= (err . render)
+
+actual `expectType` expected =
+  ensure (actual `aeq` expected)
+           ("Expecting '" <++> expected <++> "' but actual type is " <++> actual)
+
+
+t1 <++> t2 = liftM2 (<+>) (doDisp t1) (doDisp t2)
+t1 $$$ t2 = liftM2 ($$) (doDisp t1) (doDisp t2)
+
+class IsDisp a where
+  doDisp :: a -> TCMonad Doc
+
+instance IsDisp String where
+  doDisp s = return $ text s
+
+-- instance Disp a => IsDisp a where
+--   doDisp = disp
+instance IsDisp TName where
+  doDisp n = disp n
+instance IsDisp Term where
+  doDisp t = disp t
+instance  IsDisp (TCMonad Doc) where
+  doDisp m = m
+
+
+
 
 -- * Running the typechecker.
 
@@ -102,8 +133,7 @@ data DefRes = DataResult TName Term [(TName,Term)]
 checkDef (ProofDecl nm theorem proof) = do
   lk <- predSynth theorem
   isLK <- lkJudgment lk
-  unless isLK $
-         err $ "Theorem is not a well-formed logical kind " ++ show nm
+  ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
 
   proofAnalysis proof theorem
   return $ ProofResult nm theorem False
@@ -115,9 +145,7 @@ checkDef (ProgDecl nm ty prog) = do
 
 checkDef (DataDecl (Con nm) ty cs) = do
   ran <- arrowRange ty
-  unless (ran `aeq` Type) $
-         err $ "The datatype decl " ++ show nm ++
-               " must have range Type."
+  ty `expectType` Type
 
   -- Make sure that the type constructor is a well-formed type.
   typeAnalysis ty Type
@@ -147,13 +175,12 @@ checkDef (DataDecl (Con nm) ty cs) = do
            ran <- arrowRange ty
            case appHead ran of
              Con tc -> do
-               unless (tc == nm) $
-                  err $ "In constructor " ++ show c ++
-                        " result type does not match declared data type."
+               ensure (tc == nm) $
+                        "In constructor " <++> c <++>
+                        "result type does not match declared data type."
                return (c,ty)
              h -> do
-               hd <- disp h
-               err $ "Constructor head is " ++ render hd
+               die $ "Constructor head is" <++> h
 
 
 checkDefs [] = return ()
@@ -193,14 +220,14 @@ valJudgment t@(App _ _ _ ) =
 lkJudgment (Formula _ ) = return True
 lkJudgment (Forall binding) = do
   ((n,Embed ty),body) <- unbind binding
-  unless (isA ty)$
-    err "Expecting the classifier for a logical kind argument to be syntax class 'A'"
+  ensure (isA ty) $
+    "Expecting the classifier for a logical kind argument to be syntax class"
+    <++> "'A'."
   extendBinding n ty False (lkJudgment body)
 
 guardLK t = do
   lk <- lkJudgment t
-  td <- disp t
-  unless lk $ err $ render td ++ " is not a valid logical kind."
+  ensure lk (t <++> "is nota valid logical kind.")
 
 
 -- The S,G |- P : LK judgment
@@ -232,8 +259,9 @@ predSynth (Forall binding) = do
         SortType -> do
                  ty <- typeSynth t
                  dty <- disp ty
-                 unless (ty `aeq` Type) $
-                      err $ "Expecting a type for " ++ render dty
+                 -- unless (ty `aeq` Type) $
+                 --      err $ "Expecting a type for " ++ render dty
+                 ty `expectType` Type
 
 
                  form <- extendBinding n t False (predSynth body)
@@ -264,13 +292,13 @@ predSynth (Terminates t) = do -- Pred_Terminates rule
 predSynth (Lambda Form Static binding) = do -- Pred_Lam rule
   ((n,Embed ty),body) <- unbind binding
   -- First Premise
-  unless (isW ty) $
-         err $ show ty ++ " is not in the 'W' syntactic class."
+  ensure (isW ty) $ ty <++> "is not in the 'W' syntactic class."
   -- Second Premise
   form <- extendBinding n ty False (predSynth body)
   lk <- lkJudgment form
-  dform <- disp form
-  unless lk $ err (render dform ++ " is not a valid logical kind.")
+  -- dform <- disp form
+  -- unless lk $ err (render dform ++ " is not a valid logical kind.")
+  ensure lk $ form <++> " is not a valid logical kind."
 
   return (Forall (bind (n,Embed ty) form))
 
@@ -332,21 +360,20 @@ proofSynth (Sym t) = do
   case down ty of
      (Equal t1 t0)-> return (Equal t0 t1)
      _  ->
-       throwError $ strMsg "Sym's argument must have the type of an equality proof"
+       err "Sym's argument must have the type of an equality proof."
 
 
 proofSynth (Aborts c) = withEscapeContext StrictContext $ do
   cty <- typeSynth c
   case isStrictContext c of
-    Nothing -> throwError $ strMsg "Not a strict context"
+    Nothing -> err "Not a strict context."
     Just (e,f) -> do
       eqTy <- typeSynth e
       case down eqTy of
         (Equal (Abort t) e2) -> do
            let ty' = Equal (Abort t) (f e2)
            return ty'
-        _ -> throwError $ strMsg
-               "In strict, the context hole is not of the proper form abort = e"
+        _ -> err $ "In strict, the context hole is not of the proper form abort = e"
 
 proofSynth (Con n) = do
   (ty,_) <- lookupBinding n
@@ -426,8 +453,10 @@ proofAnalysis (App p _ b) res = do
              requirePred body
              bty <- bAnalysis b ty
              let snb = subst n b body
-             unless (snb `aeq` res) $
-                    err "proofAnalysis app: not the expected type"
+             snb `expectType` res
+             -- unless (snb `aeq` res) $
+             --        err "proofAnalysis app: not the expected type"
+
              return snb
     Pi Static binding -> do
              ((n,Embed ty),body) <- unbind binding
@@ -800,8 +829,8 @@ typeAnalysis (Ann t ty) ty' = do
 
 typeAnalysis (Con t) ty = do -- Term_Var
   (ty',_) <- lookupBinding t
-  unless (ty' `aeq` ty) $
-         err $ "Constructor " ++ show t ++ " has type " ++ show ty'  ++ ", whichdoesn't match expected type " ++ show ty
+  ensure (ty' `aeq` ty) $
+        "Constructor " <++> t <++> "has type" <++> ty' <++> ", which doesn't match expected type" <++> ty
 
   return ty
 
@@ -814,12 +843,9 @@ typeAnalysis (Rec progBinding) res@(Pi Dynamic piBinding) = do -- Term_Rec
   Just ((f,(arg,Embed ty)),body,(_,(piArg,Embed piTy)),piBody)
     <- unbind2 (bind p1 body) (bind (f,p2) piBody)
 
-  dty <- disp ty
-  dPiTy <- disp piTy
-  unless (ty `aeq` piTy) $
-         err $ "Type " ++ render dty ++ " ascribed to lambda bound variable " ++
-               " does not match type " ++ render dPiTy ++
-               " ascribed to pi-bound variable."
+  ensure (ty `aeq` piTy) $
+         "Type " <++> ty <++> " ascribed to lambda bound variable " <++>
+         "does not match type " <++> piTy <++> "ascribed to pi-bound variable."
 
   extendBinding f res True $
     extendBinding arg ty True $ typeAnalysis body piBody
@@ -855,14 +881,8 @@ typeAnalysis (Case s Nothing binding) ty = do
           let pat = foldl (\t0 t1 -> (App t0 Dynamic t1))
                       (Con (string2Name cons)) (map Var vars)
 
-          dty <- disp ty
-          dbody <- disp body
-          -- liftIO  $ putStrLn $ "In alt, looking for type " ++ render dty
-          -- liftIO  $ putStrLn $ " in body " ++ render dbody
           ty' <- substPat vars ctype $
                    extendBinding eqpf (Equal pat s) True  $ typeAnalysis body ty
-          dty' <- disp ty
-          -- liftIO  $ putStrLn $ "Result type of case alt is " ++ render dty'
           return ty'
 
 
@@ -896,10 +916,7 @@ typeAnalysis (App t0 stage t1) ty = do
              let sub = subst x t1 body
              dsub <- disp sub
              dty <- disp ty
-             unless (sub `aeq` ty) $ err $
-                    "Actual type " ++ render dsub ++
-                    " does not match expected type " ++
-                    render dty
+             sub `expectType` ty
              return ty
 
 
@@ -909,12 +926,7 @@ typeAnalysis (App t0 stage t1) ty = do
 
 typeAnalysis tm@(Var x) ty = do
   ty' <- typeSynth tm
-  unless (ty `aeq` ty') $ do
-    dx <- disp x
-    dty' <- disp ty'
-    dty <- disp ty
-    err $ "Variable " ++ render dx ++ " has type '" ++ render dty' ++
-          "' but type '" ++ render dty ++ "' was expected."
+  ty `expectType` ty'
   return ty
 
 
@@ -925,18 +937,16 @@ typeAnalysis (Escape t) ty = do
   -- liftIO  $ putStrLn $ "ty is " ++ render dty ++ "\n ++ t is " ++ render dt
   escctx <- asks escapeContext
   case escctx of
-    NoContext -> throwError $ strMsg "Can't have an escape outside of a context."
-    LeftContext -> throwError $ strMsg "Wait for it"
-    RightContext -> throwError $ strMsg "Wait for it"
+    NoContext -> err "Can't have an escape outside of a context."
+    LeftContext -> err "typeAnalysis: Escape in LeftContext not implemented."
+    RightContext -> err "typeAnalysis: Escape in RightContext not implemented."
     StrictContext -> do
       ty <- typeSynth t
       case down ty of
         Equal (Abort _) e -> return e -- typeAnalysis e ty
         _ -> do
-          dty <- disp ty
-          throwError $
-               strMsg $ "In strict context, witness of abort" ++
-                      render dty ++ " equality is ill-formed."
+          die $ "In strict context, witness of abort" <++>
+                 ty <++> "equality is ill-formed."
 
 
 
@@ -947,12 +957,8 @@ typeAnalysis (ConvCtx t ctx) ty = do
   proofAnalysis t l
   r <- copyEqualInEsc RightContext ctx
   rty <- withEscapeContext RightContext $ typeSynth r
-
-  unless (ty `aeq` r) $ do
-    dty <- disp ty
-    dr <- disp r
-    throwError $ strMsg $ "RHS of conv " ++ render dr ++ " does not match " ++
-               "expected type " ++ render dty
+  ensure (ty `aeq` r) $
+     "RHS of conv" <++> r <++> "does not match expected type" <++> ty
   return r
 
 
@@ -1099,9 +1105,7 @@ require p cls (Var n) = do
   require p cls v
 
 require p cls t =
-  unless (p t) $
-         err $ show t ++ " is not the proper syntactic class (" ++
-               cls ++ ")."
+  ensure (p t) $ t <++> "is not the proper syntactic class (" <++> cls <++> ")."
 
 
 
@@ -1124,16 +1128,14 @@ getClassification t = do
   ta `comb` pa `comb` la `comb` end
   where ta = typeAnalysis t Type >> return SortType
         pa = do sort <- predSynth t
-                unless (isLK (down sort)) $
-                  throwError (strMsg "not a predicate")
+                unless (isLK (down sort)) $ err "Not a predicate"
                 return SortPred
-        la = do unless (isLK t) (throwError (strMsg "Could not classify classifier"))
+        la = do unless (isLK t) (err "Could not classify classifier")
                 return SortLK
         comb a b = a `catchError` (\_ -> b)
-        end = do dt <- disp t
-                 env <- asks gamma
+        end = do env <- asks gamma
                  -- liftIO  $ mapM print env
-                 throwError $ strMsg $ "Can't classify " ++ render dt
+                 die $ "Can't classify " <++> t
 
 -----------------------------------------------
 -- Generic function for copying a term and 
