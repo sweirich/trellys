@@ -164,12 +164,17 @@ name = string2Name <$> identifier
 -- termName :: Parser TName
 termName = name
 
+nestPi [] body = body
+nestPi ((stage,(n,ty)):more) body = 
+   Pi stage (bind (n,Embed ty) (nestPi more body))
 
 piType = do
   (stage,(n,ty)) <- absBinding
+  -- bindings <- many absBinding
   reservedOp "->"
   range <- expr
-  return $ Pi stage (bind (n,Embed ty) range)
+  return $ -- nestPi bindings range 
+           Pi stage (bind (n,Embed ty) range)
   <?> "Dependent product type"
 
 
@@ -182,31 +187,37 @@ absBinding =
 abstraction = unicodeAbstraction <|> asciiAbstraction
 asciiAbstraction = do
   reservedOp "\\"
-  (stage,(n,ty)) <- absBinding
+  args <- many absBinding
   kind <- (reservedOp "->" >> return Program)  <|>
            (reservedOp "=>" >> return Form)
 
   -- Formula are always static
-  let stage' = if kind == Form then Static else stage
+  let g (stage,p) = if kind == Form then (Static,p) else (stage,p)
   body <- expr
-  return $ Lambda kind stage' (bind (n,Embed ty) body)
+  return $ nestLambda kind (map g args) body -- Lambda kind stage' (bind (n,Embed ty) body)
 
+nestLambda kind [] body = body
+nestLambda kind ((stage,(n,ty)):more) body = 
+   Lambda kind stage (bind (n,Embed ty) (nestLambda kind more body))
 
 unicodeAbstraction = do
   kind <- (reservedOp "?" >> return Program) <|>
          (reservedOp "?" >> return Form)
-  (stage,(n,ty)) <- absBinding
+  args <- many absBinding
   reservedOp "."
   body <- expr
-  return $ Lambda kind stage (bind (n,Embed ty) body)
+  return $ nestLambda kind args body -- Lambda kind stage (bind (n,Embed ty) body)
 
+nestForall :: [(TName, Term)] -> Term -> Term
+nestForall [] body = body
+nestForall ((n,ty):more) body = Forall $ bind (n,Embed ty) (nestForall more body)
 
 quantification = do
   reservedOp "?" <|> reservedOp "forall"
-  (n,ty) <- quantBinding
+  pairs <- many quantBinding
   reservedOp "."
   body <- expr
-  return $ Forall (bind (n,Embed ty) body)
+  return $ nestForall pairs body -- Forall (bind (n,Embed ty) body)
 
 
 quantBinding = parens $ (,) <$> termName <* colon <*> expr
