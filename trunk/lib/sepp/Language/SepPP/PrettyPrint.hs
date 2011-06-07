@@ -20,16 +20,16 @@ class Disp a where
   precedence x = 0
 
 dParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
-dParen level x = 
-   if level >= (precedence x) 
+dParen level x =
+   if level >= (precedence x)
       then do { d <- disp x; return(parens d)}
       else disp x
-      
+
 termParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
-termParen level x = 
-   if level <= (precedence x) 
+termParen level x =
+   if level <= (precedence x)
       then do { d <- disp x; return(parens d)}
-      else disp x      
+      else disp x
 
 -- Set the precedence to i. If this is < than the current precedence, then wrap
 -- this with parens.
@@ -81,7 +81,7 @@ instance Disp Term where
     dty <- disp ty
     dn <- disp n
     dbody <- disp body
-    return $ text "\\" <> bindingWrap stage (dn <+> colon <+> dty) <+>
+    return $ text "\\" <+> bindingWrap stage (dn <+> colon <+> dty) <+>
              absOp kind <+> dbody
 
     where absOp Form = text "=>"
@@ -235,10 +235,10 @@ instance Disp Term where
     return $ text "sym" <+> dx
 
   -- disp e = error $ "disp: " ++ show e
- 
+
   precedence (Parens t) = precedence t -- 100
   precedence (Pos _ t) = precedence t
-  precedence (Var _) = 12 
+  precedence (Var _) = 12
   precedence (Con _) = 12
   precedence (Type) = 12
   precedence (Escape _) = 11
@@ -247,25 +247,25 @@ instance Disp Term where
   precedence (IndLT _ _) = 8
   precedence (Terminates _) = 7
   precedence (Ann _ _) = 6
-  
+
   precedence (Contra _) = 5
   precedence (Val _ ) = 5
   precedence (ContraAbort _ _) = 5
   precedence (Ord _) = 5
   precedence (Aborts _) = 5
   precedence (Sym _) = 5
-  
+
   precedence (Pi Dynamic _) = 4
   precedence (Pi Static _) = 4
   precedence _ = 0
-  
+
 
 linearizeLet (Pos _ t) = linearizeLet t
 linearizeLet (Parens t) = linearizeLet t
 linearizeLet (Let binding) =
   do (triple,body) <- unbind binding
      (ds,b) <- linearizeLet body
-     return(triple:ds,b)     
+     return(triple:ds,b)
 linearizeLet x = return ([],x)
 
 -- bindingWrap adds the correct stage annotation for an abstraction binding.
