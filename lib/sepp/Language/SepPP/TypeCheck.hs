@@ -4,6 +4,8 @@ module Language.SepPP.TypeCheck where
 
 import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
+import Language.SepPP.Eval
+import Language.SepPP.TCUtils
 
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -18,101 +20,10 @@ import Control.Applicative
 import Text.Parsec.Pos
 
 
--- * The typechecking monad
-
-newtype TCMonad a =
-  TCMonad { runTCMonad :: ReaderT Env (FreshMT (ErrorT TypeError IO)) a }
-  deriving (Fresh, Functor, Monad, MonadReader Env, MonadError TypeError, MonadIO)
-
 
 typecheck :: Module -> IO (Either TypeError ())
 typecheck mod = do
   runErrorT $ runFreshMT $ runReaderT (runTCMonad (typecheckModule mod)) emptyEnv
-
--- ** The Environment
-data EscapeContext = LeftContext | RightContext | StrictContext | NoContext
-withEscapeContext c = local (\env -> env { escapeContext = c })
-
--- The typing context contains a mapping from variable names to types, with
--- an additional boolean indicating if it the variable is a value.
-data Env = Env { gamma :: [(TName,(Term,Bool))]
-               , sigma :: [()]
-               , escapeContext :: EscapeContext }
-emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
-
-
--- | Add a new binding to an environment
-extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
-
-
--- Functions for working in the environment
-lookupBinding :: TName -> TCMonad (Term,Bool)
-lookupBinding n = do
-  env <- asks gamma
-  maybe (err $ "Can't find variable " ++ show n ++ "\n" ++ show env) return (lookup n env)
-extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
-extendBinding n ty isVal m = do
-  local (extendEnv n ty isVal) m
-
-
--- ** Error handling
-
-data TypeError = ErrMsg [(SourcePos,Term)] String deriving (Show,Typeable)
-
-instance Error TypeError where
-  strMsg s = ErrMsg [] s
-  noMsg = strMsg "<unknown>"
-
-
-instance Exception TypeError
-
-instance Disp TypeError where
-  disp (ErrMsg [] msg) = return
-          (nest 2 (text "Type Error" $$
-              text msg))
-
-  disp (ErrMsg ps msg) = return
-     (start $$
-      nest 2 (text "Type Error" $$
-              text msg))
-    where (p,t) = last ps
-          start = text (show p)
-
-
-
-addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
-
-err msg = throwError (strMsg msg)
-
-ensure p m = do
-  unless p $ m >>= (err . render)
-
-die m = do
-  m >>= (err . render)
-
-actual `expectType` expected =
-  ensure (actual `aeq` expected)
-           ("Expecting '" <++> expected <++> "' but actual type is " <++> actual)
-
-
-t1 <++> t2 = liftM2 (<+>) (doDisp t1) (doDisp t2)
-t1 $$$ t2 = liftM2 ($$) (doDisp t1) (doDisp t2)
-
-class IsDisp a where
-  doDisp :: a -> TCMonad Doc
-
-instance IsDisp String where
-  doDisp s = return $ text s
-
--- instance Disp a => IsDisp a where
---   doDisp = disp
-instance IsDisp TName where
-  doDisp n = disp n
-instance IsDisp Term where
-  doDisp t = disp t
-instance  IsDisp (TCMonad Doc) where
-  doDisp m = m
-
 
 
 
@@ -126,8 +37,8 @@ typecheckModule (Module n decls) = do
 
 
 data DefRes = DataResult TName Term [(TName,Term)]
-            | ProofResult TName Term Bool
-            | ProgResult TName Term Bool
+            | ProofResult TName Term Term Bool
+            | ProgResult TName Term Term Bool
 
 -- | Typecheck a single definition
 checkDef (ProofDecl nm theorem proof) = do
@@ -136,12 +47,12 @@ checkDef (ProofDecl nm theorem proof) = do
   ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
 
   proofAnalysis proof theorem
-  return $ ProofResult nm theorem False
+  return $ ProofResult nm theorem proof False
 
 checkDef (ProgDecl nm ty prog) = do
   typeAnalysis ty Type
   typeAnalysis prog ty
-  return $ ProgResult nm ty False
+  return $ ProgResult nm ty prog False
 
 checkDef (DataDecl (Con nm) ty cs) = do
   ran <- arrowRange ty
@@ -188,8 +99,10 @@ checkDefs (d:ds) = do
   d <- checkDef d
   extendBinding' d (checkDefs ds)
 
-  where extendBinding' (ProofResult n ty v) comp = extendBinding n ty v comp
-        extendBinding' (ProgResult n ty v) comp = extendBinding n ty v comp
+  where extendBinding' (ProofResult n ty def v) comp =
+          extendDefinition n ty def v comp
+        extendBinding' (ProgResult n ty def v) comp =
+          extendDefinition  n ty def v comp
         extendBinding' (DataResult n ty cs) comp =
           extendBinding n ty True $
                         foldr (\(n,ty) m -> extendBinding n ty True m) comp cs
@@ -383,7 +296,7 @@ proofSynth (t@(Val x)) =
   do let f t = do ty <- typeSynth t
                   case down ty of
                    (Terminates x) -> return x
-                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"  
+                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"
      term <- escCopy f x
      typeSynth term
      stub <- escCopy (\ x -> return Type) x
@@ -425,11 +338,11 @@ proofAnalysis (Lambda Form _ pfBinding)
 
 proofAnalysis (Parens p) eq = proofAnalysis p eq
 proofAnalysis p (Parens eq) = proofAnalysis p eq
-proofAnalysis (Join _ _) eq@(Equal t0 t1) = do
+proofAnalysis (Join lSteps rSteps) eq@(Equal t0 t1) = do
   typeSynth t0
   typeSynth t1
   -- FIXME: Need to define operational semantics.
-  join t0 t1
+  join lSteps rSteps t0 t1
   return eq
 
 -- FIXME: check to see that ty and ty' are alpha-equivalent
@@ -466,12 +379,12 @@ proofAnalysis (App p _ b) res = do
              let snb = subst n b body
              unless (snb `aeq` res) $
                     err "proofAnalysis app: not the expected type"
-             return snb  
-    (w@(Pi Dynamic b)) -> 
+             return snb
+    (w@(Pi Dynamic b)) ->
            do d <- disp p
               t <- disp w
               err ("function in proof application: "++render d++"\nhas a dynamic function type: "++render t)
-             
+
     rng -> do d <- disp p
               t <- disp rng
               err ("function in application: "++render d++"\ndoes not have a function type: "++render t)
@@ -692,7 +605,7 @@ proofAnalysis (t@(Val x)) ty =
   do let f t = do ty <- typeSynth t
                   case down ty of
                    (Terminates x) -> return x
-                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"  
+                   _ -> throwError $ strMsg $ "Can't escape to something not a Termination in valCopy"
      term <- escCopy f x
      typeSynth term
      stub <- escCopy (\ x -> return Type) x
@@ -773,7 +686,7 @@ typeSynth (Escape t) = do
       dt <- disp t
       -- liftIO  $ putStrLn $ "ty is " ++ render dty ++ "\n ++ t is " ++ render dt
       case down ty of
-        Equal (Abort _) e -> -- return e 
+        Equal (Abort _) e -> -- return e
                               typeSynth e
         _ -> do
           dty <- disp ty
@@ -804,7 +717,7 @@ typeSynth (Terminates t) = do
 
 typeSynth (Pi _ binding)  = do -- Term_Pi
   ((n,Embed ty),body) <- unbind binding
-  extendBinding n ty False $ typeSynth body 
+  extendBinding n ty False $ typeSynth body
   return Type
 
 typeSynth t =  do
@@ -1110,7 +1023,13 @@ require p cls t =
 
 
 -- Placeholder for op. semantics
-join t1 t2 = do
+join lSteps rSteps t1 t2 = do
+  t1' <-  substDefs t1 >>= eval
+  t2' <- substDefs t2 >>= eval
+  ensure (t1' `aeq` t2') $
+         t1' <++> " and " <++> t2' <++> "are not joinable."
+
+
   return (Equal t1 t2)
   -- unless (t1 `aeq` t2) $ err "Terms not joinable"
 
@@ -1138,47 +1057,52 @@ getClassification t = do
                  die $ "Can't classify " <++> t
 
 -----------------------------------------------
--- Generic function for copying a term and 
+-- Generic function for copying a term and
 -- handling the escape clause in a specific manner
 
 
 lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
 lift1 f c1 = do { x<-c1; return(f x)}
 
-escCopy f (Var x) = return(Var x)
-escCopy f (Con x) = return(Con x)
-escCopy f (Formula n) = return(Formula n)
-escCopy f Type = return Type
-escCopy f (Pi stage binding) = do
-  ((n,Embed ty),body) <- unbind binding
-  ty' <- escCopy f ty
-  body' <- escCopy f body
-  return $ Pi stage (bind (n,Embed ty') body')  
-escCopy f (Forall binding) = do
-  ((n,Embed ty),body) <- unbind binding
-  ty' <- escCopy f ty
-  body' <- escCopy f body
-  return $ Forall (bind (n,Embed ty') body')  
-escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
-  where app x y = App x s y
-escCopy f (Ann x y) = lift2 Ann (escCopy f x) (escCopy f y)
-escCopy f (Equal x y) = lift2 Equal (escCopy f x) (escCopy f y)
-escCopy f (Terminates x) = lift1 Terminates (escCopy f x)
-escCopy f (Val x) = lift1 Val (escCopy f x)
-escCopy f (Abort x) = lift1 Abort (escCopy f x)
-escCopy f (Contra x) = lift1 Contra (escCopy f x)
-escCopy f (ConvCtx x y) = lift2 ConvCtx (escCopy f x) (escCopy f y)
-escCopy f (Parens x) = escCopy f x
-escCopy f (Pos x t) = lift2 Pos (return x) (escCopy f t)
-escCopy f (Escape t) = f t
-escCopy f t = 
-  do td <- disp t
-     error ("Not implemented yet in escCopy: "++render td)
-  
-copyEqualInEsc b x = escCopy f x 
+-- escCopy f (Var x) = return(Var x)
+-- escCopy f (Con x) = return(Con x)
+-- escCopy f (Formula n) = return(Formula n)
+-- escCopy f Type = return Type
+-- escCopy f (Pi stage binding) = do
+--   ((n,Embed ty),body) <- unbind binding
+--   ty' <- escCopy f ty
+--   body' <- escCopy f body
+--   return $ Pi stage (bind (n,Embed ty') body')
+-- escCopy f (Forall binding) = do
+--   ((n,Embed ty),body) <- unbind binding
+--   ty' <- escCopy f ty
+--   body' <- escCopy f body
+--   return $ Forall (bind (n,Embed ty') body')
+-- escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
+--   where app x y = App x s y
+-- escCopy f (Ann x y) = lift2 Ann (escCopy f x) (escCopy f y)
+-- escCopy f (Equal x y) = lift2 Equal (escCopy f x) (escCopy f y)
+-- escCopy f (Terminates x) = lift1 Terminates (escCopy f x)
+-- escCopy f (Val x) = lift1 Val (escCopy f x)
+-- escCopy f (Abort x) = lift1 Abort (escCopy f x)
+-- escCopy f (Contra x) = lift1 Contra (escCopy f x)
+-- escCopy f (ConvCtx x y) = lift2 ConvCtx (escCopy f x) (escCopy f y)
+-- escCopy f (Parens x) = escCopy f x
+-- escCopy f (Pos x t) = lift2 Pos (return x) (escCopy f t)
+-- escCopy f (Escape t) = f t
+-- escCopy f t =
+--   do td <- disp t
+--      error ("Not implemented yet in escCopy: "++render td)
+
+escCopy :: (Term -> TCMonad Term) -> Term -> TCMonad Term
+escCopy f t = everywhereM (mkM f') t
+  where f' (Escape t) = f t
+        f' t = return t
+
+copyEqualInEsc b x = escCopy f x
  where f t  = do ty <- typeSynth t
                  case down ty of
-                  (Equal l r) -> 
+                  (Equal l r) ->
                      case b of
                        LeftContext -> return l
                        RightContext -> return r
@@ -1188,7 +1112,7 @@ copyEqualInEsc b x = escCopy f x
 -------------------------------------
 -- syntactic Value
 
-synValue (Var x) = 
+synValue (Var x) =
   do (term,valuep) <- lookupBinding x
      return valuep
 synValue (Con c) = return True
@@ -1205,8 +1129,8 @@ synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
         constrApp (Parens t) = constrApp t
         constrApp (Pos x t) = constrApp t
         constrApp _ = return False
-        
-synValue x = return False 
+
+synValue x = return False
 
 
 

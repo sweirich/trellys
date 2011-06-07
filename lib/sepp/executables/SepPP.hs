@@ -17,7 +17,7 @@ import System.IO(withFile,hGetContents,IOMode(..),hClose,openFile)
 
 main = do
   opts <- cmdArgs sepPPArgs
-  -- cnts <- withFile (file opts) ReadMode hGetContents            
+  -- cnts <- withFile (file opts) ReadMode hGetContents
   bracket (openFile (file opts)ReadMode ) hClose $ \ h ->
      do cnts <- hGetContents h
   -- Parse the module
@@ -54,7 +54,7 @@ liftEither (Right val) = return val
 
 go s = withArgs ["--file="++s] main
 
-testcase = "../Tests/unittests/ParseTest.sepp"
+testcase = "Tests/unittests/ParseTest.sepp"
 
 
 --------------------------------------
