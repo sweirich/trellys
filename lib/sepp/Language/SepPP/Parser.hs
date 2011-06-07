@@ -18,6 +18,7 @@ import Control.Monad.Identity
 import Control.Exception(Exception)
 import Data.Char
 import Text.PrettyPrint(render)
+import Language.SepPP.PrettyPrint(runDisp)
 
 parse2 p s =
    case parse p "Input" s of
@@ -125,7 +126,7 @@ sepPPStyle = haskellStyle {
             "prog","def", "theorem", "proof",
             "value", "values",
             "abort","aborts",
-            "LogicalKind","Form", "Type",
+            "LogicalKind","Form", "Type","Pi",
             "ord",
             "let","in",
             "sym"
@@ -164,17 +165,33 @@ name = string2Name <$> identifier
 -- termName :: Parser TName
 termName = name
 
+
+piBinding =
+    ((,) Static <$> brackets binding) <|>
+    ((,) Dynamic <$> parens binding) <|>
+    (do { v <- variable; return(Dynamic,(wildcard,v))})
+  where binding = try ((,) <$> termName <* colon <*> expr) <|>
+                  (do { e <- expr; return(wildcard,e)})
+
 nestPi [] body = body
 nestPi ((stage,(n,ty)):more) body = 
    Pi stage (bind (n,Embed ty) (nestPi more body))
 
-piType = do
-  (stage,(n,ty)) <- absBinding
-  -- bindings <- many absBinding
+-- "Pi(x:A)(y:x)z(List y)(q:Z) -> z x y q"
+-- means  "(x : A) -> (y1 : x) -> (_2 : z) -> (_3 : List y1) -> (q4 : Z) -> z x y1 q4"
+explicitPi = do 
+  reserved "Pi"
+  bindings <- many piBinding
   reservedOp "->"
   range <- expr
-  return $ -- nestPi bindings range 
-           Pi stage (bind (n,Embed ty) range)
+  return $ nestPi bindings range  
+  <?> "Dependent product type with explicit 'Pi'"
+
+piType = do
+  (stage,(n,ty)) <- absBinding
+  reservedOp "->"
+  range <- expr
+  return $ Pi stage (bind (n,Embed ty) range)
   <?> "Dependent product type"
 
 
@@ -403,6 +420,7 @@ term = wrapPos $
               ,quantification
               ,caseExpr
               ,termCase
+              ,explicitPi
               ,try piType
               ,joinExpr
               ,contraExpr
@@ -442,7 +460,9 @@ expr = wrapPos $ buildExpressionParser table factor
         binOp assoc op f = Infix (reservedOp op >> return f) assoc
         postOp op f = Postfix (reservedOp op >> return f)
         preOp op f = Prefix (reservedOp op >> return f)
-        wildcard = string2Name "_"
+        
+        
+wildcard = string2Name "_"
 
 
 wrapPos p = pos <$> getPosition <*> p

@@ -18,6 +18,13 @@ def plus = rec plus (x:Nat) . \(y:Nat) ->
   case x {xeq} of
     Z -> y
     | S x' -> S (plus x' y)
+    
+prog plus2 : Pi(x:Nat)(y:Nat) -> Nat
+def plus2 = rec plus (x:Nat) . \(y:Nat) ->
+  case x {xeq} of
+    Z -> y
+    | S x' -> S (plus x' y)
+    
 
 theorem plus_right_unit_term : forall (n:Nat). forall (u:n!) .plus n Z = n
 proof plus_right_unit_term = ind f (n:Nat) [u] .
