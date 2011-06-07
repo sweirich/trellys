@@ -307,6 +307,13 @@ proofSynth (t@(Val x)) =
                  err $ "Non Value: " ++ render d
 
 
+proofSynth (Equal t0 t1) = do
+  k0 <- typeSynth t0
+  typeAnalysis k0 Type
+  k1 <- typeSynth t1
+  typeAnalysis k1 Type
+  return Type
+
 proofSynth t = do
   dt <- disp t
   err $ "TODO: proofSynth: " ++ render dt
@@ -539,7 +546,7 @@ proofAnalysis (Ord w) ty@(IndLT l r) = do
         let ls = splitApp l'
             rs = splitApp r'
         unless (or (map (aeq l) (tail ls))) $
-           err $ show  ls  ++ "/" ++ show rs
+           err $ "proofAnalysis (ord) sym error " ++ show  ls  ++ "/" ++ show rs
         return ty
 
 
@@ -719,6 +726,23 @@ typeSynth (Pi _ binding)  = do -- Term_Pi
   ((n,Embed ty),body) <- unbind binding
   extendBinding n ty False $ typeSynth body
   return Type
+
+
+typeSynth (Equal t0 t1) = do
+  k0 <- typeSynth t0
+  typeAnalysis k0 Type
+  k1 <- typeSynth t1
+  typeAnalysis k1 Type
+  return Type
+
+
+typeSynth (Sym t) = do
+  ty <- proofSynth  t
+  case down ty of
+     (Equal t1 t0)-> return (Equal t0 t1)
+     _  ->
+       err "Sym's argument must have the type of an equality proof."
+
 
 typeSynth t =  do
   dt <- disp t
@@ -1035,9 +1059,6 @@ join lSteps rSteps t1 t2 = do
 
 
 
-down (Pos _ t) = down t
-down (Parens t) = down t
-down t = t
 
 -- Get the classification of a classifier (Type,Predicate,LogicalKind)
 data Sort = SortType | SortPred | SortLK deriving (Eq,Show)

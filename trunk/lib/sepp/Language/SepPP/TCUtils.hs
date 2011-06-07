@@ -1,0 +1,119 @@
+{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving #-}
+module Language.SepPP.TCUtils where
+
+import Language.SepPP.Syntax
+import Language.SepPP.PrettyPrint
+
+
+import Unbound.LocallyNameless(Fresh,FreshMT,runFreshMT,aeq,substs)
+
+import Text.PrettyPrint
+import Data.Typeable
+import Control.Monad.Reader hiding (join)
+import Control.Monad.Error hiding (join)
+import Control.Exception(Exception)
+import Control.Applicative
+import Text.Parsec.Pos
+
+
+-- * The typechecking monad
+
+newtype TCMonad a =
+  TCMonad { runTCMonad :: ReaderT Env (FreshMT (ErrorT TypeError IO)) a }
+  deriving (Fresh, Functor, Monad, MonadReader Env, MonadError TypeError, MonadIO)
+
+
+
+-- ** The Environment
+data EscapeContext = LeftContext | RightContext | StrictContext | NoContext
+withEscapeContext c = local (\env -> env { escapeContext = c })
+
+-- The typing context contains a mapping from variable names to types, with
+-- an additional boolean indicating if it the variable is a value.
+data Env = Env { gamma :: [(TName,(Term,Bool))]
+               , sigma :: [(TName,Term)]
+               , escapeContext :: EscapeContext }
+emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
+
+
+-- | Add a new binding to an environment
+extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
+extendDef n ty def isVal e@(Env {sigma}) =
+  extendEnv n ty isVal e { sigma = (n,def):sigma }
+
+-- Functions for working in the environment
+lookupBinding :: TName -> TCMonad (Term,Bool)
+lookupBinding n = do
+  env <- asks gamma
+  maybe (err $ "Can't find variable " ++ show n ++ "\n" ++ show env) return (lookup n env)
+extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
+extendBinding n ty isVal m = do
+  local (extendEnv n ty isVal) m
+
+extendDefinition :: TName -> Term -> Term -> Bool -> TCMonad a -> TCMonad a
+extendDefinition n ty def isVal m = do
+  local (extendDef n ty def isVal) m
+
+
+substDefs :: Term -> TCMonad Term
+substDefs t = do
+  defs <- asks sigma
+  return $ substs defs t
+
+-- ** Error handling
+
+data TypeError = ErrMsg [(SourcePos,Term)] String deriving (Show,Typeable)
+
+instance Error TypeError where
+  strMsg s = ErrMsg [] s
+  noMsg = strMsg "<unknown>"
+
+
+instance Exception TypeError
+
+instance Disp TypeError where
+  disp (ErrMsg [] msg) = return
+          (nest 2 (text "Type Error" $$
+              text msg))
+
+  disp (ErrMsg ps msg) = return
+     (start $$
+      nest 2 (text "Type Error" $$
+              text msg))
+    where (p,t) = last ps
+          start = text (show p)
+
+
+
+addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
+
+err msg = throwError (strMsg msg)
+
+ensure p m = do
+  unless p $ m >>= (err . render)
+
+die m = do
+  m >>= (err . render)
+
+actual `expectType` expected =
+  ensure (actual `aeq` expected)
+           ("Expecting '" <++> expected <++> "' but actual type is " <++> actual)
+
+
+t1 <++> t2 = liftM2 (<+>) (doDisp t1) (doDisp t2)
+t1 $$$ t2 = liftM2 ($$) (doDisp t1) (doDisp t2)
+
+class IsDisp a where
+  doDisp :: a -> TCMonad Doc
+
+instance IsDisp String where
+  doDisp s = return $ text s
+
+-- instance Disp a => IsDisp a where
+--   doDisp = disp
+instance IsDisp TName where
+  doDisp n = disp n
+instance IsDisp Term where
+  doDisp t = disp t
+instance  IsDisp (TCMonad Doc) where
+  doDisp m = m
