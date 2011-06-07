@@ -149,3 +149,13 @@ less-than proof.
 
 
 
+** TODO Change ord rule to insure that the constructed value terminates?
+
+Without this, we can probe x < x (for the subterm ordering), but we can't
+actually use this in an inductive proof, because ind has a value
+restriction. The IndVRDemo.sep module demonstrates this.
+
+** TODO Add an the trans rule for ord
+
+
+

@@ -5,6 +5,7 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
   Stage(..),Kind(..),Alt,
   TName, ModName,
+  down,
   splitApp, isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
@@ -136,7 +137,11 @@ instance Subst Term SourcePos
 
 splitApp (App t0 _ t1) = splitApp' t0 [t1]
   where splitApp' (App s0 _ s1) acc = splitApp' s0 (s1:acc)
+        splitApp' (Pos _ t) acc = splitApp' t acc
+        splitApp' (Parens t) acc = splitApp' t acc
         splitApp' s acc = s:(reverse acc)
+splitApp (Pos _ t) = splitApp t
+splitApp (Parens t) = splitApp t
 splitApp t = []
 
 isStrictContext (Parens t) = isStrictContext t
@@ -159,3 +164,8 @@ isStrictContext _ = Nothing
 var s = Var (string2Name s)
 app f x = App f Dynamic x
 
+
+
+down (Pos _ t) = down t
+down (Parens t) = down t
+down t = t
