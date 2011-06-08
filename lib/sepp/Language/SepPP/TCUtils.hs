@@ -36,6 +36,7 @@ data Env = Env { gamma :: [(TName,(Term,Bool))]
 emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
 
 
+
 -- | Add a new binding to an environment
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
 extendDef n ty def isVal e@(Env {sigma}) =

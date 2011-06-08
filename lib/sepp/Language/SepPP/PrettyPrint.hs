@@ -174,6 +174,12 @@ instance Disp Term where
     d0 <- termParen (precedence t) t0
     return $ text "ord" <+> d0
 
+  disp (t@(OrdTrans t0 t1)) = do
+    d0 <- termParen (precedence t) t0
+    d1 <- termParen (precedence t) t1
+    return $ text "ordtrans" <+> d0 <+> d1
+
+
   disp (t@(IndLT t0 t1)) = do
      d0 <- dParen (precedence t) t0
      d1 <- dParen (precedence t) t1
@@ -252,6 +258,7 @@ instance Disp Term where
   precedence (Val _ ) = 5
   precedence (ContraAbort _ _) = 5
   precedence (Ord _) = 5
+  precedence (OrdTrans _ _) = 5
   precedence (Aborts _) = 5
   precedence (Sym _) = 5
 

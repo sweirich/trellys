@@ -6,7 +6,7 @@ module Language.SepPP.Syntax (
   Stage(..),Kind(..),Alt,
   TName, ModName,
   down,
-  splitApp, isStrictContext, var, app) where
+  splitApp, splitApp', isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
 import Unbound.LocallyNameless.Alpha(aeqR1)
@@ -88,6 +88,7 @@ data Term = Var TName                                 -- Term, Proof
           | Ord Term                                  -- Proof
                                                       -- intros a
           | IndLT Term Term                           -- Pred
+          | OrdTrans Term Term
 
 
           | Ind (Bind (TName, (TName, Embed Term), TName) Term) -- proof
@@ -143,6 +144,11 @@ splitApp (App t0 _ t1) = splitApp' t0 [t1]
 splitApp (Pos _ t) = splitApp t
 splitApp (Parens t) = splitApp t
 splitApp t = []
+
+
+splitApp' t = case splitApp t of
+                [] -> (t,[])
+                (x:xs) -> (x,xs)
 
 isStrictContext (Parens t) = isStrictContext t
 isStrictContext (Pos _ t) = isStrictContext t
