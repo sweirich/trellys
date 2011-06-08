@@ -17,7 +17,6 @@ import Text.PrettyPrint(render, text,(<+>),($$))
 
 
 
-
 eval t = do
 
   -- dt <- disp t
@@ -76,6 +75,19 @@ reduce t k = do
                          reduce body k
 
           k'' alts t = k' alts (down t)
+
+
+   reduce' (Let binding) k = do
+      ((x,y,Embed t),body) <- unbind binding
+
+      let k' v' = do
+               sv <- synValue v'
+               if sv
+                 then reduce (subst x v' body) k
+                 else k $ Let (bind (x,y,Embed v') body)
+      reduce t k'
+
+
 
    reduce' v@(Lambda _ _ _) k =  k v
    reduce' v@(Rec _) k = k v

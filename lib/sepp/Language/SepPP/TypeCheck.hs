@@ -354,12 +354,12 @@ proofAnalysis (Join lSteps rSteps) eq@(Equal t0 t1) = do
 
 -- FIXME: check to see that ty and ty' are alpha-equivalent
 proofAnalysis (Ann t ty') ty = do
-  proofAnalysis t ty
   unless (ty `aeq` ty') $ do
     dty' <- disp ty'
     dty <- disp ty
     err $ "Annotated type " ++ render dty' ++ " doesn't match " ++
         render dty
+  proofAnalysis t ty'
   return ty'
 
 
@@ -744,6 +744,15 @@ typeSynth (Sym t) = do
        err "Sym's argument must have the type of an equality proof."
 
 
+typeSynth (Let binding) = do
+    ((n,pf,Embed t),body) <- unbind binding
+    ty' <- typeSynth t
+    -- what is the value annotation for this?
+    extendBinding n ty' True $
+     extendBinding pf (Equal (Var n) t) True $
+      typeSynth body
+
+
 typeSynth t =  do
   dt <- disp t
   err $ "TODO: typeSynth: " ++ render dt
@@ -1082,8 +1091,6 @@ getClassification t = do
 -- handling the escape clause in a specific manner
 
 
-lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
-lift1 f c1 = do { x<-c1; return(f x)}
 
 -- escCopy f (Var x) = return(Var x)
 -- escCopy f (Con x) = return(Con x)
@@ -1130,28 +1137,6 @@ copyEqualInEsc b x = escCopy f x
                        _ -> throwError $ strMsg $ "Copy can't reach this."
                   _ -> throwError $ strMsg $ "Can't escape to something not an equality"
 
--------------------------------------
--- syntactic Value
-
-synValue (Var x) =
-  do (term,valuep) <- lookupBinding x
-     return valuep
-synValue (Con c) = return True
-synValue (Formula n) = return True
-synValue Type = return True
-synValue (Pi stg bdngs) = return True
-synValue (Lambda k stg bndgs) = return True
-synValue (Pos n t) = synValue t
-synValue (Parens t) = synValue t
-synValue (Ann t typ) = synValue t
-synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
-  where constrApp (Con c) = return True
-        constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
-        constrApp (Parens t) = constrApp t
-        constrApp (Pos x t) = constrApp t
-        constrApp _ = return False
-
-synValue x = return False
 
 
 

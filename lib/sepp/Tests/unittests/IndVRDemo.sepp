@@ -6,22 +6,32 @@ data Nat : Type where
 | S : Nat -> Nat
 
 
-prog bad : Nat -> Nat
-def bad = rec bad (n:Nat) . S (bad n)
+theorem asd : forall(f:Nat->Nat)(x:Nat).(f Z = let a [b] = Z in f a)
+proof asd = \(f:Nat->Nat)(x:Nat) =>
+			((join 100 100 : f Z = let a [b] = Z in f a))
+ -- conv ((join 100 100 : f x = let a [b] = f x in a)) at
+ --   (f x = (f x))
 
 
-theorem fz : S (bad Z) = bad Z
-proof fz = join 1 1
-
-theorem fzo : bad Z < bad Z
-proof fzo = ord fz
+-- prog bad : Nat -> Nat
+-- def bad = rec bad (n:Nat) . S (bad n)
 
 
+-- theorem fz : S (bad Z) = bad Z
+-- proof fz = join 1 1
 
-theorem g : forall (x:Nat)(u:x!)(p:x = bad Z). Z = S Z
-proof g = ind g (x : Nat) [u]. \(p:x = bad Z) =>
-  g (bad Z) (conv fzo at bad Z < ~(sym p)) (join 1 1 : bad Z = bad Z)
+-- theorem fzo : bad Z < bad Z
+-- proof fzo = ord fz
 
 
-theorem terrible : Z = S Z
-proof terrible = g Z (value Z)  (join 1000 1000)
+
+-- theorem g : forall (x:Nat)(u:x!)(p:x = bad Z). Z = S Z
+-- proof g = ind g (x : Nat) [u]. \(p:x = bad Z) =>
+--   g (bad Z) (conv fzo at bad Z < ~(sym p)) (join 1 1 : bad Z = bad Z)
+
+
+-- theorem terrible : Z = S Z
+-- proof terrible = g Z (value Z)  (join 1000 1000)
+
+
+

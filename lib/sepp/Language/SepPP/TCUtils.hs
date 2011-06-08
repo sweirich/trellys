@@ -117,3 +117,33 @@ instance IsDisp Term where
   doDisp t = disp t
 instance  IsDisp (TCMonad Doc) where
   doDisp m = m
+
+
+
+
+-------------------------------------
+-- syntactic Value
+
+lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
+lift1 f c1 = do { x<-c1; return(f x)}
+
+
+synValue (Var x) =
+  do (term,valuep) <- lookupBinding x
+     return valuep
+synValue (Con c) = return True
+synValue (Formula n) = return True
+synValue Type = return True
+synValue (Pi stg bdngs) = return True
+synValue (Lambda k stg bndgs) = return True
+synValue (Pos n t) = synValue t
+synValue (Parens t) = synValue t
+synValue (Ann t typ) = synValue t
+synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+  where constrApp (Con c) = return True
+        constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+        constrApp (Parens t) = constrApp t
+        constrApp (Pos x t) = constrApp t
+        constrApp _ = return False
+
+synValue x = return False
