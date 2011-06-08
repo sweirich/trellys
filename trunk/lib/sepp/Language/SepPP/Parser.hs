@@ -127,7 +127,7 @@ sepPPStyle = haskellStyle {
             "value", "values",
             "abort","aborts",
             "LogicalKind","Form", "Type","Pi",
-            "ord",
+            "ord","ordtrans",
             "let","in",
             "sym"
            ],
@@ -174,17 +174,17 @@ piBinding =
                   (do { e <- expr; return(wildcard,e)})
 
 nestPi [] body = body
-nestPi ((stage,(n,ty)):more) body = 
+nestPi ((stage,(n,ty)):more) body =
    Pi stage (bind (n,Embed ty) (nestPi more body))
 
 -- "Pi(x:A)(y:x)z(List y)(q:Z) -> z x y q"
 -- means  "(x : A) -> (y1 : x) -> (_2 : z) -> (_3 : List y1) -> (q4 : Z) -> z x y1 q4"
-explicitPi = do 
+explicitPi = do
   reserved "Pi"
   bindings <- many piBinding
   reservedOp "->"
   range <- expr
-  return $ nestPi bindings range  
+  return $ nestPi bindings range
   <?> "Dependent product type with explicit 'Pi'"
 
 piType = do
@@ -214,7 +214,7 @@ asciiAbstraction = do
   return $ nestLambda kind (map g args) body -- Lambda kind stage' (bind (n,Embed ty) body)
 
 nestLambda kind [] body = body
-nestLambda kind ((stage,(n,ty)):more) body = 
+nestLambda kind ((stage,(n,ty)):more) body =
    Lambda kind stage (bind (n,Embed ty) (nestLambda kind more body))
 
 unicodeAbstraction = do
@@ -356,7 +356,7 @@ indExpr = do
  <?> "Rec expression"
 
 
-letdecls = 
+letdecls =
   semiSep1 (do x <- string2Name <$> identifier
                y <- brackets (string2Name <$> identifier)
                reservedOp "="
@@ -410,6 +410,7 @@ sepType = reserved "Type" >> return Type
 
 -- FIXME: Relatively certain this will cause the parser to choke.
 ordExpr = reserved "ord" >> Ord <$> term
+ordTrans = reserved "ordtrans" >> OrdTrans <$> term <*> term
 
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
@@ -431,6 +432,7 @@ term = wrapPos $
               ,recExpr
               ,valExpr
               ,ordExpr
+              ,ordTrans
               ,letExpr
               ,escapeExpr
               ,strictExpr
@@ -460,8 +462,8 @@ expr = wrapPos $ buildExpressionParser table factor
         binOp assoc op f = Infix (reservedOp op >> return f) assoc
         postOp op f = Postfix (reservedOp op >> return f)
         preOp op f = Prefix (reservedOp op >> return f)
-        
-        
+
+
 wildcard = string2Name "_"
 
 

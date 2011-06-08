@@ -13,6 +13,7 @@ import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Text.PrettyPrint
 
 import Data.Typeable
+
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
@@ -245,7 +246,7 @@ proofSynth (Var x) = do         -- Prf_Var
 
 -- TODO: Waiting for Harley to split the forall rule before implementing it.
 -- FIXME: The static/dynamic stage is not being respected here
-proofSynth (App p _ b) = do
+proofSynth t@(App p _ b) = do
   pty <- proofSynth p
   case down pty of
     Forall binding -> do
@@ -254,6 +255,22 @@ proofSynth (App p _ b) = do
              requirePred body
              bty <- bAnalysis b ty
              return $ subst n b body
+    Pi stage binding  -> do
+             ((n,Embed ty),body) <- unbind binding
+             --requireB ty
+             --requirePred body
+             ensure (constrApp t) $ t <++> "is not a construction."
+             bty <- typeAnalysis b ty
+             return $ subst n b body
+
+    _ -> die $ "proofSynth (App)" <++> t
+
+  where constrApp (Con c) =  True
+        constrApp (App f _ x) = (constrApp f)
+        constrApp (Parens t) = constrApp t
+        constrApp (Pos x t) = constrApp t
+        constrApp _ = False
+
 
 proofSynth (Parens p) = proofSynth p
 proofSynth (Ann p pred) = do
@@ -543,11 +560,26 @@ proofAnalysis (Ord w) ty@(IndLT l r) = do
   ty <- proofSynth w
   case down ty of
     (Equal l' r') -> do
-        let ls = splitApp l'
-            rs = splitApp r'
-        unless (or (map (aeq l) (tail ls))) $
-           err $ "proofAnalysis (ord) sym error " ++ show  ls  ++ "/" ++ show rs
+        let (c,ls) = splitApp' l'
+        -- let (cr,rs) = splitApp' r'
+        -- unless (not (null ls) &&  or (map (aeq l) (tail ls))) $
+        --    err $ "proofAnalysis (ord) sym error left " ++ show  ls  ++ "   \n right:" ++ show rs
+        ensure (r `aeq` r' && any (aeq l) ls) $ "Ord error" <++> ty
+
+
+
         return ty
+
+
+proofAnalysis t@(OrdTrans p1 p2) ty@(IndLT y x) = do
+  ty1 <- proofSynth p1
+  ty2 <- proofSynth p2
+  case (down ty1,down ty2) of
+    (IndLT y' z, IndLT z' x')
+      | z `aeq` z' && y `aeq` y' && x `aeq` x' ->
+          return ty
+      | otherwise -> die $ "Bad ordtrans" <++> t <++> ty1 <++> ty2 <++> ty
+    _ -> die $ "Bad ordtrans" <++> t <++> ty1 <++> ty2 <++> ty
 
 
 proofAnalysis (Var n) ty = do
