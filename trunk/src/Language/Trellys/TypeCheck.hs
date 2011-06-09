@@ -451,8 +451,8 @@ ts tsTh tsTm =
                       \e ->
                         if th' == Logic then throwError e else
                           do tot <- isTotal Program b
-                             unless tot $
-                                    err [DS "When applying to a term with classifier P,",
+                             unless (tot || th==Program) $
+                                    err [DS "When applying to an argument with classifier P in a logical context,",
                                          DS "the term must be classified Total, but",
                                          DD b, DS "is not.",
                                          DS "This is the dreaded value restriction:",
