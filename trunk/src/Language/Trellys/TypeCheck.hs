@@ -392,9 +392,10 @@ ts tsTh tsTm =
       do x <- lookupTy y
          case x of
            Just (th',ty) -> do
-             unless (th' <= th || isFirstOrder ty) $
+             isFO <- isFirstOrder ty
+             unless (th' <= th || isFO) $
                err [DS "Variable", DD y, DS "is programmatic, but it was checked",
-                    DS "logically."]
+                    DS "logically (and ", DD ty, DS " is not a FO type." ]
              return (Var y, ty)
            Nothing -> err [DS "The variable", DD y, DS "was not found."]
 
@@ -722,11 +723,18 @@ subtype _ a b =
   where a' = delPosParenDeep a
         b' = delPosParenDeep b
 
-isFirstOrder :: Term -> Bool
-isFirstOrder (TyEq _ _) = True
+isFirstOrder :: Term -> TcMonad Bool
+isFirstOrder (TyEq _ _) = return True
 isFirstOrder (Pos _ ty) = isFirstOrder ty
 isFirstOrder (Paren ty) = isFirstOrder ty
-isFirstOrder ty = ty `aeqSimple` natType
+isFirstOrder ty = case splitApp ty of
+      (Con d, apps) -> do
+         ent <- lookupCon d
+         return $ case ent of 
+                    (Left _)  -> True  -- Datatype constructors are considered FO.
+                    (Right _) -> False -- Data  constructors are not
+      _ -> return False 
+-- isFirstOrder ty = return $ ty `aeqSimple` natType
 
 --debug n v = when False (liftIO (putStr n) >> liftIO (print v))
 --debugNoReally n v = when True (liftIO (putStr n) >> liftIO (print v))
