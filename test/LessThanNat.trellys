@@ -230,6 +230,14 @@ lt_trans_pred = \l m n l_lt_m m_lt_n .
                  l_lt_m
                  (conv m_lt_n by (m_lt_n__n_eq_SPn m n m_lt_n) at h.ltT m h) -- LT m (pred n)
 
+-- l < m /\ m < n -> l < n
+lt_trans : (l:Nat) -> (m:Nat) -> (n:Nat) -> ltT l m -> ltT m n -> ltT l n
+lt_trans = \l m n l_lt_m m_lt_n .
+  let l_lt_Pn [_] = lt_trans_pred l m n l_lt_m m_lt_n in
+  let sPn_eq_n [_] = sym Nat Nat n (Succ (pred n)) (m_lt_n__n_eq_SPn m n m_lt_n) in
+  let l_lt_SPn [_] = m_lt_n__m_lt_Sn l (pred n) l_lt_Pn in
+  conv l_lt_SPn by sPn_eq_n at n . ltT l n
+
 {- This was the key lemma in the first version of StrongNat.  It
    wasn't used in second version of StrongNat, so it was never
    ported, but I'll keep it around to port later ...
