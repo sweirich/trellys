@@ -1,0 +1,76 @@
+-- Shows how a termination proof can be used to prove equalities
+-- arising from linearization in response to the PP value restriction.
+--
+-- These equalities don't arise if the PP value restriction is
+-- dropped, and can be worked around without proving termination if
+-- the let-P-in-L value restriction is dropped (just let bind to get
+-- the termination equality).
+--
+-- See
+-- https://groups.google.com/group/trellys-team/msg/ab966d88c44ca03b?dmode=source
+-- for the context of the contrived theorem t and a claim that t can't
+-- be proved in PP value restricted trellys :)
+--
+-- See ProgrammaticCdiv for a real termination proof (here we
+-- just admit).
+module TerminationAsValueRestrictionWorkaround where
+import Prelude
+
+axiom prog p : Nat -> Nat
+ex : Nat -> Nat -> Type 0
+ex = \m . (\v . p m = v)
+ex_red : (m:Nat) -> (v:Nat) -> (ex m v) = (p m = v)
+ex_red = \m v . join
+axiom p_terminates : (m:Nat) -> Exists Nat (ex m)
+t : (m:Nat) ->
+  (let prog d [_] =
+     let prog r [_] = p m
+     in Succ r
+   in d)
+   =
+  (let prog d [_] =
+     let prog r [_] = p m
+     in r
+   in Succ d)
+t = \m . case (p_terminates m) [_] of
+  Ex [v] v_eq -> let v_eq' [_] = conv v_eq by (ex_red m v) at t.t
+                 in let eql1 [_] = conv join by v_eq'
+                                   at h . (let prog d [_] =
+                                               let prog r [_] = p m
+                                               in Succ r
+                                           in d)
+                                        =
+                                           (let prog d [_] =
+                                               let prog r [_] = h
+                                               in Succ r
+                                           in d)
+                 in let eql2 [_] = (join: (let prog d [_] =
+                                               let prog r [_] = v
+                                               in Succ r
+                                           in d)
+                                        =
+                                           Succ v)
+                 in let eqr1 [_] = (join: Succ v
+                                        =
+                                        (let prog d [_] =
+                                           let prog r [_] = v
+                                           in r
+                                         in Succ d))
+                 in let eqr2 [_] = conv join by v_eq'
+                                   at h . (let prog d [_] =
+                                             let prog r [_] = h
+                                             in r
+                                           in Succ d)
+                                        = (let prog d [_] =
+                                             let prog r [_] = p m
+                                             in r
+                                           in Succ d)
+                 in (conv eql1 by (conv eql2 by (conv eqr1 by eqr2 at h . Succ v = h)
+                                  at h . (let prog d [_] =
+                                               let prog r [_] = v
+                                               in Succ r
+                                           in d) = h)
+                     at h . (let prog d [_] =
+                                               let prog r [_] = p m
+                                               in Succ r
+                                           in d) = h)

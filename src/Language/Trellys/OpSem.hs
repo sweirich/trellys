@@ -6,11 +6,8 @@ module Language.Trellys.OpSem
   (makeModuleEnv, join, isValue, isEValue, erase, cbvStep, cbvNSteps)
 where
 
-
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
-import Language.Trellys.Environment
-import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 
 import Language.Trellys.GenericBind
@@ -19,8 +16,6 @@ import Text.PrettyPrint.HughesPJ (nest)
 
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
-import Control.Monad.Reader hiding (join)
-import Control.Monad.Error hiding (join)
 
 import Data.Maybe
 
@@ -29,9 +24,9 @@ erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
 erase (Con c)               = return $ ECon (translate c)
 erase (Type l)              = return $ EType l
-erase (Arrow th ep tyA bnd) =
-  do (x, tyB) <- unbind bnd
-     tyA' <- erase tyA
+erase (Arrow th ep bnd) =
+  do ((x,tyA), tyB) <- unbind bnd
+     tyA' <- erase (unembed tyA)
      tyB' <- erase tyB
      return $ EArrow th ep tyA' $ bind (translate x) tyB'
 erase (Lam ep bnd)   =
@@ -61,11 +56,11 @@ erase (Case a bnd)      =
   do a' <- erase a
      (_,mtchs) <- unbind bnd
      liftM (ECase a') (mapM eraseMatch mtchs)
-erase (Let _ ep a bnd)       =
-  do ((x,_),body) <- unbind bnd
+erase (Let _ ep bnd)       =
+  do ((x,_,a),body) <- unbind bnd
      body' <- erase body
      case ep of
-       Runtime -> do a' <- erase a
+       Runtime -> do a' <- erase (unembed a)
                      return $ ELet a' (bind (translate x) body')
        Erased  -> return body'
 erase (Conv a _ _)      = erase a
@@ -130,7 +125,7 @@ cbvStep (EArrow th ep a bnd) = do
     Just a'     -> return $ Just $ EArrow th ep a' bnd
     Nothing     ->
       if not (isEValue a) then return Nothing
-       else do 
+       else do
          (x,b) <- unbind bnd
          stpb <- cbvStep b
          case stpb of
@@ -139,7 +134,7 @@ cbvStep (EArrow th ep a bnd) = do
            Nothing ->
              if isEValue b
                then return $ Just $ (EArrow th ep a (bind x b))
-               else return Nothing           
+               else return Nothing
 cbvStep (ELam _)         = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
@@ -183,7 +178,7 @@ cbvStep (ECase b mtchs) =
                Just bnd ->
                  do (delta,mtchbody) <- unbind bnd
                     if (length delta /= length tms) then return Nothing
-                      else return $ Just $ substs delta tms mtchbody
+                      else return $ Just $ substs (zip delta tms) mtchbody
            _ -> return Nothing
 cbvStep (ELet m bnd)   =
   do stpm <- cbvStep m
@@ -208,9 +203,9 @@ isValue :: Term -> Bool
 isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
-isValue (Arrow _ _ t1 b)  =
-  let (_,t2) = unsafeUnbind b in
-  isValue t1 && isValue t2
+isValue (Arrow _ _ b)  =
+  let ((_,t1),t2) = unsafeUnbind b in
+  isValue (unembed t1) && isValue t2
 isValue (Lam _ _)          = True
 isValue (App _ e1 e2)      =
   isValue e2 &&
@@ -222,10 +217,10 @@ isValue Abort              = False
 isValue (NatRec ep _)      = ep == Runtime
 isValue (Rec ep _)         = ep == Runtime
 isValue (Case _ _)         = False
-isValue (Let _ Erased _ a) =
+isValue (Let _ Erased a) =
   let (_,a') = unsafeUnbind a in
     isValue a'
-isValue (Let _ _ _ _)      = False
+isValue (Let _ _ _)      = False
 isValue (Conv a _ _)       = isValue a
 isValue (Contra _)         = False
 isValue (Ann a _)          = isValue a
@@ -236,7 +231,7 @@ isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
-isEValue (EArrow _ _ t1 b) = 
+isEValue (EArrow _ _ t1 b) =
   let (_,t2) = unsafeUnbind b in
    isEValue t1 && isEValue t2
 isEValue (ELam _)         = True

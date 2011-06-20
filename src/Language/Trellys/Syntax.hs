@@ -43,8 +43,8 @@ instance Ord Theta where
   _ <= Program = True
   _ <= _ = False
 
-(<:>) :: TName -> a -> (TName, Annot a)
-x <:> t = (x, Annot t)
+-- (<:>) :: TName -> a -> (TName, Annot a)
+-- x <:> t = (x, Annot t)
 
 
 ------------------------------
@@ -69,10 +69,10 @@ data Term = Var TName    -- | variables
           | Lam Epsilon (Bind TName Term)
           -- | Applications, tagged with stage
           | App Epsilon Term Term
-          -- | A let expressoin
-          | Let Theta Epsilon Term (Bind (TName, TName) Term)
+          -- | A let expression (bound name, equality name, value)
+          | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
           -- | Dependent functions: (x :^{th} A )_{ep} -> B
-          | Arrow Theta Epsilon Term (Bind TName Term)
+          | Arrow Theta Epsilon (Bind (TName, Embed Term) Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
           | Case Term (Bind TName [Match])
           -- | The type of a proof that the two terms join, @a = b@
@@ -111,6 +111,10 @@ delPosParen (Paren tm) = tm
 delPosParen tm         = tm
 
 
+-- delPosParenDeep :: Term -> Term
+delPosParenDeep :: Rep a => a -> a
+delPosParenDeep = everywhere (mkT delPosParen)
+
 
 -- | A Module has a name, a list of imports, and a list of declarations
 data Module = Module { moduleName :: MName,
@@ -147,7 +151,7 @@ teleApp tm tms =
 
 telePi :: Telescope -> Term -> Term
 telePi tele tyB =
-  foldr (\(n,tm,th,ep) ret -> Arrow th ep tm (bind n ret))
+  foldr (\(n,tm,th,ep) ret -> Arrow th ep (bind (n,embed tm) ret))
         tyB tele
 
 domTeleMinus :: Telescope -> [TName]
@@ -202,10 +206,10 @@ isTyEq (Paren t) = isTyEq  t
 isTyEq (TyEq ty0 ty1) = Just (ty0,ty1)
 isTyEq _ = Nothing
 
-isArrow :: Term -> Maybe (Theta, Epsilon, Term, Bind TName Term)
+isArrow :: Term -> Maybe (Theta, Epsilon, Bind (TName, Embed Term) Term)
 isArrow (Pos _ t)            = isArrow t
 isArrow (Paren t)            = isArrow t
-isArrow (Arrow th ep tm bnd) = Just (th,ep,tm,bnd)
+isArrow (Arrow th ep bnd) = Just (th,ep,bnd)
 isArrow _                    = Nothing
 
 -- splitApp makes sure a term is an application and returns the
@@ -228,9 +232,9 @@ splitPi tm = splitPi' tm []
   where
     splitPi' (Pos _ tm')          acc = splitPi' tm' acc
     splitPi' (Paren tm')          acc = splitPi' tm' acc
-    splitPi' (Arrow th ep tmA bd) acc =
-      do (nm,tmB) <- unbind bd
-         splitPi' tmB ((nm,tmA,th,ep):acc)
+    splitPi' (Arrow th ep bd) acc =
+      do ((nm,tmA),tmB) <- unbind bd
+         splitPi' tmB ((nm,unembed tmA,th,ep):acc)
     splitPi' tm'                  acc = return (reverse acc, tm')
 
 
@@ -285,26 +289,23 @@ splitEApp e = splitEApp' e []
 $(derive [''Epsilon, ''Theta, ''Term, ''ETerm])
 
 
-instance Alpha Term where
-  match' pol  (Pos _ t1) t2 = match' pol t1 t2
-  match' pol  t1 (Pos _ t2) = match' pol t1 t2
-  match' pol (Paren t1) t2 = match' pol t1 t2
-  match' pol t1 (Paren t2) = match' pol t1 t2
-  match' pol t1 t2 = matchR1 rep1 pol t1 t2
+instance Alpha Term
 
 instance Alpha Theta
 instance Alpha Epsilon
 
 instance Subst Term Term where
-  isvar (Var m) = Just (m,id)
+  isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
+
 instance Subst Term Epsilon
 instance Subst Term Theta
 
 
 instance Alpha ETerm
 instance Subst ETerm ETerm where
-  isvar (EVar m) = Just (m,id)
+  isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
+
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta

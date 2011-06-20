@@ -226,9 +226,9 @@ instance Display Term where
   display (Con n) = display n
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
-  display (Arrow th ep a bnd) = do
-     da <- display a
-     lunbind bnd $ \(n, b) -> do
+  display (Arrow th ep bnd) = do
+     lunbind bnd $ \((n,a), b) -> do
+        da <- display (unembed a)
         dn <- display n
         db <- display b
         return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
@@ -265,12 +265,12 @@ instance Display Term where
      let wrapx = case x of
                    App _ _ _   -> parens
                    Lam _ _     -> parens
-                   Let _ _ _ _ -> parens
+                   Let _ _ _   -> parens
                    Case _ _    -> parens
                    _           -> id
      let wrapf = case f of
                    Lam _ _     -> parens
-                   Let _ _ _ _ -> parens
+                   Let _ _ _   -> parens
                    Case _ _    -> parens
                    _           -> id
      return $ wrapf df <+> wrapx (bindParens ep dx)
@@ -280,9 +280,10 @@ instance Display Term where
 
   display (Pos _ e) = display e
 
-  display (Let th ep a bnd) = do
-    da <- display a
-    lunbind bnd $ \ ((x,y) , b) -> do
+  display (Let th ep bnd) = do
+
+    lunbind bnd $ \ ((x,y,a) , b) -> do
+     da <- display (unembed a)
      dx <- display x
      dy <- display y
      db <- display b

@@ -1,0 +1,45 @@
+module IndVRDemo where
+
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+
+theorem asd : forall(f:Nat->Nat)(x:Nat).(f Z = let a [b] = Z in f a)
+proof asd = \(f:Nat->Nat)(x:Nat) =>
+			((join 100 100 : f Z = let a [b] = Z in f a))
+ -- conv ((join 100 100 : f x = let a [b] = f x in a)) at
+ --   (f x = (f x))
+
+
+theorem q : forall (x:Nat) (y:Nat) (p : x = S (S y)) . (y < x)
+proof q = \(x:Nat)(y:Nat)(p : (x = S (S y))) =>
+   let z [zw] = S y;
+       p1 [z1] = (ord (sym zw) : y < z);
+       p2 [z2] = (ord (sym p) :  S y < x);
+       p3 [z3] = conv p2 at (~(sym zw) < x)
+   in ordtrans p1 p3
+
+-- prog bad : Nat -> Nat
+-- def bad = rec bad (n:Nat) . S (bad n)
+
+
+-- theorem fz : S (bad Z) = bad Z
+-- proof fz = join 1 1
+
+-- theorem fzo : bad Z < bad Z
+-- proof fzo = ord fz
+
+
+
+-- theorem g : forall (x:Nat)(u:x!)(p:x = bad Z). Z = S Z
+-- proof g = ind g (x : Nat) [u]. \(p:x = bad Z) =>
+--   g (bad Z) (conv fzo at bad Z < ~(sym p)) (join 1 1 : bad Z = bad Z)
+
+
+-- theorem terrible : Z = S Z
+-- proof terrible = g Z (value Z)  (join 1000 1000)
+
+
+
