@@ -561,7 +561,9 @@ ts tsTh tsTm =
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
     ts' _ tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
-                      DS "Please add an annotation."]
+                      DS "Please add an annotation.",
+                      DS "NB: This error happens when you misspell,",
+                      DS "so check your spelling if you think you did annotate."]
 
 
 --------------------------------------------------------

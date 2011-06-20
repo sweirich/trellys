@@ -1,0 +1,67 @@
+-- Examples related to subtyping conversions
+module Subvert where
+
+import Prelude
+import LessThanNat
+import LessThanNat_lt_eq_True
+
+-- Dimitrios' Haskell example: GADT Index type and conversion function
+-- which is identity (but is O(n)):
+--
+--   data Index n where
+--     IZero :: Index n
+--     ISucc :: Index n -> Index (n+1)
+--
+--   convert :: Index n -> Index (n+1)
+--   convert IZero = IZero
+--   convert (ISucc x) = ISucc (convert x)
+
+data Index (n:Nat) -> Type 0 where
+  IZero : Index n
+  ISucc : [n':Nat] -> [Succ n' = n] -> Index n' -> Index n
+
+convert : [n:Nat] -> Index n -> Index (Succ n)
+recnat convert [n] = \i . case i [i_eq] of
+  IZero -> IZero [Succ n]
+  ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
+                           conv (ISucc [Succ (Succ n')] [Succ n'] [join]
+                                   (convert [n'] [n'_eq'] i'))
+                           by n'_eq
+                           at n . Index (Succ n)
+
+convert_id : [n : Nat] -> (i : Index n) -> convert [n] i = i
+recnat convert_id [n] = \i . case i [i_eq] of
+  IZero -> let [i_eq'] [_] = sym (Index n) (Index n) i (IZero [n]) i_eq in
+           conv join by i_eq' at i . convert [n] i = i
+  ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
+                           let ih [_] = convert_id [n'] [n'_eq'] i' in
+                           let step [_] = (join : convert [n] (ISucc [n] [n'] [n'_eq] i')
+                                                = ISucc [Succ (Succ n')] [Succ n'] [join] (convert [n'] i')) in
+                           let isucc_eq [_] = (join : ISucc [Succ (Succ n')] [Succ n'] [join]
+                                                    = ISucc [n] [n'] [n'_eq]) in
+                           let [i_eq'] [_] = sym (Index n) (Index n) i (ISucc [n] [n'] [n'_eq] i') i_eq in
+                           let eq [_] =
+                              conv step by isucc_eq, ih, i_eq'
+                              at is ci i . convert [n] i
+                                         = is ci
+                           in conv eq by i_eq' at ii . convert [n] i = ii
+
+-- Garrin's suggestion (non-Haskell): leverage dependent types to use
+-- term level nats as indices.  The Index' type is essentially the
+-- dependent pair
+--
+--   Exists Nat (\m . ltT m n)
+--
+-- Now conversion is O(1).
+
+data Index' (n:Nat) -> Type 0 where
+  MkIndex' : (m:Nat) -> [ltT m n] -> Index' n
+
+convert' : [n1:Nat] -> [n2:Nat] -> [ltT n1 n2] -> Index' n1 -> Index' n2
+convert' = \[n1] [n2] [n1_lt_n2] i. case i [i_eq] of
+  MkIndex' m [m_lt_n1] -> MkIndex' [n2] m [lt_trans m n1 n2 m_lt_n1 n1_lt_n2]
+
+convert_id' : [n1:Nat] -> [n2:Nat] -> [n1_lt_n2:ltT n1 n2] -> (i:Index' n1) -> convert' [n1] [n2] [n1_lt_n2] i = i
+convert_id' = \[n1] [n2] [n1_lt_n2] i . case i [i_eq] of
+  MkIndex' m [m_lt_n1] -> let [i_eq'] [_] = sym (Index' n1) (Index' n1) i (MkIndex' [n1] m [m_lt_n1]) i_eq in
+                          conv join by i_eq' at i . convert' [n1] [n2] [n1_lt_n2] i = i
