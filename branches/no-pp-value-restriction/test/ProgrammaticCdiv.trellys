@@ -1,0 +1,93 @@
+-- Programmatic ceiling Nat division (cdivP)
+--
+-- Includes a proof that cdivP terminates when dividing by non-zero:
+--
+--   cdivP_t : (m:Nat) -> (n:Nat) -> Exists Nat (\v . cdivP m (Succ n) = v)
+--
+-- NB: this proof is compatible with the PP value restriction and may
+-- allow the bound proofs to go through with the PP value restriction
+-- in place (which I thought was impossible) ...
+--
+-- ... does indeed allow my simplified thm to be proven.  See
+-- TerminationAsValueRestrictionWorkaround.
+module ProgrammaticCdiv where
+import Prelude
+import Arithmetic
+import StrongNat
+import LessThanNat
+import LessThanNat_lt_eq_True
+
+prog cdivP : Nat => Nat => Nat
+rec cdivP m = \n . case m [m_eq] of
+  Zero -> Zero
+  Succ m' -> let prog r [_] = cdivP (minus m n) n
+             in Succ r
+
+cdivP_ex : Nat -> Nat -> Nat -> Type 0
+cdivP_ex = \m n v . cdivP m (Succ n) = v
+cdivP_ex_red : (m:Nat) -> (n:Nat) -> (v:Nat) -> (cdivP_ex m n v = (cdivP m (Succ n) = v))
+cdivP_ex_red = \m n v . join
+cdivP_ex_red' : (m:Nat) -> (n:Nat) -> (v:Nat) -> ((cdivP m (Succ n) = v) = cdivP_ex m n v)
+cdivP_ex_red' = \m n v . join
+
+cdivP_t_p : Nat -> Type 0
+cdivP_t_p = \m . (n:Nat) -> Exists Nat (cdivP_ex m n)
+cdivP_t_p_red : (m:Nat) -> (cdivP_t_p m = (n:Nat) -> Exists Nat (cdivP_ex m n))
+cdivP_t_p_red = \m . join
+cdivP_t_p_red' : (m:Nat) -> (((n:Nat) -> Exists Nat (cdivP_ex m n)) = cdivP_t_p m)
+cdivP_t_p_red' = \m . join
+
+cdivP_t_f_base : (m:Nat) -> [m = Zero] -> (n:Nat) -> Exists Nat (cdivP_ex m n)
+cdivP_t_f_base = \m [m_eq] n .
+  let eq1 [_] = conv join by (sym Nat Nat m Zero m_eq) at m . cdivP m (Succ n) = m
+  in Ex [Nat] [cdivP_ex m n] [m] (conv eq1 by (cdivP_ex_red' m n m) at t.t)
+
+cdivP_t_f_step : (m:Nat) -> (m':Nat) -> [m = Succ m']
+              -> ((k:Nat) -> [ltT k m] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
+              -> (n:Nat) -> Exists Nat (cdivP_ex m n)
+cdivP_t_f_step = \m m' [m_eq] gm n .
+  let [m_eq'] [_] = (sym Nat Nat m (Succ m') m_eq)
+  in let eq1 [_] = conv join by m_eq'
+                   at m . (cdivP m (Succ n)
+                        = (let prog r [_] = cdivP (minus m (Succ n)) (Succ n)
+                           in Succ r))
+  in let lt_Sn [_] = conv s_minus_s__lt m' n by m_eq'
+                     at m . ltT (minus m (Succ n)) m
+  in let ih [_] = gm (minus m (Succ n)) [lt_Sn] n
+  in case ih [_] of
+       Ex [v] v_eq -> let v_eq' [_] = conv v_eq by cdivP_ex_red (minus m (Succ n)) n v at t.t
+                      in let eq2 [_] = conv eq1 by v_eq'
+                                       at h . (cdivP m (Succ n)
+                                            = (let prog r [_] = h
+                                               in Succ r))
+                      in let w_eq [_] = conv eq2 by (join : (let prog r [_] = v
+                                               in Succ r) = Succ v)
+                                        at h . cdivP m (Succ n) = h
+                      in Ex [Nat] [cdivP_ex m n] [Succ v]
+                            (conv w_eq by (cdivP_ex_red' m n (Succ v)) at t.t)
+
+cdivP_t_f' : (m:Nat) -> ((k:Nat) -> [ltT k m] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
+         -> (n:Nat) -> Exists Nat (cdivP_ex m n)
+cdivP_t_f' = \m gm n . case m [m_eq] of
+  Zero    -> cdivP_t_f_base m [m_eq] n
+  Succ m' -> cdivP_t_f_step m m' [m_eq] gm n
+
+cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m] -> cdivP_t_p k) -> cdivP_t_p m
+cdivP_t_f = \m gm .
+  let gm' [_] = (\k [k_lt_m] .
+                 (conv (gm k [k_lt_m]) by (cdivP_t_p_red k) at t.t)
+              : (k:Nat) -> [ltT k m] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
+  in conv (cdivP_t_f' m gm') by (cdivP_t_p_red' m) at t.t
+
+cdivP_t' : (m:Nat) -> cdivP_t_p m
+cdivP_t' = cov [cdivP_t_p] cdivP_t_f
+
+-- it's tricky to state these equalities so that trellys can infer the
+-- type of the Nat -> Type 0 lambda ...
+cdivP_ex_red2 : (m:Nat) -> (n:Nat) -> Exists Nat (cdivP_ex m n)
+                                    = Exists Nat (\v . cdivP m (Succ n) = v)
+cdivP_ex_red2 = \m n . join
+
+cdivP_t : (m:Nat) -> (n:Nat) -> Exists Nat (\v . cdivP m (Succ n) = v)
+cdivP_t = \m n . conv (conv cdivP_t' m by (cdivP_t_p_red m) at t.t) n
+                 by (cdivP_ex_red2 m n) at t.t

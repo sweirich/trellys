@@ -1,0 +1,161 @@
+
+* Legend:
+
+[i] indicates the feature has been implemented
+[t] indicates the implemented and tested (list test case)
+
+* Parser Productions
+
+The name in quotes indicates the production that generates the constructor.
+
+[x] Var (variable)
+[x] Con (constructor)
+[x] Formula (formula)
+[x] Type (sepType)
+[x] Pi (within expr table, or piType)
+[x] Forall (quantification)
+[x] App (factor)
+[x] Lambda (abstraction)
+[x] Case (caseExpr)
+[x] TermCase (termCase)
+[x] Join (joinExpr)
+[x] Equal (within expr table)
+[x] Val (valExpr)
+[x] Terminates (within expr table)
+[x] Contra (contraExpr)
+[x] ContraAbort (contraAbortExpr)
+[x] Abort (abortExpr)
+[x] Conv (convExpr)
+[x] Ord (ordExpr)
+[x] IndTL (within expr table)
+[x] Ind (indExpr)
+[x] Rec (recExpr)
+[x] Ann (within expr table)
+[x] Parens (within term)
+[x] Escape (expr table)
+[ ] Let
+
+* Pretty Printer
+[x] Var
+[x] Con
+[x] Formula
+[x] Type
+[x] Pi
+[x] Forall
+[x] App
+[x] Lambda
+[x] Case
+[x] TermCase
+[x] Join
+[x] Equal
+[x] Val
+[x] Terminates
+[x] Contra
+[x] ContraAbort
+[x] Abort
+[x] Conv
+[x] Ord
+[x] IndTL
+[x] Ind
+[x] Rec
+[x] Ann
+[x] Parens
+[x] Escape
+[x] Let
+
+
+* Type Judgements
+
+** S,G |- val t
+
+Done, except that Nat is not built-in, so not supported.
+
+
+** S,G |- LK : LogicalKind
+
+Done, except need to check to make make sure that the quantifier type is of the
+'A' syntactic class.
+
+** S,G |- P : LK
+
+[ ] Pred_Annotate
+[ ] Pred_Forall1
+[x] Pred_Forall2
+[x] Pred_Forall3
+[x] Pred_Forall4
+[x] Pred_K_Eq
+[x] Pred_Terminates
+[x] Pred_Lam
+[x] Pred_App
+
+
+* Notes
+
+** Syntax:
+*** Multi arity functions and foralls and pis
+*** Reuse binders in signatures and definitions
+
+
+
+* Example Programs
+
+** Lemma instantiation
+
+l: Forall x, x = x.
+
+y = l (f 0) -- Value restriction, fails with current trellys core.
+
+Alternatively, in seppp we could:
+
+1. prove l, using tcase
+2. prove l', \forall x, x' -> x = x and then do a tcase before instantiating l'.
+
+S (mult (div x (S y)) (S y) lte x
+
+** Use axiom schemes in positive and negative ways.
+
+For example, use ord to construct a less-than proof. Use ind to consume a
+less-than proof.
+
+*** Terminates
+*** Ord
+*** Join
+
+
+
+** Prove termination of a recursive function.
+
+
+** Derived ord over equalities/implicit conv
+
+** Context representations
+
+
+** Proof of termination of a recursive function.
+
+
+** Reverse order of case-generated equalites to be C xi = y
+** Context representations for convs and 'joinabort'
+** the abort context corresponds to a cbv evaluation context.
+** strictness axioms for termcase abort;
+   x = abort
+   ————————–
+      f x
+
+
+    f = abort
+    -————————-
+      f x = abort
+
+
+
+** TODO Change ord rule to insure that the constructed value terminates?
+
+Without this, we can probe x < x (for the subterm ordering), but we can't
+actually use this in an inductive proof, because ind has a value
+restriction. The IndVRDemo.sep module demonstrates this.
+
+** TODO Add an the trans rule for ord
+
+
+

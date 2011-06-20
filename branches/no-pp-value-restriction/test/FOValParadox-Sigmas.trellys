@@ -1,0 +1,31 @@
+module FOVal where
+
+import Prelude
+
+data S (a : Type 0) -> Type 0 where
+  MkS : (x : a)  -> S a
+
+prog blerg : Unit -> Type 0 
+rec blerg x = S (blerg U => 1=0)
+
+log out : (S (blerg U => 1=0)) -> ((S (blerg U => 1=0)) => 1=0)
+out = \ x . case x [_] of 
+              MkS y -> (conv y 
+                          by (join 1 0 : (blerg U) = (S (blerg U => 1=0)))
+                          at t.t => 1=0)
+
+log into : ((S (blerg U => 1=0)) => 1=0) -> (S (blerg U => 1=0))
+into = \ x . MkS [blerg U => 1=0]
+                 (conv x 
+                    by (join 0 1 : (S (blerg U => 1=0)) = (blerg U))
+                    at t.t => 1=0)
+
+-- The rest is the usual intuinistic proof of contradiction from (P <-> ~P), but with one twist:
+log foo : (S (blerg U => 1=0))
+foo = into (\ s . out s s)
+-- We use FOval here: ^
+
+log falsity : 1=0
+falsity = out foo foo
+
+

@@ -33,6 +33,11 @@ ilam_term = \ [x] . 1
 
 app_pi_term = lam_term 1
 
+-- Explicit product where the argument type is only
+-- wellformed programmatically.
+log prog_pi_type : Type 0
+prog_pi_type = (a : Type 0) => a => Nat
+
 add : (x : Nat) -> (y:Nat) -> Nat
 recnat add x = \y .
    case x [z] of
