@@ -110,7 +110,7 @@ import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive 
 --
 -- Tuple trick: instead define
 --
---   fib' : Nat -> (Nat,Nat) -- \n . (fib (n-1), fib (n-2))
+--   fib' : Nat -> (Nat,Nat) -- \n . (fib n, fib (n-1))
 --   fib' = \n . case n of
 --               Z    -> (Z,Z)
 --               S n' -> case n' of
