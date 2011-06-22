@@ -45,10 +45,11 @@ reduce t k = do
                                     dt2'
                              reduce t2' k)
              k' t@(Rec binding) = do
-                 dt <- disp t
+
                  ((f,(n,_)),body) <- unbind binding
                  reduce t2 (\v2 -> do
                               let t2' = substs [(f,t),(n,v2)] body
+                              dt <- disp (App t stage v2)
                               dt2' <- disp t2'
                               liftIO $ print $
                                 text "(Rec) Reduced" $$ dt $$ text "to" $$
@@ -64,16 +65,17 @@ reduce t k = do
    reduce' (Case scrutinee tp bindingAlts) k = do
      (_,alts') <- unbind bindingAlts
      reduce scrutinee (k'' alts')
-    where k' alts t = do cs <- getCons t
-                         (body :: Term) <- patMatch cs alts
-                         dt <- disp (Case t tp bindingAlts)
-                         dbody <- disp body
-                         liftIO $ print $ text "(Case) Reduced"  $$
-                                          dt $$
-                                          text "to" $$
-                                          dbody
-                         reduce body k
-
+    where k' alts t
+            | Just cs <- getCons t = do
+                           (body :: Term) <- patMatch cs alts
+                           dt <- disp (Case t tp bindingAlts)
+                           dbody <- disp body
+                           liftIO $ print $ text "(Case) Reduced"  $$
+                                               dt $$
+                                               text "to" $$
+                                               dbody
+                           reduce body k
+            | otherwise = k (Case t tp bindingAlts)
           k'' alts t = k' alts (down t)
 
 
@@ -110,9 +112,8 @@ patMatch t@(Con c,args) (b:bs) = do
      else patMatch t bs
 
 
-getCons :: Term -> TCMonad (Term,[Term])
+getCons :: Term -> Maybe (Term,[Term])
 getCons t@(Con _) = return (t,[])
 getCons t = case splitApp t of
               (c@(Con _):cs) -> return (c,cs)
-              _ -> throwError $
-                   strMsg $ "Case argument doesn't reduce to a construction"
+              _ -> Nothing

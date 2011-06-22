@@ -6,6 +6,47 @@ data Nat : Type where
 | S : Nat -> Nat
 
 
+data Bool : Type where
+  True : Bool
+| False : Bool
+
+
+
+
+prog minus : (x:Nat) -> (y:Nat) -> Nat
+def minus = \(x:Nat) -> rec minus (y:Nat) .
+		case y {yw} of
+      Z -> Z
+			| S y' -> case x {xw} of
+			            Z -> Z
+								| S x' -> minus x' y'
+
+
+prog lt : (x:Nat) -> (y:Nat) -> Bool
+def lt = \(x:Nat) -> rec minus (y:Nat) .
+		case x {xw} of
+      Z -> case y {yw} of
+			            Z -> False
+								| S y' -> True
+
+			S x' ->  case y {yw} of
+			            Z -> False
+								| S y' -> lt x' y'
+
+
+-- theorem lt_minus : forall (x:Nat)(xterm:x!). lt (minus x x) x = True
+-- proof lt_minus = \(x:Nat) => \(xterm:x!) =>
+--    case x {xc} xterm of
+--      Z -> (join 100 100) --  : (minus x x = minus x x))
+
+theorem minus_minus_zero : forall (n:Nat)(nterm:n!). minus n n = Z
+proof minus_minus_zero = \(n:Nat) => \(nterm:n!) =>
+  case n {nc} nterm of
+    Z -> conv (join 100 100 : minus Z Z = Z) at minus ~nc ~nc = Z
+
+
+
+
 theorem asd : forall(f:Nat->Nat)(x:Nat).(f Z = let a [b] = Z in f a)
 proof asd = \(f:Nat->Nat)(x:Nat) =>
 			((join 100 100 : f Z = let a [b] = Z in f a))
