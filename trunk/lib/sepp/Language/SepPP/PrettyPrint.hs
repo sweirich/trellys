@@ -355,6 +355,14 @@ instance Disp ETerm where
            dpvars <- mapM disp pvars
            return $ text c <+> hcat dpvars <+> text "->" <+> dbody
 
+  disp t@(ELet binding) = do
+     ((n,t),body) <- unbind binding
+     dn <- disp n
+     dt <- disp t
+     dbody <- disp body
+     return $ text "let" <+> dn <+> text "=" <+> dt $$
+              text "in" <+> dbody
+
 
 
   precedence (EVar _) = 12
