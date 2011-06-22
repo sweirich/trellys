@@ -5,7 +5,7 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 
 
-import Unbound.LocallyNameless(Fresh,FreshMT,runFreshMT,aeq,substs)
+import Unbound.LocallyNameless(Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst)
 
 import Text.PrettyPrint
 import Data.Typeable
@@ -72,11 +72,16 @@ lookupTypeCons nm = do
     Just cs -> return cs
 
 
+lookupDef :: Name Term -> TCMonad (Maybe Term)
+lookupDef n = do
+  defs <- asks sigma
+  return $ lookup n defs
 
 
 substDefs :: Term -> TCMonad Term
 substDefs t = do
   defs <- asks sigma
+  mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
   return $ substs defs t
 
 
@@ -116,13 +121,15 @@ ensure p m = do
 die m = do
   m >>= (err . render)
 
+emit m = m >>= (liftIO . print)
+
 actual `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected =
   ensure (actual `aeq` expected)
-           ("Expecting '" <++> expected <++> "' but actual type is " <++> actual)
-
+           ("Expecting" $$$ (nest 2 <$> doDisp expected) $$$
+            "but actual type is" $$$ (nest 2 <$> doDisp actual))
 
 t1 <++> t2 = liftM2 (<+>) (doDisp t1) (doDisp t2)
 t1 $$$ t2 = liftM2 ($$) (doDisp t1) (doDisp t2)
@@ -168,6 +175,7 @@ synValue (Pi stg bdngs) = return True
 synValue (Lambda k stg bndgs) = return True
 synValue (Pos n t) = synValue t
 synValue (Ann t typ) = synValue t
+synValue (Rec _) = return True
 synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
   where constrApp (Con c) = return True
         constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
