@@ -433,7 +433,9 @@ check ProofMode (t@(Val x)) expected = do
                    _ -> err $ "Can't escape to something not a Termination in valCopy."
      term <- escCopy f x
      typeSynth' term
+     emit $ "Term is" <++> term
      stub <- escCopy (\ x -> return Type) x
+     emit $ "Stub is" <++> stub
      b <- synValue stub
      if b
         then do let ans = Terminates (down term)
@@ -818,6 +820,11 @@ isTerm (Rec binding) = isTerm ty &&  isTerm body
 isTerm (Ann t0 t1) = isTerm t0 && isTerm t1
 isTerm (Pos _ t) = isTerm t
 isTerm (Escape t) = isTerm t
+isTerm (Case t tbang binding) =  isTerm t && maybe True isTerm tbang
+   where (n,alts) = unsafeUnbind binding
+         altsOk = and [isTerm body | alt <- alts, ((_,_),body) <- [unsafeUnbind alt]]
+
+
 isTerm t = False
 
 

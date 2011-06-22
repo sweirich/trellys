@@ -18,11 +18,13 @@ import Text.PrettyPrint(render, text,(<+>),($$))
 -- compile-time configuration: should reduction steps be logged
 debugReductions = False
 
-
 eval t = do
-
   -- dt <- disp t
   -- liftIO $ print $ text "Evaluating" <+> dt
+  when debugReductions $ liftIO $ putStrLn "======================"
+  when debugReductions $ liftIO $ putStrLn "Evaluating"
+  when debugReductions $ doDisp t >>= (liftIO . print)
+  when debugReductions $ liftIO $ putStrLn "======================"
   t' <- reduce t return
   -- dt' <- disp t'
   -- liftIO $ putStrLn "-----------------"
