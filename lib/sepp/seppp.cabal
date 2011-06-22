@@ -40,7 +40,7 @@ Build-type:          Simple
 -- Extra-source-files:
 
 -- Constraint on the version of Cabal needed to build this package.
-Cabal-version:       >=1.8
+Cabal-version:       >=1.10
 
 
 Library
@@ -51,6 +51,8 @@ Library
     Language.SepPP.Layout
     Language.SepPP.PrettyPrint
     Language.SepPP.TypeCheck
+    Language.SepPP.TCUtils
+    Language.SepPP.Eval
 
   -- Packages needed in order to build this package.
   Build-depends:
@@ -70,8 +72,8 @@ Library
 
 Executable sep
   Main-is: SepPP.hs
-  Build-depends: base, cmdargs, pretty, mtl, unbound, parsec >= 3, RepLib >= 0.4
-  Hs-source-dirs: executables, .
+  Build-depends: base, cmdargs, pretty, mtl, unbound, RepLib, seppp
+  Hs-source-dirs: executables
   Extensions: DeriveDataTypeable
 
 
