@@ -13,8 +13,8 @@ data Bool : Type where
 
 
 
-prog minus : (x:Nat) -> (y:Nat) -> Nat
-def minus = rec minus (x:Nat) . \(y:Nat) ->
+type minus : (x:Nat) -> (y:Nat) -> Nat
+prog minus = rec minus (x:Nat) . \(y:Nat) ->
 		case x {xw} of
       Z -> Z
 			| S x' -> case y {yw} of
@@ -22,8 +22,8 @@ def minus = rec minus (x:Nat) . \(y:Nat) ->
   							| S y' -> minus x' y'
 
 
-prog lt : (x:Nat) -> (y:Nat) -> Bool
-def lt = rec lt (x:Nat) . \(y:Nat) ->
+type lt : (x:Nat) -> (y:Nat) -> Bool
+prog lt = rec lt (x:Nat) . \(y:Nat) ->
 		case x {xw} of
     | Z -> (case y {yw} of
 			            Z -> False
@@ -67,8 +67,8 @@ proof q = \(x:Nat)(y:Nat)(p : (x = S (S y))) =>
        p3 [z3] = conv p2 at (~(sym zw) < x)
    in ordtrans p1 p3
 
--- prog bad : Nat -> Nat
--- def bad = rec bad (n:Nat) . S (bad n)
+-- type bad : Nat -> Nat
+-- progb ad = rec bad (n:Nat) . S (bad n)
 
 
 -- theorem fz : S (bad Z) = bad Z

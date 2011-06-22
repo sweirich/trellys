@@ -281,8 +281,8 @@ instance Disp Decl where
     dn <- disp n
     dty <- disp ty
     dval <- disp val
-    return $ text "prog" <+> dn <+> text ":" <+> dty <> semi $$
-             cat[text "def" <+> dn <+> text "=", nest 3 $ dval <> semi] $$ text ""
+    return $ text "type" <+> dn <+> text ":" <+> dty <> semi $$
+             cat[text "prog" <+> dn <+> text "=", nest 3 $ dval <> semi] $$ text ""
 
 
   disp (ProofDecl n ty val) = do

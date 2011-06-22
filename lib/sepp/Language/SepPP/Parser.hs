@@ -74,8 +74,8 @@ sepProgDecl = do
     fail "Type signature name does not match value name"
   return $ ProgDecl n ty val
  <?> "top-level binding"
- where sig = reserved "prog" >> (,) <$> termName <* colon <*> expr <?> "top-level program type signature"
-       decl = reserved "def" >> (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level program declaration "
+ where sig = reserved "type" >> (,) <$> termName <* colon <*> expr <?> "top-level program type signature"
+       decl = reserved "prog" >> (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level program declaration "
 
 
 sepProofDecl = do
@@ -123,7 +123,7 @@ sepPPStyle = haskellStyle {
             "contra", "contraabort", "using",
             "data", "where",
             "rec", "ind",
-            "prog","def", "theorem", "proof",
+            "prog","type", "theorem", "proof",
             "value", "values",
             "abort","aborts",
             "LogicalKind","Form", "Type","Pi",
