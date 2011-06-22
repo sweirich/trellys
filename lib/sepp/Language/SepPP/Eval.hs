@@ -99,6 +99,14 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
              else substPat c args alts
 
 
+reduce steps (ELet binding) k = do
+  ((x,Embed t), body) <- unbind binding
+  let k' steps t' = do
+          if erasedValue t'
+             then do let body' = subst x t' body
+                     reduce (steps - 1) body' k
+             else return $ ELet (bind (x,Embed t') body)
+  reduce steps t k'
 
 
 reduce steps t@(ERec binding) k = k steps t

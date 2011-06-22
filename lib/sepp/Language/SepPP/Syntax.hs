@@ -5,7 +5,7 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
   Stage(..),Kind(..),Alt,
   TName, ModName,
-  ETerm(..), erase,
+  ETerm(..), erase, erasedValue,
   down,
   splitApp, splitApp', isStrictContext, var, app) where
 
@@ -182,6 +182,7 @@ data ETerm = EVar (Name ETerm)
            | ELambda (Bind EName ETerm)
            | ERec (Bind (EName, EName) ETerm)
            | ECase ETerm [Bind (String,[EName]) ETerm]
+           | ELet (Bind (EName, Embed ETerm) ETerm)
   deriving (Show)
 
 erase (Pos _ t) = erase t
@@ -204,9 +205,20 @@ erase (Case scrutinee _ binding) = do
   where eraseAlt binding = do
           ((c,vs),body) <- unbind binding
           bind (c,map translate vs) <$> erase body
-erase (Ann t _) = erase t
 
+erase (Let binding) = do
+    ((x,_,Embed t),body) <- unbind binding
+    et <- erase t
+    ebody <- erase body
+    return $ ELet (bind (translate x,Embed et) ebody)
+
+erase (Ann t _) = erase t
 erase t = error $ "erase " ++ show t
+
+erasedValue (ECase _ _) = False
+erasedValue (EApp _ _) = False
+erasedValue (ELet _) = False
+erasedValue _ = True
 
 
 
