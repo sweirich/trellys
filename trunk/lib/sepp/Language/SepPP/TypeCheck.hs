@@ -66,8 +66,6 @@ checkDef (DataDecl (Con nm) ty cs) = do
 
   conTypes <- extendBinding nm ty True $
               mapM chkConstructor cs
-
-
   return (DataResult nm Type conTypes)
 
 
@@ -206,8 +204,10 @@ check ProgMode (Pi _ binding) expected = do -- Term_Pi
   ((n,Embed ty),body) <- unbind binding
   extendBinding n ty False $ check ProgMode body expected
 
-check mode (Pi _ _) _ = do
-  err "Can't check Pi type in non-programmatic mode."
+check mode tm@(Pi _ _) ty = do
+  die $  "Can't check Pi type in non-programmatic mode." $$$
+        tm $$$
+        ty
 
 
 -- Forall
@@ -353,7 +353,9 @@ check mode (Case s pf binding) expected = do
       (ProofMode,Just termProof) -> do
                      sTermType <- proofSynth' termProof
                      ensure (sTermType `aeq` Terminates s) $
-                       termProof <++> "is not a proof of" <++> (Terminates s)
+                       termProof $$$
+                        "with the type" <++> sTermType <++> "is not a proof of" $$$
+                       (Terminates s)
       (ProofMode, Nothing) -> do
                      err "When case-splitting in a proof, a termination proof must be supplied."
       _ -> return ()
@@ -846,11 +848,10 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
-  t1' <-  substDefs t1 >>= eval
-  t2' <- substDefs t2 >>= eval
+  t1' <- eval t1
+  t2' <- eval t2
   ensure (t1' `aeq` t2') $
          t1' <++> " and " <++> t2' <++> "are not joinable."
-
 
   return (Equal t1 t2)
   -- unless (t1 `aeq` t2) $ err "Terms not joinable"

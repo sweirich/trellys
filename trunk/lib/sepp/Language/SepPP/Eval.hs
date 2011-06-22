@@ -95,7 +95,21 @@ reduce t k = do
 
    reduce' v@(Lambda _ _ _) k =  k v
    reduce' v@(Rec _) k = k v
-   reduce' v@(Var _) k = k v
+   reduce' v@(Var n) k =  do
+     d <- lookupDef n
+     case d of
+       Just def -> do
+               when debugReductions $  ((liftIO . print) =<<
+                      ("(Def) Reduced"  $$$
+                      v $$$
+                      "to" $$$
+                      def))
+
+               reduce' def k
+       Nothing -> do
+               when debugReductions $ liftIO . print =<<
+                     ("Can't reduce variable" <++> v)
+               k v
    reduce' c@(Con _) k = k c
    reduce' (Pos _ t) k = reduce' t k
 
