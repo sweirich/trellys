@@ -116,7 +116,7 @@ sepDataDecl = do
 sepPPStyle = haskellStyle {
            Token.reservedNames = [
             "forall",
-            "join",
+            "join","morejoin",
             "case", "of",
             "conv", "by", "at",
             "reserved",
@@ -288,6 +288,11 @@ joinExpr = do
   return $ Join i0 i1
 
 
+morejoinExpr = do
+  reserved "morejoin"
+  MoreJoin <$> braces (commaSep1 term)
+
+
 valExpr = reserved "value" >> Val <$> term
 
 
@@ -436,7 +441,9 @@ term = wrapPos $
               ,letExpr
               ,escapeExpr
               ,strictExpr
+                -- Derived Forms
               ,symExpr
+              ,morejoinExpr
               ,varOrCon <?> "Identifier"
               ,parens expr <?> "Parenthesized Expression"
               ] <?> "term")

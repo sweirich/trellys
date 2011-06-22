@@ -409,6 +409,23 @@ check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
 
 -- MoreJoin
 
+check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
+  rs <- checkRewrites ps
+  withRewrites rs (join 10000 10000 t0 t1)
+  return eq
+
+  where checkRewrites [] = return []
+        checkRewrites (p:ps) = do
+          ty <- check ProofMode p Nothing
+          case down ty of
+            Equal t1 t2 -> do
+                         et1 <- erase t1
+                         et2 <- erase t2
+                         rs <- checkRewrites ps
+                         return ((et1,et2):rs)
+            _ -> die $ p <++> "with type" <++> ty <++> "is not a proper rewrite"
+
+
 -- Equal
 check mode term@(Equal t0 t1) expected = do
   ty0 <- typeSynth' t0

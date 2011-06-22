@@ -239,6 +239,10 @@ instance Disp Term where
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
 
+  disp t@(MoreJoin xs) = do
+    ds <- mapM disp xs
+    return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
+
   -- disp e = error $ "disp: " ++ show e
 
   precedence (Pos _ t) = precedence t
@@ -320,10 +324,6 @@ instance Disp a => Disp (Embed a) where
 
 
 
--- instance Show TypeError where
---     show e = render $ disp e
-
-
 instance Disp ETerm where
   disp (EVar v) = disp v
   disp (ECon c) = disp c
@@ -370,6 +370,10 @@ etermParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
 etermParen level x
   | level >= (precedence x) = parens <$> disp x
   | otherwise =  disp x
+
+
+-- instance Show TypeError where
+--     show e = render $ disp e
 
 
 
