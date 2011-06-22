@@ -5,6 +5,7 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Term(..),
   Stage(..),Kind(..),Alt,
   TName, ModName,
+  ETerm(..), erase,
   down,
   splitApp, splitApp', isStrictContext, var, app) where
 
@@ -12,6 +13,7 @@ import Unbound.LocallyNameless hiding (Con)
 import Unbound.LocallyNameless.Alpha(aeqR1)
 import Text.Parsec.Pos
 import Control.Monad(mplus)
+import Control.Applicative((<$>), (<*>))
 
 import Data.Typeable
 
@@ -168,3 +170,49 @@ app f x = App f Dynamic x
 
 down (Pos _ t) = down t
 down t = t
+
+
+
+-- | Erased Terms
+type EName = Name ETerm
+data ETerm = EVar (Name ETerm)
+           | ECon (Name ETerm)
+           | EApp ETerm ETerm
+           | ELambda (Bind EName ETerm)
+           | ERec (Bind (EName, EName) ETerm)
+           | ECase ETerm [Bind (String,[EName]) ETerm]
+  deriving (Show)
+
+erase (Pos _ t) = erase t
+erase (Var n) = return $ EVar (translate n)
+erase (Con n) = return $ ECon (translate n)
+erase (App f Static _) = erase f
+erase (App f Dynamic x) = EApp <$> (erase f) <*> (erase x)
+erase (Lambda _ Static binding) = do
+  (_,body) <- unbind binding
+  erase body
+erase (Lambda _ Dynamic binding) = do
+  ((n,_),body) <- unbind binding
+  ELambda <$> ((bind (translate n)) <$> erase body)
+erase (Rec binding) = do
+  ((n,(arg,_)),body) <- unbind binding
+  ERec <$> (bind (translate n, translate arg)) <$> erase body
+erase (Case scrutinee _ binding) = do
+    (_,alts) <- unbind binding
+    ECase <$> erase scrutinee <*> mapM eraseAlt alts
+  where eraseAlt binding = do
+          ((c,vs),body) <- unbind binding
+          bind (c,map translate vs) <$> erase body
+erase (Ann t _) = erase t
+
+erase t = error $ "erase " ++ show t
+
+
+
+
+$(derive [''ETerm])
+
+instance Alpha ETerm
+instance Subst ETerm ETerm where
+  isvar (EVar x) = Just (SubstName x)
+  isvar _ = Nothing

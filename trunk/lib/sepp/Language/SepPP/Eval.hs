@@ -5,7 +5,6 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 
-
 import Generics.RepLib hiding (Con(..))
 import Unbound.LocallyNameless hiding (Con(..))
 -- import Control.Monad((>=>))
@@ -18,108 +17,85 @@ import Text.PrettyPrint(render, text,(<+>),($$))
 -- compile-time configuration: should reduction steps be logged
 debugReductions = False
 
-eval t = do
+eval steps t = do
   -- dt <- disp t
   -- liftIO $ print $ text "Evaluating" <+> dt
-  when debugReductions $ liftIO $ putStrLn "======================"
-  when debugReductions $ liftIO $ putStrLn "Evaluating"
-  when debugReductions $ doDisp t >>= (liftIO . print)
-  when debugReductions $ liftIO $ putStrLn "======================"
-  t' <- reduce t return
-  -- dt' <- disp t'
-  -- liftIO $ putStrLn "-----------------"
-  -- liftIO $ print $ dt $$ text "-->" $$ dt'
-  -- liftIO $ putStrLn "======================"
-  -- die (t <++> "can't be evaluated.")
-  return t'
+  t' <- erase t
+  reduce steps t' (\_ tm -> return tm)
 
+logReduce _ _ = return ()
+logReduce t t' = do
+  emit $ ("reduced" $$$ t $$$ "to" $$$ t')
+  emit $  "===" <++> "==="
 
-reduce t k = do
-  dt <- disp t
-  reduce' (down t) k where
-   reduce' (App t1 stage t2) k = reduce' t1 k''
-       where k' t@(Lambda _ _ binding) = do
-                ((n,_),body) <- unbind binding
-                reduce t2 (\v2 -> do
-                             dt <- disp (App t stage v2)
-                             let t2' = (subst n v2 body)
-                             dt2' <- disp t2'
-                             when debugReductions $ liftIO $ print $
-                                    text "(Beta) Reduced" $$ dt $$ text "to" $$
-                                    dt2'
-                             reduce t2' k)
-             k' t@(Rec binding) = do
+reduce 0 t k = k 0 t
 
-                 ((f,(n,_)),body) <- unbind binding
-                 reduce t2 (\v2 -> do
-                              let t2' = substs [(f,t),(n,v2)] body
-                              dt <- disp (App t stage v2)
-                              dt2' <- disp t2'
-                              when debugReductions $ liftIO $ print $
-                                text "(Rec) Reduced" $$ dt $$ text "to" $$
-                                     dt2'
-                              reduce t2' k)
-             k' v1 = do
-               dt <- disp v1
-               when debugReductions $ liftIO $ print $ text "App stuck: " <+> dt
-               when debugReductions $ liftIO $ print $ v1
-               k (App v1 stage t2)
-             k'' v = k' (down v)
-
-   reduce' (Case scrutinee tp bindingAlts) k = do
-     (_,alts') <- unbind bindingAlts
-     reduce scrutinee (k'' alts')
-    where k' alts t
-            | Just cs <- getCons t = do
-                           (body :: Term) <- patMatch cs alts
-                           dt <- disp (Case t tp bindingAlts)
-                           dbody <- disp body
-                           when debugReductions $ liftIO $ print $ text "(Case) Reduced"  $$
-                                               dt $$
-                                               text "to" $$
-                                               dbody
-                           reduce body k
-            | otherwise = k (Case t tp bindingAlts)
-          k'' alts t = k' alts (down t)
-
-
-   reduce' (Let binding) k = do
-      ((x,y,Embed t),body) <- unbind binding
-
-      let k' v' = do
-               sv <- synValue v'
-               if sv
-                 then reduce (subst x v' body) k
-                 else k $ Let (bind (x,y,Embed v') body)
-      reduce t k'
-
-
-
-   reduce' v@(Lambda _ _ _) k =  k v
-   reduce' v@(Rec _) k = k v
-   reduce' v@(Var n) k =  do
-     d <- lookupDef n
+reduce steps v@(EVar n) k = do
+     d <- lookupDef (translate n)
      case d of
        Just def -> do
-               when debugReductions $  ((liftIO . print) =<<
-                      ("(Def) Reduced"  $$$
-                      v $$$
-                      "to" $$$
-                      def))
-
-               reduce' def k
+              t' <- erase def
+              logReduce v t'
+              reduce (steps - 1) t' k
        Nothing -> do
                when debugReductions $ liftIO . print =<<
                      ("Can't reduce variable" <++> v)
-               k v
-   reduce' c@(Con _) k = k c
-   reduce' (Pos _ t) k = reduce' t k
+               k steps v
+reduce steps t@(ECon _) k = k steps t
+
+reduce steps (EApp t1 t2) k = reduce steps t1 k'
+  where k' 0 t1' = k 0 (EApp t1' t2)
+        k' steps t1'@(ELambda binding) = do
+          (x,body) <- unbind binding
+          reduce steps t2 (\steps' v -> do
+                       if steps' == 0
+                          then return $ EApp t1' v
+                          else do
+                            let tm' = subst x v body
+                            logReduce (EApp t1' v) tm'
+                            reduce (steps - 1) tm' k)
+
+        k' steps t1'@(ERec binding) = do
+
+          reduce steps t2 (\steps' v -> do
+                       if steps' == 0
+                          then return $ EApp t1' v
+                          else do
+                                  ((f,x),body) <- unbind binding
+                                  let tm' = (substs [(f,t1'),(x,v)] body)
+                                  logReduce (EApp t1' v) tm'
+                                  reduce (steps - 1) tm' k)
+        k' steps t1 = k steps (EApp t1 t2)
+
+reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
+  where k' 0 t = k 0 (ECase t alts)
+        k' steps v = case findCon v [] of
+                       (ECon c:args) -> do
+                         branch <- substPat c args alts
+                         reduce (steps - 1) branch k
+                       _ -> k steps (ECase v alts)
+
+        findCon :: ETerm -> [ETerm] -> [ETerm]
+        findCon c@(ECon _) args = (c:args)
+        findCon (EApp t a) args = findCon t (a:args)
+        findCon _ _ = []
+        substPat c args [] = err $ "Can't find constructor"
+        substPat c args (alt:alts) = do
+          ((c',vs),body) <- unbind alt
+          if string2Name c' == c
+             then return $ substs (zip vs args) body
+             else substPat c args alts
 
 
-   reduce' t k = do
-    die (t <++> "can't be evaluated.")
 
 
+reduce steps t@(ERec binding) k = k steps t
+reduce steps t@(ELambda _) k = k steps t
+
+
+
+
+reduce steps t k = die $ "reduce" <++> t
 
 patMatch (c,args) [] = fail "No Pattern Match"
 patMatch t@(Con c,args) (b:bs) = do
@@ -134,8 +110,6 @@ getCons t@(Con _) = return (t,[])
 getCons t = case splitApp t of
               (c@(Con _):cs) -> return (c,cs)
               _ -> Nothing
-
-
 
 
 
