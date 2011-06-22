@@ -14,13 +14,14 @@ import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
-
+import Data.List(find)
 
 -- * The typechecking monad
 
 newtype TCMonad a =
   TCMonad { runTCMonad :: ReaderT Env (FreshMT (ErrorT TypeError IO)) a }
-  deriving (Fresh, Functor, Applicative, Monad, MonadReader Env, MonadError TypeError, MonadIO)
+    deriving (Fresh, Functor, Applicative, Monad,
+              MonadReader Env, MonadError TypeError, MonadIO)
 
 
 
@@ -33,8 +34,9 @@ withEscapeContext c = local (\env -> env { escapeContext = c })
 data Env = Env { gamma :: [(TName,(Term,Bool))]   -- (var, (type,isValue))
                , sigma :: [(TName,Term)]          -- (var, definition)
                , delta :: [(TName,[(TName,Int)])] -- (type constructor, [(data cons, arity)])
-               , escapeContext :: EscapeContext }
-emptyEnv = Env {gamma = [], sigma = [], delta=[],escapeContext = NoContext}
+               , escapeContext :: EscapeContext
+               , rewrites :: [(ETerm,ETerm)]}
+emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoContext}
 
 
 
@@ -84,6 +86,16 @@ substDefs t = do
   mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
   return $ substs defs t
 
+withRewrites :: [(ETerm,ETerm)] -> TCMonad a -> TCMonad a
+withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m
+
+lookupRewrite :: ETerm -> TCMonad (Maybe ETerm)
+lookupRewrite e = do
+  rs <- asks rewrites
+  -- FIXME: alpha-equality is too week. We need actual equality.
+  case find (\(l,r) -> aeq e l) rs of
+    Just (_,r) -> return (Just r)
+    Nothing -> return Nothing
 
 
 -- ** Error handling

@@ -104,6 +104,7 @@ data Term = Var TName                                 -- Term, Proof
 
           | Aborts Term
           | Sym Term -- Should be a derived form
+          | MoreJoin [Term] -- Should be a derived form
 
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
           | Pos SourcePos Term

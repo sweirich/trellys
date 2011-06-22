@@ -17,11 +17,15 @@ import Text.PrettyPrint(render, text,(<+>),($$))
 -- compile-time configuration: should reduction steps be logged
 debugReductions = False
 
+
+
 eval steps t = do
   -- dt <- disp t
   -- liftIO $ print $ text "Evaluating" <+> dt
   t' <- erase t
-  reduce steps t' (\_ tm -> return tm)
+  evalErased steps t'
+
+evalErased steps t = reduce steps t (\_ tm -> return tm)
 
 logReduce _ _ = return ()
 logReduce t t' = do
@@ -73,7 +77,15 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
                        (ECon c:args) -> do
                          branch <- substPat c args alts
                          reduce (steps - 1) branch k
-                       _ -> k steps (ECase v alts)
+                       _ -> do
+                         rw <- lookupRewrite scrutinee
+                         case rw of
+                           Just rhs -> do
+                                   emit $ "Found rewrite" <++> rhs
+                                   reduce steps rhs k'
+                           Nothing -> do
+                             emit $  "No match" <++> v
+                             k steps (ECase v alts)
 
         findCon :: ETerm -> [ETerm] -> [ETerm]
         findCon c@(ECon _) args = (c:args)
