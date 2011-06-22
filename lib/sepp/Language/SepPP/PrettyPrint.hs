@@ -324,6 +324,54 @@ instance Disp a => Disp (Embed a) where
 --     show e = render $ disp e
 
 
+instance Disp ETerm where
+  disp (EVar v) = disp v
+  disp (ECon c) = disp c
+  disp t@(EApp t1 t2) = do
+     d1 <- etermParen (precedence t - 1) t1
+     d2 <- etermParen (precedence t) t2
+     return $ d1 <+> d2
+  disp t@(ERec binding) = do
+    ((f,x),body) <- unbind binding
+    df <- disp f
+    dx <- disp x
+    dbody <- etermParen (precedence t) body
+    return $ text "rec" <+> df <+> dx <+> text "." <+> dbody
+
+  disp t@(ELambda binding) =  do
+    (x,body) <- unbind binding
+    dx <- disp x
+    dbody <- etermParen (precedence t) body
+    return $ text "\\" <+> dx <+> text "." <+> dbody
+
+  disp t@(ECase s alts) = do
+    ds <- disp s
+    alts <- mapM dispAlt alts
+    return $ text "case" <+> ds <+> text "of" $$
+             nest 2 (vcat alts)
+   where dispAlt alt = do
+           ((c,pvars),body) <- unbind alt
+           dbody <- disp body
+           dpvars <- mapM disp pvars
+           return $ text c <+> hcat dpvars <+> text "->" <+> dbody
+
+
+
+  precedence (EVar _) = 12
+  precedence (ECon _) = 12
+  precedence (EApp _ _) = 10
+  precedence (ERec _) = 0
+  precedence (ELambda _) = 0
+  precedence (ECase _ _) = 1
+
+
+
+etermParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+etermParen level x
+  | level >= (precedence x) = parens <$> disp x
+  | otherwise =  disp x
+
+
 
 runDisp t = render $ runFreshM (disp t)
 

@@ -27,8 +27,6 @@ typecheck :: Module -> IO (Either TypeError ())
 typecheck mod = do
   runErrorT $ runFreshMT $ runReaderT (runTCMonad (typecheckModule mod)) emptyEnv
 
-
-
 -- * Running the typechecker.
 
 -- | Typecheck an entire module
@@ -405,9 +403,11 @@ check ProofMode (TerminationCase s binding) (Just ty) = do
 check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
   typeSynth' t0
   typeSynth' t1
-  -- FIXME: Need to define operational semantics.
   join lSteps rSteps t0 t1
   return eq
+
+
+-- MoreJoin
 
 -- Equal
 check mode term@(Equal t0 t1) expected = do
@@ -433,9 +433,7 @@ check ProofMode (t@(Val x)) expected = do
                    _ -> err $ "Can't escape to something not a Termination in valCopy."
      term <- escCopy f x
      typeSynth' term
-     emit $ "Term is" <++> term
      stub <- escCopy (\ x -> return Type) x
-     emit $ "Stub is" <++> stub
      b <- synValue stub
      if b
         then do let ans = Terminates (down term)
@@ -855,10 +853,10 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
-  t1' <- eval t1
-  t2' <- eval t2
+  t1' <- eval lSteps t1
+  t2' <- eval rSteps t2
   ensure (t1' `aeq` t2') $
-         t1' <++> " and " <++> t2' <++> "are not joinable."
+         t1' $$$ "and" $$$ t2' $$$  "are not joinable."
 
   return (Equal t1 t2)
   -- unless (t1 `aeq` t2) $ err "Terms not joinable"

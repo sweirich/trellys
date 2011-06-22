@@ -20,7 +20,7 @@ import Text.Parsec.Pos
 
 newtype TCMonad a =
   TCMonad { runTCMonad :: ReaderT Env (FreshMT (ErrorT TypeError IO)) a }
-  deriving (Fresh, Functor, Monad, MonadReader Env, MonadError TypeError, MonadIO)
+  deriving (Fresh, Functor, Applicative, Monad, MonadReader Env, MonadError TypeError, MonadIO)
 
 
 
@@ -156,7 +156,11 @@ instance IsDisp (Maybe Term) where
 instance  IsDisp (TCMonad Doc) where
   doDisp m = m
 
+instance IsDisp ETerm where
+  doDisp = disp
 
+instance IsDisp (Name ETerm) where
+  doDisp = disp
 
 -------------------------------------
 -- syntactic Value
