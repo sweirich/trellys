@@ -30,10 +30,11 @@ withEscapeContext c = local (\env -> env { escapeContext = c })
 
 -- The typing context contains a mapping from variable names to types, with
 -- an additional boolean indicating if it the variable is a value.
-data Env = Env { gamma :: [(TName,(Term,Bool))]
-               , sigma :: [(TName,Term)]
+data Env = Env { gamma :: [(TName,(Term,Bool))]   -- (var, (type,isValue))
+               , sigma :: [(TName,Term)]          -- (var, definition)
+               , delta :: [(TName,[(TName,Int)])] -- (type constructor, [(data cons, arity)])
                , escapeContext :: EscapeContext }
-emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
+emptyEnv = Env {gamma = [], sigma = [], delta=[],escapeContext = NoContext}
 
 
 
@@ -41,6 +42,7 @@ emptyEnv = Env {gamma = [], sigma = [], escapeContext = NoContext}
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
 extendDef n ty def isVal e@(Env {sigma}) =
   extendEnv n ty isVal e { sigma = (n,def):sigma }
+extendTypes n cs e@(Env {delta}) = e{delta=(n,cs):delta}
 
 -- Functions for working in the environment
 lookupBinding :: TName -> TCMonad (Term,Bool)
@@ -56,10 +58,28 @@ extendDefinition n ty def isVal m = do
   local (extendDef n ty def isVal) m
 
 
+extendTypeCons :: TName -> [(TName,Int)] -> TCMonad a -> TCMonad a
+extendTypeCons n cs m = do
+  local (extendTypes n cs) m
+
+
+lookupTypeCons :: TName -> TCMonad [(TName,Int)]
+lookupTypeCons nm = do
+  d <- asks delta
+  case lookup nm d of
+    Nothing -> die $ "Can't find type constructor " <++> nm <++> show d
+
+    Just cs -> return cs
+
+
+
+
 substDefs :: Term -> TCMonad Term
 substDefs t = do
   defs <- asks sigma
   return $ substs defs t
+
+
 
 -- ** Error handling
 
@@ -109,7 +129,8 @@ class IsDisp a where
 
 instance IsDisp String where
   doDisp s = return $ text s
-
+instance IsDisp Int where
+  doDisp i = return $ int i
 -- instance Disp a => IsDisp a where
 --   doDisp = disp
 instance IsDisp TName where
@@ -118,7 +139,6 @@ instance IsDisp Term where
   doDisp t = disp t
 instance  IsDisp (TCMonad Doc) where
   doDisp m = m
-
 
 
 

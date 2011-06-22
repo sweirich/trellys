@@ -55,6 +55,7 @@ liftEither (Right val) = return val
 go s = withArgs ["--file="++s] main
 
 testcase = "Tests/unittests/ParseTest.sepp"
+testcase2 = "Tests/unittests/IndVRDemo.sepp"
 
 
 --------------------------------------

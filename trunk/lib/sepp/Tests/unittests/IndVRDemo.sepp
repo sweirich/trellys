@@ -14,22 +14,22 @@ data Bool : Type where
 
 
 prog minus : (x:Nat) -> (y:Nat) -> Nat
-def minus = \(x:Nat) -> rec minus (y:Nat) .
-		case y {yw} of
+def minus = rec minus (x:Nat) . \(y:Nat) ->
+		case x {xw} of
       Z -> Z
-			| S y' -> case x {xw} of
-			            Z -> Z
-								| S x' -> minus x' y'
+			| S x' -> case y {yw} of
+			            Z -> x
+  							| S y' -> minus x' y'
 
 
 prog lt : (x:Nat) -> (y:Nat) -> Bool
-def lt = \(x:Nat) -> rec minus (y:Nat) .
+def lt = rec lt (x:Nat) . \(y:Nat) ->
 		case x {xw} of
-      Z -> case y {yw} of
+    | Z -> (case y {yw} of
 			            Z -> False
-								| S y' -> True
+								| S y' -> True)
 
-			S x' ->  case y {yw} of
+		| S x' ->  case y {yw} of
 			            Z -> False
 								| S y' -> lt x' y'
 
@@ -39,10 +39,10 @@ def lt = \(x:Nat) -> rec minus (y:Nat) .
 --    case x {xc} xterm of
 --      Z -> (join 100 100) --  : (minus x x = minus x x))
 
-theorem minus_minus_zero : forall (n:Nat)(nterm:n!). minus n n = Z
-proof minus_minus_zero = \(n:Nat) => \(nterm:n!) =>
-  case n {nc} nterm of
-    Z -> conv (join 100 100 : minus Z Z = Z) at minus ~nc ~nc = Z
+-- theorem minus_minus_zero : forall (n:Nat)(nterm:n!). minus n n = Z
+-- proof minus_minus_zero = \(n:Nat) => \(nterm:n!) =>
+--   case n {nc} nterm of
+--     Z -> conv (join 100 100 : minus Z Z = Z) at minus ~nc ~nc = Z
 
 
 

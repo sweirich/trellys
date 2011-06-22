@@ -19,7 +19,7 @@ import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
-
+import qualified Data.Set as S
 
 
 typecheck :: Module -> IO (Either TypeError ())
@@ -37,7 +37,7 @@ typecheckModule (Module n decls) = do
   return ()
 
 
-data DefRes = DataResult TName Term [(TName,Term)]
+data DefRes = DataResult TName Term [(TName,Int,Term)]
             | ProofResult TName Term Term Bool
             | ProgResult TName Term Term Bool
 
@@ -81,6 +81,12 @@ checkDef (DataDecl (Con nm) ty cs) = do
         appHead (Pos _ t) = appHead t
         appHead t = t
 
+        arity (Pi _ binding) = 1 + arity body
+          where (_,body) = unsafeUnbind binding
+        arity (Parens t) = arity t
+        arity (Pos _ t) = arity t
+        arity t = 0
+
 
         chkConstructor (c,ty) = do
            typeAnalysis ty Type
@@ -90,7 +96,7 @@ checkDef (DataDecl (Con nm) ty cs) = do
                ensure (tc == nm) $
                         "In constructor " <++> c <++>
                         "result type does not match declared data type."
-               return (c,ty)
+               return (c,arity ty,ty)
              h -> do
                die $ "Constructor head is" <++> h
 
@@ -105,8 +111,9 @@ checkDefs (d:ds) = do
         extendBinding' (ProgResult n ty def v) comp =
           extendDefinition  n ty def v comp
         extendBinding' (DataResult n ty cs) comp =
+          extendTypeCons n [(c,arity) | (c,arity,_) <- cs] $
           extendBinding n ty True $
-                        foldr (\(n,ty) m -> extendBinding n ty True m) comp cs
+                        foldr (\(n,arity,ty) m -> extendBinding n ty True m) comp cs
 
 
 
@@ -508,12 +515,14 @@ proofAnalysis (Ind prfBinding) res@(Forall predBinding) = do -- Prf_Ind
 
 proofAnalysis (Case s (Just termProof) binding) ty = do
     (sEq,alts) <- unbind binding
-    typeSynth s
+    tyS <- typeSynth s
     sTermType <- proofSynth termProof
     unless (sTermType `aeq` Terminates s) $ do
          dTerm <- disp termProof
          ds <- disp (Terminates s)
          err $ render dTerm ++ " is not a proof of " ++ render ds
+
+    checkCaseCoverage tyS alts
 
     mapM (altAnalysis sEq) alts
     return ty
@@ -522,18 +531,20 @@ proofAnalysis (Case s (Just termProof) binding) ty = do
           -- the scruinee, and that all cases are covered.
           ((cons,vars),body) <- unbind alt
           (ctype,_) <- lookupBinding (string2Name cons)
-          dctype <- disp ctype
+
+
           let pat = foldl (\t0 t1 -> (App t0 Dynamic t1))
                       (Con (string2Name cons)) (map Var vars)
 
+          dctype <- disp ctype
           dty <- disp ty
           dbody <- disp body
-          -- liftIO  $ putStrLn $ "In alt, looking for type " ++ render dty
-          -- liftIO  $ putStrLn $ " in body " ++ render dbody
+          -- liftIO  $ print $ "In alt, looking for type " <++> ty <++> "in body" <++> body
+
           ty' <- substPat vars ctype $
                    extendBinding eqpf (Equal pat s) True  $ proofAnalysis body ty
           dty' <- disp ty
-          -- liftIO  $ putStrLn $ "Result type of case alt is " ++ render dty'
+          -- liftIO  $ print $ "Result type of case alt is " <++> ty
           return dty'
 
 
@@ -844,7 +855,46 @@ typeAnalysis (Lambda Program progStage progBinding) ty@(Pi piStage piBinding) = 
   -- TODO: Several side conditions on stage annotations
   extendBinding progName progTy True $ typeAnalysis progBody piBody
 
-typeAnalysis (Case _ _ _) ty = return ty
+
+
+typeAnalysis (Case s Nothing binding) ty = do
+    (sEq,alts) <- unbind binding
+    tyS <- typeSynth s
+
+    checkCaseCoverage tyS alts
+    mapM (altAnalysis sEq) alts
+    return ty
+  where altAnalysis eqpf alt = do
+          -- FIXME: We need to make sure that constructors belong to the type of
+          -- the scruinee, and that all cases are covered.
+          ((cons,vars),body) <- unbind alt
+          (ctype,_) <- lookupBinding (string2Name cons)
+
+
+          let pat = foldl (\t0 t1 -> (App t0 Dynamic t1))
+                      (Con (string2Name cons)) (map Var vars)
+
+          dctype <- disp ctype
+          dty <- disp ty
+          dbody <- disp body
+          -- liftIO  $ print $ "In alt, looking for type " <++> ty <++> "in body" <++> body
+
+          ty' <- substPat vars ctype $
+                   extendBinding eqpf (Equal pat s) True  $ typeAnalysis body ty
+          dty' <- disp ty
+          -- liftIO  $ print $ "Result type of case alt is " <++> ty
+          return dty'
+
+
+        substPat [] ty m = m
+        substPat (n:ns) ty m =
+          case down ty of
+            (Pi _ binding) -> do
+             ((n',Embed ty),body) <- unbind binding
+             extendBinding n ty True $ substPat ns body m
+
+
+
 typeAnalysis (Case s Nothing binding) ty = do
     (sEq,alts) <- unbind binding
     typeSynth s
@@ -898,8 +948,7 @@ typeAnalysis (App t0 stage t1) ty = do
              return ty
 
 
-    _ -> err $ "Can't apply a term " ++ show t0 ++
-               " with type " ++ show ty0
+    _ -> die $ "Can't apply a term" <++> t0 <++> "with type" <++> ty0
 
 
 typeAnalysis tm@(Var x) ty = do
@@ -1171,4 +1220,24 @@ copyEqualInEsc b x = escCopy f x
 
 
 
+checkCaseCoverage tyS alts = do
+    -- Checking constructor coverage
+    let (tc,_) = splitApp' tyS
+    cs <- case down tc of  -- declared (constructor, arity)
+           (Con tcName) -> lookupTypeCons tcName
+           _ -> die $ "Can't find type constructor" <++> show tc
 
+
+    altCs <- forM alts (\a -> do { ((n,vars),_) <- unbind a; return (string2Name n, length vars)})
+
+    let unhandled = S.fromList (map fst cs) S.\\ S.fromList (map fst altCs)
+    ensure (S.null unhandled) $
+           "Unhandled constructors:" <++> (vcat <$> mapM disp (S.toList unhandled) :: TCMonad Doc)
+
+    forM altCs (\(n,arity) -> case lookup n cs of
+                                Nothing -> die $ n <++> "is not a constructor of" <++> tc
+                                Just arity'
+                                     | arity == arity' -> return ()
+                                     | otherwise -> die $ "Pattern arity" <++> arity <++>
+                                                          "does not match constructor" <++> n <++>
+                                                          "arity" <++> arity')
