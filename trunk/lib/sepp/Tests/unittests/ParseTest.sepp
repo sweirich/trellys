@@ -29,33 +29,35 @@ prog plus2 = rec plus (x:Nat) . \(y:Nat) ->
 theorem plus_right_unit_term : forall (n:Nat). forall (u:n!) .plus n Z = n
 proof plus_right_unit_term = ind f (n:Nat) [u] .
 		          case n {n_eq} u of -- n_eq = Z = n
-                Z -> conv join 0 0 at (plus ~n_eq Z = ~n_eq)
+                Z -> conv join 10 10 at (plus ~n_eq Z = ~n_eq)
                      -- convert Z + Z = Z to
     		     -- n + Z = n
                 | S n' ->  -- n_eq = (S n') = n
                            -- ord n_eq : (n' < n)
-                   let ih [ih_eq] = f n' (ord n_eq) 
+                   let ih [ih_eq] = f n' (ord n_eq)
                    in -- plus n' 0 = n'
-		      let x [xa] =  conv (join 0 1 : plus (S n') Z = S(plus n' Z))
-                                         at plus ~n_eq Z = S ~ih  
+		      let x [xa] =  conv (join 100 100 : plus (S n') Z = S (plus n' Z))
+                                             at plus ~n_eq Z = S ~ih
                       in -- x: plus n Z = S n'
 		         conv x at plus n Z = ~n_eq -- plus n Z = n
-		         
+
+
 theorem plus_right_unit_term2 : forall (n:Nat). forall (u:n!) .plus n Z = n
-proof plus_right_unit_term2 = 
+proof plus_right_unit_term2 =
     ind f (n:Nat) [u] .
     case n {n_eq} u of -- n_eq = Z = n
-      Z -> conv join 0 0 at (plus ~n_eq Z = ~n_eq)
+      Z -> conv join 10 10 at (plus ~n_eq Z = ~n_eq)
                      -- convert Z + Z = Z to
     		     -- n + Z = n
     | S n' -> let -- n_eq = (S n') = n
                   -- ord n_eq : (n' < n)
                   ih [ih_eq] = f n' (ord n_eq);    -- plus n' 0 = n'
-                  x [xa] = conv (join 0 1 : plus (S n') Z = S(plus n' Z))
-                             at plus ~n_eq Z = S ~ih  
+                  x [xa] = conv (join 100 100 : plus (S n') Z = S(plus n' Z))
+                             at plus ~n_eq Z = S ~ih
               in -- x: plus n Z = S n'
-	         conv x at plus n Z = ~n_eq -- plus n Z = n		         
+	         conv x at plus n Z = ~n_eq -- plus n Z = n
 
+{-
 type bad : Nat -> Nat
 prog bad = rec bad (n:Nat) . S (bad n)
 
@@ -75,7 +77,7 @@ proof g = ind g (x : Nat) [u]. \(p:x = bad Z) =>
 
 -- theorem terrible : Z = S Z
 -- proof terrible = g Z (value Z)  (join 1000 1000)
-
+-}
 
 theorem plus_Z_Z : plus Z Z = Z
 proof plus_Z_Z = join 100 100
@@ -83,13 +85,13 @@ proof plus_Z_Z = join 100 100
 theorem plus_right_unit_term : forall (n:Nat). forall (u:n!) .plus n Z = n
 proof plus_right_unit_term = ind f (n:Nat) [u] .
 		          case n {n_eq} u of -- n_eq = Z = n
-                Z -> conv join 0 0 at (plus ~n_eq Z = ~n_eq)
+                Z -> conv join 10 10 at (plus ~n_eq Z = ~n_eq)
 							        -- convert Z + Z = Z to
     								  -- n + Z = n
                 | S n' ->  -- n_eq = (S n') = n
 								         -- ord n_eq : (n' < n)
                    let ih [ih_eq] = f n' (ord n_eq) in -- plus n' 0 = n'
-									 let x [xa] =  conv (join 0 1 : plus (S n') Z = S(plus n' Z))
+									 let x [xa] =  conv (join 100 100 : plus (S n') Z = S(plus n' Z))
                                     at plus ~n_eq Z = S ~ih  in
 									 -- x: plus n Z = S n'
 									 conv x at plus n Z = ~n_eq -- plus n Z = n
