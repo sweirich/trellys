@@ -27,7 +27,7 @@ eval t = do
   -- dt' <- disp t'
   -- liftIO $ putStrLn "-----------------"
   -- liftIO $ print $ dt $$ text "-->" $$ dt'
-  liftIO $ putStrLn "======================"
+  -- liftIO $ putStrLn "======================"
   -- die (t <++> "can't be evaluated.")
   return t'
 
@@ -98,7 +98,6 @@ reduce t k = do
    reduce' v@(Var _) k = k v
    reduce' c@(Con _) k = k c
    reduce' (Pos _ t) k = reduce' t k
-   reduce' (Parens t) k = reduce' t k
 
 
    reduce' t k = do

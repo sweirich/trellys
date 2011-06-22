@@ -56,7 +56,7 @@ Library
   Build-depends:
     base,
     unbound,
-    parsec >= 3.0,mtl,pretty
+    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0
 
   -- Modules not exported by this package.
   -- Other-modules:
@@ -70,7 +70,7 @@ Library
 
 Executable sep
   Main-is: SepPP.hs
-  Build-depends: base, cmdargs, pretty, mtl, unbound, parsec >= 3
+  Build-depends: base, cmdargs, pretty, mtl, unbound, parsec >= 3, RepLib >= 0.4
   Hs-source-dirs: executables, .
   Extensions: DeriveDataTypeable
 

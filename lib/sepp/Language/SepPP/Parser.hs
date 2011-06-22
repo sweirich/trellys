@@ -438,7 +438,7 @@ term = wrapPos $
               ,strictExpr
               ,symExpr
               ,varOrCon <?> "Identifier"
-              ,Parens <$> parens expr <?> "Parenthesized Expression"
+              ,parens expr <?> "Parenthesized Expression"
               ] <?> "term")
 
 factor = do

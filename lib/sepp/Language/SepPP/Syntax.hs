@@ -104,7 +104,6 @@ data Term = Var TName                                 -- Term, Proof
           | Sym Term -- Should be a derived form
 
           | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
-          | Parens Term    -- Meta
           | Pos SourcePos Term
           deriving (Show,Typeable)
 
@@ -121,8 +120,6 @@ $(derive [''Term, ''Module, ''Decl, ''Stage, ''Kind])
 instance Alpha Term where
   aeq' c (Pos _ t1) t2 = t1 `aeq` t2
   aeq' c t1 (Pos _ t2) = t1 `aeq` t2
-  aeq' c (Parens t1) t2 = t1 `aeq` t2
-  aeq' c t1 (Parens t2) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
 
 instance Alpha Stage
@@ -139,10 +136,8 @@ instance Subst Term SourcePos
 splitApp (App t0 _ t1) = splitApp' t0 [t1]
   where splitApp' (App s0 _ s1) acc = splitApp' s0 (s1:acc)
         splitApp' (Pos _ t) acc = splitApp' t acc
-        splitApp' (Parens t) acc = splitApp' t acc
         splitApp' s acc = s:(reverse acc)
 splitApp (Pos _ t) = splitApp t
-splitApp (Parens t) = splitApp t
 splitApp t = []
 
 
@@ -150,7 +145,6 @@ splitApp' t = case splitApp t of
                 [] -> (t,[])
                 (x:xs) -> (x,xs)
 
-isStrictContext (Parens t) = isStrictContext t
 isStrictContext (Pos _ t) = isStrictContext t
 isStrictContext (Escape e) = Just (e,id)
 isStrictContext (App e1 stage e2) =
@@ -173,5 +167,4 @@ app f x = App f Dynamic x
 
 
 down (Pos _ t) = down t
-down (Parens t) = down t
 down t = t
