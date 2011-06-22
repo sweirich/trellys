@@ -19,8 +19,8 @@ import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
-import Data.List(nubBy)
-import qualified Data.Set as S
+import Data.List(nubBy, nub, (\\))
+
 
 
 typecheck :: Module -> IO (Either TypeError ())
@@ -74,17 +74,14 @@ checkDef (DataDecl (Con nm) ty cs) = do
           ((n,_),body) <- unbind binding
           arrowRange body
         arrowRange (Pos _ t) = arrowRange t
-        arrowRange (Parens t) = arrowRange t
         arrowRange ty = return ty
 
         appHead (App t0 _ _) = appHead t0
-        appHead (Parens t) = appHead t
         appHead (Pos _ t) = appHead t
         appHead t = t
 
         arity (Pi _ binding) = 1 + arity body
           where (_,body) = unsafeUnbind binding
-        arity (Parens t) = arity t
         arity (Pos _ t) = arity t
         arity t = 0
 
@@ -157,10 +154,6 @@ data CheckMode = PredMode | ProofMode | ProgMode deriving (Show,Eq)
 
 
 check :: CheckMode -> Term -> Maybe Term -> TCMonad Term
-check mode (Parens t) expect =
-  check mode t expect
-check mode t (Just (Parens ty)) =
-  check mode t (Just ty)
 check mode (Pos p t) expect  = check mode t expect `catchError` addErrorPos p t
 check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 
@@ -303,7 +296,6 @@ check mode term@(App t0 stage t1) expected = do
     _ -> checkUnhandled mode term expected
   where constrApp (Con c) =  True
         constrApp (App f _ x) = (constrApp f)
-        constrApp (Parens t) = constrApp t
         constrApp (Pos x t) = constrApp t
         constrApp _ = False
 
@@ -476,7 +468,6 @@ check ProofMode (Contra p) (Just ty) = do
 
   where findCon (Con c) = Just c
         findCon (Pos _ t) = findCon t
-        findCon (Parens t) = findCon t
         findCon (App t1 _ _) = findCon t1
         findCon _ = Nothing
 
@@ -527,14 +518,15 @@ check mode (ConvCtx p ctx) expected = do
 
 check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
   -- Skeleton version of the 'ord' axiom.
-  ty <- proofSynth' w
-  case down ty of
+  ty' <- proofSynth' w
+  case down ty' of
     (Equal l' r') -> do
         let (c,ls) = splitApp' l'
-        -- let (cr,rs) = splitApp' r'
-        -- unless (not (null ls) &&  or (map (aeq l) (tail ls))) $
-        --    err $ "proofAnalysis (ord) sym error left " ++ show  ls  ++ "   \n right:" ++ show rs
-        ensure (r `aeq` r' && any (aeq l) ls) $ "Ord error" <++> ty
+        ensure (r `aeq` r' && any (aeq l) ls)
+                 $ "Ord error" <++> ty' $$$
+                   r <++> "/=" <++> r' <++> "or" $$$
+                   l <++> "not in" <++> show ls
+
         return ty
 
 -- IndLT
@@ -744,14 +736,12 @@ isB t = isTerm t || isPred t || isLK t
 isW Type = True
 isW (Formula _) = True
 isW (Pos _ t) = isW t
-isW (Parens t) = isW t
 
 isW _ = False
 
 isQ Type = True
 isQ (Formula _) = True
 isQ (Pos _ t) = isQ t
-isQ (Parens t) = isQ t
 isQ t = isLK t
 
 isLK (Pos _ t) = isLK t
@@ -771,7 +761,6 @@ isPred (Equal t0 t1) = isTerm t0 && isTerm t1
 isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
 isPred (Terminates t) = isTerm t
 isPred (Ann p t) = isPred p && isLK t
-isPred (Parens p) = isPred p
 isPred (Pos _ t) = isPred t
 isPred _ = False
 
@@ -803,7 +792,6 @@ isProof (Ind binding) = isTerm ty &&  isProof body
 isProof (Contra p) = isProof p
 isProof (ContraAbort p0 p1) = isProof p0 && isProof p1
 isProof (Ann p pred) = isProof p && isPred pred
-isProof (Parens p) = isProof p
 isProof (Pos _ t) = isProof t
 isProof t = False
 
@@ -825,7 +813,6 @@ isTerm (Abort t) = isTerm t
 isTerm (Rec binding) = isTerm ty &&  isTerm body
   where ((f,(n,Embed ty)),body) = unsafeUnbind binding
 isTerm (Ann t0 t1) = isTerm t0 && isTerm t1
-isTerm (Parens t) = isTerm t
 isTerm (Pos _ t) = isTerm t
 isTerm (Escape t) = isTerm t
 isTerm t = False
@@ -846,7 +833,6 @@ requirePred = require isPred "P"
 require_a = require is_a "a"
 
 
-require p cls (Parens t) = require p cls t
 require p cls (Pos _ t) = require p cls t
 require p cls (Var n) = do
   (v,_) <- lookupBinding n
@@ -874,7 +860,6 @@ join lSteps rSteps t1 t2 = do
 -- Get the classification of a classifier (Type,Predicate,LogicalKind)
 data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
 getClassification (Pos _ t) = getClassification t
-getClassification (Parens t) = getClassification t
 getClassification t = do
   ta `comb` pa `comb` la `comb` end
   where ta = typeAnalysis' t Type >> return SortType
@@ -951,9 +936,9 @@ checkCaseCoverage tyS alts = do
 
     altCs <- forM alts (\a -> do { ((n,vars),_) <- unbind a; return (string2Name n, length vars)})
 
-    let unhandled = S.fromList (map fst cs) S.\\ S.fromList (map fst altCs)
-    ensure (S.null unhandled) $
-           "Unhandled constructors:" <++> (vcat <$> mapM disp (S.toList unhandled) :: TCMonad Doc)
+    let unhandled =  (nub $ map fst cs) \\ (nub $ map fst altCs)
+    ensure (null unhandled) $
+           "Unhandled constructors:" <++> (vcat <$> mapM disp unhandled :: TCMonad Doc)
 
     forM altCs (\(n,arity) -> case lookup n cs of
                                 Nothing -> die $ n <++> "is not a constructor of" <++> tc

@@ -54,6 +54,11 @@ proof asd = \(f:Nat->Nat)(x:Nat) =>
  --   (f x = (f x))
 
 
+theorem r : forall (x:Nat) (y:Nat) (p: x = S (S y)) . (S y < x)
+proof r = \(x:Nat)(y:Nat)(p:x = S (S y)) =>
+			let z [z2] = S y
+			in ord (sym p)
+
 theorem q : forall (x:Nat) (y:Nat) (p : x = S (S y)) . (y < x)
 proof q = \(x:Nat)(y:Nat)(p : (x = S (S y))) =>
    let z [zw] = S y;

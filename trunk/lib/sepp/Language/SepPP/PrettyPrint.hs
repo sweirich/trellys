@@ -234,7 +234,6 @@ instance Disp Term where
     return $ d0 <+> colon <+> d1
 
 
-  disp (Parens p) = disp p -- parens <$> disp p
   disp (Pos _ t) = disp t
   disp (t@(Sym x)) = do
     dx <- dParen (precedence t) x
@@ -242,7 +241,6 @@ instance Disp Term where
 
   -- disp e = error $ "disp: " ++ show e
 
-  precedence (Parens t) = precedence t -- 100
   precedence (Pos _ t) = precedence t
   precedence (Var _) = 12
   precedence (Con _) = 12
@@ -268,7 +266,6 @@ instance Disp Term where
 
 
 linearizeLet (Pos _ t) = linearizeLet t
-linearizeLet (Parens t) = linearizeLet t
 linearizeLet (Let binding) =
   do (triple,body) <- unbind binding
      (ds,b) <- linearizeLet body

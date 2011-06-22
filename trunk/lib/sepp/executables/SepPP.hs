@@ -56,8 +56,6 @@ go s = withArgs ["--file="++s] main
 
 testcase = "Tests/unittests/ParseTest.sepp"
 testcase2 = "Tests/unittests/IndVRDemo.sepp"
-
-
 --------------------------------------
 
 less1 = IndLT (var "x") (var "y")

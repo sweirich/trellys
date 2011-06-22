@@ -167,12 +167,10 @@ synValue Type = return True
 synValue (Pi stg bdngs) = return True
 synValue (Lambda k stg bndgs) = return True
 synValue (Pos n t) = synValue t
-synValue (Parens t) = synValue t
 synValue (Ann t typ) = synValue t
 synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
   where constrApp (Con c) = return True
         constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
-        constrApp (Parens t) = constrApp t
         constrApp (Pos x t) = constrApp t
         constrApp _ = return False
 
