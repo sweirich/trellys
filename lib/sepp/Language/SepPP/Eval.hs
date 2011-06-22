@@ -20,9 +20,8 @@ debugReductions = False
 
 
 eval steps t = do
-  -- dt <- disp t
-  -- liftIO $ print $ text "Evaluating" <+> dt
   t' <- erase t
+  -- emit $ "Reducing" <++> t'
   evalErased steps t'
 
 evalErased steps t = reduce steps t (\_ tm -> return tm)
@@ -69,13 +68,20 @@ reduce steps (EApp t1 t2) k = reduce steps t1 k'
                                   let tm' = (substs [(f,t1'),(x,v)] body)
                                   logReduce (EApp t1' v) tm'
                                   reduce (steps - 1) tm' k)
-        k' steps t1 = k steps (EApp t1 t2)
+        k' steps v1
+          | isCon v1 && erasedValue v1 = reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
+          | otherwise = k steps (EApp v1 t2)
+        isCon (ECon _) = True
+        isCon (EApp l _) = isCon l
+        isCon _ = False
+
 
 reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
   where k' 0 t = k 0 (ECase t alts)
         k' steps v = case findCon v [] of
                        (ECon c:args) -> do
                          branch <- substPat c args alts
+                         logReduce (ECase v alts) branch
                          reduce (steps - 1) branch k
                        _ -> do
                          rw <- lookupRewrite scrutinee
