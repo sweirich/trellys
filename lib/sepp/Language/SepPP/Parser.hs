@@ -75,7 +75,17 @@ sepProgDecl = do
   return $ ProgDecl n ty val
  <?> "top-level binding"
  where sig = reserved "type" >> (,) <$> termName <* colon <*> expr <?> "top-level program type signature"
-       decl = reserved "prog" >> (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level program declaration "
+       decl = reserved "prog" >> (valDecl <|> recDecl)
+       valDecl = (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level program declaration "
+       recDecl = do
+                reserved "rec"
+                n <- termName
+                arg <- (parens ((,) <$> termName <* colon <*> (Embed <$> expr))) <?>
+                               "top-level rec argument"
+                reservedOp "="
+                body <- expr
+                return (n, Rec (bind (n,arg) body))
+
 
 
 sepProofDecl = do
@@ -86,8 +96,17 @@ sepProofDecl = do
   return $ ProofDecl n ty val
  <?> "top-level binding"
  where sig = reserved "theorem" >> (,) <$> termName <* colon <*> expr <?> "top-level theorem"
-       decl = reserved "proof" >> (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level proof "
-
+       decl = reserved "proof" >> (nonIndDecl <|> indDecl)
+       nonIndDecl = (,) <$> termName <* reservedOp "="  <*> expr <?>
+                       "top-level proof "
+       indDecl = do
+          reserved "ind"
+          f <- termName
+          (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
+          u <- brackets termName
+          reservedOp "="
+          body <- expr
+          return $ (f,Ind (bind (f,(x,Embed ty),u) body))
 
 
 sepDataDecl = do
