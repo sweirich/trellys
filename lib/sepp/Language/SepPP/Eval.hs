@@ -15,6 +15,8 @@ import Control.Monad
 import Control.Monad.Error
 import Text.PrettyPrint(render, text,(<+>),($$))
 
+-- compile-time configuration: should reduction steps be logged
+debugReductions = False
 
 
 eval t = do
@@ -40,7 +42,7 @@ reduce t k = do
                              dt <- disp (App t stage v2)
                              let t2' = (subst n v2 body)
                              dt2' <- disp t2'
-                             liftIO $ print $
+                             when debugReductions $ liftIO $ print $
                                     text "(Beta) Reduced" $$ dt $$ text "to" $$
                                     dt2'
                              reduce t2' k)
@@ -51,14 +53,14 @@ reduce t k = do
                               let t2' = substs [(f,t),(n,v2)] body
                               dt <- disp (App t stage v2)
                               dt2' <- disp t2'
-                              liftIO $ print $
+                              when debugReductions $ liftIO $ print $
                                 text "(Rec) Reduced" $$ dt $$ text "to" $$
                                      dt2'
                               reduce t2' k)
              k' v1 = do
                dt <- disp v1
-               liftIO $ print $ text "App stuck: " <+> dt
-               liftIO $ print $ v1
+               when debugReductions $ liftIO $ print $ text "App stuck: " <+> dt
+               when debugReductions $ liftIO $ print $ v1
                k (App v1 stage t2)
              k'' v = k' (down v)
 
@@ -70,7 +72,7 @@ reduce t k = do
                            (body :: Term) <- patMatch cs alts
                            dt <- disp (Case t tp bindingAlts)
                            dbody <- disp body
-                           liftIO $ print $ text "(Case) Reduced"  $$
+                           when debugReductions $ liftIO $ print $ text "(Case) Reduced"  $$
                                                dt $$
                                                text "to" $$
                                                dbody
@@ -117,3 +119,8 @@ getCons t@(Con _) = return (t,[])
 getCons t = case splitApp t of
               (c@(Con _):cs) -> return (c,cs)
               _ -> Nothing
+
+
+
+
+
