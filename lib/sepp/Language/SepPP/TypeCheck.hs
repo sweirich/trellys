@@ -54,7 +54,8 @@ checkDef (ProofDecl nm theorem proof) = do
 checkDef (ProgDecl nm ty prog) = do
   typeAnalysis' ty Type
   typeAnalysis' prog ty
-  return $ ProgResult nm ty prog False
+  isVal <- synValue prog
+  return $ ProgResult nm ty prog isVal
 
 checkDef (DataDecl (Con nm) ty cs) = do
   ran <- arrowRange ty
