@@ -116,6 +116,9 @@ ensure p m = do
 die m = do
   m >>= (err . render)
 
+actual `sameType` Nothing = return ()
+actual `sameType` (Just expected) = actual `expectType` expected
+
 actual `expectType` expected =
   ensure (actual `aeq` expected)
            ("Expecting '" <++> expected <++> "' but actual type is " <++> actual)
@@ -131,12 +134,18 @@ instance IsDisp String where
   doDisp s = return $ text s
 instance IsDisp Int where
   doDisp i = return $ int i
+
+
 -- instance Disp a => IsDisp a where
 --   doDisp = disp
 instance IsDisp TName where
   doDisp n = disp n
 instance IsDisp Term where
   doDisp t = disp t
+instance IsDisp (Maybe Term) where
+  doDisp Nothing = doDisp "<empty>"
+  doDisp (Just t) = doDisp t
+
 instance  IsDisp (TCMonad Doc) where
   doDisp m = m
 
