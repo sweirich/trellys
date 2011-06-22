@@ -12,14 +12,15 @@ theorem idprog : forall (a : Type).forall (x : a).(x = x)
 proof idprog = \(a:Type) => \(x:a) => join 1 1
 
 
-prog plus : (x:Nat) -> (y:Nat) -> Nat
-def plus = rec plus (x:Nat) . \(y:Nat) ->
+
+type plus : (x:Nat) -> (y:Nat) -> Nat
+prog plus = rec plus (x:Nat) . \(y:Nat) ->
   case x {xeq} of
     Z -> y
     | S x' -> S (plus x' y)
 
-prog plus2 : Pi(x:Nat)(y:Nat) -> Nat
-def plus2 = rec plus (x:Nat) . \(y:Nat) ->
+type plus2 : Pi(x:Nat)(y:Nat) -> Nat
+prog plus2 = rec plus (x:Nat) . \(y:Nat) ->
   case x {xeq} of
     Z -> y
     | S x' -> S (plus x' y)
@@ -55,8 +56,8 @@ proof plus_right_unit_term2 =
               in -- x: plus n Z = S n'
 	         conv x at plus n Z = ~n_eq -- plus n Z = n		         
 
-prog bad : Nat -> Nat
-def bad = rec bad (n:Nat) . S (bad n)
+type bad : Nat -> Nat
+prog bad = rec bad (n:Nat) . S (bad n)
 
 
 theorem fz : S (bad Z) = bad Z
@@ -106,8 +107,8 @@ proof plus_right_unit = \(x:Nat) =>
 -- theorem plus_z_z : plus (plus Z Z) Z = plus Z Z
 -- proof plus_z_z = plus_right_unit (plus Z Z)
 
--- prog copy : (x:Nat) -> Nat
--- def copy = rec copy (x:Nat) .
+-- type copy : (x:Nat) -> Nat
+-- prog copy = rec copy (x:Nat) .
 --   case x {xeq} of
 --     Z -> Z
 --     | S x' -> S (copy x')
@@ -173,12 +174,12 @@ proof plus_right_unit = \(x:Nat) =>
 
 
 
--- -- theorem idprog : ?(a:Type).?(x:a).x = x
--- -- proof idprog = ?(a:Type).?(x:a). join 1 1
+-- -- theorem idtype : ?(a:Type).?(x:a).x = x
+-- -- proof idtype = ?(a:Type).?(x:a). join 1 1
 
 -- {-
 
--- prog a : (x:b) -> a
+-- type a : (x:b) -> a
 -- def a = c
 
 
@@ -235,7 +236,7 @@ proof plus_right_unit = \(x:Nat) =>
 -- theorem e : Formula
 -- proof e = ind f (x:int) [u] -> g h i j
 
--- prog e : Type
+-- type e : Type
 -- def e = rec f (x:int) -> g h i j
 
 -- data A : a where
