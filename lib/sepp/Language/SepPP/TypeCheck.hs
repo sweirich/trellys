@@ -761,7 +761,7 @@ checkUnhandled mode term expected = do
 checkEqual mode term = do
   ty <- check mode term Nothing
   case down ty of
-    Equal a b -> return ty
+    dty@(Equal a b) -> return dty
     _ -> die $ "Expecting an equality type." $$$
                "When checking the term" $$$ term $$$
                "and the type" $$$ ty $$$ "was inferred."
