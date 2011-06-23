@@ -711,8 +711,8 @@ check ProofMode (Sym t) (Just ty@(Equal t0 t1)) = do
   return ty
 
 -- Refl
-check mode Refl (Just ty) = 
-  let err = 
+check mode Refl (Just ty) =
+  let err =
         "The type ascribed to a refl-proof is not of the form t = t.\n\n"
         <++> "1. the type: "<++> ty in
   do
