@@ -52,7 +52,9 @@ liftEither (Left err) = throw err
 liftEither (Right val) = return val
 
 
-go s = withArgs ["--file="++s] main
+go s = handle h $ withArgs ["--file="++s] main
+  where h (SomeException e) = do
+          print e
 
 testcase = "Tests/unittests/ParseTest.sepp"
 testcase2 = "Tests/unittests/IndVRDemo.sepp"
