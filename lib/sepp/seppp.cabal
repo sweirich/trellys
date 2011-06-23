@@ -58,7 +58,7 @@ Library
   Build-depends:
     base,
     unbound,
-    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0
+    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0, containers
 
   -- Modules not exported by this package.
   -- Other-modules:

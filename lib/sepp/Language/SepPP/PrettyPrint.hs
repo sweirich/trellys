@@ -10,28 +10,106 @@ import Control.Applicative hiding (empty)
 import Control.Monad.Reader
 import Text.Parsec.Pos
 import Text.Parsec.Error(ParseError,showErrorMessages,errorPos,errorMessages)
+import qualified Data.Set as S
 
 
-display :: Disp a => a -> IO Doc
-display d = runFreshMT $ runReaderT (disp d) 0
+import Debug.Trace
+
+class Disp d where
+  disp :: d -> Doc
 
 
-class Disp a where
-  disp :: (Functor m, Fresh m) => a -> m Doc
-  precedence :: a -> Int
-  precedence x = 0
+instance Disp Doc where
+  disp = id
+instance Disp String where
+  disp  = text
+instance Disp Term where
+  disp  = cleverDisp
+instance Disp ETerm where
+  disp = cleverDisp
+instance Rep a => Disp (Name a) where
+  disp = cleverDisp
+instance Disp Module where
+  disp = cleverDisp
+instance Disp Int where
+  disp = integer . toInteger
 
-dParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+instance Disp (Maybe Term) where
+  disp = maybe empty disp
+
+
+-- Adapted from an adaptation from AuxFuns.
+data DispInfo = DI {
+    dispAvoid :: S.Set AnyName
+  }
+
+initDI :: DispInfo
+initDI = DI S.empty
+
+type M = Reader DispInfo
+instance LFresh M where
+  lfresh nm = do
+    let s = name2String nm
+    di <- ask
+    return $ head (filter (\x -> AnyName x `S.notMember` (dispAvoid di))
+                      (map (makeName s) [0..]))
+
+  avoid names = local upd where
+     upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
+
+
+
+cleverDisp :: (Display d, Alpha d) => d -> Doc
+cleverDisp d =
+  runReader dm initDI where
+    dm = let vars = S.elems (fvAny d)  in
+         lfreshen vars $ \vars'  p ->
+           (display (swaps p d))
+
+-- 1. Display is monadic :: a -> M Doc
+-- 2. Disp is pure :: a -> Doc
+
+-- display :: Disp a => a -> IO Doc
+-- display d = runFreshMT $ runReaderT (disp d) 0
+
+
+class (Alpha t) => Display t where
+  display :: t -> M Doc
+  precedence :: t -> Int
+  precedence _ = 0
+
+instance Display String where
+  display = return . text
+instance Display Int where
+  display = return . text . show
+instance Display Integer where
+  display = return . text . show
+instance Display Double where
+  display = return . text . show
+instance Display Float where
+  display = return . text . show
+instance Display Char where
+  display = return . text . show
+instance Display Bool where
+  display = return . text . show
+
+
+-- class Disp a where
+--   disp :: (Functor m, Fresh m) => a -> m Doc
+--   precedence :: a -> Int
+--   precedence x = 0
+
+dParen:: (Display a) => Int -> a -> M Doc
 dParen level x =
    if level >= (precedence x)
-      then do { d <- disp x; return(parens d)}
-      else disp x
+      then do { d <- display x; return(parens d)}
+      else display x
 
-termParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+termParen:: (Display a) => Int -> a -> M Doc
 termParen level x =
    if level <= (precedence x)
-      then do { d <- disp x; return(parens d)}
-      else disp x
+      then do { d <- display x; return(parens d)}
+      else display x
 
 -- Set the precedence to i. If this is < than the current precedence, then wrap
 -- this with parens.
@@ -43,34 +121,35 @@ withPrec i m = do
      then return $ parens dm
      else return $ dm
 
-instance Disp (Name a) where
-  disp = return . text . show
+instance Rep a => Display (Name a) where
+  display = return . text . show
 
-instance Disp Term where
-  disp (Var n) = return $ text $ show n
-  disp (Con n) = return $ text $ show n
-  disp (Formula 0) = return $ text "Form"
-  disp (Formula n) = return $ text "Form" <+> integer n
-  disp Type = return $ text "Type"
+instance Display Term where
+  display (Var n) = return $ text $ show n
+  display (Con n) = return $ text $ show n
+  display (Formula 0) = return $ text "Form"
+  display (Formula n) = return $ text "Form" <+> integer n
+  display Type = return $ text "Type"
 
-  disp (Pi stage binding) = do
-      ((n,ty),ran) <- unbind binding
-      dn <- disp n
-      dty <- disp ty
-      dran <- disp ran
-      return $ bindingWrap stage (dn <+> colon <+> dty) <+> text "->" <+> dran
-    where wrap Dynamic = parens
+  display (Pi stage binding) = do
+      lunbind binding fmt
+    where fmt ((n,ty),ran) = do
+                        dn <- display n
+                        dty <- display ty
+                        dran <- display ran
+                        return $ bindingWrap stage (dn <+> colon <+> dty) <+> text "->" <+> dran
+          wrap Dynamic = parens
           wrap Static =  brackets
 
 
-  disp (Forall binding) = do
-    ((n,ty),ran) <- unbind binding
-    dn <- disp n
-    dty <- disp ty
-    dran <- disp ran
+  display (Forall binding) = do
+    lunbind binding $ \((n,ty),ran) -> do
+    dn <- display n
+    dty <- display ty
+    dran <- display ran
     return $ text "forall" <+> parens (dn <+> colon <+> dty) <+> text "." <+> dran
 
-  disp (t@(App t0 stage t1)) = do
+  display (t@(App t0 stage t1)) = do
     d0 <- dParen (precedence t - 1) t0
     d1 <- dParen (precedence t) t1
     return $ d0 <+> ann stage d1
@@ -78,180 +157,179 @@ instance Disp Term where
          ann Dynamic = id
 
 
-  disp (Lambda kind stage binding) = do
-    ((n,ty),body) <- unbind binding
-    dty <- disp ty
-    dn <- disp n
-    dbody <- disp body
+  display (Lambda kind stage binding) = do
+    lunbind binding $ \((n,ty),body) -> do
+    dty <- display ty
+    dn <- display n
+    dbody <- display body
     return $ text "\\" <+> bindingWrap stage (dn <+> colon <+> dty) <+>
              absOp kind <+> dbody
 
     where absOp Form = text "=>"
           absOp Program = text "->"
 
-  disp (Case scrutinee termWitness binding) = do
-    (consEq,alts) <- unbind binding
-    dScrutinee <- disp scrutinee
-    dConsEq <- braces <$> disp consEq
-    dTermWitness <- maybe (return empty) (\v -> brackets <$> disp v) termWitness
+  display (Case scrutinee termWitness binding) = do
+   lunbind binding $ \(consEq,alts) -> do
+    dScrutinee <- display scrutinee
+    dConsEq <- braces <$> display consEq
+    dTermWitness <- maybe (return empty) (\v -> brackets <$> display v) termWitness
     dAlts <- mapM dAlt alts
     return $ text "case" <+> dScrutinee <+> dConsEq <+> dTermWitness <+> text "of" $$
              nest 2 (braces $ vcat $ punctuate semi dAlts)
 
     where dAlt alt = do
-            ((con,pvars),body) <- unbind alt
-            dPvars <- mapM disp pvars
-            dBody <- disp body
+            lunbind alt $ \((con,pvars),body) -> do
+            dPvars <- mapM display pvars
+            dBody <- display body
             return $ cat [text con <+> hsep dPvars <+> text "-> ",
                           nest 2 dBody]
 
 
-  disp (TerminationCase scrutinee binding) = do
-    dScrutinee <- disp scrutinee
-    (n,(diverge,terminate)) <- unbind binding
-    dDiverge <- disp diverge
-    dTerminate <- disp terminate
-    dn <- disp n
-    return $ hang (text "termcase" <+> dScrutinee <+> braces dn <+> text "of") 2
-               (braces (text "abort" <+> text "->" <+> dDiverge <> semi $$
-                       text "!" <+> text "->" <+> dTerminate))
+  display (TerminationCase scrutinee binding) =
+    lunbind binding $ \(n,(diverge,terminate)) -> do
+                        dScrutinee <- display scrutinee
+                        dDiverge <- display diverge
+                        dTerminate <- display terminate
+                        dn <- display n
+                        return $ hang (text "termcase" <+> dScrutinee <+> braces dn <+> text "of") 2
+                                 (braces (text "abort" <+> text "->" <+> dDiverge <> semi $$
+                                          text "!" <+> text "->" <+> dTerminate))
 
 
-  disp (Join i0 i1) =
+  display (Join i0 i1) =
     return $ text "join" <+> integer i0 <+> integer i1
 
 
-  disp (t@(Equal t0 t1)) = do
+  display (t@(Equal t0 t1)) = do
                      d0 <- dParen (precedence t) t0
                      d1 <- dParen (precedence t) t1
                      return $ d0 <+> text "=" <+> d1
 
-  disp (w@(Val t)) = do
+  display (w@(Val t)) = do
     d <- termParen (precedence w) t
     return $ text "value" <+> d
 
-  disp (w@(Terminates t)) = do
+  display (w@(Terminates t)) = do
                      dt <- termParen (precedence w) t
                      return $ dt <+> text "!"
 
 
-  disp (t@(Contra t0)) = do
+  display (t@(Contra t0)) = do
     d0 <- termParen (precedence t) t0
     return $ text "contra" <+> d0
 
-  disp (t@(ContraAbort t0 t1)) = do
+  display (t@(ContraAbort t0 t1)) = do
     d0 <- termParen (precedence t) t0
     d1 <- termParen (precedence t) t1
     return $ text "contraabort" <+> d0 <+> d1
 
-  disp (w@(Abort t)) = do
+  display (w@(Abort t)) = do
     d <- dParen (precedence w) t
     return $ text "abort" <+> d
 
-  disp (Conv t pfs binding) = do
-    (vars,ty) <- unbind binding
-    dVars <- mapM disp vars
-    dTy <- disp ty
-    dt <- disp t
-    dPfs <- mapM disp pfs
-    return $ sep ([text "conv" <+> dt, text "by"] ++
-                  (punctuate comma dPfs) ++
-                  [text "at"] ++
-                  dVars ++
-                  [text ".", dTy])
+  display (Conv t pfs binding) = do
+    lunbind binding $ \(vars,ty) -> do
+      dVars <- mapM display vars
+      dTy <- display ty
+      dt <- display t
+      dPfs <- mapM display pfs
+      return $ sep ([text "conv" <+> dt, text "by"] ++
+                    (punctuate comma dPfs) ++
+                    [text "at"] ++
+                    dVars ++
+                    [text ".", dTy])
 
   -- Context-style conversions
-  disp (ConvCtx t ctx) = do
-    dt <- disp t
-    dctx <- disp ctx
+  display (ConvCtx t ctx) = do
+    dt <- display t
+    dctx <- display ctx
     return $ sep [text "conv" <+> nest 5 dt,text "at" <+> nest 3 dctx]
 
 
-  disp (Escape t) = do
-    dt <- disp t
+  display (Escape t) = do
+    dt <- display t
     return $ text "~" <> dt
 
 
-  disp (t@(Ord t0)) = do
+  display (t@(Ord t0)) = do
     d0 <- termParen (precedence t) t0
     return $ text "ord" <+> d0
 
-  disp (t@(OrdTrans t0 t1)) = do
+  display (t@(OrdTrans t0 t1)) = do
     d0 <- termParen (precedence t) t0
     d1 <- termParen (precedence t) t1
     return $ text "ordtrans" <+> d0 <+> d1
 
 
-  disp (t@(IndLT t0 t1)) = do
+  display (t@(IndLT t0 t1)) = do
      d0 <- dParen (precedence t) t0
      d1 <- dParen (precedence t) t1
      return (d0 <+> text "<" <+> d1)
 
 
 
-  disp (Ind binding) = do
-    ((f,(x,ty),u),body) <- unbind binding
-    df <- disp f
-    dx <- disp x
-    dTy <- disp ty
-    dBody <- disp body
-    du <- disp u
-    return $
+  display (Ind binding) = do
+   lunbind binding $ \((f,(x,ty),u),body) -> do
+     df <- display f
+     dx <- display x
+     dTy <- display ty
+     dBody <- display body
+     du <- display u
+     return $
       sep [text "ind" <+> df <+> parens (dx <+> colon <+> dTy) <+>
            brackets du <+> text ".",
            nest 2 dBody]
 
 
-  disp (Rec binding) = do
-    ((f,(x,ty)),body) <- unbind binding
-    df <- disp f
-    dx <- disp x
-    dTy <- disp ty
-    dBody <- disp body
-    return $
-      sep [text "rec" <+> df <+> parens (dx <+> colon <+> dTy) <+>
-           text ".",
-           nest 2 dBody]
+  display (Rec binding) = do
+    lunbind binding $ \((f,(x,ty)),body) -> do
+      df <- display f
+      dx <- display x
+      dTy <- display ty
+      dBody <- display body
+      return $
+         sep [text "rec" <+> df <+> parens (dx <+> colon <+> dTy) <+>
+              text ".",
+              nest 2 dBody]
 
 
-  disp (t@(Let binding)) = do
+  display (t@(Let binding)) = do
     (ds,body) <- linearizeLet t
     let f (x,y,Embed z) =
-         do dx <- disp x
-            dy <- disp y
-            dz <- disp z
+         do dx <- display x
+            dy <- display y
+            dz <- display z
             return(sep [dx <+> brackets dy <+> text "=",nest 3 dz])
     docs <- mapM f ds
-    db <- disp body
+    db <- display body
     return $ sep
       [text "let" <+> nest 4 (sep (punctuate (text ";") docs)), text "in" <+> db]
 
 
-  disp (t@(Aborts c)) = do
+  display (t@(Aborts c)) = do
     dc <- dParen (precedence t) c
     return $ text "aborts" <+> dc
-  disp (t@(Ann t0 t1)) = do
+  display (t@(Ann t0 t1)) = do
     d0 <- dParen (precedence t) t0
     d1 <- dParen (precedence t) t1
     return $ d0 <+> colon <+> d1
 
 
-  disp (Pos _ t) = disp t
-  disp (t@(Sym x)) = do
+  display (Pos _ t) = display t
+  display (t@(Sym x)) = do
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
-  disp (t@Refl) = return $ text "refl"
-  disp t@(Trans t1 t2) = do
+  display (t@Refl) = return $ text "refl"
+  display t@(Trans t1 t2) = do
     d1 <- dParen (precedence t) t1
     d2 <- dParen (precedence t) t2
     return $ text "trans" <+> d1 <+> d2
 
-
-  disp t@(MoreJoin xs) = do
-    ds <- mapM disp xs
+  display t@(MoreJoin xs) = do
+    ds <- mapM display xs
     return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
 
-  -- disp e = error $ "disp: " ++ show e
+  -- display e = error $ "display: " ++ show e
 
   precedence (Pos _ t) = precedence t
   precedence (Var _) = 12
@@ -281,7 +359,7 @@ instance Disp Term where
 
 linearizeLet (Pos _ t) = linearizeLet t
 linearizeLet (Let binding) =
-  do (triple,body) <- unbind binding
+  lunbind binding $ \(triple,body) -> do
      (ds,b) <- linearizeLet body
      return(triple:ds,b)
 linearizeLet x = return ([],x)
@@ -290,88 +368,87 @@ linearizeLet x = return ([],x)
 bindingWrap Dynamic = parens
 bindingWrap Static = brackets
 
-instance Disp Decl where
-  disp (ProgDecl n ty val) = do
-    dn <- disp n
-    dty <- disp ty
-    dval <- disp val
+instance Display Decl where
+  display (ProgDecl n ty val) = do
+    dn <- display n
+    dty <- display ty
+    dval <- display val
     return $ text "type" <+> dn <+> text ":" <+> dty <> semi $$
              cat[text "prog" <+> dn <+> text "=", nest 3 $ dval <> semi] $$ text ""
 
 
-  disp (ProofDecl n ty val) = do
-    dn <- disp n
-    dty <- disp ty
-    dval <- disp val
+  display (ProofDecl n ty val) = do
+    dn <- display n
+    dty <- display ty
+    dval <- display val
     return $ text "theorem" <+> dn <+> text ":" <+> dty <> semi $$
              cat[text "proof" <+> dn <+> text "=",nest 3 $ dval <> semi] $$ text ""
 
 
-  disp (DataDecl t1 t2 cs) = do
-     d1 <- disp t1
-     d2 <- disp t2
-     dcs <- mapM dispCons cs
+  display (DataDecl t1 t2 cs) = do
+     d1 <- display t1
+     d2 <- display t2
+     dcs <- mapM displayCons cs
      return $ hang (text "data" <+> d1 <+> colon <+> d2 <+> text "where") 2
                        (vcat (punctuate semi dcs)) $$ text ""
-    where dispCons (c,t) = do
-            dc <- disp c
-            dt <- disp t
+    where displayCons (c,t) = do
+            dc <- display c
+            dt <- display t
             return $ dc <+> colon <+> dt
 
 
 
 
-instance Disp Module where
-  disp (Module n bindings) = do
-    dn <- disp n
-    dbindings <- mapM disp bindings
+instance Display Module where
+  display (Module n bindings) = do
+    dn <- display n
+    dbindings <- mapM display bindings
     return $ text "module" <+> dn <+> text "where" $$
              cat dbindings
 
 
-instance Disp a => Disp (Embed a) where
-  disp (Embed e) = disp e
+instance Display a => Display (Embed a) where
+  display (Embed e) = display e
 
 
 
-instance Disp ETerm where
-  disp (EVar v) = disp v
-  disp (ECon c) = disp c
-  disp EType = return $ text "Type"
-
-  disp t@(EApp t1 t2) = do
+instance Display ETerm where
+  display (EVar v) = display v
+  display (ECon c) = display c
+  display EType = return $ text "Type"
+  display t@(EApp t1 t2) = do
      d1 <- etermParen (precedence t - 1) t1
      d2 <- etermParen (precedence t) t2
      return $ d1 <+> d2
-  disp t@(ERec binding) = do
-    ((f,x),body) <- unbind binding
-    df <- disp f
-    dx <- disp x
+  display t@(ERec binding) = do
+    lunbind binding $ \((f,x),body) -> do
+    df <- display f
+    dx <- display x
     dbody <- etermParen (precedence t) body
     return $ text "rec" <+> df <+> dx <+> text "." <+> dbody
 
-  disp t@(ELambda binding) =  do
-    (x,body) <- unbind binding
-    dx <- disp x
+  display t@(ELambda binding) =  do
+    lunbind binding $ \(x,body) -> do
+    dx <- display x
     dbody <- etermParen (precedence t) body
     return $ text "\\" <+> dx <+> text "." <+> dbody
 
-  disp t@(ECase s alts) = do
-    ds <- disp s
-    alts <- mapM dispAlt alts
+  display t@(ECase s alts) = do
+    ds <- display s
+    alts <- mapM displayAlt alts
     return $ text "case" <+> ds <+> text "of" $$
              nest 2 (vcat alts)
-   where dispAlt alt = do
-           ((c,pvars),body) <- unbind alt
-           dbody <- disp body
-           dpvars <- mapM disp pvars
+   where displayAlt alt = do
+           lunbind alt $ \((c,pvars),body) -> do
+           dbody <- display body
+           dpvars <- mapM display pvars
            return $ text c <+> hcat dpvars <+> text "->" <+> dbody
 
-  disp t@(ELet binding) = do
-     ((n,t),body) <- unbind binding
-     dn <- disp n
-     dt <- disp t
-     dbody <- disp body
+  display t@(ELet binding) = do
+     lunbind binding $ \((n,t),body) -> do
+     dn <- display n
+     dt <- display t
+     dbody <- display body
      return $ text "let" <+> dn <+> text "=" <+> dt $$
               text "in" <+> dbody
 
@@ -386,30 +463,28 @@ instance Disp ETerm where
 
 
 
-etermParen:: (Functor m,Fresh m,Disp a) => Int -> a -> m Doc
+etermParen:: (Display a) => Int -> a -> M Doc
 etermParen level x
-  | level >= (precedence x) = parens <$> disp x
-  | otherwise =  disp x
+  | level >= (precedence x) = parens <$> display x
+  | otherwise =  display x
 
 
 -- instance Show TypeError where
---     show e = render $ disp e
+--     show e = render $ display e
 
 
 
-runDisp t = render $ runFreshM (disp t)
+-- runDisplay t = render $ runFreshM (display t)
 
 
 
 instance Disp SourcePos where
-  disp sp =
-    return $ text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
+  disp sp =  text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
 
 instance Disp ParseError where
  disp pe = do
-    dpos <- disp (errorPos pe)
-    return $ dpos $$
-             text "Parse Error:" $$ sem
+    hang (disp (errorPos pe)) 2
+             (text "Parse Error:" $$ sem)
   where sem = text $ showErrorMessages "or" "unknown parse error"
               "expecting" "unexpected" "end of input"
               (errorMessages pe)

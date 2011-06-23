@@ -25,7 +25,6 @@ main = flip catches handlers $ do
      do cnts <- hGetContents h
   -- Parse the module
         ast <- liftEither $  parseModule (file opts) cnts
-        dast <- display ast
 
   -- Typecheck the module
         tcres <- typecheck ast
@@ -34,8 +33,8 @@ main = flip catches handlers $ do
         exitSuccess
 
   where handlers = [Handler parseHandler, Handler typeHandler]
-        typeHandler e@(ErrMsg _ _) = putStrLn (runDisp e) >> exitFailure
-        parseHandler (e :: ParseError)= putStrLn (runDisp e) >> exitFailure
+        typeHandler e@(ErrMsg _ _) = print (disp e) >> exitFailure
+        parseHandler (e :: ParseError)= print (disp e) >> exitFailure
 
 
 
@@ -58,7 +57,7 @@ liftEither (Right val) = return val
 
 go s = handle h $ withArgs ["--file="++s] main
   where h e@(ErrMsg _ _) = do
-          putStrLn $ runDisp e
+          print $ disp e
 
 testcase = "Tests/unittests/ParseTest.sepp"
 testcase2 = "Tests/unittests/IndVRDemo.sepp"
@@ -67,4 +66,4 @@ testcase2 = "Tests/unittests/IndVRDemo.sepp"
 less1 = IndLT (var "x") (var "y")
 eq1 = Equal (var "x") (var "y")
 
-test p s =  putStrLn(runDisp (parse2 p s))
+test p s =  print (disp (parse2 p s))

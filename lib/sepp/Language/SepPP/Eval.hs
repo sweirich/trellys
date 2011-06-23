@@ -41,8 +41,7 @@ reduce steps v@(EVar n) k = do
               logReduce v t'
               reduce (steps - 1) t' k
        Nothing -> do
-               when debugReductions $ liftIO . print =<<
-                     ("Can't reduce variable" <++> v)
+               when debugReductions $ emit ("Can't reduce variable" <++> v)
                k steps v
 reduce steps t@(ECon _) k = k steps t
 

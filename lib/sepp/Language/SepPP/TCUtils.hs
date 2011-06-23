@@ -83,7 +83,7 @@ lookupDef n = do
 substDefs :: Term -> TCMonad Term
 substDefs t = do
   defs <- asks sigma
-  mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
+  -- mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
   return $ substs defs t
 
 withRewrites :: [(ETerm,ETerm)] -> TCMonad a -> TCMonad a
@@ -110,17 +110,14 @@ instance Error TypeError where
 instance Exception TypeError
 
 instance Disp TypeError where
-  disp (ErrMsg [] msg) = return
+  disp (ErrMsg [] msg) =
           (nest 2 (text "Type Error" $$
               text msg))
 
-  disp (ErrMsg ps msg) = do
-    dpos <- disp pos
-    return (dpos $$
-            nest 2 (text "Type Error" $$
-                    text msg))
-    where (pos,t) = last ps
-
+  disp (ErrMsg ps msg) =
+      hang start 2 (text "Type Error" $$ text msg)
+    where (p,t) = last ps
+          start = disp p
 
 
 
@@ -129,51 +126,26 @@ addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
 err msg = throwError (strMsg msg)
 
 ensure p m = do
-  unless p $ m >>= (err . render)
+  unless p $ die m
 
 die m = do
-  m >>= (err . render)
+  err $ render (disp m)
 
-emit m = m >>= (liftIO . print)
+emit m = liftIO $ print m
 
 actual `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected =
   ensure (actual `aeq` expected)
-           ("Expecting" $$$ (nest 2 <$> doDisp expected) $$$
-            "but actual type is" $$$ (nest 2 <$> doDisp actual))
+           ("Expecting" $$$ (nest 2 $ disp expected) $$$
+            "but actual type is" $$$ (nest 2 $ disp actual))
 
-t1 <++> t2 = liftM2 (<+>) (doDisp t1) (doDisp t2)
-t1 $$$ t2 = liftM2 ($$) (doDisp t1) (doDisp t2)
-
-class IsDisp a where
-  doDisp :: a -> TCMonad Doc
-
-instance IsDisp String where
-  doDisp s = return $ text s
-instance IsDisp Int where
-  doDisp i = return $ int i
+(<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc
+t1 <++> t2 = disp t1 <+> disp t2
+t1 $$$ t2 =  disp t1 $$ disp t2
 
 
--- instance Disp a => IsDisp a where
---   doDisp = disp
-instance IsDisp TName where
-  doDisp n = disp n
-instance IsDisp Term where
-  doDisp t = disp t
-instance IsDisp (Maybe Term) where
-  doDisp Nothing = doDisp "<empty>"
-  doDisp (Just t) = doDisp t
-
-instance  IsDisp (TCMonad Doc) where
-  doDisp m = m
-
-instance IsDisp ETerm where
-  doDisp = disp
-
-instance IsDisp (Name ETerm) where
-  doDisp = disp
 
 -------------------------------------
 -- syntactic Value

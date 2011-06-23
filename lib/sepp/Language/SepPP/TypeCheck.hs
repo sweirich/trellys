@@ -203,7 +203,7 @@ check ProgMode (Pi _ binding) expected = do -- Term_Pi
   extendBinding n ty False $ check ProgMode body expected
 
 check mode tm@(Pi _ _) ty = do
-  die $  "Can't check Pi type in non-programmatic mode." $$$
+  die $ "Can't check Pi type in non-programmatic mode." $$$
         tm $$$
         ty
 
@@ -234,9 +234,6 @@ check PredMode (Forall binding) Nothing = do
                 err "predSynth pred case, not a formula."
         SortType -> do
                  ty <- typeSynth' t
-                 dty <- disp ty
-                 -- unless (ty `aeq` Type) $
-                 --      err $ "Expecting a type for " ++ render dty
                  ty `expectType` Type
 
 
@@ -266,10 +263,11 @@ check mode term@(App t0 stage t1) expected = do
         let sub = subst x t1 body
         sub `sameType` expected
         return sub
+    (ProgMode, ty0') -> do
+      die $ "Cannot apply" <++> t0 <++> "with a non-functional type" <++> ty0'
 
     (PredMode, Forall binding) -> do
-        ensure (stage == Static) $
-               err "Application of a predicate must be in the static stage."
+        ensure (stage == Static) $ "Application of a predicate must be in the static stage."
         ((n,Embed ty),body) <- unbind binding
         guardLK body
         typeAnalysis' t1 ty -- TODO: Check on this, should it be typeAnalysis?
@@ -342,7 +340,7 @@ check ProgMode (Lambda Program progStage progBinding) (Just ty@(Pi piStage piBin
 -- Case
 check mode (Case s pf binding) expected = do
   ensure (mode `elem` [ProofMode,ProgMode]) $
-         die $ "Case expressions can only be checked in proof and program mode, not " <++> show mode
+     "Case expressions can only be checked in proof and program mode, not " <++> show mode
   (sEq,alts) <- unbind binding
   tyS <- typeSynth' s
 
@@ -456,8 +454,7 @@ check ProofMode (t@(Val x)) expected = do
         then do let ans = Terminates (down term)
                 ans `sameType` expected
                 return ans
-        else  do d <- disp t
-                 err $ "Non Value: " ++ render d
+        else  do die $ "Non Value:" <++> t
 
 
 
@@ -465,7 +462,7 @@ check ProofMode (t@(Val x)) expected = do
 
 check mode (Terminates t) expected = do -- Pred_Terminates rule
   ensure (mode `elem` [PredMode,ProgMode]) $
-         die $ "Can't check type of Terminates term in " <++> show mode <++> "mode."
+           "Can't check type of Terminates term in " <++> show mode <++> "mode."
   typeSynth' t
   (Formula 0) `sameType` expected
   return (Formula 0)
@@ -520,7 +517,7 @@ check ProgMode (Abort t) Nothing = do
 -- ConvCtx
 check mode (ConvCtx p ctx) expected = do
   ensure (mode `elem` [ProofMode,ProgMode]) $
-         die $  "Can't do conversion in mode" <++> show mode
+         "Can't do conversion in mode" <++> show mode
   let submode = case mode of
                   ProofMode -> PredMode
                   ProgMode -> ProgMode
@@ -684,7 +681,7 @@ check ProofMode (Aborts c) expected = withEscapeContext StrictContext $ do
 -- Sym
 check mode (Sym t) expected = do
   ensure (mode `elem` [ProgMode, ProofMode]) $
-         die $ "Can't check sym in mode" <++> show mode
+         "Can't check sym in mode" <++> show mode
   ty <- check ProofMode t Nothing
   case down ty of
      (Equal t1 t0)-> return (Equal t0 t1)
@@ -728,16 +725,16 @@ check mode (Trans t1 t2) (Just ty) = do
     (Equal ty0 ty1) -> do
        (Equal a b) <- checkEqual mode t1
        (Equal b' c) <- checkEqual mode t2
-       ensure (a `aeq` ty0) $ die $
+       ensure (a `aeq` ty0) $
                 "When checking a trans, the LHS of first equality" $$$
                 a $$$ "does not match the LHS of the expected type." $$$
                 ty0
-       ensure (c `aeq` ty1) $ die $
+       ensure (c `aeq` ty1) $
                 "When checking a trans, the RHS of second equality" $$$
                 c $$$ "does not match the RHS of the expected type" $$$
                 ty1
 
-       ensure (b `aeq` b') $ die $
+       ensure (b `aeq` b') $
                 "When checking a trans, the RHS of first equality" $$$
                 b $$$ "does not match the LHS of the second equality" $$$
                 b'
@@ -1014,7 +1011,7 @@ checkCaseCoverage tyS alts = do
 
     let unhandled =  (nub $ map fst cs) \\ (nub $ map fst altCs)
     ensure (null unhandled) $
-           "Unhandled constructors:" <++> (vcat <$> mapM disp unhandled :: TCMonad Doc)
+           "Unhandled constructors:" <++> (vcat $ map disp unhandled)
 
     forM altCs (\(n,arity) -> case lookup n cs of
                                 Nothing -> die $ n <++> "is not a constructor of" <++> tc
