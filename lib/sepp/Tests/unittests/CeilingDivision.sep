@@ -32,21 +32,6 @@ data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
 
-theorem refl_test : Z = Z
-proof refl_test = (join 1 1 : Z = Z)
-
-
-theorem builtin_refl_test : Z = Z
-proof builtin_refl_test = (refl : Z = Z)
-
-theorem builtin_trans_test : Z = Z
-proof builtin_trans_test = trans (refl : Z = Z) (refl : S Z = S Z)
-
-
-
-theorem refl_test2 : Type = Type
-proof refl_test2 = (join 1 1 : Type = Type)
-
 data Bool : Type where
   True : Bool
 | False : Bool
@@ -96,25 +81,27 @@ prog lt = rec lt (x:Nat) . \(y:Nat) ->
 
 
 
-{-
--- [AS]: possible bug type checking this one:
-
-theorem ltZ_False : forall(x:Nat)(u:x!)(u:lt x Z = True)(p:Form).p
+theorem ltZ_False : forall(x:Nat)(u:x!)(u:lt x Z = True). True = False
 proof ind ltZ_False(x:Nat)[x_term] =
-  \(u:lt x Z = True)(p:Form) =>
+  \(u:lt x Z = True) =>
    case x {x_eq} x_term of
-     Z -> Z
-     -- (contra
-     --   trans
-     --     sym
-     --     trans
-     --       conv (refl Bool (lt x Z)) at lt x Z = lt ~u Z
-     --       (join 100 100 : lt Z Z = False)
-     --  : p)
-   | S x' -> u
-
-
+     | Z -> 
+{-       trans
+         sym
 -}
+       trans
+           (conv refl at lt x Z = lt ~(symm x_eq) Z)
+           (join 100 100 : (lt Z Z) = False)
+
+{-       (contra
+         trans
+           sym
+             trans
+               conv refl at lt x Z = lt ~u Z
+               (join 100 100 : lt Z Z = False))
+       : True = False
+-}     | S x' -> u
+
 
 -- [AS] I am not 100% sure how many of these termination assumptions are needed.
 {-
