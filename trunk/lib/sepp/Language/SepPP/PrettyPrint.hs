@@ -327,6 +327,8 @@ instance Disp a => Disp (Embed a) where
 instance Disp ETerm where
   disp (EVar v) = disp v
   disp (ECon c) = disp c
+  disp EType = return $ text "Type"
+
   disp t@(EApp t1 t2) = do
      d1 <- etermParen (precedence t - 1) t1
      d2 <- etermParen (precedence t) t2

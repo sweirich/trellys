@@ -87,10 +87,8 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
                          rw <- lookupRewrite scrutinee
                          case rw of
                            Just rhs -> do
-                                   emit $ "Found rewrite" <++> rhs
                                    reduce steps rhs k'
                            Nothing -> do
-                             emit $  "No match" <++> v
                              k steps (ECase v alts)
 
         findCon :: ETerm -> [ETerm] -> [ETerm]
@@ -117,13 +115,13 @@ reduce steps (ELet binding) k = do
 
 reduce steps t@(ERec binding) k = k steps t
 reduce steps t@(ELambda _) k = k steps t
-
+reduce steps EType k = k steps EType
 
 
 
 reduce steps t k = die $ "reduce" <++> t
 
-patMatch (c,args) [] = fail "No Pattern Match"
+patMatch (c,args) [] = err "No Pattern Match"
 patMatch t@(Con c,args) (b:bs) = do
   ((cname,vars),body) <- unbind b
   if string2Name cname == c

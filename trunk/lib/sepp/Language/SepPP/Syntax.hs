@@ -185,9 +185,11 @@ data ETerm = EVar (Name ETerm)
            | ERec (Bind (EName, EName) ETerm)
            | ECase ETerm [Bind (String,[EName]) ETerm]
            | ELet (Bind (EName, Embed ETerm) ETerm)
+           | EType
   deriving (Show)
 
 erase (Pos _ t) = erase t
+erase Type = return EType
 erase (Var n) = return $ EVar (translate n)
 erase (Con n) = return $ ECon (translate n)
 erase (App f Static _) = erase f
@@ -214,8 +216,12 @@ erase (Let binding) = do
     ebody <- erase body
     return $ ELet (bind (translate x,Embed et) ebody)
 
+
+
+
 erase (Ann t _) = erase t
-erase t = error $ "erase " ++ show t
+erase t =  do
+  fail $  "The erasure function is not defined on: " ++ show t
 
 erasedValue (ECase _ _) = False
 erasedValue (EApp _ _) = False
