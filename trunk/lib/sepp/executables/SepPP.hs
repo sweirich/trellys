@@ -1,21 +1,24 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
 module Main where
 
 import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
+import Language.SepPP.TCUtils(TypeError(ErrMsg))
 import Language.SepPP.Syntax(Term(..),var,app,Stage(..))
 import Unbound.LocallyNameless(Embed(..),bind,string2Name)
 
 import Text.PrettyPrint(render)
+import Text.Parsec(ParseError)
 
 import System.Console.CmdArgs
 import Data.Typeable
 import Control.Exception
 import System.Environment
+import System.Exit
 import System.IO(withFile,hGetContents,IOMode(..),hClose,openFile)
 
-main = do
+main = flip catches handlers $ do
   opts <- cmdArgs sepPPArgs
   -- cnts <- withFile (file opts) ReadMode hGetContents
   bracket (openFile (file opts)ReadMode ) hClose $ \ h ->
@@ -26,14 +29,15 @@ main = do
 
   -- Typecheck the module
         tcres <- typecheck ast
-        case tcres of
-         Left err -> fail $ runDisp err
-         Right val -> return ()
-
-
-  -- _ <- liftEither tcres
-
+        liftEither tcres
         putStrLn "Success!"
+        exitSuccess
+
+  where handlers = [Handler parseHandler, Handler typeHandler]
+        typeHandler e@(ErrMsg _ _) = putStrLn (runDisp e) >> exitFailure
+        parseHandler (e :: ParseError)= putStrLn (runDisp e) >> exitFailure
+
+
 
 
 data SepPPOpts = SepPPOpts {
@@ -53,8 +57,8 @@ liftEither (Right val) = return val
 
 
 go s = handle h $ withArgs ["--file="++s] main
-  where h (SomeException e) = do
-          print e
+  where h e@(ErrMsg _ _) = do
+          putStrLn $ runDisp e
 
 testcase = "Tests/unittests/ParseTest.sepp"
 testcase2 = "Tests/unittests/IndVRDemo.sepp"

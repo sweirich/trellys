@@ -36,6 +36,13 @@ theorem refl_test : Z = Z
 proof refl_test = (join 1 1 : Z = Z)
 
 
+theorem builtin_refl_test : Z = Z
+proof builtin_refl_test = (refl : Z = Z)
+
+theorem builtin_trans_test : Z = Z
+proof builtin_trans_test = trans (refl : Z = Z) (refl : S Z = S Z)
+
+
 
 theorem refl_test2 : Type = Type
 proof refl_test2 = (join 1 1 : Type = Type)

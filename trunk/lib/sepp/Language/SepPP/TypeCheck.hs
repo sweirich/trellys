@@ -716,11 +716,39 @@ check mode Refl (Just ty) =
         "The type ascribed to a refl-proof is not of the form t = t.\n\n"
         <++> "1. the type: "<++> ty in
   do
-    case ty of
-      (Equal t0 t1) ->
+    case down ty of
+      (Equal t0 t1) -> do
         ensure (t0 `aeq` t1) $ err
+        return ty
       _ -> die $ err
     return ty
+
+check mode (Trans t1 t2) (Just ty) = do
+  case down ty of
+    (Equal ty0 ty1) -> do
+       (Equal a b) <- checkEqual mode t1
+       (Equal b' c) <- checkEqual mode t2
+       ensure (a `aeq` ty0) $ die $
+                "When checking a trans, the LHS of first equality" $$$
+                a $$$ "does not match the LHS of the expected type." $$$
+                ty0
+       ensure (c `aeq` ty1) $ die $
+                "When checking a trans, the RHS of second equality" $$$
+                c $$$ "does not match the RHS of the expected type" $$$
+                ty1
+
+       ensure (b `aeq` b') $ die $
+                "When checking a trans, the RHS of first equality" $$$
+                b $$$ "does not match the LHS of the second equality" $$$
+                b'
+
+       return ty
+
+    _ -> die $ "The type ascribed to a refl-proof is not of the form t = t." $$$
+                 "1. the type: "<++> ty
+
+
+
 
 check mode term expected = checkUnhandled mode term expected
 
@@ -728,7 +756,19 @@ checkUnhandled mode term expected = do
   die $  "Unhandled check case:" $$$
           "mode: " <++> show mode $$$
           "term: " <++> term $$$
-          "expected: " <++> expected
+          "expected: " <++> expected $$$
+          show term $$$
+          show expected
+
+
+checkEqual mode term = do
+  ty <- check mode term Nothing
+  case down ty of
+    Equal a b -> return ty
+    _ -> die $ "Expecting an equality type." $$$
+               "When checking the term" $$$ term $$$
+               "and the type" $$$ ty $$$ "was inferred."
+
 
 
 predSynth' t = check PredMode t Nothing
