@@ -710,6 +710,18 @@ check ProofMode (Sym t) (Just ty@(Equal t0 t1)) = do
   proofAnalysis' t (Equal t1 t0)
   return ty
 
+-- Refl
+check mode Refl (Just ty) = 
+  let err = 
+        "The type ascribed to a refl-proof is not of the form t = t.\n\n"
+        <++> "1. the type: "<++> ty in
+  do
+    case ty of
+      (Equal t0 t1) ->
+        ensure (t0 `aeq` t1) $ err
+      _ -> die $ err
+    return ty
+
 check mode term expected = checkUnhandled mode term expected
 
 checkUnhandled mode term expected = do

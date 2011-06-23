@@ -1,9 +1,46 @@
 module CeilingDiv where
 
+{-
+
+-- [AS] I proved symm and trans before I realized we had sym built-in.
+   So then I added refl and trans, too.
+
+theorem refl : forall(a:Type)(m:a).m = m
+proof refl = \(a:Type)(m:a) => join 100 100
+
+theorem symm : forall(A:Type)(B:Type)(a:A)(b:B)(u:a = b).b = a
+proof symm = \(A:Type)(B:Type)(a:A)(b:B)(u:a = b) =>
+                 conv (refl A a) at ~u = a
+
+theorem usymm : forall(A:Type)(a:A)(b:A)(u:a = b).b = a
+proof usymm = \(A:Type)(a:A)(b:A)(u:a = b) =>
+                 conv (refl A a) at ~u = a
+
+
+
+theorem trans : forall(A:Type)(B:Type)(C:Type)(a:A)(b:B)(c:C)(u:a = b)(u2:b = c).a = c
+proof trans = \(A:Type)(B:Type)(C:Type)(a:A)(b:B)(c:C)(u:a = b)(u2:b = c) =>
+                 conv u at a = ~u2
+
+theorem utrans : forall(A:Type)(a:A)(b:A)(c:A)(u:a = b)(u2:b = c).a = c
+proof utrans = \(A:Type)(a:A)(b:A)(c:A)(u:a = b)(u2:b = c) =>
+                 conv u at a = ~u2
+-}
+
 
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
+
+theorem refl_test : Z = Z
+proof refl_test = (join 1 1 : Z = Z)
+
+{- [AS] this does not type check, but should, I believe:
+
+theorem refl_test2 : Type = Type
+proof refl_test2 = (join 1 1 : Type = Type)
+
+-}
 
 data Bool : Type where
   True : Bool
@@ -53,6 +90,38 @@ prog lt = rec lt (x:Nat) . \(y:Nat) ->
 								| S y' -> lt x' y'
 
 
+{-
+
+[AS]: possible bug type checking this one:
+
+theorem ltZ_False : forall(x:Nat)(u:x!)(u:lt x Z = True)(p:Form).p
+proof ind ltZ_False(x:Nat)[x_term] =
+  \(u:lt x Z = True)(p:Form) =>
+   case x {x_eq} x_term of
+     Z ->
+     (contra 
+       trans
+         sym
+         trans 
+           conv (refl Bool (lt x Z)) at lt x Z = lt ~u Z
+           (join 100 100 : lt Z Z = False)
+      : P)     
+   | S x' -> u
+-}
+
+-- [AS] I am not 100% sure how many of these termination assumptions are needed.
+{-
+theorem lt_ind_h : forall(x:Nat)(u:x!)
+                         (P:forall(x:Nat)(u:x!).Form)
+                         (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x). P x
+proof ind lt_ind(x:Nat)[x_term] = 
+  \(P:forall(x:Nat)(u:x!).Form)
+   (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x) =>
+   case x {x_eq} x_term of
+     Z -> (u x x_term \(y:Nat)(u:y!)(u:lt y x = True).
+-}                       
+  
+
 type le : (x:Nat) -> (y:Nat) -> Bool
 prog le = rec le (x:Nat) . \(y:Nat) ->
     (case x {xw} of
@@ -60,6 +129,7 @@ prog le = rec le (x:Nat) . \(y:Nat) ->
     | S x' -> (case y {yw} of
                 Z -> False
               | S y' -> le x' y'))
+
 
 -- theorem minus_same_zero : forall (n:Nat)(n_term:n!). (minus n n = Z)
 -- proof minus_same_zero = ind minus_same_zero (n:Nat) [n_term] .
@@ -81,12 +151,6 @@ prog rec div (x:Nat) = \(y:Nat) ->
                    True -> Z
                  | False -> S (div (minus x y)  y)
 
-
-
-
-
-theorem refl : forall(a:Type)(m:a).m = m
-proof refl = \(a:Type)(m:a) => join 100 100
 
 -- If S m' terminates, then m' terminates.
 theorem s_term : forall(m:Nat)(m':Nat)(p:S m' = m)(u:m!).m' !

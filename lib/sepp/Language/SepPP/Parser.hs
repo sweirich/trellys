@@ -148,7 +148,7 @@ sepPPStyle = haskellStyle {
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
             "let","in",
-            "sym"
+            "sym","symm","trans","refl"
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -333,8 +333,16 @@ abortExpr = do
   Abort <$> expr
 
 symExpr = do
-  reserved "sym"
+  reserved "sym" <|> reserved "symm"
   Sym <$> term
+
+reflExpr = do
+  reserved "refl"
+  return $ Refl
+
+transExpr = do
+  reserved "trans"
+  Trans <$> term <*> term
 
 
 convExpr = do
@@ -462,6 +470,8 @@ term = wrapPos $
               ,strictExpr
                 -- Derived Forms
               ,symExpr
+              ,transExpr
+              ,reflExpr
               ,morejoinExpr
               ,varOrCon <?> "Identifier"
               ,parens expr <?> "Parenthesized Expression"
