@@ -127,6 +127,8 @@ instance Alpha Term where
   aeq' c t1 (Pos _ t2) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
 
+instance Alpha Module
+instance Alpha Decl
 instance Alpha Stage
 instance Alpha Kind
 instance Subst Term Term where
@@ -136,6 +138,7 @@ instance Subst Term Term where
 instance Subst Term Stage
 instance Subst Term Kind
 instance Subst Term SourcePos
+
 
 
 splitApp (App t0 _ t1) = splitApp' t0 [t1]
