@@ -11,6 +11,8 @@ data Nat : Type where
 theorem idprog : forall (a : Type).forall (x : a).(x = x)
 proof idprog = \(a:Type) => \(x:a) => join 1 1
 
+theorem builtin_refl_test : Z = Z
+proof builtin_refl_test = (refl : Z = Z)
 
 
 type plus : (x:Nat) -> (y:Nat) -> Nat
@@ -18,6 +20,9 @@ prog plus = rec plus (x:Nat) . \(y:Nat) ->
   case x {xeq} of
     Z -> y
     | S x' -> S (plus x' y)
+
+theorem builtin_trans_test : Z = (plus (plus Z Z) Z)
+proof builtin_trans_test = trans (join 10 10 : Z = (plus Z Z)) (join 10 10 : (plus Z Z) = (plus (plus Z Z) Z))
 
 type plus2 : Pi(x:Nat)(y:Nat) -> Nat
 prog plus2 = rec plus (x:Nat) . \(y:Nat) ->
