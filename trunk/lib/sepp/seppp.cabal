@@ -72,7 +72,7 @@ Library
 
 Executable sep
   Main-is: SepPP.hs
-  Build-depends: base, cmdargs, pretty, mtl, unbound, RepLib, seppp
+  Build-depends: base, cmdargs, pretty, mtl, unbound, RepLib, seppp, parsec >= 3.0
   Hs-source-dirs: executables
   Extensions: DeriveDataTypeable
 
