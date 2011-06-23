@@ -114,12 +114,13 @@ instance Disp TypeError where
           (nest 2 (text "Type Error" $$
               text msg))
 
-  disp (ErrMsg ps msg) = return
-     (start $$
-      nest 2 (text "Type Error" $$
-              text msg))
-    where (p,t) = last ps
-          start = text (show p)
+  disp (ErrMsg ps msg) = do
+    dpos <- disp pos
+    return (dpos $$
+            nest 2 (text "Type Error" $$
+                    text msg))
+    where (pos,t) = last ps
+
 
 
 

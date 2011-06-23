@@ -18,7 +18,6 @@ import Control.Monad.Identity
 import Control.Exception(Exception)
 import Data.Char
 import Text.PrettyPrint(render)
-import Language.SepPP.PrettyPrint(runDisp)
 
 parse2 p s =
    case parse p "Input" s of
@@ -26,27 +25,14 @@ parse2 p s =
      Right e -> e
 
 -- | Parse a string to module.
-parseModule :: String -> String -> Either ParseError Module
-parseModule srcName cnts =
-  case runParser sepModule () srcName cnts of
-    Left err -> Left $ ParseError err
-    Right val -> Right val
-
--- We wrap ParseError, so that we can write a custom show instance
-newtype ParseError = ParseError P.ParseError deriving (Typeable)
-instance Show ParseError where
-  show (ParseError e) = posMsg ++ "\n" ++
-                        show e
-    where pos = errorPos e
-          posMsg = sourceName pos ++ ":" ++
-                   show (sourceLine pos) ++ ":" ++
-                   show (sourceColumn pos) ++ ":"
+parseModule :: String -> String -> Either P.ParseError Module
+parseModule srcName cnts = runParser sepModule () srcName cnts
 
 
 
 -- | Lifting ParseErrors to Exceptions
 deriving instance Typeable P.ParseError
-instance Exception ParseError where
+instance Exception P.ParseError where
 
 --type Parser = ParsecT String () Identity
 

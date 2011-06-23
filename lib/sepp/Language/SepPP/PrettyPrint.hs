@@ -8,6 +8,8 @@ import Unbound.LocallyNameless hiding (empty,Val,Con)
 import Text.PrettyPrint
 import Control.Applicative hiding (empty)
 import Control.Monad.Reader
+import Text.Parsec.Pos
+import Text.Parsec.Error(ParseError,showErrorMessages,errorPos,errorMessages)
 
 
 display :: Disp a => a -> IO Doc
@@ -238,6 +240,12 @@ instance Disp Term where
   disp (t@(Sym x)) = do
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
+  disp (t@Refl) = return $ text "refl"
+  disp t@(Trans t1 t2) = do
+    d1 <- dParen (precedence t) t1
+    d2 <- dParen (precedence t) t2
+    return $ text "trans" <+> d1 <+> d2
+
 
   disp t@(MoreJoin xs) = do
     ds <- mapM disp xs
@@ -263,6 +271,8 @@ instance Disp Term where
   precedence (OrdTrans _ _) = 5
   precedence (Aborts _) = 5
   precedence (Sym _) = 5
+  precedence (Trans _ _) = 5
+  precedence Refl = 5
 
   precedence (Pi Dynamic _) = 4
   precedence (Pi Static _) = 4
@@ -388,4 +398,20 @@ etermParen level x
 
 
 runDisp t = render $ runFreshM (disp t)
+
+
+
+instance Disp SourcePos where
+  disp sp =
+    return $ text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
+
+instance Disp ParseError where
+ disp pe = do
+    dpos <- disp (errorPos pe)
+    return $ dpos $$
+             text "Parse Error:" $$ sem
+  where sem = text $ showErrorMessages "or" "unknown parse error"
+              "expecting" "unexpected" "end of input"
+              (errorMessages pe)
+
 
