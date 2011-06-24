@@ -1,33 +1,5 @@
 module CeilingDiv where
 
-{-
-
--- [AS] I proved symm and trans before I realized we had sym built-in.
-   So then I added refl and trans, too.
-
-theorem refl : forall(a:Type)(m:a).m = m
-proof refl = \(a:Type)(m:a) => join 100 100
-
-theorem symm : forall(A:Type)(B:Type)(a:A)(b:B)(u:a = b).b = a
-proof symm = \(A:Type)(B:Type)(a:A)(b:B)(u:a = b) =>
-                 conv (refl A a) at ~u = a
-
-theorem usymm : forall(A:Type)(a:A)(b:A)(u:a = b).b = a
-proof usymm = \(A:Type)(a:A)(b:A)(u:a = b) =>
-                 conv (refl A a) at ~u = a
-
-
-
-theorem trans : forall(A:Type)(B:Type)(C:Type)(a:A)(b:B)(c:C)(u:a = b)(u2:b = c).a = c
-proof trans = \(A:Type)(B:Type)(C:Type)(a:A)(b:B)(c:C)(u:a = b)(u2:b = c) =>
-                 conv u at a = ~u2
-
-theorem utrans : forall(A:Type)(a:A)(b:A)(c:A)(u:a = b)(u2:b = c).a = c
-proof utrans = \(A:Type)(a:A)(b:A)(c:A)(u:a = b)(u2:b = c) =>
-                 conv u at a = ~u2
--}
-
-
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
@@ -201,41 +173,17 @@ proof ind lt_ord (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
                                in ord (sym u4)
 
 
-{-
-theorem ltZ_False : forall(x:Nat)(u:x!)(u:lt x Z = True). True = False
-proof ind ltZ_False(x:Nat)[x_term] =
-  \(u:lt x Z = True) =>
-   case x {x_eq} x_term of
-     | Z ->
-{-       trans
-         sym
--}
-       trans
-           (conv refl at lt x Z = lt ~(symm x_eq) Z)
-           (join 100 100 : (lt Z Z) = False)
-
-{-       (contra
-         trans
-           sym
-             trans
-               conv refl at lt x Z = lt ~u Z
-               (join 100 100 : lt Z Z = False))
-       : True = False
--}     | S x' -> u
--}
-
 -- [AS] I am not 100% sure how many of these termination assumptions are needed.
-{-
 theorem lt_ind_h : forall(x:Nat)(u:x!)
                          (P:forall(x:Nat)(u:x!).Form)
                          (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x). P x
-proof ind lt_ind(x:Nat)[x_term] =
+proof ind lt_ind_h(x:Nat)[x_term] =
   \(P:forall(x:Nat)(u:x!).Form)
    (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x) =>
-   case x {x_eq} x_term of
-     Z -> (u x x_term \(y:Nat)(u:y!)(u:lt y x = True).
--}
-
+   (case x {x_eq} x_term of
+     Z -> (u x x_term \(y:Nat)(u:y!)(u:lt y x = True) =>
+                       contra trans symm u (not_lt_z y u Z refl))
+   | S x' -> u)
 
 type le : (x:Nat) -> (y:Nat) -> Bool
 prog le = rec le (x:Nat) . \(y:Nat) ->
