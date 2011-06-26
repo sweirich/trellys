@@ -36,7 +36,7 @@ typecheckModule (Module n decls) = do
   return ()
 
 
-data DefRes = DataResult TName Term [(TName,Int,Term)]
+data DefRes = DataResult TName Tele [(TName,(Int,Term))]
             | ProofResult TName Term Term Bool
             | ProgResult TName Term Term Bool
             | AxiomResult TName Term
@@ -63,8 +63,12 @@ checkDef (ProgDecl nm ty prog) = do
   isVal <- synValue prog
   return $ ProgResult nm ty prog isVal
 
-checkDef (DataDecl (Con nm) ty cs) = do
+checkDef (DataDecl (Con nm) binding) = do
+  (tele,cs) <- unbind binding
+
+  let ty = teleArrow tele Type
   ran <- arrowRange ty
+
   withErrorInfo "When checking the range of a type constructor"
                   [(text "The Type Constructor", disp nm)] $ ran `expectType` Type
 
@@ -74,8 +78,8 @@ checkDef (DataDecl (Con nm) ty cs) = do
                 ,(text "The Type",disp ty)] $ typeAnalysis' ty Type
 
   conTypes <- extendBinding nm ty True $
-              mapM chkConstructor cs
-  return (DataResult nm ty conTypes)
+               extendTele tele $ (mapM chkConstructor cs)
+  return (DataResult nm tele conTypes)
 
 
   where arrowRange (Pi _ binding) = do
@@ -83,6 +87,14 @@ checkDef (DataDecl (Con nm) ty cs) = do
           arrowRange body
         arrowRange (Pos _ t) = arrowRange t
         arrowRange ty = return ty
+
+
+        arrowDom (Pos _ t) = arrowDom t
+        arrowDom (Pi stage binding) = do
+          (pat,body) <- unbind binding
+          doms <- arrowDom body
+          return $ (stage,pat):doms
+        arrowDom t = return []
 
         appHead (App t0 _ _) = appHead t0
         appHead (Pos _ t) = appHead t
@@ -95,14 +107,15 @@ checkDef (DataDecl (Con nm) ty cs) = do
 
 
         chkConstructor (c,ty) = do
-           typeAnalysis' ty Type
-           ran <- arrowRange ty
-           case appHead ran of
+
+          typeAnalysis' ty Type
+          ran <- arrowRange ty
+          case appHead ran of
              Con tc -> do
                ensure (tc == nm) $
                         "In constructor " <++> c <++>
                         "result type does not match declared data type."
-               return (c,arity ty,ty)
+               return (c,(arity ty,ty))
              h -> do
                die $ "Constructor head is" <++> h
 
@@ -118,10 +131,12 @@ checkDefs (d:ds) = do
           extendBinding n ty False comp
         extendBinding' (ProgResult n ty def v) comp =
           extendDefinition  n ty def v comp
-        extendBinding' (DataResult n ty cs) comp =
-          extendTypeCons n [(c,arity) | (c,arity,_) <- cs] $
-          extendBinding n ty True $
-                        foldr (\(n,arity,ty) m -> extendBinding n ty True m) comp cs
+        extendBinding' (DataResult n tele cs) comp =
+          extendTypeCons n tele cs $
+          extendBinding n (teleArrow tele Type) True $
+                        foldr (\(n,(arity,ty)) m ->
+                                 extendBinding n (teleArrow tele ty) True m)
+                              comp cs
 
 
 
@@ -173,7 +188,7 @@ check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 
 check mode (Ann t ty) Nothing = check mode t (Just ty)
 check mode (Ann t ty) (Just ty') = do
-  unless (ty `aeq` ty') $ do
+  unless (down ty `aeq` down ty') $ do
     die $ "Annotated type" <++> ty' <++> "doesn't match" <++> ty
   check mode t (Just ty)
 
@@ -264,7 +279,6 @@ check mode (Forall _) _ = do
 
 -- App
 
-
 check mode term@(App t0 stage t1) expected = do
   ty0 <- check mode t0 Nothing
   case (mode, down ty0) of
@@ -278,8 +292,8 @@ check mode term@(App t0 stage t1) expected = do
 
         ((x,Embed dom),body) <- unbind binding
         argTy <- typeAnalysis' t1 dom   -- TODO: Check on this, should it be typeAnalysis?
-        requireA argTy
-        require_a t1
+        withErrorInfo "requireA" [] $  requireA argTy
+        -- withErrorInfo "require_a" [] $ require_a t1
         let sub = subst x t1 body
         sub `sameType` expected
         return sub
@@ -367,11 +381,12 @@ check mode (Case s pf binding) expected = do
   (sEq,alts) <- unbind binding
   tyS <- typeSynth' s
 
+
   -- Checking termination proof
   case (mode,pf) of
       (ProofMode,Just termProof) -> do
                      sTermType <- proofSynth' termProof
-                     ensure (sTermType `aeq` Terminates s) $
+                     ensure (down sTermType `aeq` Terminates s) $
                        termProof $$$
                         "with the type" <++> sTermType <++> "is not a proof of" $$$
                        (Terminates s)
@@ -379,8 +394,12 @@ check mode (Case s pf binding) expected = do
                      err "When case-splitting in a proof, a termination proof must be supplied."
       _ -> return ()
 
-  checkCaseCoverage tyS alts
-  tys <- mapM (altAnalysis sEq) alts
+  -- Set up the parameter substitution
+
+  (args,cs) <- checkCaseCoverage tyS alts
+  tys <- mapM (altAnalysis args cs sEq) alts
+
+
   case nubBy aeq tys of
     [] -> maybe (err "Can't infer a type for a case expression with no branches.") return expected
     [l] -> do
@@ -390,13 +409,14 @@ check mode (Case s pf binding) expected = do
     ls -> err "Types of case alternatives do not match"
 
 
-  where altAnalysis eqpf alt = do
+  where altAnalysis args cs eqpf alt = do
           ((cons,vars),body) <- unbind alt
-          (ctype,_) <- lookupBinding (string2Name cons)
-
+          ctype <-
+            maybe (typeError "When checking a case alternative, can't find constructor"  [(text "The Constructor", disp cons)])
+                  return (lookup (string2Name cons) cs)
 
           let pat = foldl (\t0 t1 -> (App t0 Dynamic t1))
-                      (Con (string2Name cons)) (map Var vars)
+                      (Con (string2Name cons)) (args ++ (map Var vars))
 
           substPat vars ctype $
             extendBinding eqpf (Equal pat s) True  $ check mode body expected
@@ -407,7 +427,11 @@ check mode (Case s pf binding) expected = do
           case down ty of
             (Pi _ binding) -> do
              ((n',Embed ty),body) <- unbind binding
-             extendBinding n ty True $ substPat ns body m
+             extendBinding n ty True $ substPat ns (subst n' (Var n) body) m
+            _ -> typeError
+                  ("When checking a pattern, expected constructor to have" <++>
+                   "a pi-type.")
+                  [(text "The Type", disp ty)]
 
 
 
@@ -646,7 +670,7 @@ check ProgMode (Rec progBinding) (Just res@(Pi Dynamic piBinding)) = do -- Term_
   Just ((f,(arg,Embed ty)),body,(_,(piArg,Embed piTy)),piBody)
     <- unbind2 (bind p1 body) (bind (f,p2) piBody)
 
-  unless(ty `aeq` piTy) $ typeError
+  unless(down ty `aeq` down piTy) $ typeError
     ("Type ascribed to a lambda-bound variable does not match the type" <++>
      "ascribed to the associated pi-bound variable")
     [(text "Lambda-variable type", disp ty)
@@ -984,39 +1008,6 @@ getClassification t = do
 -----------------------------------------------
 -- Generic function for copying a term and
 -- handling the escape clause in a specific manner
-
-
-
--- escCopy f (Var x) = return(Var x)
--- escCopy f (Con x) = return(Con x)
--- escCopy f (Formula n) = return(Formula n)
--- escCopy f Type = return Type
--- escCopy f (Pi stage binding) = do
---   ((n,Embed ty),body) <- unbind binding
---   ty' <- escCopy f ty
---   body' <- escCopy f body
---   return $ Pi stage (bind (n,Embed ty') body')
--- escCopy f (Forall binding) = do
---   ((n,Embed ty),body) <- unbind binding
---   ty' <- escCopy f ty
---   body' <- escCopy f body
---   return $ Forall (bind (n,Embed ty') body')
--- escCopy f (App x s y) = lift2 app (escCopy f x) (escCopy f y)
---   where app x y = App x s y
--- escCopy f (Ann x y) = lift2 Ann (escCopy f x) (escCopy f y)
--- escCopy f (Equal x y) = lift2 Equal (escCopy f x) (escCopy f y)
--- escCopy f (Terminates x) = lift1 Terminates (escCopy f x)
--- escCopy f (Val x) = lift1 Val (escCopy f x)
--- escCopy f (Abort x) = lift1 Abort (escCopy f x)
--- escCopy f (Contra x) = lift1 Contra (escCopy f x)
--- escCopy f (ConvCtx x y) = lift2 ConvCtx (escCopy f x) (escCopy f y)
--- escCopy f (Parens x) = escCopy f x
--- escCopy f (Pos x t) = lift2 Pos (return x) (escCopy f t)
--- escCopy f (Escape t) = f t
--- escCopy f t =
---   do td <- disp t
---      error ("Not implemented yet in escCopy: "++render td)
-
 escCopy :: (Term -> TCMonad Term) -> Term -> TCMonad Term
 escCopy f t = everywhereM (mkM f') t
   where f' (Escape t) = f t
@@ -1036,22 +1027,25 @@ copyEqualInEsc b x = escCopy f x
 
 checkCaseCoverage tyS alts = do
     -- Checking constructor coverage
-    let (tc,_) = splitApp' tyS
-    cs <- case down tc of  -- declared (constructor, arity)
-           (Con tcName) -> lookupTypeCons tcName
-           _ -> die $ "Can't find type constructor" <++> show tc
+    let (tc,args) = splitApp' tyS
+    (tele,cs) <- case down tc of  -- declared (constructor, arity)
+                   (Con tcName) -> lookupTypeCons tcName
+                   _ -> die $ "Can't find type constructor" <++> show tc
 
-
-    altCs <- forM alts (\a -> do { ((n,vars),_) <- unbind a; return (string2Name n, length vars)})
+    altCs <- forM alts (\a -> do { ((n,vars),_) <- unbind a;
+                                   return (string2Name n, length vars)})
 
     let unhandled =  (nub $ map fst cs) \\ (nub $ map fst altCs)
     ensure (null unhandled) $
            "Unhandled constructors:" <++> (vcat $ map disp unhandled)
 
-    forM altCs (\(n,arity) -> case lookup n cs of
-                                Nothing -> die $ n <++> "is not a constructor of" <++> tc
-                                Just arity'
-                                     | arity == arity' -> return ()
-                                     | otherwise -> die $ "Pattern arity" <++> arity <++>
-                                                          "does not match constructor" <++> n <++>
+    let teleSub =  subTele tele args
+    cs<- forM altCs (\(n,arity) ->
+                  case lookup n cs of
+                    Nothing -> die $ n <++> "is not a constructor of" <++> tc
+                    Just (arity',ty)
+                      | arity == arity' -> return (n,teleSub ty)
+                      | otherwise -> die $ "Pattern arity" <++> arity <++>
+                                     "does not match constructor" <++> n <++>
                                                           "arity" <++> arity')
+    return $ (args,cs)

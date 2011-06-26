@@ -5,7 +5,7 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 
 
-import Unbound.LocallyNameless(Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst)
+import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind)
 
 import Text.PrettyPrint
 import Data.Typeable
@@ -33,7 +33,8 @@ withEscapeContext c = local (\env -> env { escapeContext = c })
 -- an additional boolean indicating if it the variable is a value.
 data Env = Env { gamma :: [(TName,(Term,Bool))]   -- (var, (type,isValue))
                , sigma :: [(TName,Term)]          -- (var, definition)
-               , delta :: [(TName,[(TName,Int)])] -- (type constructor, [(data cons, arity)])
+               , delta :: [(TName,(Tele,[(TName,(Int,Term))]))]
+                   -- (type constructor, [(data cons, arity, type)])
                , escapeContext :: EscapeContext
                , rewrites :: [(ETerm,ETerm)]}
 emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoContext}
@@ -44,7 +45,7 @@ emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoC
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
 extendDef n ty def isVal e@(Env {sigma}) =
   extendEnv n ty isVal e { sigma = (n,def):sigma }
-extendTypes n cs e@(Env {delta}) = e{delta=(n,cs):delta}
+extendTypes n tele cs e@(Env {delta}) = e{delta=(n,(tele,cs)):delta}
 
 -- Functions for working in the environment
 lookupBinding :: TName -> TCMonad (Term,Bool)
@@ -57,17 +58,23 @@ extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
 extendBinding n ty isVal m = do
   local (extendEnv n ty isVal) m
 
+
+extendTele :: Tele -> TCMonad a -> TCMonad a
+extendTele Empty m = m
+extendTele (TCons binding) m = extendBinding n ty False $ extendTele rest m
+  where ((n,st,Embed ty),rest) = unrebind binding
+
 extendDefinition :: TName -> Term -> Term -> Bool -> TCMonad a -> TCMonad a
 extendDefinition n ty def isVal m = do
   local (extendDef n ty def isVal) m
 
 
-extendTypeCons :: TName -> [(TName,Int)] -> TCMonad a -> TCMonad a
-extendTypeCons n cs m = do
-  local (extendTypes n cs) m
+extendTypeCons :: TName -> Tele -> [(TName,(Int,Term))] -> TCMonad a -> TCMonad a
+extendTypeCons n tele cs m = do
+  local (extendTypes n tele cs) m
 
 
-lookupTypeCons :: TName -> TCMonad [(TName,Int)]
+lookupTypeCons :: TName -> TCMonad (Tele,[(TName,(Int,Term))])
 lookupTypeCons nm = do
   d <- asks delta
   case lookup nm d of
@@ -154,10 +161,13 @@ actual `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected =
-  unless (actual `aeq` expected) $
+  unless (down actual `aeq` down expected) $
     typeError "Couldn't match expected type with actual type."
                 [(text "Expected Type",disp expected),
-                 (text "Actual Type", disp actual)]
+                 (text "Actual Type", disp actual),
+                 (text "Expected AST", text $ show $ downAll  expected),
+                 (text "Actual AST", text $ show $ downAll actual)
+                ]
 
 
 (<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc

@@ -5,7 +5,7 @@ import Language.SepPP.Syntax
 
 import Unbound.LocallyNameless hiding (name,Infix,Val,Con)
 
-import Text.Parsec hiding (ParseError)
+import Text.Parsec hiding (ParseError,Empty)
 import Text.Parsec.Error(errorMessages, messageString)
 import qualified Text.Parsec as P
 import Text.Parsec.Language
@@ -104,10 +104,11 @@ sepDataDecl = do
   reserved "data"
   n <- name
   colon
-  e <- expr
+  ps <- params
+  reserved "Type"
   reserved "where"
   cs <- sepBy cons (reservedOp "|")  <?> "Constructor declaration"
-  return $ DataDecl (Con n) e cs
+  return $ DataDecl (Con n) (bind ps cs)
 
   where isCon (Con _) = True
         isCon _ = False
@@ -118,6 +119,12 @@ sepDataDecl = do
                 colon
                 t <- expr
                 return (c,t)
+        params = option Empty $ do
+                   ps <- many1 piBinding
+                   reservedOp "->"
+                   return $ foldr (\(st,(n,ty)) r ->
+                             TCons (rebind (n,st,Embed ty) r))  Empty ps
+
 
 
 

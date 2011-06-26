@@ -52,7 +52,7 @@ instance LFresh M where
     let s = name2String nm
     di <- ask
     return $ head (filter (\x -> AnyName x `S.notMember` (dispAvoid di))
-                      (map (makeName s) [0..]))
+                      (map (makeName s) [1..]))
 
   avoid names = local upd where
      upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
@@ -390,16 +390,30 @@ instance Display Decl where
     return $ text "axiom" <+> dn <+> text ":" <+> dty <> semi
 
 
-  display (DataDecl t1 t2 cs) = do
+  display (DataDecl t1 binding) = do
+    lunbind binding $ \(tele,cs) -> do
      d1 <- display t1
-     d2 <- display t2
+     -- d2 <- display t2
+     dtele <- displayTele False tele
      dcs <- mapM displayCons cs
-     return $ hang (text "data" <+> d1 <+> colon <+> d2 <+> text "where") 2
+     return $ hang (text "data" <+> d1 <+> colon <+> dtele <+> text "where") 2
                        (vcat (punctuate semi dcs)) $$ text ""
     where displayCons (c,t) = do
             dc <- display c
             dt <- display t
             return $ dc <+> colon <+> dt
+
+
+          displayTele False Empty = return $ text "Type"
+          displayTele True Empty = return $ text "-> Type"
+          displayTele _ (TCons binding) = do
+            let ((n,stage,Embed ty),tele) = unrebind binding
+            dn <- display n
+            dty <- display ty
+            drest <- displayTele True tele
+            case stage of
+              Static -> return $ brackets (dn <> colon <> dty <> drest)
+              Dynamic -> return $ parens (dn <> colon <> dty <> drest)
 
 
 
