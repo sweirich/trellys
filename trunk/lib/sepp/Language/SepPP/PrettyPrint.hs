@@ -384,6 +384,11 @@ instance Display Decl where
     return $ text "theorem" <+> dn <+> text ":" <+> dty <> semi $$
              cat[text "proof" <+> dn <+> text "=",nest 3 $ dval <> semi] $$ text ""
 
+  display (AxiomDecl n ty) = do
+    dn <- display n
+    dty <- display ty
+    return $ text "axiom" <+> dn <+> text ":" <+> dty <> semi
+
 
   display (DataDecl t1 t2 cs) = do
      d1 <- display t1

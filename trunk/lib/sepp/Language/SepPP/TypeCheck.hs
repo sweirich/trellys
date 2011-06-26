@@ -39,8 +39,16 @@ typecheckModule (Module n decls) = do
 data DefRes = DataResult TName Term [(TName,Int,Term)]
             | ProofResult TName Term Term Bool
             | ProgResult TName Term Term Bool
+            | AxiomResult TName Term
 
 -- | Typecheck a single definition
+
+checkDef (AxiomDecl nm theorem) = do
+  lk <- predSynth' theorem
+  isLK <- lkJudgment lk
+  ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
+  return $ AxiomResult nm theorem
+
 checkDef (ProofDecl nm theorem proof) = do
   lk <- predSynth' theorem
   isLK <- lkJudgment lk
@@ -103,6 +111,8 @@ checkDefs (d:ds) = do
 
   where extendBinding' (ProofResult n ty def v) comp =
           extendDefinition n ty def v comp
+        extendBinding' (AxiomResult n ty) comp =
+          extendBinding n ty False comp
         extendBinding' (ProgResult n ty def v) comp =
           extendDefinition  n ty def v comp
         extendBinding' (DataResult n ty cs) comp =
