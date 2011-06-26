@@ -7,6 +7,7 @@ module Language.SepPP.Syntax (
   TName, ModName,
   ETerm(..), erase, erasedValue,
   down,downAll,
+  Tele(..),teleArrow,subTele,
   splitApp, splitApp', isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
@@ -20,6 +21,11 @@ import Data.Typeable
 -- | 'Unbound' Name representation
 type TName = Name Term
 
+-- Telescopes. Hmmmm.
+data Tele = Empty | TCons (Rebind (TName, Stage, Embed Term) Tele) deriving (Show)
+
+
+
 -- | A module is just a list of definitions.
 type ModName = Name Module
 data Module = Module ModName [Decl] deriving (Show)
@@ -27,7 +33,7 @@ data Module = Module ModName [Decl] deriving (Show)
 -- Name, type, value
 data Decl =  ProgDecl TName Term Term
           |  ProofDecl TName Term Term
-          | DataDecl Term Term [(TName,Term)]
+          | DataDecl Term (Bind Tele [(TName,Term)])
           | AxiomDecl TName Term
      deriving Show
 
@@ -119,7 +125,7 @@ type Alt = Bind (String, [TName]) Term
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 
-$(derive [''Term, ''Module, ''Decl, ''Stage, ''Kind])
+$(derive [''Term, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
 
 
 instance Alpha Term where
@@ -131,6 +137,8 @@ instance Alpha Module
 instance Alpha Decl
 instance Alpha Stage
 instance Alpha Kind
+instance Alpha Tele
+
 instance Subst Term Term where
   isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
@@ -144,7 +152,7 @@ instance Subst Term SourcePos
 splitApp (App t0 _ t1) = splitApp' t0 [t1]
   where splitApp' (App s0 _ s1) acc = splitApp' s0 (s1:acc)
         splitApp' (Pos _ t) acc = splitApp' t acc
-        splitApp' s acc = s:(reverse acc)
+        splitApp' s acc = s:acc
 splitApp (Pos _ t) = splitApp t
 splitApp t = []
 
@@ -246,3 +254,21 @@ instance Alpha ETerm
 instance Subst ETerm ETerm where
   isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
+
+
+
+
+teleArrow Empty end = end
+teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
+ where ((n,stage,ty),rest) = unrebind binding
+       arrRest = teleArrow rest end
+
+subTele :: Tele -> [Term] -> Term -> Term
+subTele Empty [] x = x
+subTele (TCons binding) (ty:tys) x = subst n ty $ subTele rest tys x
+  where ((n,_,_),rest) = unrebind binding
+subTele _ _ _ =
+  error "Can't construct a telescope substitution, arg lengths don't match"
+
+
+
