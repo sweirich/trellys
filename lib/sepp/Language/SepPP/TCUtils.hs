@@ -118,7 +118,7 @@ instance Exception TypeError
 instance Disp TypeError where
 
   disp (ErrMsg rinfo) =
-       hang (pos positions) 2 (summary $$ nest 2 detailed)
+       hang (pos positions) 2 (summary $$ nest 2 detailed $$  vcat terms)
     where info = reverse rinfo
           positions = [el | el@(ErrLoc _ _) <- info]
           messages = [ei | ei@(ErrInfo d _) <- info]
@@ -129,6 +129,7 @@ instance Disp TypeError where
           summary = vcat [s | ErrInfo s _ <- messages]
           detailed = vcat [(int i <> colon <+> brackets label) <+> d |
                            (label,d) <- details | i <- [1..]]
+          terms = [hang (text "In the term") 2 (disp t) | ErrLoc _ t <- take 2 positions]
 
 
 addErrorPos p t (ErrMsg ps) = throwError (ErrMsg (ErrLoc p t:ps))
