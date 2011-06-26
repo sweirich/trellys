@@ -51,7 +51,7 @@ sepModule = do
 
 -- | Top-level binding
 -- sepBinding :: Parser Binding
-sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl
+sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl
 
 sepProgDecl = do
   (n,ty) <- sig
@@ -72,13 +72,18 @@ sepProgDecl = do
                 body <- expr
                 return (n, Rec (bind (n,arg) body))
 
-
+sepAxiomDecl = do
+  reserved "axiom"
+  n <- termName
+  colon
+  ty <- term
+  return $ AxiomDecl n ty
 
 sepProofDecl = do
   (n,ty) <- sig
   (n',val) <- decl
   unless (n == n') $ do
-    fail "Theorem name does not match proof name"
+    unexpected "Theorem name does not match proof name"
   return $ ProofDecl n ty val
  <?> "top-level binding"
  where sig = reserved "theorem" >> (,) <$> termName <* colon <*> expr <?> "top-level theorem"
@@ -128,7 +133,7 @@ sepPPStyle = haskellStyle {
             "contra", "contraabort", "using",
             "data", "where",
             "rec", "ind",
-            "prog","type", "theorem", "proof",
+            "prog","type", "theorem", "proof", "axiom",
             "value", "values",
             "abort","aborts",
             "LogicalKind","Form", "Type","Pi",

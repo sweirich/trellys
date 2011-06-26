@@ -27,8 +27,8 @@ data Module = Module ModName [Decl] deriving (Show)
 -- Name, type, value
 data Decl =  ProgDecl TName Term Term
           |  ProofDecl TName Term Term
-          -- FIXME: The Unbound representation isn't right here,
           | DataDecl Term Term [(TName,Term)]
+          | AxiomDecl TName Term
      deriving Show
 
 data Stage = Dynamic | Static deriving (Eq,Show)
