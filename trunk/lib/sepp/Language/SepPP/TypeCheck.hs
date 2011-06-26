@@ -252,9 +252,12 @@ check mode term@(App t0 stage t1) expected = do
   ty0 <- check mode t0 Nothing
   case (mode, down ty0) of
     (ProgMode, Pi piStage binding) -> do
-        ensure (piStage == stage) $ do
-                 "Stage" <++> show piStage <++>  "for arrow" <++>
-                  "does not match stage for application " <++> show stage
+        unless (piStage == stage) $ do
+           typeError "Stage for the arrow does not match the stage for the application"
+                        [(text "Arrow stage:",disp piStage),
+                         (text "Application stage", disp stage)]
+                 -- "Stage" <++> show piStage <++>  "for arrow" <++>
+                 --  "does not match stage for application " <++> show stage
 
         ((x,Embed dom),body) <- unbind binding
         argTy <- typeAnalysis' t1 dom   -- TODO: Check on this, should it be typeAnalysis?
@@ -264,7 +267,10 @@ check mode term@(App t0 stage t1) expected = do
         sub `sameType` expected
         return sub
     (ProgMode, ty0') -> do
-      die $ "Cannot apply" <++> t0 <++> "with a non-functional type" <++> ty0'
+        typeError "Can't apply a expression that does not have an arrow type."
+                  [(text "The Type", disp ty0')
+                  ,(text "The Function", disp t0)
+                  ,(text "The Application", disp term)]
 
     (PredMode, Forall binding) -> do
         ensure (stage == Static) $ "Application of a predicate must be in the static stage."
@@ -421,7 +427,10 @@ check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
                          et2 <- erase t2
                          rs <- checkRewrites ps
                          return ((et1,et2):rs)
-            _ -> die $ p <++> "with type" <++> ty <++> "is not a proper rewrite"
+            ty -> typeError
+                    "Term does not have the correct type to be used as a morejoin rewrite."
+                      [(text "The Term", disp p),
+                       (text "The Type", disp ty)]
 
 
 -- Equal
@@ -523,10 +532,16 @@ check mode (ConvCtx p ctx) expected = do
                   ProgMode -> ProgMode
                   _ -> error "Unreachable case in check of ConvCtx def."
   l <- copyEqualInEsc LeftContext ctx
-  lty <- withEscapeContext LeftContext $ check submode l Nothing
-  proofAnalysis' p l
+  lty <- withErrorInfo
+           "When checking the left hand side of a context."
+           [(text "The context", disp l)] $
+              withEscapeContext LeftContext $ check submode l Nothing
+  withErrorInfo "When checking the left hand side of a context." [] $
+                  proofAnalysis' p l
   r <- copyEqualInEsc RightContext ctx
-  rty <- withEscapeContext RightContext $ check submode r Nothing
+  rty <- withErrorInfo  "When checking the right hand side of a context."
+           [(text "The context", disp r)] $
+              withEscapeContext RightContext $ check submode r Nothing
   r `sameType` expected
   return r
 

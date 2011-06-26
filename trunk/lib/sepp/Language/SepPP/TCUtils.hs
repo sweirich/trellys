@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving, ParallelListComp #-}
 module Language.SepPP.TCUtils where
 
 import Language.SepPP.Syntax
@@ -12,7 +12,7 @@ import Data.Typeable
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
-import Control.Applicative
+import Control.Applicative hiding (empty)
 import Text.Parsec.Pos
 import Data.List(find)
 
@@ -50,7 +50,7 @@ extendTypes n cs e@(Env {delta}) = e{delta=(n,cs):delta}
 lookupBinding :: TName -> TCMonad (Term,Bool)
 lookupBinding n = do
   env <- asks gamma
-  maybe (err $ "Can't find variable " ++ show n ++ "\n" ++ show env) return (lookup n env)
+  maybe (die $ "Can't find variable " <++> show n $$$ show env) return (lookup n env)
 extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
 extendBinding n ty isVal m = do
   local (extendEnv n ty isVal) m
@@ -100,36 +100,50 @@ lookupRewrite e = do
 
 -- ** Error handling
 
-data TypeError = ErrMsg [(SourcePos,Term)] String deriving (Show,Typeable)
+data TypeError = ErrMsg [ErrInfo] deriving (Show,Typeable)
+
+data ErrInfo = ErrInfo Doc -- A Summary
+                       [(Doc,Doc)] -- A list of details
+             | ErrLoc SourcePos Term deriving (Show,Typeable)
 
 instance Error TypeError where
-  strMsg s = ErrMsg [] s
+  strMsg s = ErrMsg [ErrInfo (text s) []]
   noMsg = strMsg "<unknown>"
 
 
 instance Exception TypeError
 
 instance Disp TypeError where
-  disp (ErrMsg [] msg) =
-          (nest 2 (text "Type Error" $$
-              text msg))
 
-  disp (ErrMsg ps msg) =
-      hang start 2 (text "Type Error" $$ text msg)
-    where (p,t) = last ps
-          start = disp p
+  disp (ErrMsg rinfo) =
+       hang (pos positions) 2 (summary $$ nest 2 detailed)
+    where info = reverse rinfo
+          positions = [el | el@(ErrLoc _ _) <- info]
+          messages = [ei | ei@(ErrInfo d _) <- info]
+          details = concat [ds | ErrInfo _ ds <- info]
+
+          pos ((ErrLoc sp _):_) = disp sp
+          pos _ = text "unknown" <> colon
+          summary = vcat [s | ErrInfo s _ <- messages]
+          detailed = vcat [(int i <> colon <+> brackets label) <+> d |
+                           (label,d) <- details | i <- [1..]]
 
 
-
-addErrorPos p t (ErrMsg ps msg) = throwError (ErrMsg ((p,t):ps) msg)
+addErrorPos p t (ErrMsg ps) = throwError (ErrMsg (ErrLoc p t:ps))
 
 err msg = throwError (strMsg msg)
 
 ensure p m = do
   unless p $ die m
 
-die m = do
-  err $ render (disp m)
+die msg = do
+  typeError (disp msg) []
+
+
+typeError summary details = throwError (ErrMsg [ErrInfo (disp summary) details])
+
+addErrorInfo summary details (ErrMsg ms) = ErrMsg (ErrInfo (disp summary) details:ms)
+withErrorInfo summary details m = m `catchError` (throwError . addErrorInfo summary details)
 
 emit m = liftIO $ print m
 
@@ -137,9 +151,11 @@ actual `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected =
-  ensure (actual `aeq` expected)
-           ("Expecting" $$$ (nest 2 $ disp expected) $$$
-            "but actual type is" $$$ (nest 2 $ disp actual))
+  unless (actual `aeq` expected) $
+    typeError "Couldn't match expected type with actual type."
+                [(text "Expected Type",disp expected),
+                 (text "Actual Type", disp actual)]
+
 
 (<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc
 t1 <++> t2 = disp t1 <+> disp t2
