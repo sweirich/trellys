@@ -141,6 +141,10 @@ lkJudgment (Forall binding) = do
     <++> "'A'."
   extendBinding n ty False (lkJudgment body)
 
+lkJudgment t = do
+  typeError "Could not classify term as a logical kind"
+            [(text "The Term", disp t)]
+
 guardLK t = do
   lk <- lkJudgment t
   ensure lk (t <++> "is nota valid logical kind.")

@@ -50,7 +50,9 @@ extendTypes n cs e@(Env {delta}) = e{delta=(n,cs):delta}
 lookupBinding :: TName -> TCMonad (Term,Bool)
 lookupBinding n = do
   env <- asks gamma
-  maybe (die $ "Can't find variable " <++> show n $$$ show env) return (lookup n env)
+  let fmtEnv = vcat [disp n <> colon <+> disp ty | (n,(ty,_)) <- env]
+  maybe (die $ "Can't find variable " <++> show n $$$ fmtEnv) return (lookup n env)
+
 extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
 extendBinding n ty isVal m = do
   local (extendEnv n ty isVal) m
