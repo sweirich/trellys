@@ -352,8 +352,8 @@ check ProgMode (Lambda Program progStage progBinding) (Just ty@(Pi piStage piBin
          err $ "Lambda stage annotation " ++ show progStage ++ " does not " ++
                "match arrow annotation " ++ show piStage
 
-  ((progName,Embed progTy), progBody) <- unbind progBinding
-  ((piName,Embed piTy), piBody) <- unbind piBinding
+  Just ((progName,Embed progTy), progBody,(piName,Embed piTy), piBody) <-
+    unbind2 progBinding piBinding
 
   -- TODO: Several side conditions on stage annotations
   extendBinding progName progTy True $ typeAnalysis' progBody piBody
@@ -640,14 +640,17 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
 check ProgMode (Rec progBinding) (Just res@(Pi Dynamic piBinding)) = do -- Term_Rec
   -- FIXME: This is a hack, because there are different number of binders in the
   -- Rec and Pi forms, which doesn't seem to play well with unbind2.
-  (p1@(f,_),body) <- unbind progBinding
-  (p2,piBody) <- unbind piBinding
+  (p1@(f,(recVar,recType)),body) <- unbind progBinding
+  (p2@(piVar,piType),piBody) <- unbind piBinding
+
   Just ((f,(arg,Embed ty)),body,(_,(piArg,Embed piTy)),piBody)
     <- unbind2 (bind p1 body) (bind (f,p2) piBody)
 
-  ensure (ty `aeq` piTy) $
-         "Type " <++> ty <++> " ascribed to lambda bound variable " <++>
-         "does not match type " <++> piTy <++> "ascribed to pi-bound variable."
+  unless(ty `aeq` piTy) $ typeError
+    ("Type ascribed to a lambda-bound variable does not match the type" <++>
+     "ascribed to the associated pi-bound variable")
+    [(text "Lambda-variable type", disp ty)
+    ,(text "Pi-variable type", disp piTy)]
 
   extendBinding f res True $
     extendBinding arg ty True $ typeAnalysis' body piBody

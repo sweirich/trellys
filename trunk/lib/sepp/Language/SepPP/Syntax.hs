@@ -6,7 +6,7 @@ module Language.SepPP.Syntax (
   Stage(..),Kind(..),Alt,
   TName, ModName,
   ETerm(..), erase, erasedValue,
-  down,
+  down,downAll,
   splitApp, splitApp', isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
@@ -176,6 +176,12 @@ app f x = App f Dynamic x
 
 down (Pos _ t) = down t
 down t = t
+
+-- downAll :: Term -> TCMonad Term
+downAll t = everywhere (mkT f') t
+  where f' (Pos _ t) = t
+        f' t = t
+
 
 
 
