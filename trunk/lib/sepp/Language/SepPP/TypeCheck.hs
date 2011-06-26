@@ -65,14 +65,17 @@ checkDef (ProgDecl nm ty prog) = do
 
 checkDef (DataDecl (Con nm) ty cs) = do
   ran <- arrowRange ty
-  ty `expectType` Type
+  withErrorInfo "When checking the range of a type constructor"
+                  [(text "The Type Constructor", disp nm)] $ ran `expectType` Type
 
   -- Make sure that the type constructor is a well-formed type.
-  typeAnalysis' ty Type
+  withErrorInfo "When checking that a type constructor is kindable."
+                [(text "The Type Constructor", disp nm)
+                ,(text "The Type",disp ty)] $ typeAnalysis' ty Type
 
   conTypes <- extendBinding nm ty True $
               mapM chkConstructor cs
-  return (DataResult nm Type conTypes)
+  return (DataResult nm ty conTypes)
 
 
   where arrowRange (Pi _ binding) = do
