@@ -33,7 +33,7 @@ main = flip catches handlers $ do
         exitSuccess
 
   where handlers = [Handler parseHandler, Handler typeHandler]
-        typeHandler e@(ErrMsg _ _) = print (disp e) >> exitFailure
+        typeHandler e@(ErrMsg _) = print (disp e) >> exitFailure
         parseHandler (e :: ParseError)= print (disp e) >> exitFailure
 
 
@@ -56,7 +56,7 @@ liftEither (Right val) = return val
 
 
 go s = handle h $ withArgs ["--file="++s] main
-  where h e@(ErrMsg _ _) = do
+  where h e@(ErrMsg _) = do
           print $ disp e
 
 testcase = "Tests/unittests/ParseTest.sepp"

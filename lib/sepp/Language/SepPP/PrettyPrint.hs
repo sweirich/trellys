@@ -476,6 +476,10 @@ etermParen level x
 
 -- runDisplay t = render $ runFreshM (display t)
 
+instance Disp Stage where
+  disp Static = text "static"
+  disp Dynamic = text "runtime"
+
 
 
 instance Disp SourcePos where
