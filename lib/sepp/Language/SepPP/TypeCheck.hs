@@ -535,6 +535,12 @@ check ProofMode (Contra p) (Just ty) = do
        _ -> do
          err "In contra, equality proof must be between constructor values."
 
+   (IndLT t1 t2) -> do
+      unless (t1 `aeq` t2) $
+             typeError"When using an inductive ordering with contra, must have a proof of the form 'x < x'"
+                       [(text "The Term",disp p),
+                        (text "The Type",disp ty')]
+      return ty
 
   where findCon (Con c) = Just c
         findCon (Pos _ t) = findCon t
