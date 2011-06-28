@@ -353,7 +353,10 @@ check ProofMode (Lambda Form _ pfBinding)
 
   Just ((proofName,Embed pfTy),pfBody,(predName,Embed predTy),predBody) <-
     unbind2  pfBinding predBinding
-  pfKind <- typeSynth' pfTy
+
+  cls <- getClassification pfTy
+  -- emit $ disp pfTy <++> text (show cls)
+  pfKind <- check (classToMode cls) pfTy Nothing
   requireQ pfKind
 
   -- Whether the var should be marked value or not is sort of up in the air...
@@ -604,7 +607,7 @@ check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
 
 -- IndLT
 
-check PredMode (IndLT t0 t1) Nothing = do
+check PredMode (IndLT t0 t1) expected = do
   ty0 <- typeSynth' t0
   ty1 <- typeSynth' t1
   -- TODO: Do we need to check to see that ty0 and t1 : Type?
@@ -809,12 +812,10 @@ check mode (Trans t1 t2) (Just ty) = do
 check mode term expected = checkUnhandled mode term expected
 
 checkUnhandled mode term expected = do
-  die $  "Unhandled check case:" $$$
-          "mode: " <++> show mode $$$
-          "term: " <++> term $$$
-          "expected: " <++> expected $$$
-          show term $$$
-          show expected
+  typeError  "Unhandled typechecking case."
+          [(text "mode:", text $ show mode)
+          ,(text "term:", disp term)
+          ,(text "expected:",text $ show expected)]
 
 
 checkEqual mode term = do
@@ -1005,6 +1006,10 @@ getClassification t = do
                  -- liftIO  $ mapM print env
                  die $ "Can't classify " <++> t
 
+classToMode SortType = ProgMode
+classToMode SortPred = PredMode
+classToMode SortLK = error "classToMode: No case for SortLK"
+
 -----------------------------------------------
 -- Generic function for copying a term and
 -- handling the escape clause in a specific manner
@@ -1021,7 +1026,9 @@ copyEqualInEsc b x = escCopy f x
                        LeftContext -> return l
                        RightContext -> return r
                        _ -> throwError $ strMsg $ "Copy can't reach this."
-                  _ -> throwError $ strMsg $ "Can't escape to something not an equality"
+                  _ -> typeError "Can't escape to something not an equality."
+                       [(text "The proof type", disp ty)]
+
 
 
 
