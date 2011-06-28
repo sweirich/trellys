@@ -238,22 +238,17 @@ proof ind lt_ord (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
 																	 u4 [u4_eq] = conv (refl : S y' = S y') at ~y_eq = S ~(sym u3)
                                in ord (sym u4)
 
--- [AS] I am not 100% sure how many of these termination assumptions are needed.
--- [GK] This causes problems.
+theorem ord_lt : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:x < y). lt x y = True
+proof ind ord_lt (y:Nat)[yterm] = 
+  \(x:Nat)(xterm:x!)(p:x < y) =>
+   case y {y_eq} yterm of
+     Z -> let u1 [u1_eq] = (not_lt_z x xterm y y_eq : lt x y = False)
+          in (contra (conv u1 at ~p = False) : x < y)
+   | S y' -> 
+   case x {x_eq} xterm of
+     Z -> morejoin { sym x_eq, sym y_eq} : lt x y True
+   | S x' -> join 10 10 : x = x  -- not correct yet
 
-{-
-theorem lt_ind_h : forall(x:Nat)(u:x!)
-                         (P:forall(x:Nat)(u:x!).Form)
-                         (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x). P x
-proof ind lt_ind_h(x:Nat)[x_term] =
-  \(P:forall(x:Nat)(u:x!).Form)
-   (u:forall(x:Nat)(u:x!)(v:forall(y:Nat)(u:y!)(u:lt y x = True). P y). P x) =>
-   (case x {x_eq} x_term of
-     Z -> (u x x_term \(y:Nat)(u:y!)(u:lt y x = True) =>
-                       contra trans symm u (not_lt_z y u Z refl))
-   | S x' -> u)
-
--}
 
 type le : (x:Nat) -> (y:Nat) -> Bool
 prog le = rec le (x:Nat) . \(y:Nat) ->
