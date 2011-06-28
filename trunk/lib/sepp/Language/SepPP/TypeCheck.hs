@@ -601,15 +601,28 @@ check mode (ConvCtx p ctx) expected = do
 check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
   -- Skeleton version of the 'ord' axiom.
   ty' <- proofSynth' w
+  let errlist = [(text "the equality", disp ty') , (text "the expected ordering constraint", disp ty)]
   case down ty' of
-    (Equal l' r') -> do
+    e@(Equal l' r') -> do
         let (c,ls) = splitApp' l'
-        ensure (r `aeq` r' && any (aeq l) ls)
-                 $ "Ord error" <++> ty' $$$
-                   r <++> "/=" <++> r' <++> "or" $$$
-                   l <++> "not in" <++> show ls
-
+        unless (r `aeq` r') $
+          typeError ("In an ord-proof, the right-hand side of the equality proved by the subproof of ord does " 
+                     ++ "not match the right-hand side of the expected ordering constraint.")
+            errlist
+        let iscon (Con _) = True 
+            iscon _ = False 
+        unless (iscon c) $
+          typeError ("In an ord-proof, the left-hand side of the equality proved by the subproof of ord "
+                     ++ "is not an application of a constructor to arguments")
+            errlist
+        unless (any (aeq l) ls) $
+          typeError ("In an ord-proof, the left-hand side of the expected ordering constraint does " 
+                     ++ "not appear as an argument in the application on the left-hand side of the equality proof"
+                     ++ "proved by the subproof of ord.")
+            errlist
         return ty
+    _ -> typeError "In an ord-proof, the subproof of ord does not prove an equation."
+           errlist
 
 -- IndLT
 
