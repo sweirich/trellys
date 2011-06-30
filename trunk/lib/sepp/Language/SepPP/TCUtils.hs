@@ -31,12 +31,12 @@ withEscapeContext c = local (\env -> env { escapeContext = c })
 
 -- The typing context contains a mapping from variable names to types, with
 -- an additional boolean indicating if it the variable is a value.
-data Env = Env { gamma :: [(TName,(Term,Bool))]   -- (var, (type,isValue))
-               , sigma :: [(TName,Term)]          -- (var, definition)
-               , delta :: [(TName,(Tele,[(TName,(Int,Term))]))]
+data Env = Env { gamma :: [(EName,(Expr,Bool))]   -- (var, (type,isValue))
+               , sigma :: [(EName,Expr)]          -- (var, definition)
+               , delta :: [(EName,(Tele,[(EName,(Int,Expr))]))]
                    -- (type constructor, [(data cons, arity, type)])
                , escapeContext :: EscapeContext
-               , rewrites :: [(ETerm,ETerm)]}
+               , rewrites :: [(EExpr,EExpr)]}
 emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoContext}
 
 
@@ -48,13 +48,13 @@ extendDef n ty def isVal e@(Env {sigma}) =
 extendTypes n tele cs e@(Env {delta}) = e{delta=(n,(tele,cs)):delta}
 
 -- Functions for working in the environment
-lookupBinding :: TName -> TCMonad (Term,Bool)
+lookupBinding :: EName -> TCMonad (Expr,Bool)
 lookupBinding n = do
   env <- asks gamma
   let fmtEnv = vcat [disp n <> colon <+> disp ty | (n,(ty,_)) <- env]
   maybe (die $ "Can't find variable " <++> show n $$$ fmtEnv) return (lookup n env)
 
-extendBinding :: TName -> Term -> Bool -> TCMonad a -> TCMonad a
+extendBinding :: EName -> Expr -> Bool -> TCMonad a -> TCMonad a
 extendBinding n ty isVal m = do
   local (extendEnv n ty isVal) m
 
@@ -64,17 +64,17 @@ extendTele Empty m = m
 extendTele (TCons binding) m = extendBinding n ty False $ extendTele rest m
   where ((n,st,Embed ty),rest) = unrebind binding
 
-extendDefinition :: TName -> Term -> Term -> Bool -> TCMonad a -> TCMonad a
+extendDefinition :: EName -> Expr -> Expr -> Bool -> TCMonad a -> TCMonad a
 extendDefinition n ty def isVal m = do
   local (extendDef n ty def isVal) m
 
 
-extendTypeCons :: TName -> Tele -> [(TName,(Int,Term))] -> TCMonad a -> TCMonad a
+extendTypeCons :: EName -> Tele -> [(EName,(Int,Expr))] -> TCMonad a -> TCMonad a
 extendTypeCons n tele cs m = do
   local (extendTypes n tele cs) m
 
 
-lookupTypeCons :: TName -> TCMonad (Tele,[(TName,(Int,Term))])
+lookupTypeCons :: EName -> TCMonad (Tele,[(EName,(Int,Expr))])
 lookupTypeCons nm = do
   d <- asks delta
   case lookup nm d of
@@ -83,22 +83,22 @@ lookupTypeCons nm = do
     Just cs -> return cs
 
 
-lookupDef :: Name Term -> TCMonad (Maybe Term)
+lookupDef :: Name Expr -> TCMonad (Maybe Expr)
 lookupDef n = do
   defs <- asks sigma
   return $ lookup n defs
 
 
-substDefs :: Term -> TCMonad Term
+substDefs :: Expr -> TCMonad Expr
 substDefs t = do
   defs <- asks sigma
   -- mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
   return $ substs defs t
 
-withRewrites :: [(ETerm,ETerm)] -> TCMonad a -> TCMonad a
+withRewrites :: [(EExpr,EExpr)] -> TCMonad a -> TCMonad a
 withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m
 
-lookupRewrite :: ETerm -> TCMonad (Maybe ETerm)
+lookupRewrite :: EExpr -> TCMonad (Maybe EExpr)
 lookupRewrite e = do
   rs <- asks rewrites
   -- FIXME: alpha-equality is too week. We need actual equality.
@@ -113,7 +113,7 @@ data TypeError = ErrMsg [ErrInfo] deriving (Show,Typeable)
 
 data ErrInfo = ErrInfo Doc -- A Summary
                        [(Doc,Doc)] -- A list of details
-             | ErrLoc SourcePos Term deriving (Show,Typeable)
+             | ErrLoc SourcePos Expr deriving (Show,Typeable)
 
 instance Error TypeError where
   strMsg s = ErrMsg [ErrInfo (text s) []]

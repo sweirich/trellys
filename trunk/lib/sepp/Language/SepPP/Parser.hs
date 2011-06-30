@@ -60,13 +60,13 @@ sepProgDecl = do
     fail "Type signature name does not match value name"
   return $ ProgDecl n ty val
  <?> "top-level binding"
- where sig = reserved "type" >> (,) <$> termName <* colon <*> expr <?> "top-level program type signature"
+ where sig = reserved "type" >> (,) <$> exprName <* colon <*> expr <?> "top-level program type signature"
        decl = reserved "prog" >> (valDecl <|> recDecl)
-       valDecl = (,) <$> termName <* reservedOp "="  <*> expr <?> "top-level program declaration "
+       valDecl = (,) <$> exprName <* reservedOp "="  <*> expr <?> "top-level program declaration "
        recDecl = do
                 reserved "rec"
-                n <- termName
-                arg <- (parens ((,) <$> termName <* colon <*> (Embed <$> expr))) <?>
+                n <- exprName
+                arg <- (parens ((,) <$> exprName <* colon <*> (Embed <$> expr))) <?>
                                "top-level rec argument"
                 reservedOp "="
                 body <- expr
@@ -74,9 +74,9 @@ sepProgDecl = do
 
 sepAxiomDecl = do
   reserved "axiom"
-  n <- termName
+  n <- exprName
   colon
-  ty <- term
+  ty <- innerExpr
   return $ AxiomDecl n ty
 
 sepProofDecl = do
@@ -86,15 +86,15 @@ sepProofDecl = do
     unexpected "Theorem name does not match proof name"
   return $ ProofDecl n ty val
  <?> "top-level binding"
- where sig = reserved "theorem" >> (,) <$> termName <* colon <*> expr <?> "top-level theorem"
+ where sig = reserved "theorem" >> (,) <$> exprName <* colon <*> expr <?> "top-level theorem"
        decl = reserved "proof" >> (nonIndDecl <|> indDecl)
-       nonIndDecl = (,) <$> termName <* reservedOp "="  <*> expr <?>
+       nonIndDecl = (,) <$> exprName <* reservedOp "="  <*> expr <?>
                        "top-level proof "
        indDecl = do
           reserved "ind"
-          f <- termName
-          (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
-          u <- brackets termName
+          f <- exprName
+          (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+          u <- brackets exprName
           reservedOp "="
           body <- expr
           return $ (f,Ind (bind (f,(x,Embed ty),u) body))
@@ -179,15 +179,15 @@ alts p = do
 -- name :: Rep a => Parser (Name a)
 name = string2Name <$> identifier
 
--- termName :: Parser TName
-termName = name
+-- exprName :: Parser EName
+exprName = name
 
 
 piBinding =
     ((,) Static <$> brackets binding) <|>
     ((,) Dynamic <$> parens binding) <|>
     (do { v <- variable; return(Dynamic,(wildcard,v))})
-  where binding = try ((,) <$> termName <* colon <*> expr) <|>
+  where binding = try ((,) <$> exprName <* colon <*> expr) <|>
                   (do { e <- expr; return(wildcard,e)})
 
 nestPi [] body = body
@@ -215,7 +215,7 @@ piType = do
 absBinding =
     ((,) Static <$> brackets binding) <|>
     ((,) Dynamic <$> parens binding)
-  where binding = (,) <$> termName <* colon <*> expr
+  where binding = (,) <$> exprName <* colon <*> expr
 
 
 abstraction = unicodeAbstraction <|> asciiAbstraction
@@ -242,7 +242,7 @@ unicodeAbstraction = do
   body <- expr
   return $ nestLambda kind args body -- Lambda kind stage (bind (n,Embed ty) body)
 
-nestForall :: [(TName, Term)] -> Term -> Term
+nestForall :: [(EName, Expr)] -> Expr -> Expr
 nestForall [] body = body
 nestForall ((n,ty):more) body = Forall $ bind (n,Embed ty) (nestForall more body)
 
@@ -254,15 +254,15 @@ quantification = do
   return $ nestForall pairs body -- Forall (bind (n,Embed ty) body)
 
 
-quantBinding = parens $ (,) <$> termName <* colon <*> expr
+quantBinding = parens $ (,) <$> exprName <* colon <*> expr
 
 
--- FIXME: The 'brackets' around termWitness are necessary because 'termName'
+-- FIXME: The 'brackets' around termWitness are necessary because 'exprName'
 -- matches 'of'. This needs to be refactored.
 caseExpr = do
   reserved "case"
   scrutinee <- expr
-  consEq <- braces termName
+  consEq <- braces exprName
   termWitness <- option Nothing (Just <$> expr)
   reserved "of"
   alts <- alts (alt <?> "case alternative")
@@ -270,7 +270,7 @@ caseExpr = do
   where alt = do cons <- identifier
                  unless (isUpper (head cons)) $
                    unexpected "Pattern requires an uppercase constructor name"
-                 vars <- many termName
+                 vars <- many exprName
                  reservedOp "->"
                  body <- expr
                  return (bind (cons,vars) body)
@@ -279,7 +279,7 @@ caseExpr = do
 termCase = do
   reserved "termcase"
   scrutinee <- expr
-  pf <- braces termName
+  pf <- braces exprName
   reserved "of"
   (a,t) <- do
     -- Diverges case
@@ -288,14 +288,14 @@ termCase = do
              reservedOp "->"
              expr <?> "aborts branch"
 
-    -- Terminates case
+    -- Exprinates case
     te <- do reservedOp "|"
              reservedOp "!"
              reservedOp "->"
              expr <?> "terminates branch"
     return (ae,te)
 
-  return $ TerminationCase scrutinee (bind pf (a,t))
+  return $ ExprinationCase scrutinee (bind pf (a,t))
 
 
 joinExpr = do
@@ -307,23 +307,23 @@ joinExpr = do
 
 morejoinExpr = do
   reserved "morejoin"
-  MoreJoin <$> braces (commaSep1 term)
+  MoreJoin <$> braces (commaSep1 innerExpr)
 
 
-valExpr = reserved "value" >> Val <$> term
+valExpr = reserved "value" >> Val <$> innerExpr
 
 
 -- FIXME: I think the 'at' annotations are unnecessary, if we have annotations.
 contraExpr = do
   reserved "contra"
-  t <- term
+  t <- innerExpr
   return $ Contra t
 
 contraAbortExpr = do
   reserved "contraabort"
-  t1 <- term
+  t1 <- innerExpr
   -- reserved "using"
-  t2 <- term
+  t2 <- innerExpr
   return $ ContraAbort t1 t2
 
 abortExpr = do
@@ -332,7 +332,7 @@ abortExpr = do
 
 symExpr = do
   reserved "sym" <|> reserved "symm"
-  Sym <$> term
+  Sym <$> innerExpr
 
 reflExpr = do
   reserved "refl"
@@ -340,7 +340,7 @@ reflExpr = do
 
 transExpr = do
   reserved "trans"
-  Trans <$> term <*> term
+  Trans <$> innerExpr <*> innerExpr
 
 
 convExpr = do
@@ -353,7 +353,7 @@ convExpr = do
              reserved "by"
              bs <- commaSep1 expr
              reserved "at"
-             xs <- many1 termName
+             xs <- many1 exprName
              dot
              c <- expr
              return $ Conv a bs (bind xs c)
@@ -366,9 +366,9 @@ convExpr = do
 
 recExpr = do
   reserved "rec"
-  f <- termName
-  (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
-  -- u <- brackets termName
+  f <- exprName
+  (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+  -- u <- brackets exprName
   reservedOp "."
   body <- expr
   return $ Rec (bind (f,(x,Embed ty)) body)
@@ -377,9 +377,9 @@ recExpr = do
 
 indExpr = do
   reserved "ind"
-  f <- termName
-  (x,ty) <- parens $ (,) <$> termName <* colon <*> expr
-  u <- brackets termName
+  f <- exprName
+  (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+  u <- brackets exprName
   reservedOp "."
   body <- expr
   return $ Ind (bind (f,(x,Embed ty),u) body)
@@ -413,8 +413,8 @@ escapeExpr = do
 
 strictExpr = do
   reserved "aborts"
-  Aborts <$> term
--- Term Productions
+  Aborts <$> innerExpr
+-- Expr Productions
 
 variable = do
   v <- varOrCon
@@ -439,12 +439,12 @@ formula = reserved "Form" >> (Formula <$> option 0 integer)
 sepType = reserved "Type" >> return Type
 
 -- FIXME: Relatively certain this will cause the parser to choke.
-ordExpr = reserved "ord" >> Ord <$> term
-ordTrans = reserved "ordtrans" >> OrdTrans <$> term <*> term
+ordExpr = reserved "ord" >> Ord <$> innerExpr
+ordTrans = reserved "ordtrans" >> OrdTrans <$> innerExpr <*> innerExpr
 
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
-term = wrapPos $
+innerExpr = wrapPos $
         (choice [sepType <?> "Type"
               ,formula <?> "Form"
               ,abstraction
@@ -473,20 +473,20 @@ term = wrapPos $
               ,morejoinExpr
               ,varOrCon <?> "Identifier"
               ,parens expr <?> "Parenthesized Expression"
-              ] <?> "term")
+              ] <?> "innerExpr")
 
 factor = do
-  f <- term
+  f <- innerExpr
   args <- many arg
   return $ foldl mkApp f args
-  where arg = ((,) Static <$> brackets term) <|>
-              ((,) Dynamic <$> term)
+  where arg = ((,) Static <$> brackets innerExpr) <|>
+              ((,) Dynamic <$> innerExpr)
         mkApp f (s,a) = App f s a
 
 expr = wrapPos $ buildExpressionParser table factor
   where table = [[binOp AssocNone "=" Equal]
                 ,[binOp AssocNone "<" IndLT]
-                ,[postOp "!" Terminates]
+                ,[postOp "!" Exprinates]
                 ,[binOp AssocLeft ":" Ann]
                 ,[binOp AssocRight "->"
                           (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))

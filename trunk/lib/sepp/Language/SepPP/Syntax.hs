@@ -2,10 +2,10 @@
   FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
   UndecidableInstances  #-}
 module Language.SepPP.Syntax (
-  Decl(..),Module(..),Term(..),
+  Decl(..),Module(..),Expr(..),
   Stage(..),Kind(..),Alt,
-  TName, ModName,
-  ETerm(..), erase, erasedValue,
+  EName, ModName,
+  EExpr(..), erase, erasedValue,
   down,downAll,
   Tele(..),teleArrow,subTele,
   splitApp, splitApp', isStrictContext, var, app) where
@@ -19,10 +19,10 @@ import Control.Applicative((<$>), (<*>))
 import Data.Typeable
 
 -- | 'Unbound' Name representation
-type TName = Name Term
+type EName = Name Expr
 
 -- Telescopes. Hmmmm.
-data Tele = Empty | TCons (Rebind (TName, Stage, Embed Term) Tele) deriving (Show)
+data Tele = Empty | TCons (Rebind (EName, Stage, Embed Expr) Tele) deriving (Show)
 
 
 
@@ -31,104 +31,104 @@ type ModName = Name Module
 data Module = Module ModName [Decl] deriving (Show)
 
 -- Name, type, value
-data Decl =  ProgDecl TName Term Term
-          |  ProofDecl TName Term Term
-          | DataDecl Term (Bind Tele [(TName,Term)])
-          | AxiomDecl TName Term
+data Decl =  ProgDecl EName Expr Expr
+          |  ProofDecl EName Expr Expr
+          | DataDecl Expr (Bind Tele [(EName,Expr)])
+          | AxiomDecl EName Expr
      deriving Show
 
 data Stage = Dynamic | Static deriving (Eq,Show)
 data Kind = Form | Program deriving (Eq,Show)
 -- | The representation of SepPP expressions.
 
-data Term = Var TName                                 -- Term, Proof
-          | Con TName                                 -- Term
+data Expr = Var EName                                 -- Expr, Proof
+          | Con EName                                 -- Expr
           | Formula Integer                           -- LogicalKind
-          | Type                                      -- Term
+          | Type                                      -- Expr
             -- |
-          | Pi Stage (Bind (TName, Embed Term) Term)  -- Term
-          | Forall (Bind (TName, Embed Term) Term)    -- Predicate
+          | Pi Stage (Bind (EName, Embed Expr) Expr)  -- Expr
+          | Forall (Bind (EName, Embed Expr) Expr)    -- Predicate
 
             -- We keep a stage annotation around so that we can erase an
             -- application without knowing its type.
-          | App Term Stage Term                       -- Predicate, Proof, Term
-          | Lambda Kind Stage (Bind (TName, Embed Term) Term)  -- Predicate, Proof, Term
+          | App Expr Stage Expr                       -- Predicate, Proof, Expr
+          | Lambda Kind Stage (Bind (EName, Embed Expr) Expr)  -- Predicate, Proof, Expr
 
             -- There are actually two types of case expressions in the design
             -- document. We combine these two, with the extra termination proof
             -- argument wrapped in Maybe.
 
-          | Case Term (Maybe Term) (Bind TName [Alt])       -- Proof, Term
+          | Case Expr (Maybe Expr) (Bind EName [Alt])       -- Proof, Expr
 
 
-          | TerminationCase Term (Bind TName (Term,Term))    -- Proof
+          | ExprinationCase Expr (Bind EName (Expr,Expr))    -- Proof
 
 
           | Join Integer Integer                      -- Proof
                                                       -- intros a
-          | Equal Term Term                           -- Predicate
+          | Equal Expr Expr                           -- Predicate
 
-          | Val Term                                  -- Proof
+          | Val Expr                                  -- Proof
                                                       -- intros a
-          | Terminates Term                           -- Predicate
+          | Exprinates Expr                           -- Predicate
 
           -- Contra is used when you have an equation between
           -- distinct constructors.
-          | Contra Term                               -- Proof
+          | Contra Expr                               -- Proof
           -- Contraabort is used when you have an proof that t = abort
           -- and a proof that t terminates.
-          | ContraAbort Term Term                     -- Proof
+          | ContraAbort Expr Expr                     -- Proof
 
           -- The term argument is the type you wish to ascribe
-          | Abort Term                                -- Term
+          | Abort Expr                                -- Expr
 
 
           -- The bool associated with the equality proof is whether or not the
           -- type occurs in an erased position. If it does, then the term should
           -- be an equality proof. If it doesn't then the term should be some
           -- value with the a type that is an equality proof.
-          | Conv Term [Term] (Bind [TName] Term)  -- Proof, Term
-          | ConvCtx Term Term -- Simple quote style contexts
+          | Conv Expr [Expr] (Bind [EName] Expr)  -- Proof, Expr
+          | ConvCtx Expr Expr -- Simple quote style contexts
 
 
           -- For inductive proofs we have an ordering. The argument is the
           -- witness to the equality that demonstrates the equality.
-          | Ord Term                                  -- Proof
+          | Ord Expr                                  -- Proof
                                                       -- intros a
-          | IndLT Term Term                           -- Pred
-          | OrdTrans Term Term
+          | IndLT Expr Expr                           -- Pred
+          | OrdTrans Expr Expr
 
 
-          | Ind (Bind (TName, (TName, Embed Term), TName) Term) -- proof
-          | Rec (Bind (TName, (TName, Embed Term)) Term) -- term
+          | Ind (Bind (EName, (EName, Embed Expr), EName) Expr) -- proof
+          | Rec (Bind (EName, (EName, Embed Expr)) Expr) -- term
 
           -- In a conversion context, the 'Escape' term splices in an equality
           -- proof (or an expression that generates an equality proof).
-          | Escape Term
+          | Escape Expr
 
-          | Let (Bind (TName,TName,Embed Term) Term)
+          | Let (Bind (EName,EName,Embed Expr) Expr)
 
-          | Aborts Term
-          | Sym Term -- Should be a derived form
+          | Aborts Expr
+          | Sym Expr -- Should be a derived form
           | Refl -- Should be a derived form
-          | Trans Term Term -- Should be a derived form
-          | MoreJoin [Term] -- Should be a derived form
+          | Trans Expr Expr -- Should be a derived form
+          | MoreJoin [Expr] -- Should be a derived form
 
-          | Ann Term Term  -- Predicate, Proof, Term (sort of meta)
-          | Pos SourcePos Term
+          | Ann Expr Expr  -- Predicate, Proof, Expr (sort of meta)
+          | Pos SourcePos Expr
           deriving (Show,Typeable)
 
 
 ---------------------------------------------------------
 
-type Alt = Bind (String, [TName]) Term
+type Alt = Bind (String, [EName]) Expr
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 
-$(derive [''Term, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
+$(derive [''Expr, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
 
 
-instance Alpha Term where
+instance Alpha Expr where
   aeq' c (Pos _ t1) t2 = t1 `aeq` t2
   aeq' c t1 (Pos _ t2) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
@@ -139,13 +139,13 @@ instance Alpha Stage
 instance Alpha Kind
 instance Alpha Tele
 
-instance Subst Term Term where
+instance Subst Expr Expr where
   isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
 
-instance Subst Term Stage
-instance Subst Term Kind
-instance Subst Term SourcePos
+instance Subst Expr Stage
+instance Subst Expr Kind
+instance Subst Expr SourcePos
 
 
 
@@ -185,7 +185,7 @@ app f x = App f Dynamic x
 down (Pos _ t) = down t
 down t = t
 
--- downAll :: Term -> TCMonad Term
+-- downAll :: Expr -> TCMonad Expr
 downAll t = everywhere (mkT f') t
   where f' (Pos _ t) = t
         f' t = t
@@ -193,15 +193,15 @@ downAll t = everywhere (mkT f') t
 
 
 
--- | Erased Terms
-type EName = Name ETerm
-data ETerm = EVar (Name ETerm)
-           | ECon (Name ETerm)
-           | EApp ETerm ETerm
-           | ELambda (Bind EName ETerm)
-           | ERec (Bind (EName, EName) ETerm)
-           | ECase ETerm [Bind (String,[EName]) ETerm]
-           | ELet (Bind (EName, Embed ETerm) ETerm)
+-- | Erased Exprs
+type EEName = Name EExpr
+data EExpr = EVar (Name EExpr)
+           | ECon (Name EExpr)
+           | EApp EExpr EExpr
+           | ELambda (Bind EEName EExpr)
+           | ERec (Bind (EEName, EEName) EExpr)
+           | ECase EExpr [Bind (String,[EEName]) EExpr]
+           | ELet (Bind (EEName, Embed EExpr) EExpr)
            | EType
   deriving (Show)
 
@@ -248,10 +248,10 @@ erasedValue _ = True
 
 
 
-$(derive [''ETerm])
+$(derive [''EExpr])
 
-instance Alpha ETerm
-instance Subst ETerm ETerm where
+instance Alpha EExpr
+instance Subst EExpr EExpr where
   isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
 
@@ -263,7 +263,7 @@ teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
  where ((n,stage,ty),rest) = unrebind binding
        arrRest = teleArrow rest end
 
-subTele :: Tele -> [Term] -> Term -> Term
+subTele :: Tele -> [Expr] -> Expr -> Expr
 subTele Empty [] x = x
 subTele (TCons binding) (ty:tys) x = subst n ty $ subTele rest tys x
   where ((n,_,_),rest) = unrebind binding

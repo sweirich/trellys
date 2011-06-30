@@ -23,9 +23,9 @@ instance Disp Doc where
   disp = id
 instance Disp String where
   disp  = text
-instance Disp Term where
+instance Disp Expr where
   disp  = cleverDisp
-instance Disp ETerm where
+instance Disp EExpr where
   disp = cleverDisp
 instance Rep a => Disp (Name a) where
   disp = cleverDisp
@@ -34,7 +34,7 @@ instance Disp Module where
 instance Disp Int where
   disp = integer . toInteger
 
-instance Disp (Maybe Term) where
+instance Disp (Maybe Expr) where
   disp = maybe empty disp
 
 
@@ -124,7 +124,7 @@ withPrec i m = do
 instance Rep a => Display (Name a) where
   display = return . text . show
 
-instance Display Term where
+instance Display Expr where
   display (Var n) = return $ text $ show n
   display (Con n) = return $ text $ show n
   display (Formula 0) = return $ text "Form"
@@ -185,7 +185,7 @@ instance Display Term where
                           nest 2 dBody]
 
 
-  display (TerminationCase scrutinee binding) =
+  display (ExprinationCase scrutinee binding) =
     lunbind binding $ \(n,(diverge,terminate)) -> do
                         dScrutinee <- display scrutinee
                         dDiverge <- display diverge
@@ -209,7 +209,7 @@ instance Display Term where
     d <- termParen (precedence w) t
     return $ text "value" <+> d
 
-  display (w@(Terminates t)) = do
+  display (w@(Exprinates t)) = do
                      dt <- termParen (precedence w) t
                      return $ dt <+> text "!"
 
@@ -339,7 +339,7 @@ instance Display Term where
   precedence (App _ _ _) = 10
   precedence (Equal _ _) = 9
   precedence (IndLT _ _) = 8
-  precedence (Terminates _) = 7
+  precedence (Exprinates _) = 7
   precedence (Ann _ _) = 6
 
   precedence (Contra _) = 5
@@ -431,7 +431,7 @@ instance Display a => Display (Embed a) where
 
 
 
-instance Display ETerm where
+instance Display EExpr where
   display (EVar v) = display v
   display (ECon c) = display c
   display EType = return $ text "Type"
