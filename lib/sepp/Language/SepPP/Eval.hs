@@ -1,17 +1,17 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax
+import Language.SepPP.Syntax(EExpr(..),erase,erasedValue)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 
 import Generics.RepLib hiding (Con(..))
 import Unbound.LocallyNameless hiding (Con(..))
 -- import Control.Monad((>=>))
-import Control.Monad.Trans
+import "mtl" Control.Monad.Trans
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Error
+import "mtl" Control.Monad.Error
 import Text.PrettyPrint(render, text,(<+>),($$))
 
 -- compile-time configuration: should reduction steps be logged
@@ -31,8 +31,8 @@ logReduce t t' = do
   emit $ ("reduced" $$$ t $$$ "to" $$$ t')
   emit $  "===" <++> "==="
 
+reduce :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
 reduce 0 t k = k 0 t
-
 reduce steps v@(EVar n) k = do
      d <- lookupDef (translate n)
      case d of
@@ -45,7 +45,7 @@ reduce steps v@(EVar n) k = do
                k steps v
 reduce steps t@(ECon _) k = k steps t
 
-reduce steps (EApp t1 t2) k = reduce steps t1 k'
+reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
@@ -58,15 +58,9 @@ reduce steps (EApp t1 t2) k = reduce steps t1 k'
                             reduce (steps - 1) tm' k)
 
         k' steps t1'@(ERec binding) = do
-
-          reduce steps t2 (\steps' v -> do
-                       if steps' == 0
-                          then return $ EApp t1' v
-                          else do
-                                  ((f,x),body) <- unbind binding
-                                  let tm' = (substs [(f,t1'),(x,v)] body)
-                                  logReduce (EApp t1' v) tm'
-                                  reduce (steps - 1) tm' k)
+          typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
+                    [(text "The term being applied", disp t1'),
+                     (text "The application", disp tm)]
         k' steps v1
           | isCon v1 && erasedValue v1 = reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
           | otherwise = k steps (EApp v1 t2)
@@ -112,7 +106,10 @@ reduce steps (ELet binding) k = do
   reduce steps t k'
 
 
-reduce steps t@(ERec binding) k = k steps t
+reduce steps t@(ERec binding) k = do
+  ((f,args),body) <- unbind binding
+  let t' = foldr (\n bdy -> ELambda (bind n bdy)) (subst f t body)  args
+  k steps t'
 reduce steps t@(ELambda _) k = k steps t
 reduce steps EType k = k steps EType
 
@@ -121,18 +118,18 @@ reduce steps EType k = k steps EType
 reduce steps t k = die $ "reduce" <++> t
 
 patMatch (c,args) [] = err "No Pattern Match"
-patMatch t@(Con c,args) (b:bs) = do
+patMatch t@(ECon c,args) (b:bs) = do
   ((cname,vars),body) <- unbind b
   if string2Name cname == c
      then return $ substs (zip vars args) body
      else patMatch t bs
 
 
-getCons :: Expr -> Maybe (Expr,[Expr])
-getCons t@(Con _) = return (t,[])
-getCons t = case splitApp t of
-              (c@(Con _):cs) -> return (c,cs)
-              _ -> Nothing
+-- getCons :: Expr -> Maybe (Expr,[Expr])
+-- getCons t@(Con _) = return (t,[])
+-- getCons t = case splitApp t of
+--               (c@(Con _):cs) -> return (c,cs)
+--               _ -> Nothing
 
 
 

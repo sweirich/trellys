@@ -250,7 +250,7 @@ proof ind not_ord_z (x:Nat)[xterm] =
 axiom ordinj : forall(x:Nat)(y:Nat)(u:(S x) < (S y)). x < y
 
 theorem ord_lt : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:x < y). lt x y = True
-proof ind ord_lt (y:Nat)[yterm] = 
+proof ind ord_lt (y:Nat)[yterm] =
   \(x:Nat)(xterm:x!)(p:x < y) =>
    case y {y_eq} yterm of
      Z -> contra 
