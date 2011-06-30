@@ -90,7 +90,7 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
                            Nothing -> do
                              k steps (ECase v alts)
 
-        findCon :: ETerm -> [ETerm] -> [ETerm]
+        findCon :: EExpr -> [EExpr] -> [EExpr]
         findCon c@(ECon _) args = (c:args)
         findCon (EApp t a) args = findCon t (a:args)
         findCon _ _ = []
@@ -128,7 +128,7 @@ patMatch t@(Con c,args) (b:bs) = do
      else patMatch t bs
 
 
-getCons :: Term -> Maybe (Term,[Term])
+getCons :: Expr -> Maybe (Expr,[Expr])
 getCons t@(Con _) = return (t,[])
 getCons t = case splitApp t of
               (c@(Con _):cs) -> return (c,cs)

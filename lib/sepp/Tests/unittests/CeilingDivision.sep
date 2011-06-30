@@ -257,11 +257,10 @@ proof ind ord_lt (y:Nat)[yterm] =
             (not_ord_z x xterm (conv p at x < ~(sym y_eq)))
    | S y' -> 
    case x {x_eq} xterm of
-     Z -> morejoin { sym x_eq, sym y_eq} : lt x y = True
+     Z -> morejoin { sym x_eq, sym y_eq} 
    | S x' -> 
-      trans (morejoin { (sym x_eq), (sym y_eq) } : lt x y = lt x' y')
+     trans (morejoin { (sym x_eq), (sym y_eq) } : lt x y = lt x' y')
         (ord_lt y' (ord y_eq) x' (value x') (ordinj x' y' conv p at ~(sym x_eq) < ~(sym y_eq)))
-
 
 type le : (x:Nat) -> (y:Nat) -> Bool
 prog le = rec le (x:Nat) . \(y:Nat) ->

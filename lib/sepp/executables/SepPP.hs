@@ -5,7 +5,7 @@ import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
 import Language.SepPP.TCUtils(TypeError(ErrMsg))
-import Language.SepPP.Syntax(Term(..),var,app,Stage(..))
+import Language.SepPP.Syntax(Expr(..),var,app,Stage(..))
 import Unbound.LocallyNameless(Embed(..),bind,string2Name)
 
 import Text.PrettyPrint(render)

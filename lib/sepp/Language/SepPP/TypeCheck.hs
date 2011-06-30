@@ -36,10 +36,10 @@ typecheckModule (Module n decls) = do
   return ()
 
 
-data DefRes = DataResult TName Tele [(TName,(Int,Term))]
-            | ProofResult TName Term Term Bool
-            | ProgResult TName Term Term Bool
-            | AxiomResult TName Term
+data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
+            | ProofResult EName Expr Expr Bool
+            | ProgResult EName Expr Expr Bool
+            | AxiomResult EName Expr
 
 -- | Typecheck a single definition
 
@@ -171,7 +171,7 @@ lkJudgment (Forall binding) = do
 
 lkJudgment t = do
   typeError "Could not classify term as a logical kind"
-            [(text "The Term", disp t)]
+            [(text "The Expr", disp t)]
 
 guardLK t = do
   lk <- lkJudgment t
@@ -182,7 +182,7 @@ guardLK t = do
 data CheckMode = PredMode | ProofMode | ProgMode deriving (Show,Eq)
 
 
-check :: CheckMode -> Term -> Maybe Term -> TCMonad Term
+check :: CheckMode -> Expr -> Maybe Expr -> TCMonad Expr
 check mode (Pos p t) expect  = check mode t expect `catchError` addErrorPos p t
 check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 
@@ -227,12 +227,12 @@ check mode (Con t) expected = do
 -- Type
 
 check ProgMode Type Nothing = return Type
-check ProgMode Type (Just Type) = return Type -- Term_Type
+check ProgMode Type (Just Type) = return Type -- Expr_Type
 check _ Type _ = err "Can't check Type in non-programmatic mode."
 
 -- Pi
 
-check ProgMode (Pi _ binding) expected = do -- Term_Pi
+check ProgMode (Pi _ binding) expected = do -- Expr_Pi
   ((n,Embed ty),body) <- unbind binding
   extendBinding n ty False $ check ProgMode body expected
 
@@ -391,10 +391,10 @@ check mode (Case s pf binding) expected = do
   case (mode,pf) of
       (ProofMode,Just termProof) -> do
                      sTermType <- proofSynth' termProof
-                     ensure (down sTermType `aeq` Terminates s) $
+                     ensure (down sTermType `aeq` Exprinates s) $
                        termProof $$$
                         "with the type" <++> sTermType <++> "is not a proof of" $$$
-                       (Terminates s)
+                       (Exprinates s)
       (ProofMode, Nothing) -> do
                      err "When case-splitting in a proof, a termination proof must be supplied."
       _ -> return ()
@@ -441,12 +441,12 @@ check mode (Case s pf binding) expected = do
 
 
 
--- TerminationCase
-check ProofMode (TerminationCase s binding) (Just ty) = do
+-- ExprinationCase
+check ProofMode (ExprinationCase s binding) (Just ty) = do
   sty <- typeSynth' s
   (w,(abort,terminates)) <- unbind binding
   extendBinding w (Equal (Abort sty) s) True (proofAnalysis' abort ty)
-  extendBinding w (Terminates s) True (proofAnalysis' terminates ty)
+  extendBinding w (Exprinates s) True (proofAnalysis' terminates ty)
   return ty
 
 -- Join
@@ -475,7 +475,7 @@ check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
                          return ((et1,et2):rs)
             ty -> typeError
                     "Term does not have the correct type to be used as a morejoin rewrite."
-                      [(text "The Term", disp p),
+                      [(text "The Expr", disp p),
                        (text "The Type", disp ty)]
 
 
@@ -499,25 +499,25 @@ check mode term@(Equal t0 t1) expected = do
 check ProofMode (t@(Val x)) expected = do
      let f t = do ty <- typeSynth' t
                   case down ty of
-                   (Terminates x) -> return x
-                   _ -> err $ "Can't escape to something not a Termination in valCopy."
+                   (Exprinates x) -> return x
+                   _ -> err $ "Can't escape to something not a Exprination in valCopy."
      term <- escCopy f x
      typeSynth' term
      stub <- escCopy (\ x -> return Type) x
      b <- synValue stub
      if b
-        then do let ans = Terminates (down term)
+        then do let ans = Exprinates (down term)
                 ans `sameType` expected
                 return ans
         else  do die $ "Non Value:" <++> t
 
 
 
--- Terminates
+-- Exprinates
 
-check mode (Terminates t) expected = do -- Pred_Terminates rule
+check mode (Exprinates t) expected = do -- Pred_Terminates rule
   ensure (mode `elem` [PredMode,ProgMode]) $
-           "Can't check type of Terminates term in " <++> show mode <++> "mode."
+           "Can't check type of Exprinates term in " <++> show mode <++> "mode."
   typeSynth' t
   (Formula 0) `sameType` expected
   return (Formula 0)
@@ -540,7 +540,7 @@ check ProofMode (Contra p) (Just ty) = do
    (IndLT t1 t2) -> do
       unless (t1 `aeq` t2) $
              typeError"When using an inductive ordering with contra, must have a proof of the form 'x < x'"
-                       [(text "The Term",disp p),
+                       [(text "The Expr",disp p),
                         (text "The Type",disp ty')]
       return ty
 
@@ -555,7 +555,7 @@ check ProofMode (ContraAbort taborts tterminates) (Just ty) = do
   aborts <- proofSynth' taborts
   terminates <- proofSynth' tterminates
   case (down aborts,down terminates) of
-    (Equal (Abort _) s, Terminates s') -> do
+    (Equal (Abort _) s, Exprinates s') -> do
        ensure (down s `aeq` down s') $
                 "Can't use contrabort'" <++> s <++> "' doesn't match '" <++>
                 s' <++> "'"
@@ -657,7 +657,7 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
   (p1@(fun,_,witness),_) <- unbind prfBinding
   (a1,Forall predBinding') <- clean $ unbind predBinding
 
-  ((witness',Embed (Terminates x)),pred) <- clean $ unbind predBinding'
+  ((witness',Embed (Exprinates x)),pred) <- clean $ unbind predBinding'
 
   Just ((f,(x,Embed t1), u),proofBody,(f',(x',Embed t1'), u'),predBody)
     <- unbind2 prfBinding (bind (fun,a1,witness') pred)
@@ -677,7 +677,7 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
                            (Forall (bind (u,Embed (IndLT yvar xvar))
                                          (subst x yvar predBody))))
   extendBinding x t1 False $
-   extendBinding u (Terminates xvar) True $
+   extendBinding u (Exprinates xvar) True $
     extendBinding f fty True $ proofAnalysis' proofBody predBody
 
   return res
@@ -685,7 +685,7 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
 
 -- Rec
 
-check ProgMode (Rec progBinding) (Just res@(Pi Dynamic piBinding)) = do -- Term_Rec
+check ProgMode (Rec progBinding) (Just res@(Pi Dynamic piBinding)) = do -- Expr_Rec
   -- FIXME: This is a hack, because there are different number of binders in the
   -- Rec and Pi forms, which doesn't seem to play well with unbind2.
   (p1@(f,(recVar,recType)),body) <- unbind progBinding
@@ -909,7 +909,7 @@ isPred (Forall binding) = isB ty && isPred body
   where ((n,Embed ty),body) = unsafeUnbind binding
 isPred (Equal t0 t1) = isTerm t0 && isTerm t1
 isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
-isPred (Terminates t) = isTerm t
+isPred (Exprinates t) = isTerm t
 isPred (Ann p t) = isPred p && isLK t
 isPred (Pos _ t) = isPred t
 isPred _ = False
@@ -933,7 +933,7 @@ isProof (Case scrutinee (Just termWitness) binding) =
               (cpf,alts) -> and (map chkAlt alts)
               _ -> False
 
-isProof (TerminationCase scrutinee binding) =
+isProof (ExprinationCase scrutinee binding) =
     isTerm scrutinee && isProof p0 && isProof p1
   where (pf,(p0,p1)) = unsafeUnbind binding
 
@@ -1034,7 +1034,7 @@ classToMode SortLK = error "classToMode: No case for SortLK"
 -----------------------------------------------
 -- Generic function for copying a term and
 -- handling the escape clause in a specific manner
-escCopy :: (Term -> TCMonad Term) -> Term -> TCMonad Term
+escCopy :: (Expr -> TCMonad Expr) -> Expr -> TCMonad Expr
 escCopy f t = everywhereM (mkM f') t
   where f' (Escape t) = f t
         f' t = return t
