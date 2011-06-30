@@ -1,7 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
   NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances #-}
 module Language.SepPP.TypeCheck where
-
+ 
 import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 import Language.SepPP.Eval
@@ -188,9 +188,10 @@ check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 
 check mode (Ann t ty) Nothing = check mode t (Just ty)
 check mode (Ann t ty) (Just ty') = do
+  ret <- check mode t (Just ty)
   unless (down ty `aeq` down ty') $ do
     die $ "Annotated type" <++> ty' <++> "doesn't match" <++> ty
-  check mode t (Just ty)
+  return ret
 
 
 -- Var
