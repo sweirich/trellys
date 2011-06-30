@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, TypeSynonymInstances, FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, TypeSynonymInstances, FlexibleInstances, UndecidableInstances, PackageImports #-}
 module Language.SepPP.PrettyPrint where
 
 import Language.SepPP.Syntax
@@ -7,7 +7,7 @@ import Unbound.LocallyNameless hiding (empty,Val,Con)
 
 import Text.PrettyPrint
 import Control.Applicative hiding (empty)
-import Control.Monad.Reader
+import "mtl" Control.Monad.Reader
 import Text.Parsec.Pos
 import Text.Parsec.Error(ParseError,showErrorMessages,errorPos,errorMessages)
 import qualified Data.Set as S
@@ -34,6 +34,11 @@ instance Disp Module where
 instance Disp Int where
   disp = integer . toInteger
 
+instance Disp Tele where
+  disp = cleverDisp
+
+
+
 instance Disp (Maybe Expr) where
   disp = maybe empty disp
 
@@ -46,13 +51,20 @@ data DispInfo = DI {
 initDI :: DispInfo
 initDI = DI S.empty
 
-type M = Reader DispInfo
+-- We still wrap this in a Fresh monad, so that we can print all of the
+-- variables with their indicies, for debugging purposes.
+type M = FreshMT (Reader DispInfo)
+
+barenames = True
 instance LFresh M where
   lfresh nm = do
-    let s = name2String nm
-    di <- ask
-    return $ head (filter (\x -> AnyName x `S.notMember` (dispAvoid di))
-                      (map (makeName s) [1..]))
+    if barenames
+       then fresh nm
+        else do
+          let s = name2String nm
+          di <- ask
+          return $ head (filter (\x -> AnyName x `S.notMember` (dispAvoid di))
+                         (map (makeName s) [0..]))
 
   avoid names = local upd where
      upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
@@ -61,7 +73,7 @@ instance LFresh M where
 
 cleverDisp :: (Display d, Alpha d) => d -> Doc
 cleverDisp d =
-  runReader dm initDI where
+  runReader (runFreshMT dm) initDI where
     dm = let vars = S.elems (fvAny d)  in
          lfreshen vars $ \vars'  p ->
            (display (swaps p d))
@@ -185,7 +197,7 @@ instance Display Expr where
                           nest 2 dBody]
 
 
-  display (ExprinationCase scrutinee binding) =
+  display (TerminationCase scrutinee binding) =
     lunbind binding $ \(n,(diverge,terminate)) -> do
                         dScrutinee <- display scrutinee
                         dDiverge <- display diverge
@@ -209,7 +221,7 @@ instance Display Expr where
     d <- termParen (precedence w) t
     return $ text "value" <+> d
 
-  display (w@(Exprinates t)) = do
+  display (w@(Terminates t)) = do
                      dt <- termParen (precedence w) t
                      return $ dt <+> text "!"
 
@@ -282,13 +294,12 @@ instance Display Expr where
 
 
   display (Rec binding) = do
-    lunbind binding $ \((f,(x,ty)),body) -> do
+    lunbind binding $ \((f,tele),body) -> do
       df <- display f
-      dx <- display x
-      dTy <- display ty
+      dtele <- display tele
       dBody <- display body
       return $
-         sep [text "rec" <+> df <+> parens (dx <+> colon <+> dTy) <+>
+         sep [text "rec" <+> df <+> dtele <+>
               text ".",
               nest 2 dBody]
 
@@ -339,7 +350,7 @@ instance Display Expr where
   precedence (App _ _ _) = 10
   precedence (Equal _ _) = 9
   precedence (IndLT _ _) = 8
-  precedence (Exprinates _) = 7
+  precedence (Terminates _) = 7
   precedence (Ann _ _) = 6
 
   precedence (Contra _) = 5
@@ -394,7 +405,7 @@ instance Display Decl where
     lunbind binding $ \(tele,cs) -> do
      d1 <- display t1
      -- d2 <- display t2
-     dtele <- displayTele False tele
+     dtele <- displayTele tele
      dcs <- mapM displayCons cs
      return $ hang (text "data" <+> d1 <+> colon <+> dtele <+> text "where") 2
                        (vcat (punctuate semi dcs)) $$ text ""
@@ -404,16 +415,10 @@ instance Display Decl where
             return $ dc <+> colon <+> dt
 
 
-          displayTele False Empty = return $ text "Type"
-          displayTele True Empty = return $ text "-> Type"
-          displayTele _ (TCons binding) = do
-            let ((n,stage,Embed ty),tele) = unrebind binding
-            dn <- display n
-            dty <- display ty
-            drest <- displayTele True tele
-            case stage of
-              Static -> return $ brackets (dn <> colon <> dty <> drest)
-              Dynamic -> return $ parens (dn <> colon <> dty <> drest)
+          displayTele Empty = return $ text "Type"
+          displayTele tele = do
+             dtele <- display tele
+             return $ dtele <+> text "-> Type"
 
 
 
@@ -440,11 +445,11 @@ instance Display EExpr where
      d2 <- etermParen (precedence t) t2
      return $ d1 <+> d2
   display t@(ERec binding) = do
-    lunbind binding $ \((f,x),body) -> do
+    lunbind binding $ \((f,args),body) -> do
     df <- display f
-    dx <- display x
+    dx <- mapM display args
     dbody <- etermParen (precedence t) body
-    return $ text "rec" <+> df <+> dx <+> text "." <+> dbody
+    return $ text "rec" <+> df <+> (hcat dx) <+> text "." <+> dbody
 
   display t@(ELambda binding) =  do
     lunbind binding $ \(x,body) -> do
@@ -511,5 +516,21 @@ instance Disp ParseError where
   where sem = text $ showErrorMessages "or" "unknown parse error"
               "expecting" "unexpected" "end of input"
               (errorMessages pe)
+
+
+
+instance Display Tele where
+    display Empty = return empty
+    display (TCons binding) = do
+      let ((n,stage,Embed ty),tele) = unrebind binding
+      dn <- display n
+      dty <- display ty
+      drest <- display tele
+      case stage of
+        Static -> return $ brackets (dn <> colon <> dty) <> drest
+        Dynamic -> return $ parens (dn <> colon <> dty) <> drest
+
+
+
 
 

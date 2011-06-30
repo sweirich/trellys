@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving, ParallelListComp #-}
+{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving, ParallelListComp, PackageImports #-}
 module Language.SepPP.TCUtils where
 
 import Language.SepPP.Syntax
@@ -9,8 +9,8 @@ import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,sub
 
 import Text.PrettyPrint
 import Data.Typeable
-import Control.Monad.Reader hiding (join)
-import Control.Monad.Error hiding (join)
+import "mtl" Control.Monad.Reader hiding (join)
+import "mtl" Control.Monad.Error hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative hiding (empty)
 import Text.Parsec.Pos
@@ -38,6 +38,15 @@ data Env = Env { gamma :: [(EName,(Expr,Bool))]   -- (var, (type,isValue))
                , escapeContext :: EscapeContext
                , rewrites :: [(EExpr,EExpr)]}
 emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoContext}
+
+
+
+instance Disp Env where
+  disp env = hang (text "Context") 2 (vcat
+                [disp n <> colon <+> disp t | (n,(t,_)) <- gamma env])  $$
+             hang (text "Definitions") 2 (vcat
+                [disp n <> colon <+> disp t | (n,t) <- sigma env])
+
 
 
 
@@ -136,7 +145,7 @@ instance Disp TypeError where
           summary = vcat [s | ErrInfo s _ <- messages]
           detailed = vcat [(int i <> colon <+> brackets label) <+> d |
                            (label,d) <- details | i <- [1..]]
-          terms = [hang (text "In the term") 2 (disp t) | ErrLoc _ t <- take 2 positions]
+          terms = [hang (text "In the term") 2 (disp t) | ErrLoc _ t <- take 4 positions]
 
 
 addErrorPos p t (ErrMsg ps) = throwError (ErrMsg (ErrLoc p t:ps))

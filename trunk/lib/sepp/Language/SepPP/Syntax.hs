@@ -7,14 +7,14 @@ module Language.SepPP.Syntax (
   EName, ModName,
   EExpr(..), erase, erasedValue,
   down,downAll,
-  Tele(..),teleArrow,subTele,
+  Tele(..),teleArrow,subTele,teleFromList,
   splitApp, splitApp', isStrictContext, var, app) where
 
 import Unbound.LocallyNameless hiding (Con)
 import Unbound.LocallyNameless.Alpha(aeqR1)
 import Text.Parsec.Pos
 import Control.Monad(mplus)
-import Control.Applicative((<$>), (<*>))
+import Control.Applicative((<$>), (<*>),Applicative)
 
 import Data.Typeable
 
@@ -61,7 +61,7 @@ data Expr = Var EName                                 -- Expr, Proof
           | Case Expr (Maybe Expr) (Bind EName [Alt])       -- Proof, Expr
 
 
-          | ExprinationCase Expr (Bind EName (Expr,Expr))    -- Proof
+          | TerminationCase Expr (Bind EName (Expr,Expr))    -- Proof
 
 
           | Join Integer Integer                      -- Proof
@@ -70,7 +70,7 @@ data Expr = Var EName                                 -- Expr, Proof
 
           | Val Expr                                  -- Proof
                                                       -- intros a
-          | Exprinates Expr                           -- Predicate
+          | Terminates Expr                           -- Predicate
 
           -- Contra is used when you have an equation between
           -- distinct constructors.
@@ -100,7 +100,7 @@ data Expr = Var EName                                 -- Expr, Proof
 
 
           | Ind (Bind (EName, (EName, Embed Expr), EName) Expr) -- proof
-          | Rec (Bind (EName, (EName, Embed Expr)) Expr) -- term
+          | Rec (Bind (EName,Tele) Expr) -- term
 
           -- In a conversion context, the 'Escape' term splices in an equality
           -- proof (or an expression that generates an equality proof).
@@ -146,6 +146,7 @@ instance Subst Expr Expr where
 instance Subst Expr Stage
 instance Subst Expr Kind
 instance Subst Expr SourcePos
+instance Subst Expr Tele
 
 
 
@@ -193,18 +194,19 @@ downAll t = everywhere (mkT f') t
 
 
 
--- | Erased Exprs
+-- | Erased Terms
 type EEName = Name EExpr
-data EExpr = EVar (Name EExpr)
-           | ECon (Name EExpr)
+data EExpr = EVar EEName
+           | ECon EEName
            | EApp EExpr EExpr
            | ELambda (Bind EEName EExpr)
-           | ERec (Bind (EEName, EEName) EExpr)
+           | ERec (Bind (EEName, [EEName]) EExpr)
            | ECase EExpr [Bind (String,[EEName]) EExpr]
            | ELet (Bind (EEName, Embed EExpr) EExpr)
            | EType
   deriving (Show)
 
+erase :: (Applicative m, Fresh m ) => Expr -> m EExpr
 erase (Pos _ t) = erase t
 erase Type = return EType
 erase (Var n) = return $ EVar (translate n)
@@ -217,9 +219,20 @@ erase (Lambda _ Static binding) = do
 erase (Lambda _ Dynamic binding) = do
   ((n,_),body) <- unbind binding
   ELambda <$> ((bind (translate n)) <$> erase body)
+-- FIXME:
 erase (Rec binding) = do
-  ((n,(arg,_)),body) <- unbind binding
-  ERec <$> (bind (translate n, translate arg)) <$> erase body
+  ((n,tele),body) <- unbind binding
+  ns <- eraseTele tele
+  ERec <$> (bind (translate n, ns)) <$> erase body
+  where eraseTele :: Monad m => Tele -> m [EEName]
+        eraseTele Empty = return []
+        eraseTele (TCons rebinding) = do
+          let ((n,stage,Embed ty),rest) = unrebind rebinding
+          ns <- eraseTele rest
+          case stage of
+            Dynamic -> return (translate n:ns)
+            Static -> return ns
+
 erase (Case scrutinee _ binding) = do
     (_,alts) <- unbind binding
     ECase <$> erase scrutinee <*> mapM eraseAlt alts
@@ -256,8 +269,6 @@ instance Subst EExpr EExpr where
   isvar _ = Nothing
 
 
-
-
 teleArrow Empty end = end
 teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
  where ((n,stage,ty),rest) = unrebind binding
@@ -271,4 +282,5 @@ subTele _ _ _ =
   error "Can't construct a telescope substitution, arg lengths don't match"
 
 
-
+teleFromList args = foldr (\(st,(n,ty)) r -> TCons (rebind (n,st,Embed ty) r))
+                    Empty args

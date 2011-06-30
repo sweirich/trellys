@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable #-}
+{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, PackageImports #-}
 module Language.SepPP.Parser where
 
 import Language.SepPP.Syntax
@@ -14,7 +14,7 @@ import qualified Text.Parsec.Token as Token
 
 import Data.Typeable
 import Control.Applicative hiding ((<|>),many)
-import Control.Monad.Identity
+import "mtl" Control.Monad.Identity
 import Control.Exception(Exception)
 import Data.Char
 import Text.PrettyPrint(render)
@@ -66,11 +66,10 @@ sepProgDecl = do
        recDecl = do
                 reserved "rec"
                 n <- exprName
-                arg <- (parens ((,) <$> exprName <* colon <*> (Embed <$> expr))) <?>
-                               "top-level rec argument"
+                tele <- telescope <?> "rec parameters"
                 reservedOp "="
                 body <- expr
-                return (n, Rec (bind (n,arg) body))
+                return (n, Rec (bind (n,tele) body))
 
 sepAxiomDecl = do
   reserved "axiom"
@@ -124,7 +123,6 @@ sepDataDecl = do
                    reservedOp "->"
                    return $ foldr (\(st,(n,ty)) r ->
                              TCons (rebind (n,st,Embed ty) r))  Empty ps
-
 
 
 
@@ -184,8 +182,8 @@ exprName = name
 
 
 piBinding =
-    ((,) Static <$> brackets binding) <|>
-    ((,) Dynamic <$> parens binding) <|>
+    (((,) Static <$> brackets binding) <?> "Static Argument Declaration") <|>
+    (((,) Dynamic <$> parens binding) <?> "Dynamic Argument Declaration") <|>
     (do { v <- variable; return(Dynamic,(wildcard,v))})
   where binding = try ((,) <$> exprName <* colon <*> expr) <|>
                   (do { e <- expr; return(wildcard,e)})
@@ -295,7 +293,7 @@ termCase = do
              expr <?> "terminates branch"
     return (ae,te)
 
-  return $ ExprinationCase scrutinee (bind pf (a,t))
+  return $ TerminationCase scrutinee (bind pf (a,t))
 
 
 joinExpr = do
@@ -367,11 +365,11 @@ convExpr = do
 recExpr = do
   reserved "rec"
   f <- exprName
-  (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-  -- u <- brackets exprName
+  tele <- telescope
+  -- u <- brackets termName
   reservedOp "."
   body <- expr
-  return $ Rec (bind (f,(x,Embed ty)) body)
+  return $ Rec (bind (f,tele) body)
  <?> "Rec expression"
 
 
@@ -486,7 +484,7 @@ factor = do
 expr = wrapPos $ buildExpressionParser table factor
   where table = [[binOp AssocNone "=" Equal]
                 ,[binOp AssocNone "<" IndLT]
-                ,[postOp "!" Exprinates]
+                ,[postOp "!" Terminates]
                 ,[binOp AssocLeft ":" Ann]
                 ,[binOp AssocRight "->"
                           (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))
@@ -504,3 +502,19 @@ wildcard = string2Name "_"
 wrapPos p = pos <$> getPosition <*> p
   where pos x (Pos y e) | x==y = (Pos y e)
         pos x y = Pos x y
+
+
+telescope = do
+  ps <- many1 argBinding
+  return $ teleFromList ps
+ where binding stage = do
+           n <- exprName
+           colon
+           ty <- expr
+           return (stage,(n,ty))
+       argBinding = parens (binding Dynamic) <|>
+                    brackets (binding Static)
+
+
+
+
