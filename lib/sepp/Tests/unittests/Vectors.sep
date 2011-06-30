@@ -11,7 +11,7 @@ data List : (a:Type) -> Type where
 
 
 data Vec : (a:Type)(n:Nat) -> Type where
-   VNil : (p:n=Z) -> Vec a n
+   VNil : [p:n=Z] -> Vec a n
  | VCons : (size:Nat) -> [p:n = S size] ->
            (x:a) -> (xs:Vec a size) -> Vec a n
 
@@ -41,7 +41,7 @@ prog rec plus (x:Nat) = \(y:Nat) ->
 type vcopy : (a:Type) -> (n:Nat) -> (l:Vec a n) -> (Vec a n)
 prog rec vcopy (a:Type) (n:Nat) (l:Vec a n) =
 		   case l {l_eq} of
-         VNil p -> VNil a n p
+         VNil p -> VNil a n [p]
 			 | VCons size p x xs -> VCons a n size [p] x (vcopy a size xs)
 
 
