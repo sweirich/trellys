@@ -189,8 +189,9 @@ check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 check mode (Ann t ty) Nothing = check mode t (Just ty)
 check mode (Ann t ty) (Just ty') = do
   ret <- check mode t (Just ty)
-  unless (down ty `aeq` down ty') $ do
-    die $ "Annotated type" <++> ty' <++> "doesn't match" <++> ty
+  unless (down ty `aeq` down ty') $ 
+    typeError "The expected type does match the type given in an ascription." 
+      [(text "The expected type", disp ty'), (text "The ascribed type", disp ty)]
   return ret
 
 
