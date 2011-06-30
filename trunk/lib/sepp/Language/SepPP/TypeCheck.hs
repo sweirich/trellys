@@ -235,8 +235,26 @@ check _ Type _ = err "Can't check Type in non-programmatic mode."
 
 -- Pi
 
-check ProgMode (Pi _ binding) expected = do -- Expr_Pi
+check ProgMode tm@(Pi stage binding) expected = do -- Expr_Pi
   ((n,Embed ty),body) <- unbind binding
+  cls <- getClassification ty
+  case cls of
+    SortType -> return ()
+    SortPred -> do
+      unless (stage == Static) $
+             typeError ("When checking a programmatic Pi-type, proof arguments" <++>
+                       "must be marked erased.")
+               [(text "The type", disp tm),
+                (text "The argument", disp n)]
+    _ -> typeError ("When checking programmatic Pi-type, the arguments" <++>
+                    "must be classified as proofs or programs")
+           [(text "The type", disp ty)
+           ,(text "The argument", disp n)]
+
+
+
+
+
   extendBinding n ty False $ check ProgMode body expected
 
 check mode tm@(Pi _ _) ty = do
