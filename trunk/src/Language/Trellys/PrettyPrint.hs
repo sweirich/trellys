@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances #-}
 
--- | A Pretty Printer for the core trellys. The 'Disp' class and 'D' type should
+-- | A Pretty Printer for the core trellys. The 'Disp' class and
+-- 'D' type should
 -- be replace with their LangLib equivalents.
 module Language.Trellys.PrettyPrint(Disp(..), D(..))  where
 
@@ -15,7 +16,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 
 
--- | The 'DocAble' class governs types which can be turned into 'Doc's
+-- | The 'Disp' class governs types which can be turned into 'Doc's
 class Disp d where
   disp :: d -> Doc
 
@@ -46,6 +47,7 @@ instance Disp Telescope where
 -- Adapted From AuxFuns
 -------------------------------------------------------------------------
 -- | The data structure for information about the display
+-- 
 -- In a more perfect world this would also include the current precedence
 -- level, so we could print parenthesis exactly when needed.
 data DispInfo = DI
@@ -70,7 +72,7 @@ type M = Reader DispInfo
 
 -- | The 'Display' class is like the 'Disp' class. It qualifies
 --   types that can be turned into 'Doc'.  The difference is that the
---   type might need the 'Display' context to turn a long
+--   type might need the 'DispInfo' context to turn a long
 --   machine-generated name into a short user-readable one.
 --
 --   Minimal complete definition: 'display'.
@@ -78,7 +80,7 @@ type M = Reader DispInfo
 class (Alpha t) => Display t where
   -- | Convert a value to a 'Doc'.
   display  :: t -> M Doc
-  -- | Convert a value to a 'String'. Default definition: @'render' . 'display'@.
+  -- | Convert a value to a 'String'. Default definition: @'render' . 'cleverDisp'@.
   showd :: t -> String
   -- | Print a value to the screen.  Default definition: @'putStrLn' . 'showd'@.
   pp    :: t -> IO ()
@@ -345,6 +347,14 @@ instance Display Term where
     db <- display b
     return $ parens (da <+> text ":" <+> db)
 
+  display (AppInf tm n) = do 
+    da <- display tm
+    return $ da <+> text "_" <+> int n
+
+  display (At ty th) = do 
+    da <- display ty
+    return $ text "@" <+> disp th <+> da
+
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem
 epParens Runtime l = Dd (brackets (displays l))
@@ -418,6 +428,9 @@ instance Display ETerm where
                     <+> dval <+> text "in",
                     dbody]
   display EContra = return $ text "contra"
+  display (EAt ty th) = do 
+      dty <- display ty
+      return $ text "@" <+> disp th <+> dty
 
 instance Display EMatch where
   display (n,bnd) = do
@@ -427,9 +440,6 @@ instance Display EMatch where
        dvs <- mapM display vars
        let pat = hcat $ punctuate space $ dvs
        return $ dn <+> pat <+> text "->" <+> db
-
-
-
 
 
 instance Disp Epsilon where
@@ -449,8 +459,8 @@ instance Display Telescope where
 
 
 instance Disp Theta where
-  disp Logic = text "L"
-  disp Program = text "P"
+  disp Logic = text "log"
+  disp Program = text "prog"
 
 -- Assumes that all terms were opened safely earlier.
 instance Rep a => Display (Name a) where
