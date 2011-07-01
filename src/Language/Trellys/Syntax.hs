@@ -96,20 +96,20 @@ data Term = Var TName    -- | variables
           | Paren Term
           -- | 'Pos' wraps a term with its source position.
           | Pos SourcePos Term
+          -- | An inferred appplication of implicit, compile-time-only arguments
+          | AppInf Term Int
+          -- | Internalized Typing Judgement
+          | At Term Theta
 
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables
 type Match = (TName, Bind [(TName, Epsilon)] Term)
-
-
-
 
 -- | This just deletes any top level Pos or Paren constructors from a term
 delPosParen :: Term -> Term
 delPosParen (Pos _ tm) = tm
 delPosParen (Paren tm) = tm
 delPosParen tm         = tm
-
 
 -- delPosParenDeep :: Term -> Term
 delPosParenDeep :: Rep a => a -> a
@@ -263,6 +263,7 @@ data ETerm = EVar EName
            | ECase ETerm [EMatch]
            | ELet ETerm (Bind EName ETerm)
            | EContra
+           | EAt ETerm Theta
 
 type EMatch = (EName, Bind [EName] ETerm)
 

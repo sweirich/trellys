@@ -61,6 +61,7 @@ import Data.List
     | recnat f x = a           Runtime natrec
     | recnat f [x] = a         Erased natrec
     | (a : A)                  Annotations
+    | @th A                   At
 
 
    equality contexts
@@ -196,7 +197,7 @@ trellysStyle = Token.LanguageDef
                   , "erased"
                   ]
                , Token.reservedOpNames =
-                 ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_"]
+                 ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_", "@"]
                 }
 
 tokenizer :: Token.GenTokenParser String [Column] FreshM
@@ -414,6 +415,7 @@ factor = choice [ varOrCon <?> "an identifier"
                 , caseExpr  <?> "a case"
                 , convExpr  <?> "a conv"
                 , join      <?> "a join"
+                , at        <?> "an @"
                 , impProd   <?> "an implicit function type"
                 , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"
@@ -561,4 +563,13 @@ contra = do
   reserved "contra"
   witness <- expr
   return $ Contra witness
+
+at :: LParser Term 
+at = do
+  reservedOp "@"
+  th <- option Logic $
+             (reserved "prog" >> return Program) <|>
+             (reserved "log" >> return Logic)
+  tyA <- term 
+  return $ At tyA th
 

@@ -68,6 +68,10 @@ erase (Contra _)        = return EContra
 erase (Ann a _)         = erase a
 erase (Paren a)         = erase a
 erase (Pos _ a)         = erase a
+erase (AppInf a _)      = erase a
+erase (At a th)         = do
+      a' <- erase a 
+      return $ EAt a' th
 
 eraseMatch :: Match -> TcMonad EMatch
 eraseMatch (c,bnd) =
@@ -188,6 +192,7 @@ cbvStep (ELet m bnd)   =
        _ -> if not (isEValue m) then return Nothing else
               do (x,n) <- unbind bnd
                  return $ Just $ subst x m n
+cbvStep (EAt _ _) = return Nothing
 
 -- takes up to n steps
 cbvNSteps :: Int -> ETerm -> TcMonad ETerm
@@ -220,12 +225,14 @@ isValue (Case _ _)         = False
 isValue (Let _ Erased a) =
   let (_,a') = unsafeUnbind a in
     isValue a'
-isValue (Let _ _ _)      = False
+isValue (Let _ _ _)        = False
 isValue (Conv a _ _)       = isValue a
 isValue (Contra _)         = False
 isValue (Ann a _)          = isValue a
 isValue (Paren a)          = isValue a
 isValue (Pos _ a)          = isValue a
+isValue (AppInf _ _)       = False
+isValue (At _ _)           = True
 
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
@@ -247,6 +254,7 @@ isEValue (ERecMinus _)    = False
 isEValue (ECase _ _)      = False
 isEValue (ELet _ _)       = False
 isEValue EContra          = False
+isEValue (EAt _ _)        = False
 
 
 -- | Evaluation environments - a mapping between named values and

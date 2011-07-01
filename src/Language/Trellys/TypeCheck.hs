@@ -354,7 +354,23 @@ ta th (Let th' ep bnd) tyB =
            DS "Logical contexts because they would be normalized when the",
            DS "expression is."]
     return (Let th' ep (bind (x,y,embed ea) eb))
-
+-- rule T_At
+ta _ (At ty th') (Type i) = do 
+   ea <- ta th' ty (Type i) 
+   return (At ea th')
+-- rule T_AtP
+ta Program a (At tyA th) = ta th a tyA
+-- rule T_AtLL
+ta Logic a (At tyA Logic) = ta Logic a tyA
+-- rule T_AtLP
+ta Logic a (At tyA Program) = 
+   if (isValue a) then 
+      ta Program a tyA
+   else 
+      -- one last chance, check if it is a logical term immediately 
+      -- coerced to be programmatic
+      ta Logic a tyA    
+   
 -- rule T_chk
 ta th a tyB = do
   (ea,tyA) <- ts th a
@@ -435,7 +451,7 @@ ts tsTh tsTm =
          case isArrow tyArr of
            Nothing -> err [DS "ts: expected arrow type, for term ", DD a,
                            DS ". Instead, got", DD tyArr]
-           Just (th',epArr,bnd) -> do
+           Just (th', epArr, bnd) -> do
              ((x,tyA),tyB) <- unbind bnd
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
@@ -559,6 +575,10 @@ ts tsTh tsTm =
                DS "Logical contexts because they would be normalized when the",
                DS "expression is."]
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
+
+    ts' _ (At tyA th') = do 
+      (ea, s) <- ts' th' tyA
+      return (At ea th', s)
 
     ts' _ tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
                       DS "Please add an annotation.",
