@@ -412,6 +412,7 @@ factor = choice [ varOrCon <?> "an identifier"
                 , rec    <?> "rec"
                 , letExpr   <?> "a let"
                 , contra    <?> "a contra"
+                , abort     <?> "an abort"
                 , caseExpr  <?> "a case"
                 , convExpr  <?> "a conv"
                 , join      <?> "a join"
@@ -564,6 +565,11 @@ contra = do
   witness <- expr
   return $ Contra witness
 
+abort :: LParser Term
+abort = do
+  reserved "abort"
+  return Abort
+
 at :: LParser Term 
 at = do
   reservedOp "@"
@@ -572,4 +578,3 @@ at = do
              (reserved "log" >> return Logic)
   tyA <- term 
   return $ At tyA th
-
