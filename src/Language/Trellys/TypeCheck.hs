@@ -367,10 +367,21 @@ ta Logic a (At tyA Program) =
    if (isValue a) then 
       ta Program a tyA
    else 
-      -- one last chance, check if it is a logical term immediately 
+      -- one last chance, check if it is a log term immediately 
       -- coerced to be programmatic
       ta Logic a tyA    
    
+ta th (TerminationCase s binding) ty = do 
+    (es, sty) <- ts th s
+    (w,(abort,tbind)) <- unbind binding
+    (v, terminates) <- unbind tbind
+    eabort <- extendCtx (Sig w Logic (TyEq (Ann Abort sty) s))
+                 $ ta th abort ty
+    eterm  <- extendCtx (Sig v Program sty)
+                 $ extendCtx (Sig w Logic (TyEq (Var v) s))
+                 $ ta th terminates ty
+    return (TerminationCase es (bind w (eabort, (bind v eterm))))
+
 -- rule T_chk
 ta th a tyB = do
   (ea,tyA) <- ts th a

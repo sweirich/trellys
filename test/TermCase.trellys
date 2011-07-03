@@ -1,0 +1,17 @@
+module TermCase where
+
+import Prelude
+
+prog plus : Nat => Nat => Nat
+rec plus n = \ m . 
+    case n [cw] of  
+      Zero -> m 
+      Succ p -> Succ (plus p m)
+
+axiom log pz0 : (x:Nat) -> plus x Zero = x
+
+log pz : (x : Unit -> Nat) -> plus (x U) Zero = (x U)
+pz = \ x . termcase (x U) {z} of 
+          | abort -> conv (join 100 100 : (plus (abort:Nat) Zero = (abort:Nat))) by z at 
+	                hole. plus hole Zero = hole
+	  | ! y   -> conv (pz0 y) by z at x. plus x Zero = x

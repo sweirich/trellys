@@ -194,7 +194,8 @@ trellysStyle = Token.LanguageDef
                   ,"let", "in"
                   ,"prog", "log"
                   ,"axiom"
-                  , "erased"
+                  ,"erased"
+                  ,"termcase"
                   ]
                , Token.reservedOpNames =
                  ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_", "@"]
@@ -258,6 +259,7 @@ reservedOp = Token.reservedOp tokenizer
 parens,brackets :: LParser a -> LParser a
 parens = Token.parens tokenizer
 brackets = Token.brackets tokenizer
+braces = Token.braces tokenizer
 
 natural :: LParser Integer
 natural = Token.natural tokenizer
@@ -369,6 +371,30 @@ recDef = do
 ------------------------
 ------------------------
 
+termCase :: LParser Term
+termCase = do
+  reserved "termcase"
+  scrutinee <- expr
+  pf <- braces (string2Name <$> identifier)
+  reserved "of"
+  (a,t) <- do
+    -- Diverges case
+    ae <- do reservedOp "|"
+             reserved "abort"
+             reservedOp "->"
+             expr <?> "aborts branch"
+
+    -- Exprinates case
+    te <- do reservedOp "|"
+             reservedOp "!"
+             v <- (string2Name <$> identifier)
+             reservedOp "->"
+             e <- expr <?> "terminates branch"
+             return (bind v e)
+    return (ae,te)
+
+  return $ TerminationCase scrutinee (bind pf (a,t))
+
 
 join :: LParser Term
 join =
@@ -412,11 +438,12 @@ factor = choice [ varOrCon <?> "an identifier"
                 , rec    <?> "rec"
                 , letExpr   <?> "a let"
                 , contra    <?> "a contra"
-                , abort     <?> "an abort"
+                , abort     <?> "abort"
                 , caseExpr  <?> "a case"
                 , convExpr  <?> "a conv"
                 , join      <?> "a join"
                 , at        <?> "an @"
+                , termCase  <?> "a termcase"
                 , impProd   <?> "an implicit function type"
                 , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"
@@ -565,8 +592,9 @@ contra = do
   witness <- expr
   return $ Contra witness
 
-abort :: LParser Term
-abort = do
+
+abort :: LParser Term 
+abort = do 
   reserved "abort"
   return Abort
 

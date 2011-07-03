@@ -72,6 +72,14 @@ erase (AppInf a _)      = erase a
 erase (At a th)         = do
       a' <- erase a 
       return $ EAt a' th
+erase t@(TerminationCase a bnd)  = do
+      (w, (abort, tbind)) <- unbind bnd
+      (v, term) <- unbind tbind
+      ea <- erase a 
+      eabort <- erase abort
+      eterm <- erase term
+      return $ (ETerminationCase ea (bind (translate w)
+         (eabort, (bind (translate v) eterm))))
 
 eraseMatch :: Match -> TcMonad EMatch
 eraseMatch (c,bnd) =
@@ -233,6 +241,7 @@ isValue (Paren a)          = isValue a
 isValue (Pos _ a)          = isValue a
 isValue (AppInf _ _)       = False
 isValue (At _ _)           = True
+isValue (TerminationCase _ _)     = False
 
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
