@@ -372,7 +372,7 @@ ta Logic a (At tyA Program) =
       ta Logic a tyA    
    
 ta th (TerminationCase s binding) ty = do 
-    (es, sty) <- ts th s
+    (es, sty) <- ts Program s
     (w,(abort,tbind)) <- unbind binding
     (v, terminates) <- unbind tbind
     eabort <- extendCtx (Sig w Logic (TyEq (Ann Abort sty) s))
