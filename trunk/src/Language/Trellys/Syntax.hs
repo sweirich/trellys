@@ -100,7 +100,11 @@ data Term = Var TName    -- | variables
           | AppInf Term Int
           -- | Internalized Typing Judgement
           | At Term Theta
+          -- | Termination case
+          | TerminationCase Term (Bind TName (Term, (Bind TName Term)))    -- Proof
+          -- | Derived form: assertion that t1 of type t2 terminates
 
+          
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables
 type Match = (TName, Bind [(TName, Epsilon)] Term)
@@ -264,6 +268,8 @@ data ETerm = EVar EName
            | ELet ETerm (Bind EName ETerm)
            | EContra
            | EAt ETerm Theta
+           | ETerminationCase ETerm (Bind EName (ETerm, 
+              (Bind EName ETerm)))
 
 type EMatch = (EName, Bind [EName] ETerm)
 

@@ -355,6 +355,19 @@ instance Display Term where
     da <- display ty
     return $ text "@" <+> disp th <+> da
 
+  display (TerminationCase scrutinee binding) =
+    lunbind binding $ \(n,(diverge,tbind)) -> do
+      lunbind tbind $ \(v, terminate) -> do 
+          dScrutinee <- display scrutinee
+          dDiverge <- display diverge
+          dTerminate <- display terminate
+          dn <- display n
+          dv <- display v
+          return $ hang (text "termcase" <+> dScrutinee <+> braces dn <+> text "of") 2
+                        (braces (text "abort" <+> text "->" <+> dDiverge <> semi $$
+                                 text "!" <+> dv <+> text "->" <+> dTerminate))
+
+
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem
 epParens Runtime l = Dd (brackets (displays l))
