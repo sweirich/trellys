@@ -16,12 +16,9 @@ rec plus n = \m .
     Zero -> m
     Succ pred -> Succ (plus pred m)
 
-prog id : Nat => Nat
-id = \m . m
-
-log plus_comm' : (k : Nat) -> (n : Unit -> Nat) -> (m : Unit -> Nat)
-                 -> ((plus k (plus (n U) (m U))) = (plus (plus k (n U)) (m U)))
-recnat plus_comm' k = \n m .
+log plus_assoc' : (k : Nat) -> (n : Unit -> Nat) => (m : Unit -> Nat)
+                 => ((plus k (plus (n U) (m U))) = (plus (plus k (n U)) (m U)))
+recnat plus_assoc' k = \n m .
   case k [k_eq] of
     Zero -> let    e1 [_] = (join : (plus (n U) (m U)) = (plus (n U) (m U)))
             in let e2 [_] = conv e1
@@ -37,7 +34,7 @@ recnat plus_comm' k = \n m .
     Succ k' ->
             let    e1 [_] = (join : Succ (plus k' (plus (n U) (m U))) = Succ (plus k' (plus (n U) (m U))))
             in let e2 [_] = conv e1
-                             by (plus_comm' k' [k_eq] n m : 
+                             by (plus_assoc' k' [k_eq] n m : 
                                   plus k' (plus (n U) (m U)) = plus (plus k' (n U)) (m U))
                              at t.Succ (plus k' (plus (n U) (m U)))  = Succ (t)
             in let e3 [_] = conv e2
@@ -51,11 +48,11 @@ recnat plus_comm' k = \n m .
                               at t.(plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U))
             in e5
 
-log plus_comm : (k : Unit -> Nat) -> (n : Unit -> Nat) -> (m : Unit -> Nat)
+log plus_assoc : (k : Unit -> Nat) -> (n : Unit -> Nat) -> (m : Unit -> Nat)
                  -> ((plus (k U) (plus (n U) (m U))) = (plus (plus (k U) (n U)) (m U)))
-plus_comm = \k n m .
+plus_assoc = \k n m .
   case (termination_case Nat k) [_] of
-    Terminates x q -> conv (plus_comm' x n m)
+    Terminates x q -> conv (plus_assoc' x n m)
                         by q
                         at t.((plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U)))
     Diverges q -> conv (join : ((plus (abort:Nat) (plus (n U) (m U))) = (plus (plus (abort:Nat) (n U)) (m U))))
