@@ -1,0 +1,64 @@
+module Thunky_plus_comm where
+
+import Prelude
+
+-- what termination_case returns.
+data Oracular (a : Type 0) (prog e : Unit -> a) -> Type 0 where
+  Terminates : (x : a) => (q : x = e U) -> Oracular a e
+  Diverges : (q : (abort : a) = e U) -> Oracular a e
+
+axiom log termination_case : (a : Type 0) -> (e : Unit -> a) => Oracular a e
+
+-- plus, defined in the programmatic fragment.
+prog plus : Nat => Nat => Nat
+rec plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred m)
+
+prog id : Nat => Nat
+id = \m . m
+
+log plus_comm' : (k : Nat) -> (n : Unit -> Nat) -> (m : Unit -> Nat)
+                 -> ((plus k (plus (n U) (m U))) = (plus (plus k (n U)) (m U)))
+recnat plus_comm' k = \n m .
+  case k [k_eq] of
+    Zero -> let    e1 [_] = (join : (plus (n U) (m U)) = (plus (n U) (m U)))
+            in let e2 [_] = conv e1
+                              by (join : plus (n U) (m U) = plus Zero (plus (n U) (m U)))
+                              at t.t = (plus (n U) (m U))
+            in let e3 [_] = conv e2
+                              by (join : (n U) = (plus Zero (n U)))
+                              at t.(plus Zero (plus (n U) (m U))) = (plus t (m U))
+            in let e4 [_] = conv e3
+                              by (sym Nat Nat k Zero k_eq)
+                              at t.(plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U))
+            in e4
+    Succ k' ->
+            let    e1 [_] = (join : Succ (plus k' (plus (n U) (m U))) = Succ (plus k' (plus (n U) (m U))))
+            in let e2 [_] = conv e1
+                             by (plus_comm' k' [k_eq] n m : 
+                                  plus k' (plus (n U) (m U)) = plus (plus k' (n U)) (m U))
+                             at t.Succ (plus k' (plus (n U) (m U)))  = Succ (t)
+            in let e3 [_] = conv e2
+                              by (join : Succ (plus k' (plus (n U) (m U))) = plus (Succ k') (plus (n U) (m U)))
+                              at t.t = Succ (plus (plus k' (n U)) (m U))
+            in let e4 [_] = conv e3 
+                              by (join : Succ (plus (plus k' (n U)) (m U)) = (plus (plus (Succ k') (n U)) (m U)))
+                              at t.plus (Succ k') (plus (n U) (m U)) = t
+            in let e5 [_] = conv e4 
+                              by (sym Nat Nat k (Succ k') k_eq)
+                              at t.(plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U))
+            in e5
+
+log plus_comm : (k : Unit -> Nat) -> (n : Unit -> Nat) -> (m : Unit -> Nat)
+                 -> ((plus (k U) (plus (n U) (m U))) = (plus (plus (k U) (n U)) (m U)))
+plus_comm = \k n m .
+  case (termination_case Nat k) [_] of
+    Terminates x q -> conv (plus_comm' x n m)
+                        by q
+                        at t.((plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U)))
+    Diverges q -> conv (join : ((plus (abort:Nat) (plus (n U) (m U))) = (plus (plus (abort:Nat) (n U)) (m U))))
+                        by q
+                        at t.((plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U)))
+                       
