@@ -1,0 +1,11 @@
+module Unhandled1 where
+
+data Unit : Type where
+  Unit : Unit
+
+theorem unit_unique : forall (u1:Unit) (u2:Unit) . u1 = u2
+proof unit_unique = \(u1:Unit) (u2:Unit) => Unit {-
+  termcase u1 {u1term} of
+  | abort -> Unit
+  | !     -> Unit
+  -}
