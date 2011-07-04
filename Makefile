@@ -5,14 +5,9 @@
 #             Assumes you have Cabal installed, and that the default
 #             Cabal install dir is on your path (~/.cabal/bin for
 #             default "per-user" setup).  A trellys binary will be
-#             installed in .capri/install/bin/trellys, and symlinked
+#             installed in ./cabal-dev/bin/trellys, and symlinked
 #             to test/trellys (the only place you're expected to run
 #             `trellys`).
-#
-#             NB: if you have problems with capri, but it used to work,
-#             you may need to `rm -rf ./.capri` before doing `make`.
-#             Upgrading ./.capri is time consuming (minutes) and rarely
-#             necessary so it is not upgraded by default.
 #
 # make test:  runs all tests in ./test.
 #
@@ -29,22 +24,19 @@ all: sandbox-install
 sandbox-install: sandbox-trellys
 
 sandbox-uninstall:
-	-rm -rf .capri
+	-rm -rf cabal-dev
 
-# This has no dependencies to allow `make sandbox-trellys` to run
-# quickly.
-sandbox-trellys: .capri
-	capri import src
-	ln -fs `pwd`/.capri/install/bin/trellys test
+sandbox-trellys: cabal-dev
+	cabal-dev install ./src
+	ln -fs `pwd`/cabal-dev/bin/trellys test
 
 # You need to have the cabal install dir on your path (by default
-# ~/.cabal/bin) so that `capri` command is found.
-.capri:
-	cabal install capri
-	capri bootstrap
+# ~/.cabal/bin) so that `cabal-dev` command is found.
+cabal-dev:
+	cabal install cabal-dev
 
 install:
-	cabal install
+#	cabal install
 	cd src && cabal install
 
 uninstall:
