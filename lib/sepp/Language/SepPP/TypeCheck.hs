@@ -359,7 +359,9 @@ check mode term@(App t0 stage t1) expected = do
              ensure (constrApp term) $ term <++> "is not a construction."
              snb `sameType` expected
              return snb
-    _ -> checkUnhandled mode term expected
+    (_, tyfun) -> typeError "App with non-function"
+                  [(text "computed function type", disp tyfun)]
+    -- _ -> checkUnhandled mode term expected
   where constrApp (Con c) =  True
         constrApp (App f _ x) = (constrApp f)
         constrApp (Pos x t) = constrApp t
