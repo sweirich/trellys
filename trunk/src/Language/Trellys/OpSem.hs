@@ -126,11 +126,13 @@ reduce _ t = do
 ---------}
 
 -- | Small-step semantics.
+-- Returns Nothing when the argument cannot reduce 
 cbvStep :: ETerm -> TcMonad (Maybe ETerm)
 cbvStep (EVar _)         = return Nothing
 cbvStep (ECon _)         = return Nothing
 cbvStep (EType _)        = return Nothing
-cbvStep (EArrow th ep a bnd) = do
+cbvStep (EArrow _ _ _ _) = return Nothing {-
+  do
   stpa <- cbvStep a
   case stpa of
     Just EAbort -> return $ Just EAbort
@@ -147,6 +149,7 @@ cbvStep (EArrow th ep a bnd) = do
              if isEValue b
                then return $ Just $ (EArrow th ep a (bind x b))
                else return Nothing
+-}
 cbvStep (ELam _)         = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
@@ -161,14 +164,16 @@ cbvStep (EApp a b)       =
                Just EAbort -> return $ Just EAbort
                Just b'     -> return $ Just $ EApp a b'
                Nothing     ->
-                 case a of
-                   ELam bnd ->
-                     do (x,body) <- unbind bnd
-                        return $ Just $ subst x b body
-                   ERecPlus bnd ->
-                     do ((f,x),body) <- unbind bnd
-                        return $ Just $ subst f a $ subst x b body
-                   _ -> return Nothing
+                 if (isEValue b) then
+                   case a of
+                     ELam bnd ->
+                       do (x,body) <- unbind bnd
+                          return $ Just $ subst x b body
+                     ERecPlus bnd ->
+                       do ((f,x),body) <- unbind bnd
+                          return $ Just $ subst f a $ subst x b body
+                     _ -> return  Nothing
+                  else return Nothing
 cbvStep (ETyEq _ _)     = return Nothing
 cbvStep EJoin           = return Nothing
 cbvStep EAbort          = return $ Just EAbort
@@ -211,19 +216,26 @@ cbvNSteps n tm =
          Nothing -> return tm
          Just tm' -> cbvNSteps (n - 1) tm'
 
+-- | isConValue checks to see if a term is a 
+-- a constructor applied to arguments
+isConValue :: Term -> Bool
+isConValue e1 = 
+  (let (hd,tms) = splitApp e1 in
+     (isJust $ isCon hd) && all (isValue . fst) tms)
+
 -- | isValue checks to see if a term is a value
 isValue :: Term -> Bool
 isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
-isValue (Arrow _ _ b)  =
+isValue (Arrow _ _ b)      = True
+{-
+  -- SCW:  Why are Arrow types strict? I don't understand
   let ((_,t1),t2) = unsafeUnbind b in
   isValue (unembed t1) && isValue t2
+-}
 isValue (Lam _ _)          = True
-isValue (App _ e1 e2)      =
-  isValue e2 &&
-  (let (hd,tms) = splitApp e1 in
-     (isJust $ isCon hd) && all (isValue . fst) tms)
+isValue e@(App _ _ _)      = isConValue e
 isValue (TyEq _ _)         = True
 isValue (Join _ _)         = True
 isValue Abort              = False
@@ -243,18 +255,26 @@ isValue (AppInf _ _)       = False
 isValue (At _ _)           = True
 isValue (TerminationCase _ _)     = False
 
+
+-- | isConValue checks to see if a term is a 
+-- a constructor applied to arguments
+isEConValue :: ETerm -> Bool
+isEConValue e1 = 
+  (let (hd,tms) = splitEApp e1 in
+     (isJust $ isECon hd) && all isEValue tms)
+
+
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
-isEValue (EArrow _ _ t1 b) =
+isEValue (EArrow _ _ t1 b) = True
+{-
   let (_,t2) = unsafeUnbind b in
    isEValue t1 && isEValue t2
+-}
 isEValue (ELam _)         = True
-isEValue (EApp e1 e2)     =
-  isEValue e2 &&
-  (let (c,tms) = splitEApp e1 in
-     (isJust $ isECon c) && all isEValue tms)
+isEValue e@(EApp _ _)     = isEConValue e
 isEValue (ETyEq _ _)      = True
 isEValue EJoin            = True
 isEValue EAbort           = False

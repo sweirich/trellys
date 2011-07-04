@@ -255,6 +255,7 @@ ta Program (Rec ep binding) fty@(Arrow ath aep abnd) = do
 ta th (Case b bnd) tyA = do
   -- premises 1, 3 and 4: we check that the scrutinee is the element of some
   -- datatype defined in the context
+  -- SCW: can relax and check this at P even with th is v if b is "valuable"
   (eb,bty) <- ts th b
   (d,bbar,delta,cons) <-
     case splitApp bty of
@@ -364,6 +365,7 @@ ta Program a (At tyA th) = ta th a tyA
 ta Logic a (At tyA Logic) = ta Logic a tyA
 -- rule T_AtLP
 ta Logic a (At tyA Program) = 
+   -- allow a to be "provable value here..."
    if (isValue a) then 
       ta Program a tyA
    else 
@@ -469,11 +471,22 @@ ts tsTh tsTm =
                     DS "doesn't match arrow annotation", DD epArr]
 
              let b_for_x_in_B = subst x b tyB
+             -- check that the result kind is well-formed
+             kc th b_for_x_in_B
+             -- check the argument, at the "A @ th'" type
+             -- if the arg is implicit, make sure that it is total
+             let thb = if ep == Erased then Logic else th
+             eb <- ta thb b (At (unembed tyA) th')
+
+{-
              -- To implement app1 and app2 rules, we first try to
              -- check the argument Logically and check the resulting
              -- substitution.  If either fails, we would have to use
              -- App2.  In that case, th' must be Program and the argument
              -- must be a value.
+
+             let b_for_x_in_B = subst x b tyB
+
              eb <- ((kc th b_for_x_in_B >> ta Logic b (unembed tyA))
                     `catchError`
                       \e ->
@@ -486,7 +499,7 @@ ts tsTh tsTm =
                                          DS "This is the dreaded value restriction:",
                                          DS "use a let-binding to make the term a value."]
 
-                             ta Program b (unembed tyA))
+                             ta Program b (unembed tyA)) -}
              return (App ep ea eb, b_for_x_in_B)
 
 
