@@ -10,14 +10,14 @@ theorem s_term : forall(m:Nat)(m':Nat)(p:S m' = m)(u:m!).m' !
 proof s_term = \(m:Nat)(m':Nat)(p:S m' = m)(u:m!) =>
                let S_m'_term [wc] = conv u at (~(sym p))! -- (S m') !
                in termcase m' {u} of
-                    | abort -> contraabort (aborts (S ~u)) S_m'_term
+                      abort -> contraabort (aborts (S ~u)) S_m'_term
                     | ! -> u
 
 -- If n terminates, then S n terminates
 theorem term_s : forall (n : Nat) (p:n!) . ((S n) !)
 proof term_s = \(n:Nat) (p:n !) =>
   termcase n {u} of
-    | abort -> contraabort (aborts ~u) p
+      abort -> contraabort (aborts ~u) p
     | ! -> value (S ~u)
 
 
@@ -166,17 +166,17 @@ theorem lt_trans : forall(x:Nat)(y:Nat)(z:Nat)
     (p1:lt x y = True)(p2:lt y z = True).lt x z = True
 proof lt_trans = \(x:Nat)(y:Nat)(z:Nat)(p1:lt x y = True)(p2:lt y z = True) =>
       termcase x {x_eq} of
-       | abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
+         abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
                       u2 [u2_eq] = aborts (lt ~x_eq y)
                   in contraabort u2 u1
 
        | ! -> termcase y {y_eq} of
-                | abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
+                  abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
                                u2 [u2_eq] = aborts (lt x ~y_eq)
                            in contraabort u2 u1
 
                 | ! -> termcase z {z_eq} of
-                         | abort -> let u1 [u1_eq] = conv value True at ~(sym p2) !;
+                           abort -> let u1 [u1_eq] = conv value True at ~(sym p2) !;
                                         u2 [u2_eq] = aborts (lt y ~z_eq)
                                     in contraabort u2 u1
 
@@ -289,11 +289,11 @@ proof ind lt_implies_le_term (x:Nat) [xterm] = \(y:Nat)(yterm:y!)(p:lt x y = Tru
 theorem lt_implies_le : forall(x:Nat)(y:Nat)(p:lt x y = True).le x y = True
 proof lt_implies_le = \(x:Nat)(y:Nat)(p:lt x y = True) =>
   termcase x {x_eq} of
-   |  abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+      abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
                    u2 [u2_eq] = aborts (lt ~x_eq y)
                in contraabort u2 u1
    | ! -> termcase y {y_eq} of
-           | abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+             abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
                           u2 [u2_eq] = aborts (lt x ~y_eq)
                       in contraabort u2 u1
            | ! -> lt_implies_le_term x x_eq y y_eq p
@@ -477,17 +477,17 @@ theorem le_trans : forall(x:Nat)(y:Nat)(z:Nat)
     (p1:le x y = True)(p2:le y z = True).le x z = True
 proof le_trans = \(x:Nat)(y:Nat)(z:Nat)(p1:le x y = True)(p2:le y z = True) =>
       termcase x {x_eq} of
-       | abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
+         abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
                       u2 [u2_eq] = aborts (le ~x_eq y)
                   in contraabort u2 u1
 
        | ! -> termcase y {y_eq} of
-                | abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
+                  abort -> let u1 [u1_eq] = conv value True at ~(sym p1) !;
                                u2 [u2_eq] = aborts (le x ~y_eq)
                            in contraabort u2 u1
 
                 | ! -> termcase z {z_eq} of
-                         | abort -> let u1 [u1_eq] = conv value True at ~(sym p2) !;
+                           abort -> let u1 [u1_eq] = conv value True at ~(sym p2) !;
                                         u2 [u2_eq] = aborts (le y ~z_eq)
                                     in contraabort u2 u1
 
@@ -575,7 +575,7 @@ proof ind plus_z_right_term (m:Nat) [m_term] =
 theorem plus_z_right : forall(m:Nat).plus m Z = m
 proof plus_z_right = \(m:Nat) =>
   termcase m {m_eq} of
-     | abort -> let u1 [u1_eq] = aborts (plus ~m_eq Z)
+       abort -> let u1 [u1_eq] = aborts (plus ~m_eq Z)
                 in sym (conv u1 at ~(m_eq) = plus m Z)
      | ! -> plus_z_right_term m m_eq
 
@@ -611,12 +611,12 @@ proof ind minus_lt_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!)(p:lt m (S n) = Fa
 theorem minus_lt : forall(m:Nat)(n:Nat)(p:lt m (S n) = False).lt (minus m (S n)) m = True
 proof minus_lt = \(m:Nat)(n:Nat)(p:lt m (S n) = False) =>
    termcase m {m_eq} of
-     | abort -> let u1 [u1_eq] = aborts (lt ~m_eq (S n));
+       abort -> let u1 [u1_eq] = aborts (lt ~m_eq (S n));
                     u2 [u2_eq] = conv value False at ~(sym p) !
                 in contraabort u1 u2
 
      | ! -> termcase n {n_eq} of
-               | abort -> let u1 [u1_eq] = aborts (S ~n_eq);
+                 abort -> let u1 [u1_eq] = aborts (S ~n_eq);
                               u2 [u2_eq] = aborts (lt m ~u1);
                               u3 [u3_eq] = conv value False at ~(sym p)!
                           in contraabort u2 u3

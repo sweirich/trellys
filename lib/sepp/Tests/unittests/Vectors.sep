@@ -29,19 +29,6 @@ prog append = \(b:Type) ->
 data Unit : Type where Unit : Unit
 -- axiom undefined : (x:Type) -> x
 
--- termcase syntax has all virtcal bars but case doesn't need for the first
-
-theorem append_assoc : forall (a:Type) (l1:List a) (l2:List a) (l3:List a) .
-                   append a l1 (append a l2 l3) = append a (append a l1 l2) l3
-proof append_assoc = \(a:Type) (l1:List a) (l2:List a) (l3:List a) =>
-  termcase l1 {l1term} of
-    | abort -> -- l1term : l1 = abort
-               let p1 [tmp1] = aborts (append a ~l1term (append a l2 l3))
-                   p2 [tmp2] = aborts (append a (append a ~l1term l2) l3)
-               in Unit
-    | !     -> Unit
-
-
 
 type reverse : (a:Type) -> (l:List a) -> List a
 prog reverse = \ (a:Type) ->
