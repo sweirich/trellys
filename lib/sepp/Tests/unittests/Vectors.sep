@@ -26,7 +26,7 @@ prog rec plus (x:Nat) = \(y:Nat) ->
 -- type append : (b:Type) -> (l1:List b) -> (l2:List b)  -> List b
 -- prog append = \(b:Type) ->
 --    (rec app (l1:List b) . \ (l2:List b) ->
--- 	    case l1 {l1_eq} of
+--      case l1 {l1_eq} of
 --         Nil -> l2
 --       | Cons x xs -> Cons b x (app xs l2))
 
@@ -40,9 +40,9 @@ prog rec plus (x:Nat) = \(y:Nat) ->
 
 type vcopy : (a:Type) -> (n:Nat) -> (l:Vec a n) -> (Vec a n)
 prog rec vcopy (a:Type) (n:Nat) (l:Vec a n) =
-		   case l {l_eq} of
+                   case l {l_eq} of
          VNil p -> VNil a n [p]
-			 | VCons size p x xs -> VCons a n size [p] x (vcopy a size xs)
+                         | VCons size p x xs -> VCons a n size [p] x (vcopy a size xs)
 
 
 type vapp : (a:Type) -> (m:Nat) -> (n:Nat) -> (v1:Vec a m) ->
