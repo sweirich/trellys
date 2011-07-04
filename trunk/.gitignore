@@ -1,4 +1,4 @@
-.capri/
+cabal-dev
 lib/replib-read-only
 src/dist/
 *.trellys-elaborated
