@@ -102,7 +102,8 @@ substDefs :: Expr -> TCMonad Expr
 substDefs t = do
   defs <- asks sigma
   -- mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
-  return $ substs defs t
+  return $ foldl (\tm (nm,def) -> subst nm def tm) t defs
+  -- return $ substs defs t
 
 withRewrites :: [(EExpr,EExpr)] -> TCMonad a -> TCMonad a
 withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m

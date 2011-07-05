@@ -15,18 +15,18 @@ import "mtl" Control.Monad.Error
 import Text.PrettyPrint(render, text,(<+>),($$))
 
 -- compile-time configuration: should reduction steps be logged
-debugReductions = False
+debugReductions = True -- False
 
 
 
 eval steps t = do
   t' <- erase t
-  -- emit $ "Reducing" <++> t'
+  emit $ "Reducing" <++> t'
   evalErased steps t'
 
 evalErased steps t = reduce steps t (\_ tm -> return tm)
 
-logReduce _ _ = return ()
+-- logReduce _ _ = return ()
 logReduce t t' = do
   emit $ ("reduced" $$$ t $$$ "to" $$$ t')
   emit $  "===" <++> "==="
@@ -50,7 +50,7 @@ reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
           reduce steps t2 (\steps' v -> do
-                       if steps' == 0
+                       if steps' == 0 || not (erasedValue v)
                           then return $ EApp t1' v
                           else do
                             let tm' = subst x v body
