@@ -307,11 +307,10 @@ check mode term@(App t0 stage t1) expected = do
   case (mode, down ty0) of
     (ProgMode, Pi piStage binding) -> do
         unless (piStage == stage) $ do
-           typeError "Stage for the arrow does not match the stage for the application"
-                        [(text "Arrow stage:",disp piStage),
-                         (text "Application stage", disp stage)]
-                 -- "Stage" <++> show piStage <++>  "for arrow" <++>
-                 --  "does not match stage for application " <++> show stage
+           typeError ("A function expects a " ++ show piStage ++ " argument, but a " 
+                      ++ show stage ++ " argument was supplied.")
+             [(text "The function:",disp t0),
+              (text "The argument:", disp t1)]
 
         ((x,Embed dom),body) <- unbind binding
         cls <- getClassification dom
@@ -847,7 +846,7 @@ check ProofMode (Sym t) (Just ty@(Equal t0 t1)) = do
 -- Refl
 check mode Refl (Just ty) =
   let err =
-        "The type ascribed to a refl-proof is not of the form t = t.\n\n"
+        "The type expected for a refl-proof is not of the form t = t.\n\n"
         <++> "1. the type: "<++> ty in
   do
     case down ty of
@@ -878,7 +877,7 @@ check mode (Trans t1 t2) (Just ty) = do
 
        return ty
 
-    _ -> die $ "The type ascribed to a refl-proof is not of the form t = t." $$$
+    _ -> die $ "The type expected for a refl-proof is not an equation." $$$
                  "1. the type: "<++> ty
 
 

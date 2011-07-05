@@ -504,8 +504,6 @@ instance Disp Stage where
   disp Static = text "static"
   disp Dynamic = text "runtime"
 
-
-
 instance Disp SourcePos where
   disp sp =  text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
 
