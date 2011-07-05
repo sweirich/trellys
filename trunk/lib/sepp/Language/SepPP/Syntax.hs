@@ -37,7 +37,12 @@ data Decl =  ProgDecl EName Expr Expr
           | AxiomDecl EName Expr
      deriving Show
 
-data Stage = Dynamic | Static deriving (Eq,Show)
+data Stage = Dynamic | Static deriving Eq
+
+instance Show Stage where
+  show Static = "static"
+  show Dynamic = "runtime"
+
 data Kind = Form | Program deriving (Eq,Show)
 -- | The representation of SepPP expressions.
 
