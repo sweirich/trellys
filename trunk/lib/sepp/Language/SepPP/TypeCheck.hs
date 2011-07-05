@@ -1058,6 +1058,8 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
+  -- s1 <- substDefs t1
+  -- s2 <- substDefs t2
   t1' <- eval lSteps t1
   t2' <- eval rSteps t2
   ensure (t1' `aeq` t2') $

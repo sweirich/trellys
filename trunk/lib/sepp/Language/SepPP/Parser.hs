@@ -281,7 +281,7 @@ termCase = do
   reserved "of"
   (a,t) <- do
     -- Diverges case
-    ae <- do reservedOp "|"
+    ae <- do -- reservedOp "|"
              reserved "abort"
              reservedOp "->"
              expr <?> "aborts branch"

@@ -253,8 +253,14 @@ erase (Ann t _) = erase t
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show t
 
+cValOfApp :: EExpr -> Bool
+cValOfApp (EApp f x) = cValOfApp f && erasedValue x
+cValOfApp (ECon _)   = True
+cValOfApp _         = False
+
+erasedValue :: EExpr -> Bool
 erasedValue (ECase _ _) = False
-erasedValue (EApp _ _) = False
+erasedValue e@(EApp _ _) = cValOfApp e
 erasedValue (ELet _) = False
 erasedValue _ = True
 
