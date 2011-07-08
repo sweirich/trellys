@@ -59,3 +59,6 @@ plus_assoc = \k n m .
                         by q
                         at t.((plus t (plus (n U) (m U))) = (plus (plus t (n U)) (m U)))
                        
+
+-- See plus_le_P_thunk in StrongNat.trellys for an example *use* of a
+-- thunkified lemma.

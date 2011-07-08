@@ -644,291 +644,65 @@ fdiv_ub' = cov [fdiv_ub_p] fdiv_ub_f
 fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub = \m . conv (fdiv_ub' m) by (fdiv_ub_p_red m) at t.t
 
-{-
-
--- is some approximation to this added to the context automatically?
-fdiv_def : (m:Nat) -> (n:Nat) ->
-  (fdiv m n = ((case (lt m n) [_] of
-  True  -> Zero
-  False -> let prog r [_] = (fdiv (minus m n) n) in -- value restriction!
-           Succ r) : Nat))
-fdiv_def = \_ _ . join
-
--- helper function version
-prog fdiv_ub_lhs : Nat -> Nat -> Nat
-fdiv_ub_lhs = \m n .
-  let prog d [_] = fdiv m (Succ n) in
-  mult d (Succ n)
-
-fdiv_ub_lhs_def : (m:Nat) -> (n:Nat) ->
-  (fdiv_ub_lhs m n =
-    (let prog d [_] = fdiv m (Succ n) in
-    mult d (Succ n)))
-fdiv_ub_lhs_def = \_ _ . join
-
-fdiv_ub_lhs_def_s1 : (m:Nat) -> (n:Nat) ->
-    (let prog d [_] = fdiv m (Succ n) in
-    mult d (Succ n))
-    =
-    (let prog d [_] = ((case (lt m (Succ n)) [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-fdiv_ub_lhs_def_s1 = \_ _ . join
-
-fdiv_ub_lhs_def_s2 : (m:Nat) -> (n:Nat) -> (b:Bool) -> [lt m (Succ n) = b] ->
-    (let prog d [_] = ((case (lt m (Succ n)) [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-    =
-    (let prog d [_] = ((case b [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-
-fdiv_ub_lhs_def_s2 = \m n _ [m_lt_n] .
-  conv join by m_lt_n at m_lt_n .
-    (let prog d [_] = ((case (lt m (Succ n)) [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-    =
-    (let prog d [_] = ((case m_lt_n [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-
-fdiv_ub_lhs_def_s3_base : (m:Nat) -> (n:Nat) ->
-    (let prog d [_] = ((case True [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-    =
-    Zero
-fdiv_ub_lhs_def_s3_base = \_ _ . join
-
-fdiv_ub_lhs_def_s3_step : (m:Nat) -> (n:Nat) ->
-    (let prog d [_] = ((case False [_] of
-         True  -> Zero
-         False -> let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r) : Nat)
-    in mult d (Succ n))
-    =
-    (let prog d [_] =
-                  let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r
-    in mult d (Succ n))
-fdiv_ub_lhs_def_s3_step = \_ _ . join
-
-
-fdiv_ub_lhs_def_s4_step : (m:Nat) -> (n:Nat) ->
-    (let prog d [_] =
-                  let prog r [_] = (fdiv (minus m (Succ n)) (Succ n)) in -- value restriction!
-                  Succ r
-    in mult d (Succ n))
-    =
-    (let prog r [_] =
-                  (fdiv (minus m (Succ n)) (Succ n)) -- value restriction!
-    in (mult (Succ r) (Succ n)))
-fdiv_ub_lhs_def_s4_step = \m n . join
-
-
-{-
-fdiv_ub_lhs_base : (m:Nat) -> (n:Nat) -> [lt m n = True] ->
-  (let prog d [_] = fdiv Zero (Succ n) in mult d (Succ n)) = Zero
-fdiv_ub_lhs_base = \n . dummy
--}
-fdiv_ub_lhs_base : (m:Nat) -> (n:Nat) -> [lt m n = True] -> (fdiv_ub_lhs m n = Zero)
-fdiv_ub_lhs_base = \m n [m_lt_n] . dummy
---  let e0 [_] = (join : fdiv_ub_lhs_base m n = d
-
-
-fdiv_ub_p : (m:Nat) -> Type 0
-fdiv_ub_p = \m . (n:Nat)
-              -> (let prog lhs [_] = fdiv_ub_lhs m n in
-                  lt lhs (Succ m))
-                  = True
-
--- idea : m < n so fdiv m (S n)
-fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
-              -> fdiv_ub_p m
-fdiv_ub_f_base = \m n [m_lt_n] . dummy
-
-fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> fdiv_ub_p m
--- doesn't seem to work to annotate the \n . ... with fdiv_ub_p m.
--- try again when body is finished. (that is, it seems trellys can't
--- check that something has type fdiv_ub_p m for some reason)
-fdiv_ub_f = \m g . (\n . case (lt m n) [m_lt_n] of
-  True  -> let z_lt_Sm [_] = (join : lt Zero (Succ m) = True) in
-           let fdiv_ub_lhs_eq_Z [_] =
-             (join : (fdiv_ub_lhs m n =
-                (let prog d [_] =
-                case (lt m n) [_] of
-                  True  -> Zero
-                  False -> let prog r [_] = (fdiv (minus m n) n) in -- value restriction!
-                           Succ r
-                                        in mult d (Succ n)))) in
-           fdiv_ub_lhs_eq_Z
-  False -> Nat
-                 : (n:Nat)
-              -> (let prog lhs [_] = fdiv_ub_lhs m n in
-                  lt lhs (Succ m))
-                  = True)
-{-
-  ((\n . case (lt m n) [m_lt_n] of
-           True -> Nat
-           False -> Nat)
-   : fdiv_ub_p m)
--}
-fdiv_ub : (m:Nat) -> fdiv_ub_p m
-fdiv_ub = cov [fdiv_ub_p] fdiv_ub_f
-
-{-
--- fdiv specs
+-- Using thunks to avoid specialization of plus_le above
+-- -----------------------------------------------------
 --
--- problems:
---
--- - fdiv is programmatic so i can't apply mult to its result
--- - i can't let bind the result of fdiv to make the result logical (see commented below)
+-- See http://groups.google.com/group/trellys-team/msg/f898720ccd40aee0
 
-{-
-fdiv_upper_bound' : (m : Nat) -> (n : Nat)
-                -> (let prog lhs [_] = (let prog m_fdiv_Sn [_] = (fdiv m (Succ n))
-                                        in (mult m_fdiv_Sn (Succ n)))
-                    in lt lhs (Succ m)) = True
+-- Stephanie suggested the specialization above might be avoided by
+-- using thunks.  I couldn't figure out how to prove the thunked
+-- version, but I was able to instantiate and use the thunked version.
+-- Vilhelm later proved a (different) thunked lemma by adding a
+-- termination case axiom: see ./Thunky_plus_assoc.trellys.
+
+-- This version slightly different from Stephanie's suggestion: the
+-- returned equality is not between thunks.
+axiom plus_le_P_thunk : (m: Unit -> Nat) => (n: Unit -> Nat) => (k: Unit -> Nat)
+               => leP (plusP (k U) (m U)) (plusP (k U) (n U))
+                  = leP (m U) (n U)
+{- Some failed proofs:
+-- this fails because k is checked logically: there is no FOVal for functions
+plus_le_P_thunk = \m n k . plus_le   (k U) (m U) (n U)
+-- this fails because (k U) is not a value (LP value restriction)
+plus_le_P_thunk = \m n k . plus_le_P (k U) (m U) (n U)
+-- Induction is also out of the question.
 -}
 
-ltr : ((n:Nat) -> ((\x . plus x x = mult 2 x : Nat -> Type 0) n))
-   -> ((n:Nat) -> (plus n n = mult 2 n))
-ltr = \l n . conv (l n)
-             by (join : (\x . plus x x = mult 2 x : Nat -> Type 0) n
-                        = (plus n n = mult 2 n))
-             at h.h
-
-rtl : ((n:Nat) -> (plus n n = mult 2 n))
-   -> ((n:Nat) -> ((\x . plus x x = mult 2 x : Nat -> Type 0) n))
-rtl = \r n . conv (r n)
-             by (join : (plus n n = mult 2 n)
-                        = (\x . plus x x = mult 2 x : Nat -> Type 0) n)
-             at h.h
-
-{-
-axiom f : Nat -> Type 0
-axiom l : (n:Nat) -> ((\x . f x : Nat -> Type 0) n)
-l' : (n:Nat) -> (f n)
-l' = \n . conv (l n) by (join : (\x . f x : Nat -> Type 0) n = f n) at h.h
+{- The non-thunked statement:
+instantiate : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  leP (plusP k (multP (fdiv m n) n))
+      (plusP k m)
+  =
+  leP (multP (fdiv m n) n)
+      m
 -}
+instantiate : (m:Nat) -> (n:Nat) -> (k:Nat)
+             -> leP (plusP ((\ _ . k : Unit -> Nat) U)
+                           ((\ _ . multP (fdiv m n) n : Unit -> Nat) U))
+                    (plusP ((\ _ . k : Unit -> Nat) U)
+                           ((\ _ . m : Unit -> Nat) U))
+              = leP ((\ _ . multP (fdiv m n) n : Unit -> Nat) U)
+                    ((\ _ . m : Unit -> Nat) U)
+instantiate = \ m n k . plus_le_P_thunk (\ _ . multP (fdiv m n) n : Unit -> Nat)
+                                          (\ _ . m : Unit -> Nat)
+                                          (\ _ . k : Unit -> Nat)
 
-
-
-fdiv_upper_bound' : (m : Nat) -> (n : Nat)
-                -> (let prog m_fdiv_Sn [_] = (fdiv m (Succ n)) in
-                    let prog lhs [_] = (mult m_fdiv_Sn (Succ n)) in
-                    lt lhs (Succ m)) = True
-
-
-
-
-fdiv_upper_bound'' : (m : Nat) -> (n : Nat)
-                -> (d : Nat) => [d = fdiv m (Succ n)]
-                -> ltT (mult d (Succ n))
-                       (Succ m)
-
-{-
-fdiv_upper_bound'''' : (m : Nat) -> (n : Nat)
-                -> (let prog m_fdiv_Sn [_] = (fdiv m (Succ n)) in
-                    let prog lhs [_] = (mult m_fdiv_Sn (Succ n)) in
-                    ltT lhs (Succ m))
--}
-
-{-
-
-mult' : Nat => Nat => Nat
-mult' = \m n . mult m n
-
-ltT' : Nat => Nat => Type 0
-ltT' = \m n . ltT m n
-
--- prog will make this check, but a prog lemma is useless
-prog fdiv_upper_bound' : (m : Nat) -> (n : Nat)
-                -> (let prog lhs [_] = (let prog m_fdiv_Sn [_] = (fdiv m (Succ n))
-                                        in (mult' m_fdiv_Sn (Succ n)))
-                    in ltT' lhs (Succ m))
-rec fdiv_upper_bound' m = fdiv_upper_bound' m -- :P
-
-
-lt' : Nat => Nat => Bool
-lt' = \m n . lt m n
-
-id' : Nat => Nat
-id' = \x . x
-
-fdiv_upper_bound''' : (m : Nat) -> (n : Nat)
-                -> (let prog lhs [_] = (let prog m_fdiv_Sn [_] = (fdiv m (Succ n))
-                                        in (mult m_fdiv_Sn (Succ n)))
-                    in ltT lhs (Succ m))
-
-
-fdiv_upper_bound'' : (m : Nat) -> (n : Nat)
-                -> (let prog lhs [_] = (let prog m_fdiv_Sn [_] = (fdiv m (Succ n))
-                                        in (mult' m_fdiv_Sn (Succ n)))
-                    in ltT' lhs (Succ m))
-
-
-{-
-
-id : Nat => Nat
-recnat id n = case n [n_eq] of
-  Zero    -> Zero
-  Succ n' -> Succ (id n' [n_eq])
-
-fdiv' : Nat => Nat => Nat
-fdiv' = \m n . let prog r [_] = fdiv m n in r
-
-fdiv_upper_bound : (m : Nat) -> (n : Nat) -> ltT (mult (fdiv' m (Succ n))
-                                                       (Succ n))
-                                                 (Succ m)
-
-
-
-
-
--- (m `fdiv` S n) * S n <= m
---
--- but I've written (<= m) as (< S m).
-
-fdiv_upper_bound : (m : Nat) -> (n : Nat)
-                -> (d : Nat) => [d = fdiv m (Succ n)]
-                -> ltT (mult d (Succ n))
-                       (Succ m)
-{-
-recnat fdiv_upper_bound m = \n d [d_eq] . case m [m_eq] of
-  Zero    -> let
-  Succ m' ->
--}
-
-fdiv_upper_bound : (m : Nat) -> (n : Nat) -> ltT (mult' (fdiv m (Succ n))
-                                                        (Succ n))
-                                                 (Succ m)
-
-{- This is a syntax error .Should it be?
-fdiv_upper_bound : (m : Nat) -> (n : Nat) -> ltT (let m_fdiv_Sn [_] = (fdiv m (Succ n))
-                                                  in  mult m_fdiv_Sn (Succ n))
-                                                 (Succ m)
--}
-
-fdiv_lower_bound : (m : Nat) -> (n : Nat) -> ltT m
-                                                 (mult (Succ (fdiv m (Succ n)))
-                                                       (Succ n))
-
--}
--}
--}
--}
+-- Using the generic thunked lemma to prove the special case
+-- plus_le_specialized
+use : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  leP (plusP k (multP (fdiv m n) n))
+      (plusP k m)
+  =
+  leP (multP (fdiv m n) n)
+      m
+use = \ m n k . conv instantiate m n k
+                by (join : ((\ _ . k : Unit -> Nat) U) = k)
+                 , (join : ((\ _ . multP (fdiv m n) n : Unit -> Nat) U)
+                         =         multP (fdiv m n) n)
+                 , (join : ((\ _ . m : Unit -> Nat) U) = m)
+                at k p m .
+                   leP (plusP k p)
+                       (plusP k m)
+                   =
+                   leP p
+                       m
