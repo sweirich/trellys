@@ -531,7 +531,7 @@ check ProofMode (t@(Val x)) expected = do
      let f t = do ty <- typeSynth' t
                   case down ty of
                    (Terminates x) -> return x
-                   _ -> err $ "Can't escape to something not a Exprination in valCopy."
+                   _ -> err $ "Can't escape to something not a Termination in valCopy."
      term <- escCopy f x
      typeSynth' term
      stub <- escCopy (\ x -> return Type) x
