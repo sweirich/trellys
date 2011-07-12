@@ -22,7 +22,6 @@ proof term_s = \(n:Nat) (p:n !) =>
 
 
 
-
 data Bool : Type where
   True : Bool
 | False : Bool
@@ -73,9 +72,7 @@ type times : Nat -> Nat -> Nat
 prog rec times (x:Nat) = \(y:Nat) ->
               case x {x_eq} of
                 Z -> Z
-              | S x' -> case x' {x_eq'} of
-                           Z -> y
-                         | S x'' -> plus y (times x' y)
+              | S x' -> plus y (times x' y)
 
 
 
@@ -221,8 +218,8 @@ proof ind lt_x_Sy_not_lt_x_y_eq (x:Nat)[xterm] =
                               )
 
 -- If x < y (and both terminate) then x and y are ordered
-theorem lt_ord : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:lt x y = True).x < y
-proof ind lt_ord (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
+theorem lt_ord_term : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:lt x y = True).x < y
+proof ind lt_ord_term (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
       case y {y_eq} yterm of
         Z -> let u1 [u1_eq] = (not_lt_z x xterm y y_eq : lt x y = False)
              in (contra (conv u1 at ~p = False) : x < y)
@@ -230,7 +227,7 @@ proof ind lt_ord (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
                     lt_bang [lt_bang_eq] = lt_term x xterm y' y'term
                 in case lt x y' { lt_eq } lt_bang of
                     True -> let ih [ih_eq] =
-                                 (lt_ord y' (ord y_eq) x xterm (sym lt_eq)) : x < y'
+                                 (lt_ord_term y' (ord y_eq) x xterm (sym lt_eq)) : x < y'
                             in ordtrans ih (ord y_eq : y' < y)
                     | False -> let u1 [u1_eq] = conv p at lt x ~(sym y_eq) = True;
                                    u2 [u2_eq] = s_term y y' y_eq yterm;
@@ -238,13 +235,29 @@ proof ind lt_ord (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
                                    u4 [u4_eq] = conv (refl : S y' = S y') at ~y_eq = S ~(sym u3)
                                in ord (sym u4)
 
+
+theorem lt_ord : forall(y:Nat)(x:Nat)(p:lt x y = True).x < y
+proof lt_ord = \(y:Nat)(x:Nat)(p:lt x y = True) =>
+  termcase x {x_eq} of
+   |  abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+                   u2 [u2_eq] = aborts (lt ~x_eq y)
+               in contraabort u2 u1
+   | ! -> termcase y {y_eq} of
+           | abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+                          u2 [u2_eq] = aborts (lt x ~y_eq)
+                      in contraabort u2 u1
+           | ! -> lt_ord_term y y_eq x x_eq  p
+
+
+
+
 theorem not_ord_z : forall(x:Nat)(xterm:x!)(u:x < Z). True = False
-proof ind not_ord_z (x:Nat)[xterm] = 
+proof ind not_ord_z (x:Nat)[xterm] =
   \ (u:x < Z) =>
     case x {x_eq} xterm of
-      Z -> contra 
+      Z -> contra
             (conv u at (~(sym x_eq) < Z))
-    | S x' -> 
+    | S x' ->
         not_ord_z x' (ord x_eq) ((ordtrans ((ord x_eq) : x' < x) u) : x' < Z)
 
 axiom ordinj : forall(x:Nat)(y:Nat)(u:(S x) < (S y)). x < y
@@ -253,12 +266,12 @@ theorem ord_lt : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:x < y). lt x y = Tru
 proof ind ord_lt (y:Nat)[yterm] =
   \(x:Nat)(xterm:x!)(p:x < y) =>
    case y {y_eq} yterm of
-     Z -> contra 
+     Z -> contra
             (not_ord_z x xterm (conv p at x < ~(sym y_eq)))
-   | S y' -> 
+   | S y' ->
    case x {x_eq} xterm of
-     Z -> morejoin { sym x_eq, sym y_eq} 
-   | S x' -> 
+     Z -> morejoin { sym x_eq, sym y_eq}
+   | S x' ->
      trans (morejoin { (sym x_eq), (sym y_eq) } : lt x y = lt x' y')
         (ord_lt y' (ord y_eq) x' (value x') (ordinj x' y' conv p at ~(sym x_eq) < ~(sym y_eq)))
 
@@ -397,6 +410,13 @@ proof div_lt' = \(m:Nat)(n:Nat)(p:lt m (S n) = True) =>
 theorem div_gt: forall (m:Nat)(n:Nat)(p:lt m (S n) = False).
      div m (S n) = (S (div (minus m (S n)) (S n)))
 proof div_gt = \(m:Nat)(n:Nat)(p:lt m (S n) = False) =>
+  morejoin { p }
+
+{-
+-- Proven easier by the morejoin version above.
+theorem div_gt: forall (m:Nat)(n:Nat)(p:lt m (S n) = False).
+     div m (S n) = (S (div (minus m (S n)) (S n)))
+proof div_gt = \(m:Nat)(n:Nat)(p:lt m (S n) = False) =>
      let j1 [j1_eq] = join 1 0 :
                        (case False {lt_eq} of
                           True -> Z
@@ -427,7 +447,7 @@ proof div_gt = \(m:Nat)(n:Nat)(p:lt m (S n) = False) =>
 
      in j6
 
-
+-}
 
 theorem minus_zero_id : forall(x:Nat)(x_term:x!).minus x Z = x
 proof minus_zero_id = \ (x:Nat)(x_term:x!)  =>
@@ -625,31 +645,8 @@ proof minus_lt = \(m:Nat)(n:Nat)(p:lt m (S n) = False) =>
 
 -- This shouldn't require a termination proof, because all variables appear on
 -- both sides in strict positions.
-theorem unroll_mult : forall(m:Nat)(m_term:m!)(n:Nat).times (S m) n = plus n (times m n)
-proof unroll_mult = \(m:Nat)(m_term:m!)(n:Nat) =>
-  case m {m_eq} m_term of
-    Z -> let u1 [u1_eq] =  join 100 100 : times (S Z) n = n;
-             u2 [u2_eq] = conv join 100 100 at Z = times ~m_eq n;
-             u3 [u3_eq] = plus_z_right n : plus n Z = n;
-             u4 [u4_eq] = conv u1 at times (S ~m_eq) n = ~(sym u3)
-         in  conv u4 at times (S m) n = plus n ~u2
-  | S m' -> let  u2 [u2_eq] = join 10 10 : times = ((rec times (x:Nat) .
-                                                            (\ (y:Nat) -> case x {x_eq} of
-                                                                 Z -> Z
-                                                               | S x' -> case x' {x_eq} of
-                                                                            Z -> y
-                                                                          | S x'' -> plus y (times x' y)))
-                                                         : (x:Nat) -> (y:Nat) -> Nat);
-                  u1 [u1_eq] = join 5 0  : times (S (S m')) n =
-                            plus n (((rec times (x:Nat) .
-                                                              (\ (y:Nat) -> case x {x_eq} of
-                                                                     Z -> Z
-                                                                   | S x' -> case x' {x_eq} of
-                                                                                Z -> y
-                                                                              | S x'' -> plus y (times x' y)))
-                                                         : (x:Nat) -> (y:Nat) -> Nat) (S m') n)
-                   in conv u1 at times (S ~m_eq) n = plus n (~(sym u2) ~m_eq n)
-
+theorem unroll_mult : forall(m:Nat)(n:Nat).times (S m) n = plus n (times m n)
+proof unroll_mult = \(m:Nat)(n:Nat) => join 10 10
 
 theorem plus_mono : forall(l:Nat)(l_term:l!)(m:Nat)(n:Nat)(p:le m n = True).le (plus l m) (plus l n) = True
 proof ind plus_mono (l:Nat)[l_term] = \(m:Nat)(n:Nat)(p:le m n = True) =>
@@ -665,6 +662,8 @@ proof ind plus_mono (l:Nat)[l_term] = \(m:Nat)(n:Nat)(p:le m n = True) =>
                      u5 [u5_eq] = conv u2 at plus ~l_eq n = S (plus l' n);
                      u6 [u6_eq] = conv u3 at le ~(sym u4) ~(sym u5) = ~ih
                  in u6
+
+
 
 
 
@@ -694,7 +693,8 @@ proof ind div_term (m:Nat) [m_term] = \ (n:Nat)(n_term:n!) =>
     |False -> let u1 [u1_eq] = div_gt m n (sym lt_eq);
                   u2 [u2_eq] = minus_term m m_term (S n) (term_s n n_term) : minus m (S n) !;
                   u3 [u3_eq] = minus_lt m n (sym lt_eq);
-                  u4 [u4_eq] = div_term (minus m (S n)) (lt_ord m m_term (minus m (S n)) u2 u3) n n_term;
+                  -- u4 [u4_eq] = div_term (minus m (S n)) (lt_ord m m_term (minus m (S n)) u2 u3) n n_term;
+                  u4 [u4_eq] = div_term (minus m (S n)) (lt_ord m (minus m (S n)) u3) n n_term;
                   u5 [u5_eq] = term_s (div (minus m (S n)) (S n)) u4
               in conv u5 at ~(sym u1) !
 
@@ -710,21 +710,28 @@ proof ind div_upper_bound (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
                   u3 [u3_eq] = conv u2 at times ~(sym u1) (S n) = Z;
                   u4 [u4_eq] = join 10 10 : le Z m = True
                in conv u4 at le ~(sym u3) m = True
-    | False -> let u1 [u1_eq] = div_gt m n (sym lt_eq) : div m (S n) = (S (div (minus m (S n)) (S n)));
+                  -- If morejoin worked a little better:
+                  -- u1 [u1_eq] = morejoin {sym lt_eq} : (div m (S n)) = Z;
+                  -- u2 [u2_eq] = morejoin {u1} : times (div m (S n)) Z = Z;
+                  -- u3 [u3_eq] = morejoin {u2} : le (times (div m (S n)) Z
+                  -- in u3
+
+    | False -> let u1 [u1_eq] = morejoin {sym lt_eq} : div m (S n) = (S (div (minus m (S n)) (S n)));
                    u2 [u2_eq] = minus_lt m n (sym lt_eq);
-                   u3 [u3_eq] = minus_term m m_term (S n) (term_s n n_term);
-                   u4 [u4_eq] = lt_ord m m_term (minus m (S n)) u3 u2;
+                   -- Use lt_ord to get rid of the extra term. proof
+                   -- u3 [u3_eq] = minus_term m m_term (S n) (term_s n n_term);
+                   -- u4 [u4_eq] = lt_ord_term m m_term (minus m (S n)) u3 u2;
+                   u4 [u4_eq] = lt_ord m (minus m (S n)) u2;
                    ih [ih_eq] = div_upper_bound (minus m (S n)) u4 n n_term;
-                   -- start over
-                   u6 [u6_eq] = refl : (times (div m (S n)) (S n) = times (div m (S n)) (S n));
-                   u7 [u7_eq] = conv u6 at times (div m (S n)) (S n) = times ~u1 (S n);
-                   div_minus_term [u7_5_eq] = div_term (minus m (S n)) u3 n n_term;
-                   u8 [u8_eq] = unroll_mult (div (minus m (S n)) (S n)) div_minus_term (S n);
+                   u7 [u7_eq] =
+                       conv refl at times (div m (S n)) (S n) = times ~u1 (S n);
+                   u8 [u8_eq] = join 100 100 :
+                     times (S (div (minus m (S n)) (S n))) (S n) =
+                     plus (S n) (times (div (minus m (S n)) (S n)) (S n));
+
                    u9 [u9_eq] = plus_mono (S n) (term_s n n_term) (times (div (minus m (S n)) (S n)) (S n)) (minus m (S n)) ih;
                    u10 [u10_eq] = plus_minus_id m m_term (S n) (term_s n n_term) (sym lt_eq) : plus (S n) (minus m (S n))  = m;
                    u11 [u11_eq] = conv u9 at le (plus (S n) (times (div (minus m (S n)) (S n)) (S n))) ~u10 = True;
                    u12 [u12_eq] = conv u11 at le ~(sym u8) m = True;
                    u13 [u13_eq] = conv u12 at le ~(sym u7) m = True
                 in u13
-
-
