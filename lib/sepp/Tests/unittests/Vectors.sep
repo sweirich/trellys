@@ -19,6 +19,13 @@ prog rec plus (x:Nat) = \(y:Nat) ->
       Z -> y
     | S x' -> S (plus x' y)
 
+type times : Nat -> Nat -> Nat
+prog rec times (x:Nat) = \(y:Nat) ->
+              case x {x_eq} of
+                Z -> Z
+              | S x' -> case x' {x_eq'} of
+                           Z -> y
+                         | S x'' -> plus y (times x' y)
 type append : (b:Type) -> (l1:List b) -> (l2:List b)  -> List b
 prog append = \(b:Type) ->
   rec app (l1:List b) . \ (l2:List b) ->
@@ -52,3 +59,15 @@ prog rec vapp (a:Type) (m:Nat) (n:Nat)(v1:Vec a m)(v2:Vec a n) =
                             [(morejoin {p} : plus m n = S (plus pred n))]
                             x (vapp a pred n xs v2)
 
+
+{-
+
+type vcat : (a:Type) -> (m:Nat) -> (n:Nat) -> (v1:Vec (Vec a m) n) ->
+     Vec a (times n m)
+prog rec vcat (a:Type) (m:Nat) (n:Nat)(v1:Vec a (Vec a m) n) =
+ case v1 {v1_eq} of
+     VNil p ->  conv v1 at Vec a ~(morejoin {p} :  (Z = times n m))
+   | VCons m' p x v1' -> 
+     vapp a m (times n' m) (vcat a m' n v1')
+
+-}
