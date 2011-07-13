@@ -475,6 +475,12 @@ instance Display EExpr where
      dbody <- display body
      return $ text "let" <+> dn <+> text "=" <+> dt $$
               text "in" <+> dbody
+  display t@(EPi stage binding) = do
+     lunbind binding $ \((n,t),body) -> do
+     dn <- display n
+     dt <- display t
+     dbody <- display body
+     return $ bindingWrap stage (dn <+> colon <+> dt) <+> text "->" <+> dbody
 
 
 
