@@ -209,6 +209,7 @@ data EExpr = EVar EEName
            | ECase EExpr [Bind (String,[EEName]) EExpr]
            | ELet (Bind (EEName, Embed EExpr) EExpr)
            | EType
+           | EPi Stage (Bind (EEName, Embed EExpr) EExpr)
   deriving (Show)
 
 erase :: (Applicative m, Fresh m ) => Expr -> m EExpr
@@ -224,6 +225,13 @@ erase (Lambda _ Static binding) = do
 erase (Lambda _ Dynamic binding) = do
   ((n,_),body) <- unbind binding
   ELambda <$> ((bind (translate n)) <$> erase body)
+
+erase (Pi s binding) = do
+  ((n,Embed tp),body) <- unbind binding
+  et <- erase tp
+  EPi s <$> ((bind ((translate n),Embed et)) <$> erase body)
+
+
 -- FIXME:
 erase (Rec binding) = do
   ((n,tele),body) <- unbind binding
@@ -279,6 +287,8 @@ instance Subst EExpr EExpr where
   isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
 
+instance Subst EExpr Stage where
+  isvar _ = Nothing
 
 teleArrow Empty end = end
 teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
