@@ -35,10 +35,9 @@ type zipn :
   (n:Nat) -> (ts:Vec Type n) -> (ret:Type) -> 
   (f:funtp n ts ret) -> 
    funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) n ts) (Vec ret n)
-prog rec zipn(n:Nat) = 
-  \ (ts:Vec Type n)
-    (ret:Type)
+prog rec zipn(n:Nat)(ts:Vec Type n) =
+  \ (ret:Type)
     (f:funtp n ts ret) -> 
-  case n { n_eq } of
-    Z -> conv f at ~(morejoin { n_eq } : funtp n ts ret = ret)
-  | S n' -> n
+  case ts { ts_eq } of
+    VNil n_eq -> conv f at ~(morejoin { ts_eq } : funtp n ts ret = ret)
+  | VCons sz n_eq t ts' -> sz
