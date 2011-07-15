@@ -1,7 +1,6 @@
 Dependencies
 ============
 
-- Pre-version-7 GHC (NC thinks ...).
 - Default `cabal install` directory on $PATH (~/.cabal/bin
   for default "per-user" Cabal setup).
 
@@ -21,8 +20,8 @@ Install Trouble?
 ================
 
 After major changes, e.g. a GHC version upgrade, you may have to delete 
-the ./.capri directory from your working copy before doing a fresh 
-`make install`.
+the ./cabal-dev directory from your working copy before doing a fresh 
+`make`.
 
 Dir Summary
 ===========

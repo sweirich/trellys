@@ -13,7 +13,7 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 typetest NatElimination Ott \
+PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 TypeTest NatElimination Ott \
      OttAppend CastShiftTrick ErasedConv ProgList Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert
@@ -30,7 +30,7 @@ UNKNOWN= case_bug divtest jointest langlibbug recursion-examples
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys
 # typecheck *quietly*
-TYPECHECK=$(TRELLYS) -te 1>/dev/null 2>&1
+TYPECHECK=$(TRELLYS) -te 1>/dev/null # 2>&1
 
 .PHONY: pass fail todo_pass todo_fail todo
 

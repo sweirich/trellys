@@ -1,5 +1,5 @@
 -- Test Q_Cons in ET_RImp: bodies below are checked against Q_Cons.
-module Test where
+module Test_Q_Cons where
 
 import Prelude
 
