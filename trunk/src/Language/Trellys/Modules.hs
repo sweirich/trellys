@@ -20,21 +20,22 @@ import Data.List(nub,(\\))
 -- transitive dependency. It returns the list of parsed modules, with all
 -- modules appearing after its dependencies.
 getModules
-  :: (MonadIO m) => String -> m (Either ParseError [Module])
-getModules top = runErrorT $ gatherModules [string2Name top] []
+  :: (MonadIO m) => [FilePath] -> String -> m (Either ParseError [Module])
+getModules prefixes top = runErrorT $ gatherModules prefixes [string2Name top]
 
 -- | Build the module dependency graph, with parsed modules.
 gatherModules
   :: (MonadError ParseError m, MonadIO m) =>
-     [MName] -> [Module] -> m [Module]
-gatherModules [] accum = return $ topSort accum
-gatherModules (m:ms) accum = do
-  modFileName <- getModuleFileName m
-  parsedMod <- parseModule modFileName
-  let accum' = parsedMod:accum
-  let oldMods = map moduleName accum'
-  let newMods = [mn | ModuleImport mn <- moduleImports parsedMod]
-  gatherModules (nub (ms ++ newMods) \\ oldMods) accum'
+     [FilePath] -> [MName] -> m [Module]
+gatherModules prefixes ms = gatherModules' ms [] where
+  gatherModules' [] accum = return $ topSort accum
+  gatherModules' (m:ms) accum = do
+    modFileName <- getModuleFileName prefixes m
+    parsedMod <- parseModule modFileName
+    let accum' = parsedMod:accum
+    let oldMods = map moduleName accum'
+    let newMods = [mn | ModuleImport mn <- moduleImports parsedMod]
+    gatherModules' (nub (ms ++ newMods) \\ oldMods) accum'
 
 
 -- | Generate a sorted list of modules, with the postcondition that a module
@@ -49,28 +50,35 @@ topSort ms = reverse sorted -- gr -- reverse $ topSort' ms []
 
 instance Error ParseError
 
--- | Find the file associated with a module. Currently very simple.
-getModuleFileName :: (MonadIO m, Show a) => a -> m String
-getModuleFileName m = do
-  fe <- liftIO $ doesFileExist (show m)
-  if fe
-     then return (show m)
-     else return (addExtension (show m) "trellys")
-          -- TODO: Add support for tys extension.
-
+-- | Find the file associated with a module.
+getModuleFileName :: (MonadIO m, Show a)
+                  => [FilePath] -> a -> m FilePath
+getModuleFileName prefixes mod = do
+  let makeFileName prefix = prefix </> mDotTrellys
+      -- get M.trellys from M or M.trellys
+      mDotTrellys = if takeExtension s == ".trellys"
+                    then s
+                    else s <.> "trellys"
+      s = show mod
+      possibleFiles = map makeFileName prefixes
+  files <- liftIO $ filterM doesFileExist possibleFiles
+  if null files
+     then error $ "Can't locate module: " ++ show mod ++
+                "\nTried: " ++ show possibleFiles
+     else return $ head files
 
 parseModule
-  :: (MonadIO m, MonadError ParseError m) => String -> m Module
+  :: (MonadError ParseError m, MonadIO m) => String -> m Module
 parseModule fname = do
   res <- liftIO $ parseModuleFile fname
   case res of
     Left err -> throwError err
     Right v -> return v
 
-writeModules :: MonadIO m => [Module] -> m ()
-writeModules mods = mapM_ writeModule mods
+writeModules :: MonadIO m => [FilePath] -> [Module] -> m ()
+writeModules prefixes mods = mapM_ (writeModule prefixes) mods
 
-writeModule :: MonadIO m => Module -> m ()
-writeModule mod = do
-  basename <- getModuleFileName (moduleName mod)
+writeModule :: MonadIO m => [FilePath] -> Module -> m ()
+writeModule prefixes mod = do
+  basename <- getModuleFileName prefixes (moduleName mod)
   liftIO $ writeFile (basename ++ "-elaborated") (render $ disp mod)  
