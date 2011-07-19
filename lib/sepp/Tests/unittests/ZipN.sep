@@ -12,13 +12,13 @@ data Vec : (a:Type)(n:Nat) -> Type where
 type vmap : [a:Type] -> [b:Type] -> (f:a -> b) -> (n:Nat) -> (l:Vec a n) -> Vec b n
 prog vmap = \[a:Type][b:Type](f:a -> b) -> rec vmap(n:Nat)(l:Vec a n) .
   case l { l_eq } of
-    VNil n_eq -> (VNil b n [n_eq])
-  | VCons sz n_eq x l' -> (VCons b n sz [n_eq] (f x) (vmap sz l'))
+    VNil n_eq -> (VNil [b] [n] [n_eq])
+  | VCons sz n_eq x l' -> (VCons [b] [n] sz [n_eq] (f x) (vmap sz l'))
 
 --- funtp [ t1 , ... , tn ] t = t1 -> ... -> tn -> t
 
 type funtp : (n:Nat) -> Vec Type n -> Type -> Type
-prog rec funtp (n:Nat)(ts:Vec Type n) = 
+prog rec funtp (n:Nat)(ts:Vec Type n) =
   \(ret:Type) ->
    case ts { ts_eq } of
      VNil n_eq -> ret
@@ -27,17 +27,17 @@ prog rec funtp (n:Nat)(ts:Vec Type n) =
 
 type zipn_t : Type
 prog zipn_t =
-  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) -> 
-  (f:funtp n ts ret) -> 
+  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
+  (f:funtp n ts ret) ->
    funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) n ts) (Vec ret n)
 
-type zipn : 
-  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) -> 
-  (f:funtp n ts ret) -> 
+type zipn :
+  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
+  (f:funtp n ts ret) ->
    funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) n ts) (Vec ret n)
 prog rec zipn(n:Nat)(ts:Vec Type n) =
   \ (ret:Type)
-    (f:funtp n ts ret) -> 
+    (f:funtp n ts ret) ->
   case ts { ts_eq } of
-    VNil n_eq -> conv f at ~(morejoin { ts_eq } : funtp n ts ret = ret)
+    VNil n_eq -> conv f at ~(morejoin { sym ts_eq } : funtp n ts ret = ret)
   | VCons sz n_eq t ts' -> sz

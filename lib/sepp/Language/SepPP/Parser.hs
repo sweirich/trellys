@@ -92,11 +92,12 @@ sepProofDecl = do
        indDecl = do
           reserved "ind"
           f <- exprName
-          (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-          u <- brackets exprName
+          tele <- telescope
+          -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+          u <- braces exprName
           reservedOp "="
           body <- expr
-          return $ (f,Ind (bind (f,(x,Embed ty),u) body))
+          return $ (f,Ind (bind (f,tele,u) body))
 
 
 sepDataDecl = do
@@ -376,17 +377,18 @@ recExpr = do
 indExpr = do
   reserved "ind"
   f <- exprName
-  (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-  u <- brackets exprName
+  -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+  tele <- telescope
+  u <- braces exprName
   reservedOp "."
   body <- expr
-  return $ Ind (bind (f,(x,Embed ty),u) body)
+  return $ Ind (bind (f,tele,u) body)
  <?> "Rec expression"
 
 
 letdecls =
   semiSep1 (do x <- string2Name <$> identifier
-               y <- brackets (string2Name <$> identifier)
+               y <- brackets (string2Name <$> identifier) <?> "name for let-binding equality"
                reservedOp "="
                z <- expr
                return(x,y,z))

@@ -10,7 +10,7 @@ data List : (a:Type) -> Type where
 
 data Vec : (a:Type)(n:Nat) -> Type where
    VNil : [p:n=Z] -> Vec a n
- | VCons : (size:Nat) -> [p:n = S size] ->
+ | VCons : [size:Nat] -> [p:n = S size] ->
            (x:a) -> (xs:Vec a size) -> Vec a n
 
 type plus : (x:Nat) -> (y:Nat) -> Nat
@@ -19,22 +19,96 @@ prog rec plus (x:Nat) = \(y:Nat) ->
       Z -> y
     | S x' -> S (plus x' y)
 
-type times : Nat -> Nat -> Nat
-prog rec times (x:Nat) = \(y:Nat) ->
-              case x {x_eq} of
-                Z -> Z
-              | S x' -> case x' {x_eq'} of
-                           Z -> y
-                         | S x'' -> plus y (times x' y)
-type append : (b:Type) -> (l1:List b) -> (l2:List b)  -> List b
-prog append = \(b:Type) ->
-  rec app (l1:List b) . \ (l2:List b) ->
-    case l1 {l1_eq} of
-       Nil -> l2
-     | Cons x xs -> Cons b x (app xs l2)
+-- type append : (b:Type) -> (l1:List b) -> (l2:List b)  -> List b
+-- prog append = \(b:Type) ->
+--   rec app (l1:List b) . \ (l2:List b) ->
+--     case l1 {l1_eq} of
+--        Nil -> l2
+--      | Cons x xs -> Cons [b] x (app xs l2)
 
 data Unit : Type where Unit : Unit
 -- axiom undefined : (x:Type) -> x
+
+type append : [b:Type] -> (xs:List b) -> (ys:List b)  -> List b
+prog rec append [b:Type] (xs:List b) = \ (ys:List b) ->
+    case xs {xs_eq} of
+       Nil -> ys
+     | Cons x xs' -> Cons [b] x (append [b] xs' ys)
+
+
+theorem cons_term_head : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). x !
+proof cons_term_head = \(a:Type)(x:a)(xs:List a)(p:Cons [a]  x xs !) =>
+  termcase x {x_term} of
+     abort -> contraabort (aborts (Cons [a] ~x_term xs)) p
+   | ! -> x_term
+
+theorem cons_term_tail : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). xs !
+proof cons_term_tail = \(a:Type)(x:a)(xs:List a)(p:Cons [a]  x xs !) =>
+  termcase xs {xs_term} of
+     abort -> contraabort (aborts (Cons [a] x ~xs_term)) p
+   | ! -> xs_term
+
+-- theorem cons_term : forall(a:Type)(x:a)(xs:List a)(p1:x!)(p2:xs!).(Cons [a] x xs) !
+-- proof cons_term = \(a:Type)(x:a)(xs:List a)(p1:x!)(p2:xs!) =>
+--   termcase Cons [a] x xs
+
+
+theorem append_term : forall(a:Type)(xs:List a)(xs_term:xs!)(ys:List a)(ys_term:ys!).(append [a] xs ys)!
+proof ind append_term [a:Type](xs:List a){xs_term} = \(ys:List a)(ys_term:ys!) =>
+   case xs {xs_eq} xs_term of
+      Nil -> let u1 [u1_eq] = morejoin {sym xs_eq, xs_term, ys_term} : append [a] xs ys = ys
+             in conv ys_term at ~(sym u1) !
+    | Cons x xs' -> let ih [ih_eq] = append_term [a] xs' (ord xs_eq : xs' < xs) ys ys_term;
+                        x_term [x_term_eq] = cons_term_head a x xs' conv xs_term at ~(sym xs_eq) !;
+                        unroll_app [unroll_app] = morejoin {sym xs_eq,xs_term,ys_term }
+                                  :  append [a] xs ys = Cons [a] x (append [a] xs' ys);
+                        u1 [u1_eq] = value (Cons [a] ~x_term ~ih)
+                    in conv u1 at ~(sym unroll_app) !
+
+theorem append_assoc : forall (a:Type) (xs:List a)(xs_term:xs!) (ys:List a) (zs:List a) .
+                   append [a] xs (append [a] ys zs) = append [a] (append [a] xs ys) zs
+proof ind append_assoc [a:Type](xs:List a){xs_term} =
+  \(ys:List a) (zs:List a) =>
+   termcase ys {ys_term} of
+      abort -> let aleft [al_eq] = aborts (append [a] xs (append [a] ~ys_term zs));
+                   aright [al_eq] = aborts (append [a] (append [a] xs ~ys_term) zs)
+               in trans (sym aleft) aright
+    | ! ->  termcase zs {zs_term} of
+               abort -> let aleft [al_eq] = aborts (append [a] xs (append [a] ys ~zs_term));
+                            aright [ar_eq] = aborts (append [a] (append [a] xs ys) ~zs_term)
+                        in trans (sym aleft) aright
+             | ! -> let term_xs_ys [txy_eq] = append_term [a] xs xs_term ys ys_term;
+                        term_ys_zs [tyz_eq] = append_term [a] ys ys_term zs zs_term
+                    in case xs {xs_eq} xs_term of
+                         Nil -> let u1 [u1_eq] = morejoin {sym xs_eq, ys_term, xs_term} :
+                                      ys = append [a] xs ys;
+                                    u2 [u2_eq] = morejoin {sym xs_eq, xs_term, term_ys_zs} :
+                                       append [a] xs (append [a] ys zs) =  append [a] ys zs;
+                                    u3 [u3_eq] = morejoin {sym xs_eq, xs_term, ys_term} :
+                                        ys = append [a] xs ys
+                                 in conv u2 at append [a] xs (append [a] ys zs) =  append [a] ~u3 zs
+
+                        | Cons x xs' -> let unroll_app [ua]  = morejoin {sym xs_eq,xs_term} :
+                                                append [a] xs (append [a] ys zs) =
+                                                 Cons x (append [a] xs' (append [a] ys zs))
+                                        in unroll_app
+
+
+
+
+{-
+
+theorem append_assoc : forall (a:Type) (l1:List a) (l2:List a) (l3:List a) .
+                   append a l1 (append a l2 l3) = append a (append a l1 l2) l3
+proof append_assoc = \(a:Type) (l1:List a) (l2:List a) (l3:List a) =>
+  termcase l1 {l1term} of
+    | abort -> -- l1term : l1 = abort
+               let p1 [tmp1] = aborts (append a ~l1term (append a l2 l3))
+                   p2 [tmp2] = aborts (append a (append a ~l1term l2) l3)
+               in Unit
+    | !     -> Unit
+
+
 
 
 type reverse : (a:Type) -> (l:List a) -> List a
@@ -44,30 +118,36 @@ prog reverse = \ (a:Type) ->
        Nil -> Nil a
      | Cons x xs -> append a (rev xs) (Cons a x (Nil a))
 
+
 type vcopy : (a:Type) -> (n:Nat) -> (l:Vec a n) -> (Vec a n)
 prog rec vcopy (a:Type) (n:Nat) (l:Vec a n) =
-  case l {l_eq} of
-     VNil p -> VNil a n [p]
-   | VCons size p x xs -> VCons a n size [p] x (vcopy a size xs)
+		   case l {l_eq} of
+         VNil p -> VNil [a] [n] [p]
+			 | VCons size p x xs -> VCons [a] [n] [size] [p] x (vcopy a size xs)
 
-type vapp : (a:Type) -> (m:Nat) -> (n:Nat) -> (v1:Vec a m) ->
+
+type vapp : [a:Type] -> [m:Nat] -> [n:Nat] -> (v1:Vec a m) ->
      (v2:Vec a n) -> Vec a (plus m n)
-prog rec vapp (a:Type) (m:Nat) (n:Nat)(v1:Vec a m)(v2:Vec a n) =
-  case v1 {v1_eq} of
-    VNil p ->  conv v2 at Vec a ~(morejoin {p} :  (n = plus m n))
-  | VCons pred p x xs -> VCons a (plus m n) (plus pred n)
-                            [(morejoin {p} : plus m n = S (plus pred n))]
-                            x (vapp a pred n xs v2)
-
-
-{-
-
-type vcat : (a:Type) -> (m:Nat) -> (n:Nat) -> (v1:Vec (Vec a m) n) ->
-     Vec a (times n m)
-prog rec vcat (a:Type) (m:Nat) (n:Nat)(v1:Vec a (Vec a m) n) =
+prog rec vapp [a:Type] [m:Nat] [n:Nat](v1:Vec a m)(v2:Vec a n) =
  case v1 {v1_eq} of
-     VNil p ->  conv v1 at Vec a ~(morejoin {p} :  (Z = times n m))
-   | VCons m' p x v1' -> 
-     vapp a m (times n' m) (vcat a m' n v1')
+     VNil p ->  conv v2 at Vec a ~(morejoin {p} :  (n = plus m n))
+   | VCons pred p x xs -> VCons [a] [(plus m n)] [(plus pred n)]
+                            [(morejoin {p} : plus m n = S (plus pred n))]
+                            x (vapp [a] [pred] [n] xs v2)
+
+
+theorem vapp_assoc : forall(a:Type)(l:Nat)(v1:Vec a l)(v1_term:v1!)
+        (m:Nat)(v2:Vec a m)(n:Nat)(v3:Vec a n).
+        ((vapp [a] [l] [(plus m n)] v1 (vapp [a] [m] [n] v2 v3)) =
+         (vapp [a] [(plus l m)] [n] (vapp [a] [l] [m] v1 v2) v3))
+proof ind vapp_assoc (a:Type)(l:Nat)(v1:Vec a l){ v1_term } =
+  \(m:Nat)(v2:Vec a m)(n:Nat)(v3:Vec a n) =>
+    case v1 {v1_eq} v1_term of
+       VNil p -> let u1 [u1_eq] = morejoin {sym v1_eq} :  (v2 = vapp [a] [l] [m] v1 v2);
+                     u2 [u2_eq] = refl : (vapp [a] [m] [n] v2 v3) = (vapp [a] [m] [n] v2 v3);
+                     u3 [u2_eq] = conv u2 at (vapp [a] [m] [n] v2 v3) = (vapp [a] ~(m = plus l m) [n] ~u1 v3) -- (v2 ++ v3) == (v1 ++ v2) ++ v3
+                 in u3
+
+     | VCons pred p x xs -> Z
 
 -}
