@@ -1,5 +1,7 @@
 module CeilingDiv where
 
+flag DisableValueRestriction true
+
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat

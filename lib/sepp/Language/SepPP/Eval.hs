@@ -4,6 +4,7 @@ module Language.SepPP.Eval where
 import Language.SepPP.Syntax(EExpr(..),erase,erasedValue)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
+import Language.SepPP.Options
 
 import Generics.RepLib hiding (Con(..))
 import Unbound.LocallyNameless hiding (Con(..))
@@ -16,8 +17,6 @@ import Text.PrettyPrint(render, text,(<+>),($$))
 
 -- compile-time configuration: should reduction steps be logged
 debugReductions = False
-disableValueRestriction = True
-
 
 eval steps t = do
   t' <- erase t
@@ -26,10 +25,11 @@ eval steps t = do
 
 evalErased steps t = reduce steps t (\_ tm -> return tm)
 
-logReduce _ _ = return ()
 logReduce t t' = do
-  emit $ ("reduced" $$$ t $$$ "to" $$$ t')
-  emit $  "===" <++> "==="
+  lr <- getOptShowReductions
+  when lr $ do
+    emit $ ("reduced" $$$ t $$$ "to" $$$ t')
+    emit $  "===" <++> "==="
 
 reduce :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
 reduce 0 t k = k 0 t
@@ -77,6 +77,7 @@ reduce steps tm@(EApp t1 t2) k = do
 
         isValue t = do
           tp <- lookupTermProof t
+          disableValueRestriction <- getOptDisableValueRestriction
           case tp of
             Nothing -> return (erasedValue t || disableValueRestriction)
             Just _ -> do
