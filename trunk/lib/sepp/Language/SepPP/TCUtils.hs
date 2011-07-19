@@ -5,7 +5,7 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 
 
-import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind)
+import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate)
 
 import Text.PrettyPrint
 import Data.Typeable
@@ -36,9 +36,10 @@ data Env = Env { gamma :: [(EName,(Expr,Bool))]   -- (var, (type,isValue))
                , delta :: [(EName,(Tele,[(EName,(Int,Expr))]))]
                    -- (type constructor, [(data cons, arity, type)])
                , escapeContext :: EscapeContext
-               , rewrites :: [(EExpr,EExpr)]}
-emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],escapeContext = NoContext}
-
+               -- rewrites and termproofs are used by morejoin to drive reduction.
+               , rewrites :: [(EExpr,EExpr)]
+               , termProofs :: [EExpr]}
+emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],termProofs=[],escapeContext = NoContext}
 
 
 instance Disp Env where
@@ -46,8 +47,6 @@ instance Disp Env where
                 [disp n <> colon <+> disp t | (n,(t,_)) <- gamma env])  $$
              hang (text "Definitions") 2 (vcat
                 [disp n <> colon <+> disp t | (n,t) <- sigma env])
-
-
 
 
 -- | Add a new binding to an environment
@@ -101,9 +100,16 @@ lookupDef n = do
 substDefs :: Expr -> TCMonad Expr
 substDefs t = do
   defs <- asks sigma
-  -- mapM (\t-> doDisp (fst t) >>= (liftIO . print)) defs
   return $ foldl (\tm (nm,def) -> subst nm def tm) t defs
   -- return $ substs defs t
+
+
+substDefsErased :: EExpr -> TCMonad EExpr
+substDefsErased e = do
+  defs <- asks sigma
+  edefs <- sequence [(,) (translate n) <$> erase t | (n,t) <- defs]
+  return $ foldl (\tm (nm,def) -> subst nm def tm) e edefs
+
 
 withRewrites :: [(EExpr,EExpr)] -> TCMonad a -> TCMonad a
 withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m
@@ -111,10 +117,20 @@ withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m
 lookupRewrite :: EExpr -> TCMonad (Maybe EExpr)
 lookupRewrite e = do
   rs <- asks rewrites
-  -- FIXME: alpha-equality is too week. We need actual equality.
+  -- FIXME: Is alpha-equality is too weak? Do we need actual equality?
   case find (\(l,r) -> aeq e l) rs of
     Just (_,r) -> return (Just r)
     Nothing -> return Nothing
+
+
+withTermProofs :: [EExpr] -> TCMonad a -> TCMonad a
+withTermProofs es m = do
+  local (\ctx -> ctx {termProofs = es ++ termProofs ctx}) m
+
+lookupTermProof :: EExpr -> TCMonad (Maybe EExpr)
+lookupTermProof e = do
+  tps <- asks termProofs
+  return $ find (aeq e) tps
 
 
 -- ** Error handling
@@ -173,10 +189,10 @@ actual `sameType` (Just expected) = actual `expectType` expected
 actual `expectType` expected =
   unless (down actual `aeq` down expected) $
     typeError "Couldn't match expected type with actual type."
-                [(text "Expected Type",disp expected),
-                 (text "Actual Type", disp actual),
-                 (text "Expected AST", text $ show $ downAll  expected),
-                 (text "Actual AST", text $ show $ downAll actual)
+                [(text "Expected Type",disp expected)
+                , (text "Actual Type", disp actual)
+--                , (text "Expected AST", text $ show $ downAll  expected)
+--                , (text "Actual AST", text $ show $ downAll actual)
                 ]
 
 
@@ -206,7 +222,8 @@ synValue (Ann t typ) = synValue t
 synValue (Rec _) = return True
 synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
   where constrApp (Con c) = return True
-        constrApp (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+        constrApp (App f Static x) = constrApp f
+        constrApp (App f Dynamic x) = lift2 (&&) (constrApp f) (synValue x)
         constrApp (Pos x t) = constrApp t
         constrApp _ = return False
 

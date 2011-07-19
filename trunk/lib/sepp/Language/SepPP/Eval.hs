@@ -15,18 +15,18 @@ import "mtl" Control.Monad.Error
 import Text.PrettyPrint(render, text,(<+>),($$))
 
 -- compile-time configuration: should reduction steps be logged
-debugReductions = True -- False
-
+debugReductions = False
+disableValueRestriction = True
 
 
 eval steps t = do
   t' <- erase t
-  emit $ "Reducing" <++> t'
+  -- emit $ "Reducing" <++> t'
   evalErased steps t'
 
 evalErased steps t = reduce steps t (\_ tm -> return tm)
 
--- logReduce _ _ = return ()
+logReduce _ _ = return ()
 logReduce t t' = do
   emit $ ("reduced" $$$ t $$$ "to" $$$ t')
   emit $  "===" <++> "==="
@@ -45,13 +45,18 @@ reduce steps v@(EVar n) k = do
                k steps v
 reduce steps t@(ECon _) k = k steps t
 
-reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
+reduce steps tm@(EApp t1 t2) k = do
+   -- emit $ "Reducing term" $$$ disp tm
+   reduce steps t1 k'
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
           reduce steps t2 (\steps' v -> do
-                       if steps' == 0 || not (erasedValue v)
-                          then return $ EApp t1' v
+                       val <- isValue v
+                       if steps' == 0 || not val
+                          then do
+                            emit $ "Stuck term" $$$ EApp t1' v
+                            k steps (EApp t1' v)
                           else do
                             let tm' = subst x v body
                             logReduce (EApp t1' v) tm'
@@ -62,11 +67,21 @@ reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
         k' steps v1
-          | isCon v1 && erasedValue v1 = reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
+          | isCon v1 && erasedValue v1 =
+              reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
           | otherwise = k steps (EApp v1 t2)
+
         isCon (ECon _) = True
         isCon (EApp l _) = isCon l
         isCon _ = False
+
+        isValue t = do
+          tp <- lookupTermProof t
+          case tp of
+            Nothing -> return (erasedValue t || disableValueRestriction)
+            Just _ -> do
+              emit $ "Found a termination proof for non-value" <++> t
+              return True
 
 
 reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'

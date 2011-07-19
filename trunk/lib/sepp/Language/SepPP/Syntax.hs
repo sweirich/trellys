@@ -8,13 +8,16 @@ module Language.SepPP.Syntax (
   EExpr(..), erase, erasedValue,
   down,downAll,
   Tele(..),teleArrow,subTele,teleFromList,
-  splitApp, splitApp', isStrictContext, var, app) where
+  splitApp, splitApp', isStrictContext, var, app,
+  okCtx) where
 
-import Unbound.LocallyNameless hiding (Con)
+import Unbound.LocallyNameless hiding (Con,Val)
 import Unbound.LocallyNameless.Alpha(aeqR1)
+import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Text.Parsec.Pos
 import Control.Monad(mplus)
 import Control.Applicative((<$>), (<*>),Applicative)
+
 
 import Data.Typeable
 
@@ -101,10 +104,12 @@ data Expr = Var EName                                 -- Expr, Proof
           | Ord Expr                                  -- Proof
                                                       -- intros a
           | IndLT Expr Expr                           -- Pred
+
+
           | OrdTrans Expr Expr
 
 
-          | Ind (Bind (EName, (EName, Embed Expr), EName) Expr) -- proof
+          | Ind (Bind (EName, Tele, EName) Expr) -- proof
           | Rec (Bind (EName,Tele) Expr) -- term
 
           -- In a conversion context, the 'Escape' term splices in an equality
@@ -259,12 +264,11 @@ erase (Let binding) = do
     ebody <- erase body
     return $ ELet (bind (translate x,Embed et) ebody)
 
-
-
-
+erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t
+
 erase t =  do
-  fail $  "The erasure function is not defined on: " ++ show t
+  fail $  "The erasure function is not defined on: " ++ show (downAll t)
 
 cValOfApp :: EExpr -> Bool
 cValOfApp (EApp f x) = cValOfApp f && erasedValue x
@@ -275,6 +279,7 @@ erasedValue :: EExpr -> Bool
 erasedValue (ECase _ _) = False
 erasedValue e@(EApp _ _) = cValOfApp e
 erasedValue (ELet _) = False
+erasedValue (EVar _) = False
 erasedValue _ = True
 
 
@@ -295,6 +300,10 @@ teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
  where ((n,stage,ty),rest) = unrebind binding
        arrRest = teleArrow rest end
 
+
+-- StaticTele
+
+
 subTele :: Tele -> [Expr] -> Expr -> Expr
 subTele Empty [] x = x
 subTele (TCons binding) (ty:tys) x = subst n ty $ subTele rest tys x
@@ -305,3 +314,66 @@ subTele _ _ _ =
 
 teleFromList args = foldr (\(st,(n,ty)) r -> TCons (rebind (n,st,Embed ty) r))
                     Empty args
+
+
+
+
+
+
+-- Check to see if an escaped explicit equality appears outside an erased
+-- position. Returns True if the context is okay, false otherwise.
+
+
+okCtx (Pos _ t) = okCtx t
+okCtx (Escape t) = case down t of
+                     (Equal _ _) -> False
+                     _ -> True
+okCtx (App t Static  _) = okCtx t
+okCtx expr = and $ map okCtx $ children expr
+
+-- FIXME: Replace with RepLib...
+children (Pi _ binding) = [ty,body]
+  where ((n,Embed ty),body) = unsafeUnbind binding
+children (Forall binding) = [ty,body]
+  where ((n,Embed ty),body) = unsafeUnbind binding
+children (App t1 _ t2) = [t1,t2]
+children (Lambda _ _  binding) = [ty,body]
+  where ((n,Embed ty),body) = unsafeUnbind binding
+
+children (Case e q binding) = cons q $ [e] ++ arms
+  where (n,alts) = unsafeUnbind binding
+        arms = [bdy | a <- alts, ((n,_),bdy) <- [unsafeUnbind a]]
+        cons (Just e) es = e:es
+        cons Nothing es = es
+
+children (TerminationCase e binding) = [e,a,t]
+ where (_,(a,t)) = unsafeUnbind binding
+children (Equal x y) = [x,y]
+children (Val x) = [x]
+children (Terminates x) = [x]
+children (Contra x) = [x]
+children (ContraAbort x y) = [x,y]
+children (Abort x) = [x]
+children (ConvCtx x y) = [x,y]
+children (Ord x) = [x]
+children (IndLT x y) = [x,y]
+children (OrdTrans x y) = [x,y]
+children (Ind binding) = body:(childrenTele tele)
+  where ((_,tele,_),body) = unsafeUnbind binding
+children (Rec binding) = body:(childrenTele tele)
+  where ((_,tele),body) = unsafeUnbind binding
+
+children (Escape x) = [x]
+children (Let binding) = [t,body]
+  where ((_,_,Embed t),body) = unsafeUnbind binding
+children (Aborts x) = [x]
+children (Sym x) = [x]
+children (Trans x y) = [x,y]
+children (MoreJoin es) = es
+children (Ann x y) = [x,y]
+children (Pos _ e) = children e
+children _ = []
+
+childrenTele Empty = []
+childrenTele (TCons rebinding) = e:(childrenTele rest)
+  where ((_,_,Embed e),rest) = unrebind rebinding
