@@ -8,6 +8,7 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 import Language.SepPP.Eval
 import Language.SepPP.TCUtils
+import Language.SepPP.Options
 
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -18,16 +19,17 @@ import Data.Typeable
 
 import "mtl" Control.Monad.Reader hiding (join)
 import "mtl" Control.Monad.Error hiding (join)
+import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
 import Data.List(nubBy, nub, (\\))
-
+import qualified Data.Map as M
 
 
 typecheck :: Module -> IO (Either TypeError ())
 typecheck mod = do
-  runErrorT $ runFreshMT $ runReaderT (runTCMonad (typecheckModule mod)) emptyEnv
+  runErrorT $ runFreshMT $ runReaderT (evalStateT (runTCMonad (typecheckModule mod)) flagMap) emptyEnv
 
 -- * Running the typechecker.
 
@@ -42,8 +44,11 @@ data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
             | ProofResult EName Expr Expr Bool
             | ProgResult EName Expr Expr Bool
             | AxiomResult EName Expr
+            | FlagResult String Bool
 
 -- | Typecheck a single definition
+
+checkDef (FlagDecl nm b) = return $ FlagResult nm b
 
 checkDef (AxiomDecl nm theorem) = do
   lk <- predSynth' theorem
@@ -139,6 +144,9 @@ checkDefs (d:ds) = do
                         foldr (\(n,(arity,ty)) m ->
                                  extendBinding n (teleArrow (staticTele tele) ty) True m)
                               comp cs
+        extendBinding' (FlagResult n val) comp = do
+           setFlag n val
+           comp
         staticTele Empty = Empty
         staticTele (TCons binding) =
             TCons (rebind (n,Static,ty) (staticTele body))
@@ -1085,7 +1093,7 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
-  emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
+  -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
   -- s2 <- substDefs t2
   t1' <- eval lSteps t1

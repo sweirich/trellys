@@ -3,7 +3,7 @@ module Language.SepPP.TCUtils where
 
 import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
-
+import Language.SepPP.Options
 
 import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate)
 
@@ -11,19 +11,20 @@ import Text.PrettyPrint
 import Data.Typeable
 import "mtl" Control.Monad.Reader hiding (join)
 import "mtl" Control.Monad.Error hiding (join)
+import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative hiding (empty)
 import Text.Parsec.Pos
 import Data.List(find)
+import qualified Data.Map as M
 
 -- * The typechecking monad
 
+
 newtype TCMonad a =
-  TCMonad { runTCMonad :: ReaderT Env (FreshMT (ErrorT TypeError IO)) a }
+  TCMonad { runTCMonad :: StateT Flags (ReaderT Env (FreshMT (ErrorT TypeError IO))) a }
     deriving (Fresh, Functor, Applicative, Monad,
-              MonadReader Env, MonadError TypeError, MonadIO)
-
-
+              MonadReader Env, MonadError TypeError, MonadState Flags, MonadIO)
 
 -- ** The Environment
 data EscapeContext = LeftContext | RightContext | StrictContext | NoContext
@@ -131,6 +132,8 @@ lookupTermProof :: EExpr -> TCMonad (Maybe EExpr)
 lookupTermProof e = do
   tps <- asks termProofs
   return $ find (aeq e) tps
+
+
 
 
 -- ** Error handling

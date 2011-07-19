@@ -2,6 +2,7 @@
 module Language.SepPP.Parser where
 
 import Language.SepPP.Syntax
+import Language.SepPP.Options
 
 import Unbound.LocallyNameless hiding (name,Infix,Val,Con)
 
@@ -51,7 +52,7 @@ sepModule = do
 
 -- | Top-level binding
 -- sepBinding :: Parser Binding
-sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl
+sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|> sepFlag
 
 sepProgDecl = do
   (n,ty) <- sig
@@ -145,7 +146,8 @@ sepPPStyle = haskellStyle {
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
             "let","in",
-            "sym","symm","trans","refl"
+            "sym","symm","trans","refl",
+            "set" -- for flags
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -519,4 +521,14 @@ telescope = do
 
 
 
-
+-- Flag handling
+sepFlag = do
+  reserved "flag"
+  id <- identifier
+  unless (id `elem` map fst flags) $
+    unexpected $ id ++ " is an unknown flag." ++ "\n" ++
+                 "Valid Flags:\n" ++
+                 unlines (map fst flags)
+  b <- ((reserved "true" >> return True) <|> (reserved "false" >> return False))
+  return $ FlagDecl id b
+  <?> "flag"
