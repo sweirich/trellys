@@ -6,4 +6,4 @@ trellys
 TAGS
 *.hi
 *.o
-
+/lib/sepp/dist/*
