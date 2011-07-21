@@ -229,5 +229,25 @@ synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
         constrApp (App f Dynamic x) = lift2 (&&) (constrApp f) (synValue x)
         constrApp (Pos x t) = constrApp t
         constrApp _ = return False
-
 synValue x = return False
+
+
+-- This is the isValue judgement on erased terms. It allows us to judge
+-- variables marked as 'values' in the type environment to be values.
+erasedSynValue (EVar x) = do
+  do (term,valuep) <- lookupBinding (translate x)
+     return valuep
+erasedSynValue (ECon c) = return True
+erasedSynValue EType = return True
+-- erasedSynValue (Pi stg bdngs) = return True
+erasedSynValue (ELambda bndgs) = return True
+-- erasedSynValue (Pos n t) = synValue t
+-- erasedSynValue (Ann t typ) = synValue t
+erasedSynValue (ERec _) = return True
+erasedSynValue (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
+  where constrApp (ECon c) = return True
+        constrApp (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
+        constrApp _ = return False
+erasedSynValue x = return False
+
+

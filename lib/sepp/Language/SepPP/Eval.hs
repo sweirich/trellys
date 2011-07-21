@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax(EExpr(..),erase,erasedValue)
+import Language.SepPP.Syntax(EExpr(..),erase)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 import Language.SepPP.Options
@@ -66,20 +66,23 @@ reduce steps tm@(EApp t1 t2) k = do
           typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
-        k' steps v1
-          | isCon v1 && erasedValue v1 =
-              reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
-          | otherwise = k steps (EApp v1 t2)
+        k' steps v1 = do
+          ev <- erasedSynValue v1
+          if isCon v1 && ev
+             then reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
+             else k steps (EApp v1 t2)
 
         isCon (ECon _) = True
         isCon (EApp l _) = isCon l
         isCon _ = False
 
+
         isValue t = do
           tp <- lookupTermProof t
           disableValueRestriction <- getOptDisableValueRestriction
+          ev <- erasedSynValue t
           case tp of
-            Nothing -> return (erasedValue t || disableValueRestriction)
+            Nothing -> return (ev || disableValueRestriction)
             Just _ -> do
               emit $ "Found a termination proof for non-value" <++> t
               return True
@@ -115,7 +118,8 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
 reduce steps (ELet binding) k = do
   ((x,Embed t), body) <- unbind binding
   let k' steps t' = do
-          if erasedValue t'
+          ev <- erasedSynValue t'
+          if ev
              then do let body' = subst x t' body
                      reduce (steps - 1) body' k
              else return $ ELet (bind (x,Embed t') body)
@@ -146,6 +150,8 @@ patMatch t@(ECon c,args) (b:bs) = do
 -- getCons t = case splitApp t of
 --               (c@(Con _):cs) -> return (c,cs)
 --               _ -> Nothing
+
+
 
 
 
