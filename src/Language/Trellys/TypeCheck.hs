@@ -2,7 +2,7 @@
 -- | The Trellys core typechecker, using a bi-directional typechecking algorithm
 -- to reduce annotations.
 module Language.Trellys.TypeCheck
-  (tcModule,tcModules, runTcMonad, emptyEnv)
+  (tcModule, tcModules, runTcMonad, emptyEnv)
 where
 
 import Language.Trellys.Syntax
@@ -21,6 +21,7 @@ import Text.PrettyPrint.HughesPJ
 
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
+import Control.Applicative
 
 import Data.Maybe
 import Data.List
