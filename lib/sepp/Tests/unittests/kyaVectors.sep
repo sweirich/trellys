@@ -19,19 +19,19 @@ prog rec plus (x:Nat) = \(y:Nat) ->
       Z -> y
     | S x' -> S (plus x' y)
 
-type append : (b:Type) -> (l1:List b) -> (l2:List b)  -> List b
-prog append = \(b:Type) (l1:List b) (l2:List b) ->
+type append : [b:Type] -> (l1:List b) -> (l2:List b)  -> List b
+prog append = \[b:Type] (l1:List b) (l2:List b) ->
   ((rec app (l1':List b) .
     case l1' {l1'_eq} of
        Nil -> l2
-     | Cons x xs -> Cons b x (app xs) ) : ( List b -> List b ) ) l1
+     | Cons x xs -> Cons [b] x (app xs) ) : ( List b -> List b ) ) l1
 
-theorem append_P : forall (b:Type) . (append b =
+theorem append_P : forall (b:Type) . (append [b] =
   ( (\ (l1:List b) (l2:List b) ->
      ((rec app (l1':List b) .
        case l1' {l1'_eq} of
           Nil -> l2
-        | Cons x xs -> Cons b x (app xs) ) : ( List b -> List b ) ) l1 ) 
+        | Cons x xs -> Cons b x (app xs) ) : ( List b -> List b ) ) l1 )
   : (l1:List b) -> (l2:List b) -> List b
      ) )
 proof append_P = \(b:Type) => join 10 10
@@ -51,7 +51,7 @@ theorem append_assoc': forall (a:Type)
                               (l1:List a) (p:l1!) (l2:List a) (l3:List a) .
                    append a l1 (append a l2 l3) = append a (append a l1 l2) l3
 proof append_assoc' = \(a:Type) =>
-  ind ih (l1:List a) [p] . \ (l2:List a) (l3:List a) =>
+  ind ih (l1:List a) {p} . \ (l2:List a) (l3:List a) =>
     case l1 { l1_eq } p of
       Nil       -> let p1 [p1_eq] = conv join 100 100
                          at (append a ~l1_eq (append a l2 l3) = append a l2 l3)

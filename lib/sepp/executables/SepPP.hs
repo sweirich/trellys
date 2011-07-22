@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}
 module Main where
 
+import Language.SepPP.Options
 import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
@@ -39,16 +40,6 @@ main = flip catches handlers $ do
 
 
 
-data SepPPOpts = SepPPOpts {
-    file :: String
-  } deriving (Show,Read,Eq,Typeable,Data)
-
-
-sepPPArgs = SepPPOpts {
-              file = def
-                     &= help "Input file" &=
-                     groupname "Main"
-            }
 
 -- liftEither :: Exception a => Either a b -> IO b
 liftEither (Left err) = throw err

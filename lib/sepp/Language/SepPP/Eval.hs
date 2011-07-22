@@ -1,9 +1,10 @@
 {-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax(EExpr(..),erase,erasedValue)
+import Language.SepPP.Syntax(EExpr(..),erase)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
+import Language.SepPP.Options
 
 import Generics.RepLib hiding (Con(..))
 import Unbound.LocallyNameless hiding (Con(..))
@@ -15,21 +16,20 @@ import "mtl" Control.Monad.Error
 import Text.PrettyPrint(render, text,(<+>),($$))
 
 -- compile-time configuration: should reduction steps be logged
-debugReductions = True -- False
-
-
+debugReductions = False
 
 eval steps t = do
   t' <- erase t
-  emit $ "Reducing" <++> t'
+  -- emit $ "Reducing" <++> t'
   evalErased steps t'
 
 evalErased steps t = reduce steps t (\_ tm -> return tm)
 
--- logReduce _ _ = return ()
 logReduce t t' = do
-  emit $ ("reduced" $$$ t $$$ "to" $$$ t')
-  emit $  "===" <++> "==="
+  lr <- getOptShowReductions
+  when lr $ do
+    emit $ ("reduced" $$$ t $$$ "to" $$$ t')
+    emit $  "===" <++> "==="
 
 reduce :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
 reduce 0 t k = k 0 t
@@ -45,13 +45,18 @@ reduce steps v@(EVar n) k = do
                k steps v
 reduce steps t@(ECon _) k = k steps t
 
-reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
+reduce steps tm@(EApp t1 t2) k = do
+   -- emit $ "Reducing term" $$$ disp tm
+   reduce steps t1 k'
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
           reduce steps t2 (\steps' v -> do
-                       if steps' == 0 || not (erasedValue v)
-                          then return $ EApp t1' v
+                       val <- isValue v
+                       if steps' == 0 || not val
+                          then do
+                            emit $ "Stuck term" $$$ EApp t1' v
+                            k steps (EApp t1' v)
                           else do
                             let tm' = subst x v body
                             logReduce (EApp t1' v) tm'
@@ -61,12 +66,26 @@ reduce steps tm@(EApp t1 t2) k = reduce steps t1 k'
           typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
-        k' steps v1
-          | isCon v1 && erasedValue v1 = reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
-          | otherwise = k steps (EApp v1 t2)
+        k' steps v1 = do
+          ev <- erasedSynValue v1
+          if isCon v1 && ev
+             then reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
+             else k steps (EApp v1 t2)
+
         isCon (ECon _) = True
         isCon (EApp l _) = isCon l
         isCon _ = False
+
+
+        isValue t = do
+          tp <- lookupTermProof t
+          disableValueRestriction <- getOptDisableValueRestriction
+          ev <- erasedSynValue t
+          case tp of
+            Nothing -> return (ev || disableValueRestriction)
+            Just _ -> do
+              emit $ "Found a termination proof for non-value" <++> t
+              return True
 
 
 reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
@@ -99,7 +118,8 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
 reduce steps (ELet binding) k = do
   ((x,Embed t), body) <- unbind binding
   let k' steps t' = do
-          if erasedValue t'
+          ev <- erasedSynValue t'
+          if ev
              then do let body' = subst x t' body
                      reduce (steps - 1) body' k
              else return $ ELet (bind (x,Embed t') body)
@@ -130,6 +150,8 @@ patMatch t@(ECon c,args) (b:bs) = do
 -- getCons t = case splitApp t of
 --               (c@(Con _):cs) -> return (c,cs)
 --               _ -> Nothing
+
+
 
 
 
