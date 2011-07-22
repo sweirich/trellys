@@ -1,0 +1,77 @@
+-- Aaron's cast-shifting trick, see Vectors.trellys r2,
+-- https://groups.google.com/group/trellys-team/msg/30436b5e70af9ab5,
+-- and Vilhelm's equality writeup (design-notes/equality-writeup).
+--
+-- Shows how to workaround lack of multi-hole conversion in the
+-- presence of the typed-equality restriction.
+module CastShiftTrick where
+
+import Prelude
+
+axiom tZ : Type 0
+axiom tX : Type 0
+axiom tY : (x:tX) -> Type 0
+axiom f  : (x:tX) -> (y:tY x) -> tZ
+axiom x  : tX
+axiom x' : tX
+axiom y  : tY x
+axiom y' : tY x'
+axiom p  : x = x'
+axiom q  : y = y'
+
+thm : f x y = f x' y'
+-- Proof by "cast-shifting".
+--
+-- Idea:
+-- 
+--   1. y     = y'         : tY x'         (by q)
+--            = conv y'    : tY x          (by join, conv'd by sym p)
+--
+--   2. f x'  = f x        : tY x  -> tZ   (by sym p)
+--            = conv (f x) : tY x' -> tZ   (by join, conv'd by p)
+--   
+--   3. f x y = f x (conv y')              (by (1))
+--            = (conv (f x) by p) y'       (by join)
+--            = f x' y'                    (by (2))
+--
+-- Actually, (2) is done in the reverse direction below, although the
+-- above requires less code :P
+--
+-- The comments below track types in equalities, with 
+--   (a = b) : T 
+-- short for 
+--   (a : T) = (b : T)
+thm = let symp [w] = sym tX tX x x' p in
+      -- (y = conv y') : tY x
+      let eq   [w] = trans' (tY x) (tY x') (tY x)
+                     y
+                     y'
+                     (conv y' by symp at h.tY h)
+                     q join in
+      -- (f x y = f x (conv y')) : tZ
+      let eq1  [w] = conv join by eq at h.f x y = f x h in
+      
+      -- (f x : tY x -> tZ) = (f x' : tY x' -> tZ)
+      let eq   [w] = conv join by p at h.f x = f h in
+      -- (conv (f x) = f x') : (y:tY x') -> tZ
+      let eq   [w] = trans' ((y:tY x') -> tZ) ((y:tY x) -> tZ) ((y:tY x') -> tZ)
+                     (conv f x by p at h.((y : tY h) -> tZ))
+                     (f x)
+                     (f x')
+                     join eq in
+      -- (conv (f x) y' = f x' y') : tZ
+      let eq2  [w] = conv join by eq
+                     -- Here convrl would allow us to write the shorter
+                     -- (convrl join by eq at h.h y' = f x' y').
+                     -- Of course, we could just as well derive the above
+                     -- two equations in the reverse direction...
+                     at h.(conv f x by p at h.((y : tY h) -> tZ)) y' = h y' in
+      
+      -- (f x y = f x' y') : tZ
+      let eq3  [w] = trans4' tZ tZ tZ tZ
+                     (f x y)
+                     (f x (conv y' by symp at h . tY h))
+                     ((conv f x by p at h . ((y : tY h) -> tZ)) y')
+                     (f x' y')
+                     eq1 join eq2
+      in eq3

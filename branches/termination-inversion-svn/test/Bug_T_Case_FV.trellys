@@ -1,0 +1,11 @@
+-- Test T_Case FV check
+module Bug where
+
+data T -> Type 0 where
+  C : [x:Type 0] -> T
+
+f : T -> Type 0
+f = \t . case t [e] of
+           -- this branch should fail the FV check in the 6th premise
+           -- of T_Case because x is free.
+           C [x] -> x

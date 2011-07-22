@@ -1,0 +1,6 @@
+module LetRebind where
+-- verify that you can rebind a name in a let
+
+f : [a : Type 0] -> (b:a) -> a
+f = \[a] . \b .
+  let f [f_eq] = ((\[a] . \b . \c . b) : [a:Type 0] -> (b:a) -> (c:a) -> a) in b

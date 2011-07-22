@@ -1,0 +1,39 @@
+-- Alexandre Miquel's proof that
+-- injectivity of typeconstructors with large indices
+-- living in an impredicative universe is inconsistent.
+-- [See https://lists.chalmers.se/pipermail/agda/2010/001543.html 
+-- for the (easier to understand) original].
+
+module Typecon_injectivity where
+
+data False -> Type 0 where {}
+
+data Iff (p : Type 0) (q : Type 0) -> Type 0 where
+  IffIntro : (p -> q) -> (q -> p) -> Iff p q
+
+data I (f : Type 0 -> Type 0) -> Type 0 where {}
+axiom log iinj: (f : Type 0 -> Type 0) -> (g : Type 0 -> Type 0) -> (I f = I g) -> f = g
+
+log r : Type 0 -> Type 0
+r = \ x . (p:Type 0 -> Type 0) -> (x = I p) -> (p x -> False)
+
+log r_spec : (p : Type 0->Type 0) -> Iff (r (I p)) (p (I p) -> False)
+r_spec = \p . IffIntro [r (I p)] [p (I p) -> False]
+                (\rIp . (conv rIp 
+                           by (join : r (I p) = (p':Type 0->Type 0)->(I p = I p') -> (p' (I p)->False))
+                           at t.t)
+                              p join) 
+                (\npIp. conv \p' eq . conv npIp 
+                                      by (iinj p p' eq : p=p')
+                                      at t. (t (I p)->False)
+                        by (join : ((p':Type 0->Type 0)->(I p=I p') -> (p' (I p)-> False)) = r (I p))
+                        at t.t)
+
+log r_bad : Iff (r (I r)) (r (I r) -> False)
+r_bad = r_spec r
+
+log falsity : False
+falsity = case r_bad [_] of
+            IffIntro ltr rtl ->
+              let f [_] = (\x . ltr x x : r (I r) -> False)
+              in f (rtl f) 

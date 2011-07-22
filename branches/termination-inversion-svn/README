@@ -1,0 +1,31 @@
+Dependencies
+============
+
+- Default `cabal install` directory on $PATH (~/.cabal/bin
+  for default "per-user" Cabal setup).
+
+Install
+=======
+
+Do `make` to install trellys locally.  A trellys binary is linked to
+./test/trellys, the only place you're expected to run it.  NB: this
+does *not* put a trellys binary on your $PATH, so if you have one,
+then it's probably out of date.
+
+Do `make install` to install trellys globally.  Plain `make` is 
+preferred, but `make install` should work on broken Cygwin setups where
+plain `make` fails.
+
+Install Trouble?
+================
+
+After major changes, e.g. a GHC version upgrade, you may have to delete 
+the ./cabal-dev directory from your working copy before doing a fresh 
+`make`.
+
+Dir Summary
+===========
+
+lib: libraries maintained by others
+src: trellys language source
+test: example .trellys files

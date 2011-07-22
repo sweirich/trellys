@@ -1,0 +1,91 @@
+module IndVRDemo where
+
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+
+data Bool : Type where
+  True : Bool
+| False : Bool
+
+
+
+
+type minus : (x:Nat) -> (y:Nat) -> Nat
+prog minus = rec minus (x:Nat) . \(y:Nat) ->
+		case x {xw} of
+      Z -> Z
+			| S x' -> case y {yw} of
+			            Z -> x
+  							| S y' -> minus x' y'
+
+
+type lt : (x:Nat) -> (y:Nat) -> Bool
+prog lt = rec lt (x:Nat) . \(y:Nat) ->
+		case x {xw} of
+    | Z -> (case y {yw} of
+			            Z -> False
+								| S y' -> True)
+
+		| S x' ->  case y {yw} of
+			            Z -> False
+								| S y' -> lt x' y'
+
+
+-- theorem lt_minus : forall (x:Nat)(xterm:x!). lt (minus x x) x = True
+-- proof lt_minus = \(x:Nat) => \(xterm:x!) =>
+--    case x {xc} xterm of
+--      Z -> (join 100 100) --  : (minus x x = minus x x))
+
+-- theorem minus_minus_zero : forall (n:Nat)(nterm:n!). minus n n = Z
+-- proof minus_minus_zero = \(n:Nat) => \(nterm:n!) =>
+--   case n {nc} nterm of
+--     Z -> conv (join 100 100 : minus Z Z = Z) at minus ~nc ~nc = Z
+
+
+
+
+theorem asd : forall(f:Nat->Nat)(x:Nat).(f Z = let a [b] = Z in f a)
+proof asd = \(f:Nat->Nat)(x:Nat) =>
+			((join 100 100 : f Z = let a [b] = Z in f a))
+ -- conv ((join 100 100 : f x = let a [b] = f x in a)) at
+ --   (f x = (f x))
+
+
+theorem r : forall (x:Nat) (y:Nat) (p: x = S (S y)) . (S y < x)
+proof r = \(x:Nat)(y:Nat)(p:x = S (S y)) =>
+			let z [z2] = S y
+			in ord (sym p)
+
+theorem q : forall (x:Nat) (y:Nat) (p : x = S (S y)) . (y < x)
+proof q = \(x:Nat)(y:Nat)(p : (x = S (S y))) =>
+   let z [zw] = S y;
+       p1 [z1] = (ord (sym zw) : y < z);
+       p2 [z2] = (ord (sym p) :  S y < x);
+       p3 [z3] = conv p2 at (~(sym zw) < x)
+   in ordtrans p1 p3
+
+-- type bad : Nat -> Nat
+-- progb ad = rec bad (n:Nat) . S (bad n)
+
+
+-- theorem fz : S (bad Z) = bad Z
+-- proof fz = join 1 1
+
+-- theorem fzo : bad Z < bad Z
+-- proof fzo = ord fz
+
+
+
+-- theorem g : forall (x:Nat)(u:x!)(p:x = bad Z). Z = S Z
+-- proof g = ind g (x : Nat) [u]. \(p:x = bad Z) =>
+--   g (bad Z) (conv fzo at bad Z < ~(sym p)) (join 1 1 : bad Z = bad Z)
+
+
+-- theorem terrible : Z = S Z
+-- proof terrible = g Z (value Z)  (join 1000 1000)
+
+
+

@@ -1,0 +1,8 @@
+-- Test T_RN2 FV check
+module Test where
+
+import Prelude
+
+-- Should fail: n is free.
+t1 : [Nat] -> Nat -> Nat
+recnat t1 [n] = (\x.n)
