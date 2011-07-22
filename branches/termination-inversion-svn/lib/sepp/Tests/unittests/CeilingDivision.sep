@@ -1,5 +1,7 @@
 module CeilingDiv where
 
+flag DisableValueRestriction true
+
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
@@ -50,7 +52,7 @@ prog rec minus (x:Nat) = \(y:Nat) ->
 
 
 theorem minus_term : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(minus m n)!
-proof ind minus_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
+proof ind minus_term (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
    case m {m_eq} m_term of
       Z -> let l1 [l1_eq] = morejoin {sym m_eq} : Z = minus m n
            in conv value Z at (~l1)!
@@ -89,7 +91,7 @@ prog lt = rec lt (x:Nat) . \(y:Nat) ->
 
 -- If the arguments to lt terminate, then lt terminates
 theorem lt_term : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(lt m n)!
-proof ind lt_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
+proof ind lt_term (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
    case m {m_eq} m_term of
       Z -> (case n {n_eq} n_term of
              Z -> let l1 [l1_eq] = morejoin {sym m_eq, sym n_eq} : False = lt m n
@@ -137,7 +139,7 @@ proof not_lt_pred_pred = \(x:Nat)(y:Nat)(p:lt x y = False) =>
 -- Less-than is transitive.
 theorem lt_trans_term : forall(x:Nat)(x_term:x !)(y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
     (p1:lt x y = True)(p2:lt y z = True).lt x z = True
-proof ind lt_trans_term (x:Nat) [x_term] = \ (y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
+proof ind lt_trans_term (x:Nat) {x_term} = \ (y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
     (p1:lt x y = True)(p2:lt y z = True) =>
   case z { z_eq } z_term of
    Z -> let u1 [u1_eq] = not_lt_z y y_term z z_eq : lt y z = False
@@ -185,7 +187,7 @@ proof lt_trans = \(x:Nat)(y:Nat)(z:Nat)(p1:lt x y = True)(p2:lt y z = True) =>
 -- If x < S y and not (x < y), then x = y.
 theorem lt_x_Sy_not_lt_x_y_eq :
     forall (x:Nat)(xterm:x!)(y:Nat)(yterm:y!)(p1:lt x (S y) = True)(p2:lt x y = False).x = y
-proof ind lt_x_Sy_not_lt_x_y_eq (x:Nat)[xterm] =
+proof ind lt_x_Sy_not_lt_x_y_eq (x:Nat){xterm} =
       \(y:Nat)(yterm:y!)(p1:lt x (S y) = True)(p2:lt x y = False) =>
    case x {x_eq} xterm of
       Z -> (case y {y_eq} yterm of
@@ -219,7 +221,7 @@ proof ind lt_x_Sy_not_lt_x_y_eq (x:Nat)[xterm] =
 
 -- If x < y (and both terminate) then x and y are ordered
 theorem lt_ord_term : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:lt x y = True).x < y
-proof ind lt_ord_term (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
+proof ind lt_ord_term (y:Nat) {yterm} = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
       case y {y_eq} yterm of
         Z -> let u1 [u1_eq] = (not_lt_z x xterm y y_eq : lt x y = False)
              in (contra (conv u1 at ~p = False) : x < y)
@@ -239,11 +241,11 @@ proof ind lt_ord_term (y:Nat) [yterm] = \(x:Nat)(xterm:x!)(p:lt x y = True) =>
 theorem lt_ord : forall(y:Nat)(x:Nat)(p:lt x y = True).x < y
 proof lt_ord = \(y:Nat)(x:Nat)(p:lt x y = True) =>
   termcase x {x_eq} of
-   |  abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+      abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
                    u2 [u2_eq] = aborts (lt ~x_eq y)
                in contraabort u2 u1
    | ! -> termcase y {y_eq} of
-           | abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
+             abort -> let u1 [u1_eq] = conv value True at ~(sym p)!;
                           u2 [u2_eq] = aborts (lt x ~y_eq)
                       in contraabort u2 u1
            | ! -> lt_ord_term y y_eq x x_eq  p
@@ -252,7 +254,7 @@ proof lt_ord = \(y:Nat)(x:Nat)(p:lt x y = True) =>
 
 
 theorem not_ord_z : forall(x:Nat)(xterm:x!)(u:x < Z). True = False
-proof ind not_ord_z (x:Nat)[xterm] =
+proof ind not_ord_z (x:Nat){xterm} =
   \ (u:x < Z) =>
     case x {x_eq} xterm of
       Z -> contra
@@ -263,7 +265,7 @@ proof ind not_ord_z (x:Nat)[xterm] =
 axiom ordinj : forall(x:Nat)(y:Nat)(u:(S x) < (S y)). x < y
 
 theorem ord_lt : forall(y:Nat)(yterm:y!)(x:Nat)(xterm:x!)(p:x < y). lt x y = True
-proof ind ord_lt (y:Nat)[yterm] =
+proof ind ord_lt (y:Nat){yterm} =
   \(x:Nat)(xterm:x!)(p:x < y) =>
    case y {y_eq} yterm of
      Z -> contra
@@ -285,7 +287,7 @@ prog le = rec le (x:Nat) . \(y:Nat) ->
 
 
 theorem lt_implies_le_term : forall(x:Nat)(xterm:x!)(y:Nat)(yterm:y!)(p:lt x y = True).le x y = True
-proof ind lt_implies_le_term (x:Nat) [xterm] = \(y:Nat)(yterm:y!)(p:lt x y = True) =>
+proof ind lt_implies_le_term (x:Nat) {xterm} = \(y:Nat)(yterm:y!)(p:lt x y = True) =>
   case x {xeq} xterm of
     Z -> morejoin {sym xeq} : le x y = True
   | S x' -> case y {yeq} yterm of
@@ -337,10 +339,10 @@ prog rec div (x:Nat) = \(y:Nat) ->
 
 -- The the two arguments to le are terminating, the application terminates.
 theorem le_term : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(le m n)!
-proof ind le_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
-   case m {m_eq} m_term of
+proof ind le_term (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
+   case m {m_eq} m_term of -- Z = m
       Z -> let l1 [l1_eq] = join 100 100 : True = le Z n;
-               l2 [l2_eq] = conv value True at (~l1)!
+               l2 [l2_eq] = conv value True at (~l1)! -- (le Z n) !
            in conv l2 at (le ~m_eq n)!
       | S m' -> case n {n_eq} n_term of
                   Z -> let l1 [l1_eq] = join 100 100 : False = le (S m') Z;
@@ -353,7 +355,7 @@ proof ind le_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
 
 -- Another version, using morejoin
 theorem le_term' : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(le m n)!
-proof ind le_term' (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
+proof ind le_term' (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
    case m {m_eq} m_term of
       Z -> let l1 [l1_eq] = morejoin {sym m_eq} : True = le m n
            in conv value True at (~l1)!
@@ -459,7 +461,7 @@ proof minus_zero_id = \ (x:Nat)(x_term:x!)  =>
 
 
 theorem le_x_x : forall(x:Nat)(x_term:x !).le x x = True
-proof ind le_x_x (x:Nat) [x_term] =
+proof ind le_x_x (x:Nat) {x_term} =
    case x { x_eq } x_term of
      Z -> morejoin {sym x_eq}
    | S x' -> let u [u_eq] = join 10 10 : le (S x') (S x') = le x' x';
@@ -470,7 +472,7 @@ proof ind le_x_x (x:Nat) [x_term] =
 
 theorem le_trans_term : forall(x:Nat)(x_term:x !)(y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
   (p1:le x y = True)(p2:le y z = True).le x z = True
-proof ind le_trans_term (x:Nat) [x_term] = \ (y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
+proof ind le_trans_term (x:Nat) {x_term} = \ (y:Nat)(y_term:y!)(z:Nat)(z_term:z!)
   (p1:le x y = True)(p2:le y z = True) =>
     case x { x_eq } x_term of
        Z -> morejoin {sym x_eq}
@@ -518,7 +520,7 @@ proof le_trans = \(x:Nat)(y:Nat)(z:Nat)(p1:le x y = True)(p2:le y z = True) =>
 
 
 theorem le_n_Sn : forall(n:Nat)(n_term:n !).le n (S n) = True
-proof ind le_n_Sn (n:Nat) [n_term] =
+proof ind le_n_Sn (n:Nat) {n_term} =
       case n { n_eq } n_term of
            Z -> morejoin {sym n_eq}
          | S n' -> let ih [ih_eq] = le_n_Sn n' (ord n_eq);
@@ -528,7 +530,7 @@ proof ind le_n_Sn (n:Nat) [n_term] =
 
 
 theorem lt_n_Sn : forall(n:Nat)(n_term:n !).lt n (S n) = True
-proof ind lt_n_Sn (n:Nat) [n_term] =
+proof ind lt_n_Sn (n:Nat) {n_term} =
       case n { n_eq } n_term of
            Z -> morejoin {sym n_eq}
          | S n' -> let ih [ih_eq] = lt_n_Sn n' (ord n_eq);
@@ -556,7 +558,7 @@ proof le_Sy = \ (x:Nat)(y:Nat)(y_term:y!)(p:le x y = True) =>
 -- x - y < x
 theorem minus_lt : forall(x:Nat)(x_term:x !)(y:Nat)(y_term:y!)(p:le y x= True).
         le (minus x y) x = True
-proof ind minus_lt (x:Nat) [x_term] = \ (y:Nat)(y_term:y!)(p:le y x = True) =>
+proof ind minus_lt (x:Nat) {x_term} = \ (y:Nat)(y_term:y!)(p:le y x = True) =>
   case y { y_eq } y_term of
     Z -> let u [u_eq] = minus_zero_id x x_term;  --  x - Z = x
              u1 [u1_eq] = le_x_x x x_term; -- le x x = True
@@ -583,7 +585,7 @@ proof ind minus_lt (x:Nat) [x_term] = \ (y:Nat)(y_term:y!)(p:le y x = True) =>
 
 
 theorem plus_z_right_term : forall(m:Nat)(m_term:m!).plus m Z = m
-proof ind plus_z_right_term (m:Nat) [m_term] =
+proof ind plus_z_right_term (m:Nat) {m_term} =
   case m {m_eq} m_term of
     Z -> let u1 [u1_eq] = join 100 100 : plus Z Z = Z
          in conv u1 at plus ~m_eq Z = ~m_eq
@@ -604,7 +606,7 @@ proof plus_z_right = \(m:Nat) =>
 
 theorem minus_lt_term :
   forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(p:lt m (S n) = False).lt (minus m (S n)) m = True
-proof ind minus_lt_term (m:Nat) [m_term] = \(n:Nat)(n_term:n!)(p:lt m (S n) = False) =>
+proof ind minus_lt_term (m:Nat) {m_term} = \(n:Nat)(n_term:n!)(p:lt m (S n) = False) =>
   case m { m_eq } m_term of
      Z -> let u1 [u1_eq] = morejoin {sym m_eq} :  lt m (S n) = True
           in contra (conv u1 at ~p = True)
@@ -649,7 +651,7 @@ theorem unroll_mult : forall(m:Nat)(n:Nat).times (S m) n = plus n (times m n)
 proof unroll_mult = \(m:Nat)(n:Nat) => join 10 10
 
 theorem plus_mono : forall(l:Nat)(l_term:l!)(m:Nat)(n:Nat)(p:le m n = True).le (plus l m) (plus l n) = True
-proof ind plus_mono (l:Nat)[l_term] = \(m:Nat)(n:Nat)(p:le m n = True) =>
+proof ind plus_mono (l:Nat){l_term} = \(m:Nat)(n:Nat)(p:le m n = True) =>
       case l { l_eq } l_term of
          Z -> let u1 [u1_eq] = morejoin {sym l_eq} : plus l m = m;
                   u2 [u2_eq] = morejoin {sym l_eq} : plus l n = n
@@ -668,7 +670,7 @@ proof ind plus_mono (l:Nat)[l_term] = \(m:Nat)(n:Nat)(p:le m n = True) =>
 
 
 theorem plus_minus_id : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(p:lt m n = False).plus n (minus m n) = m
-proof ind plus_minus_id (m:Nat)[m_term] = \(n:Nat)(n_term:n!)(p:lt m n = False) =>
+proof ind plus_minus_id (m:Nat){m_term} = \(n:Nat)(n_term:n!)(p:lt m n = False) =>
   case n {n_eq} n_term of
     Z -> let u1 [u1_eq] = join 10 10 : plus Z (minus m Z) = minus m Z;
              u2 [u2_eq] = minus_zero_id m m_term : minus m Z = m
@@ -686,7 +688,7 @@ proof ind plus_minus_id (m:Nat)[m_term] = \(n:Nat)(n_term:n!)(p:lt m n = False) 
 
 
 theorem div_term : forall(m:Nat)(m_term:m !)(n:Nat)(n_term:n!).div m (S n) !
-proof ind div_term (m:Nat) [m_term] = \ (n:Nat)(n_term:n!) =>
+proof ind div_term (m:Nat) {m_term} = \ (n:Nat)(n_term:n!) =>
    case lt m (S n) {lt_eq} (lt_term m m_term (S n) (term_s n n_term)) of
      True -> let u1 [u1_eq] = morejoin {sym lt_eq} : div m (S n) = Z
              in conv value Z at ~(sym u1) !
@@ -703,7 +705,7 @@ proof ind div_term (m:Nat) [m_term] = \ (n:Nat)(n_term:n!) =>
 
 theorem div_upper_bound :
   forall (m:Nat)(m_term:m!)(n:Nat)(n_term:n!).le (times (div m (S n)) (S n)) m = True
-proof ind div_upper_bound (m:Nat) [m_term] = \(n:Nat)(n_term:n!) =>
+proof ind div_upper_bound (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
    case lt m (S n) {lt_eq} lt_term m m_term (S n) (term_s n n_term) of
       True -> let u1 [u1_eq] = morejoin {sym lt_eq} : (div m (S n)) = Z;
                   u2 [u2_eq] = join 10 10  : times Z (S n) = Z;
