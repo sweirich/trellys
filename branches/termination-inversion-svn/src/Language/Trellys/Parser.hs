@@ -5,7 +5,9 @@ module Language.Trellys.Parser
   (
    parseModuleFile,
    parseModule,
-   parseExpr
+   parseExpr,
+   testParser,
+   variable
   )
   where
 
@@ -190,6 +192,7 @@ trellysStyle = Token.LanguageDef
                   ,"with"
                   ,"abort"
                   ,"contra"
+                  ,"halt"
                   ,"conv", "by", "at"
                   ,"let", "in"
                   ,"prog", "log"
@@ -441,6 +444,7 @@ factor = choice [ varOrCon <?> "an identifier"
                 , abort     <?> "abort"
                 , caseExpr  <?> "a case"
                 , convExpr  <?> "a conv"
+                , haltExpr  <?> "a termination inversion"
                 , join      <?> "a join"
                 , at        <?> "an @"
                 , termCase  <?> "a termcase"
@@ -585,6 +589,25 @@ convExpr = do
                       <|>
                       do tm <- expr
                          return (False,tm)
+
+-- Need
+-- - e!: a proof that e halts
+-- - e': a subexpression of e (in an eval'd position)
+-- - x . c : a context s.t. e = subst [x -> e'] c
+--                     and  x is evaluated in c
+--
+-- halt e' by e! at x . e[x/e']
+haltExpr :: LParser Term
+haltExpr = do
+  reserved "halt"
+  a <- expr
+  reserved "by"
+  b <- expr
+  reserved "at"
+  x <- variable
+  dot
+  c <- expr
+  return $ Halt a b (bind x c)
 
 contra :: LParser Term
 contra = do

@@ -104,6 +104,9 @@ data Term = Var TName    -- | variables
           | TerminationCase Term (Bind TName (Term, (Bind TName Term)))    -- Proof
           -- | Derived form: assertion that t1 of type t2 terminates
 
+          -- | Termination inversion: halt e' by h at x . c
+          | Halt Term Term (Bind TName Term)
+
           
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables

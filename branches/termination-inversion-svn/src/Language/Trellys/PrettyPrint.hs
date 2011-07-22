@@ -327,6 +327,15 @@ instance Display Term where
       where displayErased (True,pf) = liftM brackets $ display pf
             displayErased (False, pf) = display pf
 
+  display (Halt a b bnd) =
+    lunbind bnd $ \(x,c) -> do
+      da <- display a
+      db <- display b
+      dx <- display x
+      dc <- display c
+      return $ fsep [text "halt" <+> da,
+                    text "by" <+> db,
+                    text "at" <+> dx  <+> text "." <+> dc]
 
   display (TyEq a b)   = do
       da <- display a
