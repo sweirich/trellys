@@ -1,6 +1,7 @@
+
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
 NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
-PackageImports,ParallelListComp #-}
+PackageImports #-}
 
 module Language.SepPP.TypeCheck where
 
@@ -8,7 +9,6 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 import Language.SepPP.Eval
 import Language.SepPP.TCUtils
-import Language.SepPP.Options
 
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -19,17 +19,16 @@ import Data.Typeable
 
 import "mtl" Control.Monad.Reader hiding (join)
 import "mtl" Control.Monad.Error hiding (join)
-import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
 import Data.List(nubBy, nub, (\\))
-import qualified Data.Map as M
+
 
 
 typecheck :: Module -> IO (Either TypeError ())
 typecheck mod = do
-  runErrorT $ runFreshMT $ runReaderT (evalStateT (runTCMonad (typecheckModule mod)) flagMap) emptyEnv
+  runErrorT $ runFreshMT $ runReaderT (runTCMonad (typecheckModule mod)) emptyEnv
 
 -- * Running the typechecker.
 
@@ -44,11 +43,8 @@ data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
             | ProofResult EName Expr Expr Bool
             | ProgResult EName Expr Expr Bool
             | AxiomResult EName Expr
-            | FlagResult String Bool
 
 -- | Typecheck a single definition
-
-checkDef (FlagDecl nm b) = return $ FlagResult nm b
 
 checkDef (AxiomDecl nm theorem) = do
   lk <- predSynth' theorem
@@ -133,7 +129,7 @@ checkDefs (d:ds) = do
   extendBinding' d (checkDefs ds)
 
   where extendBinding' (ProofResult n ty def v) comp =
-          extendBinding n ty v comp
+          extendDefinition n ty def v comp
         extendBinding' (AxiomResult n ty) comp =
           extendBinding n ty False comp
         extendBinding' (ProgResult n ty def v) comp =
@@ -142,16 +138,8 @@ checkDefs (d:ds) = do
           extendTypeCons n tele cs $
           extendBinding n (teleArrow tele Type) True $
                         foldr (\(n,(arity,ty)) m ->
-                                 extendBinding n (teleArrow (staticTele tele) ty) True m)
+                                 extendBinding n (teleArrow tele ty) True m)
                               comp cs
-        extendBinding' (FlagResult n val) comp = do
-           setFlag n val
-           comp
-        staticTele Empty = Empty
-        staticTele (TCons binding) =
-            TCons (rebind (n,Static,ty) (staticTele body))
-          where ((n,_,ty),body) = unrebind binding
-
 
 
 
@@ -319,11 +307,10 @@ check mode term@(App t0 stage t1) expected = do
   case (mode, down ty0) of
     (ProgMode, Pi piStage binding) -> do
         unless (piStage == stage) $ do
-           typeError "The stage for the arrow does not match the stage for the application"
-                        [(text "Arrow stage:",disp piStage),
-                         (text "Application stage", disp stage)]
-                 -- "Stage" <++> show piStage <++>  "for arrow" <++>
-                 --  "does not match stage for application " <++> show stage
+           typeError ("A function expects a " ++ show piStage ++ " argument, but a " 
+                      ++ show stage ++ " argument was supplied.")
+             [(text "The function:",disp t0),
+              (text "The argument:", disp t1)]
 
         ((x,Embed dom),body) <- unbind binding
         cls <- getClassification dom
@@ -464,9 +451,8 @@ check mode (Case s pf binding) expected = do
             maybe (typeError "When checking a case alternative, can't find constructor"  [(text "The Constructor", disp cons)])
                   return (lookup (string2Name cons) cs)
 
-          stages <- getStages ctype
-          let pat = foldl (\t0 (t1,stage) -> (App t0 stage t1))
-                      (Con (string2Name cons)) ([(a,Static) | a <- args] ++ [(Var v, st) | v <- vars | st <- stages])
+          let pat = foldl (\t0 t1 -> (App t0 Dynamic t1))
+                      (Con (string2Name cons)) (args ++ (map Var vars))
 
           substPat vars ctype $
             extendBinding eqpf (Equal pat s) True  $ check mode body expected
@@ -483,12 +469,6 @@ check mode (Case s pf binding) expected = do
                    "a pi-type.")
                   [(text "The Type", disp ty)]
 
-        getStages (Pos _ t) = getStages t
-        getStages (Pi st binding) = do
-          ((n',_),body) <- unbind binding
-          vs <- getStages body
-          return $ st:vs
-        getStages _ = return []
 
 
 
@@ -511,28 +491,21 @@ check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
 -- MoreJoin
 
 check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
-  (rs,ts) <- checkProofs ps
-  withTermProofs ts $ withRewrites rs (join 10000 10000 t0 t1)
+  rs <- checkRewrites ps
+  withRewrites rs (join 10000 10000 t0 t1)
   return eq
 
-  where checkProofs [] = return ([],[])
-        checkProofs (p:ps) = do
+  where checkRewrites [] = return []
+        checkRewrites (p:ps) = do
           ty <- check ProofMode p Nothing
           case down ty of
             Equal t1 t2 -> do
                          et1 <- erase t1
                          et2 <- erase t2
-                         (rs,ts) <- checkProofs ps
-                         return ((et1,et2):rs,ts)
-
-            Terminates t -> do
-                (rs,ts) <- checkProofs ps
-                t' <- erase t
-                return (rs,t':ts)
-
+                         rs <- checkRewrites ps
+                         return ((et1,et2):rs)
             ty -> typeError
-                    ("Term does not have the correct type to be used as a morejoin rewrite." <++>
-                    "It must either be a equality or termination proof.")
+                    "Term does not have the correct type to be used as a morejoin rewrite."
                       [(text "The Expr", disp p),
                        (text "The Type", disp ty)]
 
@@ -567,7 +540,7 @@ check ProofMode (t@(Val x)) expected = do
         then do let ans = Terminates (down term)
                 ans `sameType` expected
                 return ans
-        else do die $ "Non Value:" <++> t
+        else  do die $ "Non Value:" <++> t
 
 
 
@@ -635,10 +608,6 @@ check ProgMode (Abort t) Nothing = do
 
 -- ConvCtx
 check mode (ConvCtx p ctx) expected = do
-  unless (okCtx ctx) $
-   typeError "In conv context, an explicit equality is used in an unerased position"
-     [(text "The context", disp ctx)]
-
   ensure (mode `elem` [ProofMode,ProgMode]) $
          "Can't do conversion in mode" <++> show mode
   let submode = case mode of
@@ -646,7 +615,6 @@ check mode (ConvCtx p ctx) expected = do
                   ProgMode -> ProgMode
                   _ -> error "Unreachable case in check of ConvCtx def."
   l <- copyEqualInEsc LeftContext ctx
-
   lty <- withErrorInfo
            "When checking the left hand side of a context."
            [(text "The context", disp l)] $
@@ -720,38 +688,38 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
   (p1@(fun,_,witness),_) <- unbind prfBinding
   (a1,Forall predBinding') <- clean $ unbind predBinding
 
-  ((f,tele,u),prfBody) <- unbind prfBinding
-  (args,rest) <- pairTelePrf tele res
+  ((witness',Embed (Terminates x)),pred) <- clean $ unbind predBinding'
 
+  Just ((f,(x,Embed t1), u),proofBody,(f',(x',Embed t1'), u'),predBody)
+    <- unbind2 prfBinding (bind (fun,a1,witness') pred)
 
-  case (reverse args, down rest) of
-    ((iarg,iargTy):rargs,Forall predBody) -> do
-      -- FIXME: Check to make sure targ == Terminates iarg
-      ((targ,Embed tyTArg'),predBody) <- unbind predBody
-      let xvar = Var iarg
-          y = string2Name "y"
-          yvar = Var y
-          fty = foldr (\(n,ty) r -> Forall (bind (n,Embed ty) r))
-                      (Forall (bind (u,Embed (IndLT yvar (Var iarg)))
-                              (subst iarg yvar predBody)))
-                      (reverse ((y,iargTy):rargs))
+  -- TODO: Add a few more checks of consistency
+  -- dty <- disp ty
+  -- dPredTy <- disp predTy
+  -- unless (ty `aeq` predTy) $
+  --        err $ "Type " ++ render dty ++ " ascribed to lambda bound variable " ++
+  --              " does not match type " ++ render dPredTy ++
+  --              " ascribed to pi-bound variable."
 
-      extendBinding f fty True $
-        foldr (\(arg,ty) m -> extendBinding arg ty False m)
-            (extendBinding u (Terminates xvar) True $
-              check ProofMode prfBody (Just predBody))
-            args
-    _ -> typeError ("FIXME: Figure out a good error message for" <++>
-                     "when an ind doesn't take a termination argument.")
-                     []
+  let xvar = Var x
+      y = string2Name "y"
+      yvar = Var y
+  let fty = Forall (bind (y,Embed t1) -- FIXME: should take t2 as a parameter.
+                           (Forall (bind (u,Embed (IndLT yvar xvar))
+                                         (subst x yvar predBody))))
+  extendBinding x t1 False $
+   extendBinding u (Terminates xvar) True $
+    extendBinding f fty True $ proofAnalysis' proofBody predBody
 
   return res
 
 
 -- Rec
 
+check ProgMode r@(Rec progBinding) (Just res@(Pi Dynamic piBinding)) = do -- Term_Rec
+  -- FIXME: This is a hack, because there are different number of binders in the
+  -- Rec and Pi forms, which doesn't seem to play well with unbind2.
 
-check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Term_Rec
   let pairTele tele (Pos _ t) = pairTele tele t
       pairTele Empty body = return ([],body)
       pairTele (TCons teleBinding) (Pi stage binding) = do
@@ -774,7 +742,6 @@ check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Ter
                          pairTele rest (subst piName (Var teleName) piBody)
         return ((teleName,teleTy):args,body')
 
-  -- FIXME: Surely some check on the stage is needed.
   ((f,tele),recBody) <- unbind progBinding
   (args,range) <- pairTele tele res
   -- emit $ "Rec type" <++> res
@@ -812,10 +779,8 @@ check ProgMode (Escape t) expected = do
       ty <- typeSynth' t
       case down ty of
         Equal (Abort _) e -> typeSynth' e
-        _ -> typeError ("In strict context, witness of abort" <++>
-                         "equality is not of the type 'abort = t'")
-               [(text "The term",disp t)
-                ,(text "The inferred type", disp ty)]
+        _ -> die $ "In strict context, witness of abort" <++>
+                      ty <++> "equality is ill-formed."
 
 
 
@@ -1025,9 +990,8 @@ isProof (TerminationCase scrutinee binding) =
     isTerm scrutinee && isProof p0 && isProof p1
   where (pf,(p0,p1)) = unsafeUnbind binding
 
--- FIXME: Checking the telescope is not quite right.
-isProof (Ind binding) = isTermTele tele &&  isProof body
-  where ((f,tele,opf),body) = unsafeUnbind binding
+isProof (Ind binding) = isTerm ty &&  isProof body
+  where ((f,(n,Embed ty),opf),body) = unsafeUnbind binding
 isProof (Contra p) = isProof p
 isProof (ContraAbort p0 p1) = isProof p0 && isProof p1
 isProof (Ann p pred) = isProof p && isPred pred
@@ -1093,27 +1057,12 @@ require p cls t =
 
 -- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
-  -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
   -- s2 <- substDefs t2
   t1' <- eval lSteps t1
   t2' <- eval rSteps t2
-  -- Top level definitions cause problems with alpha equality. Try to subsitute
-  -- those in...
-  s1 <- substDefsErased t1'
-  s2 <- substDefsErased t2'
-
-  unless (s1 `aeq` s2) $
-         typeError "Terms are not joinable."
-                   [(text "LHS steps", integer lSteps)
-                   ,(text "RHS steps", integer rSteps)
-                   ,(text "Original LHS", disp t1)
-                   ,(text "Original RHS", disp t2)
-                   ,(text "Reduced LHS", disp t1')
-                   ,(text "Reduced RHS", disp t2')
-                   ,(text "Substituted LHS", disp s1)
-                   ,(text "Substituted RHS", disp s2)
-                   ]
+  ensure (t1' `aeq` t2') $
+         t1' $$$ "and" $$$ t2' $$$  "are not joinable."
 
   return (Equal t1 t2)
   -- unless (t1 `aeq` t2) $ err "Terms not joinable"
@@ -1150,14 +1099,7 @@ escCopy f t = everywhereM (mkM f') t
         f' t = return t
 
 copyEqualInEsc b x = escCopy f x
- where f (Equal l r) = case b of
-                         LeftContext -> return l
-                         RightContext -> return r
-                         _ -> throwError $ strMsg $ "Copy can't reach this."
-
-
-       f (Pos _ t) = f t
-       f t  = do ty <- proofSynth' t
+ where f t  = do ty <- proofSynth' t
                  case down ty of
                   (Equal l r) ->
                      case b of
@@ -1199,48 +1141,4 @@ checkCaseCoverage tyS alts = do
 
 
 
-
-
-
-pairTele tele (Pos _ t) = pairTele tele t
-pairTele Empty body = return ([],body)
-pairTele (TCons teleBinding) (Pi stage binding) = do
-        ((piName,Embed piTy),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy),rest) = unrebind teleBinding
-        piMode <- getClassification piTy
-        check (classToMode piMode) piTy Nothing
-        teleMode <- getClassification teleTy
-        check (classToMode teleMode) teleTy Nothing
-
-
-        unless (teleTy `aeq` piTy) $
-               typeError ("The type ascribed to a Rec-bound variable does not" <++>
-                         "the type ascribed to the associated Pi bound variable")
-               [(text "The Rec argument type", disp teleTy)
-               ,(text "The Pi argument type", disp piTy)]
-        (args,body') <- extendBinding teleName teleTy False $
-                         pairTele rest (subst piName (Var teleName) piBody)
-        return ((teleName,teleTy):args,body')
-
-pairTele tele ps = typeError (show tele ++ "\n" ++ show ps) []
-
-pairTelePrf tele (Pos _ t) = pairTelePrf tele t
-pairTelePrf Empty body = return ([],body)
-pairTelePrf (TCons teleBinding) (Forall binding) = do
-        ((piName,Embed piTy),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy),rest) = unrebind teleBinding
-        piMode <- getClassification piTy
-        check (classToMode piMode) piTy Nothing
-        teleMode <- getClassification teleTy
-        check (classToMode teleMode) teleTy Nothing
-
-
-        unless (teleTy `aeq` piTy) $
-               typeError ("The type ascribed to a Rec-bound variable does not" <++>
-                         "the type ascribed to the associated Pi bound variable")
-               [(text "The Rec argument type", disp teleTy)
-               ,(text "The Pi argument type", disp piTy)]
-        (args,body') <- extendBinding teleName teleTy False $
-                         pairTelePrf rest (subst piName (Var teleName) piBody)
-        return ((teleName,teleTy):args,body')
 

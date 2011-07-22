@@ -53,14 +53,12 @@ Library
     Language.SepPP.TypeCheck
     Language.SepPP.TCUtils
     Language.SepPP.Eval
-    Language.SepPP.Options
 
   -- Packages needed in order to build this package.
   Build-depends:
     base,
     unbound,
-    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0, containers,
-    cmdargs
+    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0, containers
 
   -- Modules not exported by this package.
   -- Other-modules:

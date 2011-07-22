@@ -134,11 +134,11 @@ withPrec i m = do
      else return $ dm
 
 instance Rep a => Display (Name a) where
-  display = return . text . name2String
+  display = return . text . show
 
 instance Display Expr where
-  display (Var n) = return $ text $ name2String n
-  display (Con n) = return $ text $ name2String n
+  display (Var n) = return $ text $ show n
+  display (Con n) = return $ text $ show n
   display (Formula 0) = return $ text "Form"
   display (Formula n) = return $ text "Form" <+> integer n
   display Type = return $ text "Type"
@@ -184,10 +184,10 @@ instance Display Expr where
    lunbind binding $ \(consEq,alts) -> do
     dScrutinee <- display scrutinee
     dConsEq <- braces <$> display consEq
-    dTermWitness <- maybe (return empty) display termWitness
+    dTermWitness <- maybe (return empty) (\v -> brackets <$> display v) termWitness
     dAlts <- mapM dAlt alts
     return $ text "case" <+> dScrutinee <+> dConsEq <+> dTermWitness <+> text "of" $$
-             nest 2 (vcat dAlts)
+             nest 2 (braces $ vcat $ punctuate semi dAlts)
 
     where dAlt alt = do
             lunbind alt $ \((con,pvars),body) -> do
@@ -215,7 +215,7 @@ instance Display Expr where
   display (t@(Equal t0 t1)) = do
                      d0 <- dParen (precedence t) t0
                      d1 <- dParen (precedence t) t1
-                     return $ fsep [d0, text "=", d1]
+                     return $ d0 <+> text "=" <+> d1
 
   display (w@(Val t)) = do
     d <- termParen (precedence w) t
@@ -245,7 +245,7 @@ instance Display Expr where
       dTy <- display ty
       dt <- display t
       dPfs <- mapM display pfs
-      return $ fsep ([text "conv" <+> dt, text "by"] ++
+      return $ sep ([text "conv" <+> dt, text "by"] ++
                     (punctuate comma dPfs) ++
                     [text "at"] ++
                     dVars ++
@@ -255,7 +255,7 @@ instance Display Expr where
   display (ConvCtx t ctx) = do
     dt <- display t
     dctx <- display ctx
-    return $ fsep [text "conv",nest 5 dt,text "at",nest 3 dctx]
+    return $ sep [text "conv" <+> nest 5 dt,text "at" <+> nest 3 dctx]
 
 
   display (Escape t) = do
@@ -281,15 +281,14 @@ instance Display Expr where
 
 
   display (Ind binding) = do
-   lunbind binding $ \((f,tele,u),body) -> do
+   lunbind binding $ \((f,(x,ty),u),body) -> do
      df <- display f
-     -- dx <- display x
-     -- dTy <- display ty
-     dtele <- display tele
+     dx <- display x
+     dTy <- display ty
      dBody <- display body
      du <- display u
      return $
-      fsep [text "ind" <+> df <+> dtele <+>
+      sep [text "ind" <+> df <+> parens (dx <+> colon <+> dTy) <+>
            brackets du <+> text ".",
            nest 2 dBody]
 
@@ -324,7 +323,7 @@ instance Display Expr where
   display (t@(Ann t0 t1)) = do
     d0 <- dParen (precedence t) t0
     d1 <- dParen (precedence t) t1
-    return $ fsep [d0, colon, nest 2 d1]
+    return $ d0 <+> colon <+> d1
 
 
   display (Pos _ t) = display t
@@ -450,14 +449,13 @@ instance Display EExpr where
     df <- display f
     dx <- mapM display args
     dbody <- etermParen (precedence t) body
-    -- return $ text "rec" <+> df <+> (hcat dx) <+> text "." <+> dbody
-    return df
+    return $ text "rec" <+> df <+> (hcat dx) <+> text "." <+> dbody
 
   display t@(ELambda binding) =  do
     lunbind binding $ \(x,body) -> do
     dx <- display x
     dbody <- etermParen (precedence t) body
-    return $ fsep [text "\\" <+> dx <+> text ".",nest 2 dbody]
+    return $ text "\\" <+> dx <+> text "." <+> dbody
 
   display t@(ECase s alts) = do
     ds <- display s
@@ -468,7 +466,7 @@ instance Display EExpr where
            lunbind alt $ \((c,pvars),body) -> do
            dbody <- display body
            dpvars <- mapM display pvars
-           return $ fsep $ [text c <+> hsep dpvars <+> text "->", nest 2 dbody]
+           return $ text c <+> hcat dpvars <+> text "->" <+> dbody
 
   display t@(ELet binding) = do
      lunbind binding $ \((n,t),body) -> do

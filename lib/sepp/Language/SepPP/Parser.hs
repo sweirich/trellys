@@ -2,7 +2,6 @@
 module Language.SepPP.Parser where
 
 import Language.SepPP.Syntax
-import Language.SepPP.Options
 
 import Unbound.LocallyNameless hiding (name,Infix,Val,Con)
 
@@ -52,7 +51,7 @@ sepModule = do
 
 -- | Top-level binding
 -- sepBinding :: Parser Binding
-sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|> sepFlag
+sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl
 
 sepProgDecl = do
   (n,ty) <- sig
@@ -93,12 +92,11 @@ sepProofDecl = do
        indDecl = do
           reserved "ind"
           f <- exprName
-          tele <- telescope
-          -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-          u <- braces exprName
+          (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+          u <- brackets exprName
           reservedOp "="
           body <- expr
-          return $ (f,Ind (bind (f,tele,u) body))
+          return $ (f,Ind (bind (f,(x,Embed ty),u) body))
 
 
 sepDataDecl = do
@@ -146,8 +144,7 @@ sepPPStyle = haskellStyle {
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
             "let","in",
-            "sym","symm","trans","refl",
-            "set" -- for flags
+            "sym","symm","trans","refl"
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
            }
@@ -379,18 +376,17 @@ recExpr = do
 indExpr = do
   reserved "ind"
   f <- exprName
-  -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-  tele <- telescope
-  u <- braces exprName
+  (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+  u <- brackets exprName
   reservedOp "."
   body <- expr
-  return $ Ind (bind (f,tele,u) body)
+  return $ Ind (bind (f,(x,Embed ty),u) body)
  <?> "Rec expression"
 
 
 letdecls =
   semiSep1 (do x <- string2Name <$> identifier
-               y <- brackets (string2Name <$> identifier) <?> "name for let-binding equality"
+               y <- brackets (string2Name <$> identifier)
                reservedOp "="
                z <- expr
                return(x,y,z))
@@ -521,14 +517,4 @@ telescope = do
 
 
 
--- Flag handling
-sepFlag = do
-  reserved "flag"
-  id <- identifier
-  unless (id `elem` map fst flags) $
-    unexpected $ id ++ " is an unknown flag." ++ "\n" ++
-                 "Valid Flags:\n" ++
-                 unlines (map fst flags)
-  b <- ((reserved "true" >> return True) <|> (reserved "false" >> return False))
-  return $ FlagDecl id b
-  <?> "flag"
+
