@@ -83,6 +83,8 @@ varEq2 = (delPosParenDeep  $ parse "x") `aeq` (delPosParenDeep  $ parse "x")
 -- False: there's position info
 varEq3 = parse "x" `aeq` parse "x"
 
+conEq1 = (nakedParse "(x : Nat)") `aeq` (nakedParse "x")
+
 -- True
 lamEq1 = (Lam Runtime $ bind (s2n "x") (nakedParse "x"))
    `aeq` (Lam Runtime $ bind (s2n "y") (nakedParse "y"))

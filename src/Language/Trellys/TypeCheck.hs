@@ -601,6 +601,61 @@ ts tsTh tsTm =
                DS "expression is."]
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
+    -- halt e' by t at x . body : Exists' T' (\x . x = e')
+    ts' th (Halt e' t bnd) = do
+      -- Check e' as a Program: we don't need to prove termination for Logic terms
+      (ee', e'ty) <- ts Program e'
+      (et, tty) <- ts Logic t
+
+      -- Does t have type Exists' T (\x.b) for some T and b?
+      let dtty = delPosParenDeep tty
+          (App Runtime (App Runtime (Con exists') (Con ety)) (Lam Runtime eqBnd)) = dtty
+      unless (exists' `aeq` string2Name "Exists'") $
+        err [DS "Wrong type: ", DD exists']
+
+      -- Does t prove that e terminates, for some e?
+      (y,TyEq (Var y') e) <- unbind eqBnd
+      unless (y `aeq` y') $
+        err [DS "Wrong variable in equality:", DD y, DS "/=", DD y']
+
+      -- Does e = body[e'/x] ?
+      -- ??? Should we elaborate body to ebody instead (we use ee' below)?
+      (x,body) <- unbind bnd
+      -- ??? Why use ee' instead of e'?
+      unless (e `aeqSimple` subst x ee' body) $
+        err [DS "Substitution not equal:", DD e, DS "/=", DD $ subst x ee' body]
+
+      -- Does x occur strictly in body ?
+      strict <- strictBinding bnd
+      unless strict $
+        err [DS "Binding of", DD x, DS "is not strict in", DD body]
+
+      -- Build AST for return type: Exists' T' (\x . x = e')
+      x' <- fresh $ string2Name "x"
+      let ty =  (App Runtime (App Runtime (Con (string2Name "Exists'")) (e'ty))
+                             (Lam Runtime (bind x' (TyEq (Var x') e'))))
+
+      -- ??? Could we return an Exists' *instance* here to make case
+      -- matching on Halt trivial?
+      return (Halt ee' et (bind x body), ty)
+     where
+      strictBinding :: Bind (Name Term) Term -> TcMonad Bool
+      strictBinding bnd = do
+        (x,e) <- unbind bnd
+        e'    <- erase e
+        translate x `isStrictIn` e'
+
+      isStrictIn :: EName -> ETerm -> TcMonad Bool
+      x `isStrictIn` e = i e where
+        -- 'i body' checks that 'x' is strict in 'body'
+        i (EVar y)     = return $ x == y
+        i (EApp f e)   = (||) <$> i f <*> i e
+        i (ECase e _)  = i e -- could be more complete by checking that x is evaluated in all branches ...
+        i (ETerminationCase e _) = i e
+        i (ELet e bnd) = do (_,body) <- unbind bnd
+                            (||) <$> i e <*> i body
+        i _            = return False
+
     ts' _ (At tyA th') = do 
       (ea, s) <- ts' th' tyA
       return (At ea th', s)
