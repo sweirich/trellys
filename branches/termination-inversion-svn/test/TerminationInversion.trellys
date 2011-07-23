@@ -1,0 +1,23 @@
+module TerminationInversion where
+
+import Prelude
+import ExtensionalEquality
+
+-- Proof that Z halts from assumption that S Z halts
+axiom t : Exists' Nat (\x . x = Succ Zero)
+
+x : Exists' Nat (\x . x = Zero)
+x = halt Zero by t at x . Succ x
+
+
+-- Proof that a programmatic expression halts from a proof that a
+-- function applied to it halts
+axiom prog f2 : Nat => Nat => Nat
+axiom prog e'2 : Nat
+axiom t2 : Exists' Nat (\x . x = f2 e'2 e'2)
+
+x2 : Exists' Nat (\x . x = e'2)
+x2 = halt e'2 by t2 at x . f2 x e'2
+
+x3 : Exists' Nat (\x . x = e'2)
+x3 = halt e'2 by t2 at x . f2 e'2 x

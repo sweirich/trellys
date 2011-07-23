@@ -1,0 +1,15 @@
+module Test_HaltStrictnessCheck where
+
+import Prelude
+import ExtensionalEquality
+
+axiom prog f2 : Nat => Nat => Nat
+axiom prog e'2 : Nat
+axiom t2 : Exists' Nat (\x . x = f2 e'2 e'2)
+
+prog loop : Unit -> Nat
+rec loop x = loop x
+
+x4 : Exists' Nat (\x . x = (loop U))
+-- x is not strict in f2 e'2 e'2
+x4 = halt (loop U) by t2 at x . f2 e'2 e'2
