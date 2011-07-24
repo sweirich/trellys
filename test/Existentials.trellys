@@ -1,0 +1,14 @@
+module Existentials where
+
+-- There are infinitely many sigma types in Trellys, since we don't
+-- have logicality, erasure, or universe polymorphism.  The schema is
+--
+--   Exists (T: Type n1) (P : (_:^t1_e1 T) -> Type n2) -> Type n3 where
+--     Ex : (w:^t1_e1 T) -> (_:^t2_e2 P w) -> Exists T P
+--
+-- where n1, n2, and n3 are type levels, e1 and e2 are erasures
+-- (epsilons), and t1 and t2 are logicalities (thetas).
+
+-- Here's our third n1 = n2 = n3 = 0 and e3 = + existential:
+data ExistsP1L0 (xTy:Type 0) (p:xTy => Type 0) -> Type 0 where
+  ExP1L0 : (x:xTy) => [p x] -> ExistsP1L0 xTy p
