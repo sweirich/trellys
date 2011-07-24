@@ -26,6 +26,34 @@ x3 = halt e'2 by t2 at x . f2 e'2 x
 x4 : ExistsP1L0 Nat (\x . x = f2 e'2 e'2)
 x4 = halt (f2 e'2 e'2) by t3 at x . f2 e'2 x
 
+data T (p:Nat -> Type 0) -> Type 0 where
+  C : (p Zero) -> T p
+
+axiom tt : T (\x . x = x)
+eq : Zero = Zero
+eq = case tt [_] of
+{-
+Type Error:
+TerminationInversion.trellys:35:42:
+  Sorry, I can't infer a type for:
+    \ x . x = x
+  Please add an annotation.
+-}
+--       C eqx -> let eqeq [_] = (join : ((\x . x = x) Zero) = (Zero = Zero))
+{-
+Type Error:
+TerminationInversion.trellys:37:25:
+  When checking term
+    eqx
+  against type
+    ((\ x . x = x) : ((_ : Nat) -> Type 0)) Zero
+  the distinct type
+    (\ x . x = x) Zero
+  was inferred, and it isn't a subtype:
+-}
+       C eqx -> let eqeq [_] = (join : (((\x . x = x) : (Nat -> Type 0)) Zero) = (Zero = Zero))
+                in conv eqx by eqeq at ty.ty
+
 n1 : Nat
 n1 = case x3 [_] of
       ExP1L0 x [p] -> x
@@ -38,13 +66,30 @@ n4 : Nat
 n4 = case x4 [_] of
        ExP1L0 x [p] -> x
 
-axiom p : Nat -> Type 0
+axiom p2 : Nat => Bool
+axiom l2 : (x:Nat) => p2 x = True
+
+-- The type "p2 (f2 e'2 e'2) = True" is OK, because the sides of an
+-- equality are checked programmatically.
+n6 : p2 (f2 e'2 e'2) = True
+n6 = case x4 [_] of
+       ExP1L0 x [leq] -> let [eq] [_] =
+                               conv leq
+                               by (join : ((\x . x = f2 e'2 e'2) : Nat -> Type 0) x
+                                        = (x = f2 e'2 e'2))
+                               at t . t
+                         in conv (l2 x) by eq at t . p2 t = True
+
+axiom p : Nat => Type 0
 axiom l : (x:Nat) => p x
 
-prog n5 : p (f2 e'2 e'2)
+-- The type "p (f2 e'2 e'2)" is excluded by the value restriction ...
+n5 : p (f2 e'2 e'2)
 n5 = case x4 [_] of
-       ExP1L0 x [leq] -> let eq [_] = conv leq x by (join : (\x . x = f2 e'2 e'2) x = (x = f2 e'2 e'2)) at t . t
-                         in conv (p x) by eq at t . t
+       ExP1L0 x [leq] -> let eq [_] = conv leq
+                                      by (join : (\x . x = f2 e'2 e'2) x = (x = f2 e'2 e'2))
+                                      at t . t
+                         in conv (l x) by eq at t . t
 
 -- Not sure about this one: should n2 really reduce to Zero? I.e.,
 -- should x3 really reduce to an ExP1L0 term?

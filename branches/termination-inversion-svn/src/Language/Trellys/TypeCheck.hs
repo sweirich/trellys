@@ -951,4 +951,5 @@ isTotal Program tm
 
 -- Alpha equality, dropping parens and source positions.
 aeqSimple :: Alpha t => t -> t -> Bool
-aeqSimple x y = delPosParenDeep x `aeq` delPosParenDeep y
+aeqSimple x y = d x `aeq` d y where
+  d = delAnnPosParenDeep -- was delPosParenDeep

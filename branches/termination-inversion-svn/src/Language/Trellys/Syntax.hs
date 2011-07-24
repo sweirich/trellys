@@ -118,9 +118,16 @@ delPosParen (Pos _ tm) = tm
 delPosParen (Paren tm) = tm
 delPosParen tm         = tm
 
+delAnnotation :: Term -> Term
+delAnnotation (Ann tm _) = tm
+delAnnotation tm = tm
+
 -- delPosParenDeep :: Term -> Term
 delPosParenDeep :: Rep a => a -> a
 delPosParenDeep = everywhere (mkT delPosParen)
+
+delAnnPosParenDeep :: Rep a => a -> a
+delAnnPosParenDeep = everywhere (mkT $ delAnnotation . delPosParen)
 
 
 -- | A Module has a name, a list of imports, and a list of declarations
