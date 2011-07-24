@@ -80,6 +80,18 @@ erase t@(TerminationCase a bnd)  = do
       eterm <- erase term
       return $ (ETerminationCase ea (bind (translate w)
          (eabort, (bind (translate v) eterm))))
+-- This is kind of a hack: we turn Halt expressions into Exists'
+-- instances so they can be scrutinized in case matches.
+
+--erase (Halt _ _ _) = do
+--  x <- EVar <$> fresh $ string2Name "x"
+--  return $ ECon (string2Name "Ex'") `EApp` EVar x `EApp` EJoin
+erase (Halt e' _ _) = do
+--  x <- EVar `fmap` fresh (string2Name "x")
+  ee' <- erase e'
+  __ <- fresh $ string2Name "_"
+  let x = ELam (bind __ ee')
+  return $ ECon (string2Name "ExP1L0") `EApp` x
 
 eraseMatch :: Match -> TcMonad EMatch
 eraseMatch (c,bnd) =

@@ -601,17 +601,17 @@ ts tsTh tsTm =
                DS "expression is."]
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
-    -- halt e' by t at x . body : Exists' T' (\x . x = e')
+    -- halt e' by t at x . body : ExistsP1L0 T' (\x . x = e')
     ts' th (Halt e' t bnd) = do
       -- Check e' as a Program: we don't need to prove termination for Logic terms
       (ee', e'ty) <- ts Program e'
       (et, tty) <- ts Logic t
 
-      -- Does t have type Exists' T (\x.b) for some T and b?
+      -- Does t have type ExistsP1L0 T (\x.b) for some T and b?
       let dtty = delPosParenDeep tty
           (App Runtime (App Runtime (Con exists') (Con ety)) (Lam Runtime eqBnd)) = dtty
-      unless (exists' `aeq` string2Name "Exists'") $
-        err [DS "Wrong type: ", DD exists']
+      unless (exists' `aeq` string2Name "ExistsP1L0") $
+        err [DS "Wrong type (expecting ExistsP1L0): ", DD exists']
 
       -- Does t prove that e terminates, for some e?
       (y,TyEq (Var y') e) <- unbind eqBnd
@@ -630,12 +630,12 @@ ts tsTh tsTm =
       unless strict $
         err [DS "Binding of", DD x, DS "is not strict in", DD body]
 
-      -- Build AST for return type: Exists' T' (\x . x = e')
+      -- Build AST for return type: ExistsP1L0 T' (\x . x = e')
       x' <- fresh $ string2Name "x"
-      let ty =  (App Runtime (App Runtime (Con (string2Name "Exists'")) (e'ty))
+      let ty =  (App Runtime (App Runtime (Con (string2Name "ExistsP1L0")) (e'ty))
                              (Lam Runtime (bind x' (TyEq (Var x') e'))))
 
-      -- ??? Could we return an Exists' *instance* here to make case
+      -- ??? Could we return an ExistsP1L0 *instance* here to make case
       -- matching on Halt trivial?
       return (Halt ee' et (bind x body), ty)
      where
