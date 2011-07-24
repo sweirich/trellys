@@ -1,12 +1,12 @@
 module TerminationInversion where
 
 import Prelude
-import ExtensionalEquality
+import Existentials
 
 -- Proof that Z halts from assumption that S Z halts
-axiom t : Exists' Nat (\x . x = Succ Zero)
+axiom t : ExistsP1L0 Nat (\x . x = Succ Zero)
 
-x : Exists' Nat (\x . x = Zero)
+x : ExistsP1L0 Nat (\x . x = Zero)
 x = halt Zero by t at x . Succ x
 
 
@@ -14,10 +14,55 @@ x = halt Zero by t at x . Succ x
 -- function applied to it halts
 axiom prog f2 : Nat => Nat => Nat
 axiom prog e'2 : Nat
-axiom t2 : Exists' Nat (\x . x = f2 e'2 e'2)
+axiom t2 : ExistsP1L0 Nat (\x . x = f2 e'2 e'2)
+axiom t3 : ExistsP1L0 Nat (\x . x = f2 e'2 (f2 e'2 e'2))
 
-x2 : Exists' Nat (\x . x = e'2)
+x2 : ExistsP1L0 Nat (\x . x = e'2)
 x2 = halt e'2 by t2 at x . f2 x e'2
 
-x3 : Exists' Nat (\x . x = e'2)
+x3 : ExistsP1L0 Nat (\x . x = e'2)
 x3 = halt e'2 by t2 at x . f2 e'2 x
+
+x4 : ExistsP1L0 Nat (\x . x = f2 e'2 e'2)
+x4 = halt (f2 e'2 e'2) by t3 at x . f2 e'2 x
+
+n1 : Nat
+n1 = case x3 [_] of
+      ExP1L0 x [p] -> x
+
+n2 : Nat
+n2 = case x3 [_] of
+       ExP1L0 x [p] -> Zero
+
+n4 : Nat
+n4 = case x4 [_] of
+       ExP1L0 x [p] -> x
+
+axiom p : Nat -> Type 0
+axiom l : (x:Nat) => p x
+
+prog n5 : p (f2 e'2 e'2)
+n5 = case x4 [_] of
+       ExP1L0 x [leq] -> let eq [_] = conv leq x by (join : (\x . x = f2 e'2 e'2) x = (x = f2 e'2 e'2)) at t . t
+                         in conv (p x) by eq at t . t
+
+-- Not sure about this one: should n2 really reduce to Zero? I.e.,
+-- should x3 really reduce to an ExP1L0 term?
+e1 : n2 = Zero
+e1 = join
+
+e2 : x2 = x2
+e2 = join
+
+{-
+e3 : (e: ExistsP1L0 Nat (\x . x = e'2)) ->
+     ((case e [_] of ExP1L0 _ [_] -> Zero) : Nat) = Zero
+e3 = \_ . join
+using "case" instead of "join" should work ...
+-}
+
+f : Nat -> Nat -> Nat
+f = \_ y . y
+
+e3 : f n4 Zero = f n2 Zero
+e3 = join
