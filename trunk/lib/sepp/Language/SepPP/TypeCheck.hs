@@ -512,12 +512,14 @@ check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
 
 check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
   (rs,ts) <- checkProofs ps
-  withTermProofs ts $ withRewrites rs (join 10000 10000 t0 t1)
+  withErrorInfo "When evaluating with rewrite rules, while checking a morejoin proof." []
+    $ withTermProofs ts $ withRewrites rs (join 10000 10000 t0 t1)
   return eq
 
   where checkProofs [] = return ([],[])
         checkProofs (p:ps) = do
-          ty <- check ProofMode p Nothing
+          ty <- withErrorInfo "When checking a proof supplied to morejoin." [ (text "The proof", disp p)] $
+                  check ProofMode p Nothing
           case down ty of
             Equal t1 t2 -> do
                          et1 <- erase t1
@@ -647,12 +649,13 @@ check mode (ConvCtx p ctx) expected = do
                   _ -> error "Unreachable case in check of ConvCtx def."
   l <- copyEqualInEsc LeftContext ctx
 
-  lty <- withErrorInfo
+  withErrorInfo "When checking the left hand side of a context." [] $
+                  check mode p (Just l)
+
+  withErrorInfo
            "When checking the left hand side of a context."
            [(text "The context", disp l)] $
               withEscapeContext LeftContext $ check submode l Nothing
-  withErrorInfo "When checking the left hand side of a context." [] $
-                  check mode p (Just l)
   r <- copyEqualInEsc RightContext ctx
   rty <- withErrorInfo  "When checking the right hand side of a context."
            [(text "The context", disp r)] $
@@ -1096,8 +1099,10 @@ join lSteps rSteps t1 t2 = do
   -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
   -- s2 <- substDefs t2
-  t1' <- eval lSteps t1
-  t2' <- eval rSteps t2
+  t1' <- withErrorInfo "While evaluating the first term given to join." [(text "the term", disp t1)] 
+           $ eval lSteps t1
+  t2' <- withErrorInfo "While evaluating the second term given to join." [(text "the term", disp t2)] 
+           $ eval rSteps t2
   -- Top level definitions cause problems with alpha equality. Try to subsitute
   -- those in...
   s1 <- substDefsErased t1'

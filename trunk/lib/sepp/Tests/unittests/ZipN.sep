@@ -1,5 +1,7 @@
 module ZipN where
 
+flag ShowReductions true
+
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
@@ -15,7 +17,7 @@ prog vmap = \[a:Type][b:Type](f:a -> b) -> rec vmap[n:Nat](l:Vec a n) .
     VNil n_eq -> (VNil [b] [n] [n_eq])
   | VCons sz n_eq x l' -> (VCons [b] [n] [sz] [n_eq] (f x) (vmap[sz] l'))
 
---- funtp [ t1 , ... , tn ] t = t1 -> ... -> tn -> t
+--- funtp n [ t1 , ... , tn ] t = t1 -> ... -> tn -> t
 
 type funtp : (n:Nat) -> Vec Type n -> Type -> Type
 prog rec funtp (n:Nat)(ts:Vec Type n) =
@@ -24,20 +26,44 @@ prog rec funtp (n:Nat)(ts:Vec Type n) =
      VNil n_eq -> ret
    | VCons sz n_eq t ts' -> t -> funtp sz ts' ret
 
+type vecs : (n:Nat) -> (m:Nat) -> (ts:Vec Type n) -> Vec Type n
+prog vecs = \ (n:Nat)(m:Nat)(ts:Vec Type n) -> (vmap [Type] [Type] (\(x:Type) -> Vec x m) [n] ts)
 
 type zipn_t : Type
 prog zipn_t =
-  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
-  (f:funtp n ts ret) ->
-   funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) [n] ts) (Vec ret n)
+  (n:Nat) -> (m:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
+   (f:funtp n ts ret) ->
+    funtp n (vecs n m ts) (Vec ret m)
 
 type zipn :
-  (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
+  (m':Nat) -> (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
   (f:funtp n ts ret) ->
-   funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) [n] ts) (Vec ret n)
-prog rec zipn(n:Nat)(ts:Vec Type n) =
-  \ (ret:Type)
-    (f:funtp n ts ret) ->
-  case ts { ts_eq } of
-    VNil n_eq -> conv f at ~(morejoin { ts_eq } : funtp n ts ret = funtp n (vmap [Type] [Type] (\(x:Type) -> Vec x n) [n] ts) (Vec ret n))
-  | VCons sz n_eq t ts' -> sz
+  (acc : funtp n (vecs n m' ts) (Vec ret m')) ->
+   funtp n (vecs n (S m') ts) (Vec ret (S m'))
+prog rec zipn (m':Nat) =
+  \ (n:Nat)
+    (ts:Vec Type n)
+    (ret:Type)
+    (f:funtp n ts ret) 
+    (acc : funtp n (vecs n m' ts) (Vec ret m')) ->
+  case ts {ts_eq} of
+    VNil n_eq -> conv 
+                 (VCons [ret] [(S m')] [m'] [refl] 
+                    (conv f at ~(morejoin { symm ts_eq } : funtp n ts ret = ret))
+                    conv acc at ~(morejoin { symm ts_eq } 
+                                  : funtp n (vecs n m' ts) (Vec ret m') = Vec ret m'))
+                 at ~(morejoin { symm ts_eq } : Vec ret (S m') = funtp n (vecs n (S m') ts) (Vec ret (S m')))
+  | VCons n' n_eq t ts' -> 
+      conv
+        (\ (v : Vec t (S m')) ->
+        case v { v_eq } of
+          VNil sm'_eq ->
+            contra sm'_eq
+        | Vcons m'' m''_eq x v' ->
+          (zipn m' n' ts' ret
+             ((conv f at ~(morejoin { symm ts_eq } : funtp n ts ret = (t -> funtp n' ts' ret))) x)
+             ((conv acc at ~(morejoin { symm ts_eq } 
+                              : funtp n (vecs n m' ts) (Vec ret m') = ((Vec t m') -> vecs n' m ts'))) v')))
+      at ~(morejoin { symm ts_eq , n_eq } :
+            ((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) = 
+            (funtp n (vecs n (S m') ts) (Vec ret (S m'))))
