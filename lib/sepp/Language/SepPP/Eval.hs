@@ -130,12 +130,14 @@ reduce steps t@(ERec binding) k = do
   ((f,args),body) <- unbind binding
   let t' = foldr (\n bdy -> ELambda (bind n bdy)) (subst f t body)  args
   k steps t'
+reduce steps t@(EPi s binding) k = do
+  ((x,Embed tp),body) <- unbind binding
+  let k' steps tp' = 
+        let k'' steps body' = k steps $ EPi s (bind (x,Embed tp') body') in
+            reduce steps body k''
+  reduce steps tp k'
 reduce steps t@(ELambda _) k = k steps t
 reduce steps EType k = k steps EType
-
-
-
-reduce steps t k = die $ "reduce" <++> t
 
 patMatch (c,args) [] = err "No Pattern Match"
 patMatch t@(ECon c,args) (b:bs) = do

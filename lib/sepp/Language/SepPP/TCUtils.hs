@@ -61,7 +61,7 @@ lookupBinding :: EName -> TCMonad (Expr,Bool)
 lookupBinding n = do
   env <- asks gamma
   let fmtEnv = vcat [disp n <> colon <+> disp ty | (n,(ty,_)) <- env]
-  maybe (die $ "Can't find variable " <++> show n $$$ fmtEnv) return (lookup n env)
+  maybe (die $ "Can't find variable " <++> show n) return (lookup n env)
 
 extendBinding :: EName -> Expr -> Bool -> TCMonad a -> TCMonad a
 extendBinding n ty isVal m = do
