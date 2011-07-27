@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax(EExpr(..),erase)
+import Language.SepPP.Syntax(EExpr(..))
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 import Language.SepPP.Options
@@ -132,7 +132,7 @@ reduce steps t@(ERec binding) k = do
   k steps t'
 reduce steps t@(EPi s binding) k = do
   ((x,Embed tp),body) <- unbind binding
-  let k' steps tp' = 
+  let k' steps tp' =
         let k'' steps body' = k steps $ EPi s (bind (x,Embed tp') body') in
             reduce steps body k''
   reduce steps tp k'

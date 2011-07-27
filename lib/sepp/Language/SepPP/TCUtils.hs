@@ -5,7 +5,8 @@ import Language.SepPP.Syntax
 import Language.SepPP.PrettyPrint
 import Language.SepPP.Options
 
-import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate)
+
+import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate, bind, unbind, string2Name)
 
 import Text.PrettyPrint
 import Data.Typeable
@@ -249,5 +250,85 @@ erasedSynValue (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
         constrApp (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
         constrApp _ = return False
 erasedSynValue x = return False
+
+
+
+-- Erasure
+-- | Erase an annotated term into an unannotated term, for evaluation.
+--- erase :: (Applicative m, Fresh m ) => Expr -> m EExpr
+erase (Pos _ t) = erase t
+erase Type = return EType
+erase (Var n) = return $ EVar (translate n)
+erase (Con n) = return $ ECon (translate n)
+erase (App f Static _) = erase f
+erase (App f Dynamic x) = EApp <$> (erase f) <*> (erase x)
+erase (Lambda _ Static binding) = do
+  (_,body) <- unbind binding
+  erase body
+erase (Lambda _ Dynamic binding) = do
+  ((n,_),body) <- unbind binding
+  ELambda <$> ((bind (translate n)) <$> erase body)
+erase (Pi s binding) = do
+  ((n,Embed tp),body) <- unbind binding
+  et <- erase tp
+  EPi s <$> ((bind ((translate n),Embed et)) <$> erase body)
+erase (Rec binding) = do
+  ((n,tele),body) <- unbind binding
+  ns <- eraseTele tele
+  ERec <$> (bind (translate n, ns)) <$> erase body
+  where eraseTele :: Monad m => Tele -> m [EEName]
+        eraseTele Empty = return []
+        eraseTele (TCons rebinding) = do
+          let ((n,stage,Embed ty),rest) = unrebind rebinding
+          ns <- eraseTele rest
+          case stage of
+            Dynamic -> return (translate n:ns)
+            Static -> return ns
+
+erase (Case scrutinee _ binding) = do
+    (_,alts) <- unbind binding
+    ECase <$> erase scrutinee <*> mapM eraseAlt alts
+  where eraseAlt binding = do
+          ((c,vs),body) <- unbind binding
+          -- erasePatVars looks at _all_ data constructors, which isn't
+          -- particularly efficient. To restrict this to just constructors of
+          -- the type of the scrutinee would require erasure to be
+          -- type-directed, which is a can of worms that we don't need to open
+          -- for the time being.
+          vs' <- erasePatVars c vs
+          bind (c,map translate vs') <$> erase body
+
+erase (Let binding) = do
+    ((x,_,Embed t),body) <- unbind binding
+    et <- erase t
+    ebody <- erase body
+    return $ ELet (bind (translate x,Embed et) ebody)
+
+erase (ConvCtx v _) = erase v
+erase (Ann t _) = erase t
+
+erase t =  do
+  fail $  "The erasure function is not defined on: " ++ show (downAll t)
+
+
+-- Drop pattern variables that correspond to erased /constructor/
+-- parameters. The lookup should be memoized.
+erasePatVars :: String -> [EName] -> TCMonad [EName]
+erasePatVars cname vars = do
+  tcs <- asks delta
+  let constructors = [(n,ty) | (tc,(_,cons)) <- tcs, (n,(arity,ty)) <- cons]
+  case lookup (string2Name cname) constructors of
+    Nothing -> typeError "Could not find constructor."
+                   [(text "The constructor",disp cname)]
+    Just ty -> piArgs ty vars
+
+  where piArgs (Pos _ t) vs = piArgs t vs
+        piArgs (Pi st binding) (v:vs) = do
+          (_,body) <- unbind binding
+          vs' <- piArgs body vs
+          case st of
+            Static -> return $ vs'
+            Dynamic -> return $ v:vs'
+        piArgs _ _ = return []
 
 
