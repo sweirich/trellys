@@ -211,7 +211,7 @@ check mode (Ann t ty) (Just ty') = do
 
 
 -- Var
-check mode (Var n) expected = do
+check mode tm@(Var n) expected = do
   (ty,_) <- lookupBinding n
   ty `sameType` expected
 
@@ -221,19 +221,23 @@ check mode (Var n) expected = do
       requireA ty
       pty <- predSynth' ty
       requireQ pty
-    PredMode -> err "Can't check variables in pred mode"
+    PredMode -> typeError "Can't check variables in pred mode."
+                  [(text "The expression",disp tm),
+                   (text "The expected type", disp expected)]
+
   return ty
 
 
 -- Con
-check mode (Con t) expected = do
+check mode tm@(Con t) expected = do
   (ty,_) <- lookupBinding t
   ty `sameType` expected
 
   case mode of
-    PredMode -> err "Can't check constructors in pred mode"
+    PredMode -> typeError "Can't check constructors in pred mode."
+                  [(text "The expression",disp tm),
+                   (text "The expected type", disp expected)]
     _ -> return ()
-
   return ty
 
 
