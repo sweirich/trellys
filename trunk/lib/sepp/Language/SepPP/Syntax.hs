@@ -5,7 +5,7 @@ module Language.SepPP.Syntax (
   Decl(..),Module(..),Expr(..),
   Stage(..),Kind(..),Alt,
   EName, ModName,
-  EExpr(..), erase, erasedValue,
+  EExpr(..), EEName,
   down,downAll,
   Tele(..),teleArrow,subTele,teleFromList,
   splitApp, splitApp', isStrictContext, var, app,
@@ -218,70 +218,18 @@ data EExpr = EVar EEName
            | EPi Stage (Bind (EEName, Embed EExpr) EExpr)
   deriving (Show)
 
-erase :: (Applicative m, Fresh m ) => Expr -> m EExpr
-erase (Pos _ t) = erase t
-erase Type = return EType
-erase (Var n) = return $ EVar (translate n)
-erase (Con n) = return $ ECon (translate n)
-erase (App f Static _) = erase f
-erase (App f Dynamic x) = EApp <$> (erase f) <*> (erase x)
-erase (Lambda _ Static binding) = do
-  (_,body) <- unbind binding
-  erase body
-erase (Lambda _ Dynamic binding) = do
-  ((n,_),body) <- unbind binding
-  ELambda <$> ((bind (translate n)) <$> erase body)
 
-erase (Pi s binding) = do
-  ((n,Embed tp),body) <- unbind binding
-  et <- erase tp
-  EPi s <$> ((bind ((translate n),Embed et)) <$> erase body)
+-- cValOfApp :: EExpr -> Bool
+-- cValOfApp (EApp f x) = cValOfApp f && erasedValue x
+-- cValOfApp (ECon _)   = True
+-- cValOfApp _         = False
 
-
--- FIXME:
-erase (Rec binding) = do
-  ((n,tele),body) <- unbind binding
-  ns <- eraseTele tele
-  ERec <$> (bind (translate n, ns)) <$> erase body
-  where eraseTele :: Monad m => Tele -> m [EEName]
-        eraseTele Empty = return []
-        eraseTele (TCons rebinding) = do
-          let ((n,stage,Embed ty),rest) = unrebind rebinding
-          ns <- eraseTele rest
-          case stage of
-            Dynamic -> return (translate n:ns)
-            Static -> return ns
-
-erase (Case scrutinee _ binding) = do
-    (_,alts) <- unbind binding
-    ECase <$> erase scrutinee <*> mapM eraseAlt alts
-  where eraseAlt binding = do
-          ((c,vs),body) <- unbind binding
-          bind (c,map translate vs) <$> erase body
-
-erase (Let binding) = do
-    ((x,_,Embed t),body) <- unbind binding
-    et <- erase t
-    ebody <- erase body
-    return $ ELet (bind (translate x,Embed et) ebody)
-
-erase (ConvCtx v _) = erase v
-erase (Ann t _) = erase t
-
-erase t =  do
-  fail $  "The erasure function is not defined on: " ++ show (downAll t)
-
-cValOfApp :: EExpr -> Bool
-cValOfApp (EApp f x) = cValOfApp f && erasedValue x
-cValOfApp (ECon _)   = True
-cValOfApp _         = False
-
-erasedValue :: EExpr -> Bool
-erasedValue (ECase _ _) = False
-erasedValue e@(EApp _ _) = cValOfApp e
-erasedValue (ELet _) = False
-erasedValue (EVar _) = False
-erasedValue _ = True
+-- erasedValue :: EExpr -> Bool
+-- erasedValue (ECase _ _) = False
+-- erasedValue e@(EApp _ _) = cValOfApp e
+-- erasedValue (ELet _) = False
+-- erasedValue (EVar _) = False
+-- erasedValue _ = True
 
 
 
@@ -315,7 +263,6 @@ subTele _ _ _ =
 
 teleFromList args = foldr (\(st,(n,ty)) r -> TCons (rebind (n,st,Embed ty) r))
                     Empty args
-
 
 
 
