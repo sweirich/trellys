@@ -77,7 +77,41 @@ e1 = app (arr x y) (lam "z" (arr x y))
 ------------------------------------------------
 -- operations on Shapes
 
--- everything should come into LFresh monad
+-- everything should come into LFresh monad???
+
+{-
+class (Fresh m, Alpha nm) => MFunctor m f nm where
+  mfmap :: (Alpha a, Alpha b) => (a -> m b) -> f nm a -> m (f nm b)
+
+
+instance (Fresh m, Alpha nm) => MFunctor m Bind nm where
+  mfmap = undefined -- mfmapBind
+
+instance (Fresh m, Alpha nm) => MFunctor m Shape nm where
+  mfmap = mfmapShape
+
+
+mfmapExpr f (E sp shape) = do shape' <- mfmapShape f shape
+                              return (E sp shape')
+
+mfmapBind f bnd =
+  do (p,t) <- unbind bnd
+     t' <- mfmapExpr f t
+     return (bind p t')
+
+mfmapShape f shape =
+  case shape of
+    Var s -> return (Var s)
+    App x y -> liftM2 App (f x) (f y)
+    Lam x -> do x' <- mfmapBind f x
+                return (Lam x')
+    Star -> return Star
+    CON c -> return (CON c)
+    Arr x y -> liftM2 Arr (f x) (f y)
+
+
+
+
 
 instance Functor (Bind (Name Expr)) where
   fmap f = undefined -- TODO what is the functor for Bind ???
@@ -97,6 +131,7 @@ instance Functor (Bind nm) => Sequence (Shape nm) where
   swap Star = return Star
   swap (CON c) = return(CON c)
   swap (Arr x y) = liftM2 Arr x y
+-}
 
 --------------------------------------------------------
 -- Generic operations on memoizing Tables
