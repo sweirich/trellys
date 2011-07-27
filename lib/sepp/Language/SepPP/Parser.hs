@@ -142,6 +142,7 @@ sepPPStyle = haskellStyle {
             "rec", "ind",
             "prog","type", "theorem", "proof", "axiom",
             "value", "values",
+            "show",
             "abort","aborts",
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
@@ -289,7 +290,7 @@ termCase = do
              reservedOp "->"
              expr <?> "aborts branch"
 
-    -- Exprinates case
+    -- Terminates case
     te <- do reservedOp "|"
              reservedOp "!"
              reservedOp "->"
@@ -330,6 +331,10 @@ contraAbortExpr = do
 abortExpr = do
   reserved "abort"
   Abort <$> expr
+
+showExpr = do
+  reserved "show"
+  Show <$> expr
 
 symExpr = do
   reserved "sym" <|> reserved "symm"
@@ -457,6 +462,8 @@ innerExpr = wrapPos $
               ,try piType
               ,joinExpr
               ,contraExpr
+              ,abortExpr
+              ,showExpr
               ,contraAbortExpr
               ,convExpr
               ,recExpr

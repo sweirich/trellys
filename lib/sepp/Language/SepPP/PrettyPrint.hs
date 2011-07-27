@@ -239,6 +239,10 @@ instance Display Expr where
     d <- dParen (precedence w) t
     return $ text "abort" <+> d
 
+  display (w@(Show t)) = do
+    d <- dParen (precedence w) t
+    return $ text "show" <+> d
+
   display (Conv t pfs binding) = do
     lunbind binding $ \(vars,ty) -> do
       dVars <- mapM display vars
