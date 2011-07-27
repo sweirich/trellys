@@ -44,12 +44,24 @@ instance (Alpha a, Alpha b) => Alpha (TermF (Name a) b)
 instance Alpha Term
 
 instance (Alpha a, Alpha b, Subst t b) => Subst t (TermF (Name a) b) where
---  isvar (Var v) = error "what do I have to write here???"
---  isvar _       = Nothing
+  -- what do we do if we want the result of sh4 be (Var b) ???
 
 instance Subst Term Term where
   isvar (T (Var v)) = Just (SubstName v)
   isvar _           = Nothing
+
+
+sh1 = subst (string2Name "a") (var "b") tf where T tf = app (var "a") (var "a")
+-- App (T (Var b)) (T (Var b))
+
+sh2 = subst (string2Name "a") (var "b") tf where T tf = lam "a" (var "a")
+-- Lam (<a> T (Var 0@0))
+
+sh3 = subst (string2Name "a") (var "b") tf where T tf = lam "b" (var "a")
+-- Lam (<b> T (Var b))   -- good since (Var b) is a free var not bound by <b>
+
+sh4 = subst (string2Name "a") (var "b") tf where T tf = var "a"
+-- Var a   -- not so good since what we really want here is (Var b)
 
 lam :: String -> Term -> Term
 lam x t = T $ Lam $ bind (string2Name x) t
