@@ -636,6 +636,11 @@ check ProgMode (Abort t) Nothing = do
   typeAnalysis' t Type
   return t
 
+check m (Show t) expected = do
+  ty <- check m t expected
+  emit $ ("We have the following classification:\n" $$$ t $$$ " : " $$$ ty)
+  return t
+
 
 -- Conv
 

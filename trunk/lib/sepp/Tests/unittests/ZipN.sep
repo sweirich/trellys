@@ -1,6 +1,6 @@
 module ZipN where
 
-flag ShowReductions true
+-- flag ShowReductions true
 
 data Nat : Type where
   Z : Nat
@@ -64,6 +64,12 @@ prog rec zipn (m':Nat) =
              ((conv f at ~(morejoin { symm ts_eq } : funtp n ts ret = (t -> funtp n' ts' ret))) x)
              ((conv acc at ~(morejoin { symm ts_eq } 
                               : funtp n (vecs n m' ts) (Vec ret m') = ((Vec t m') -> vecs n' m ts'))) v')))
-      at ~(morejoin { symm ts_eq , n_eq } :
+      at ~((termcase (vecs n' (S m') ts') { vecs_term } of
+             abort ->
+                 (trans (conv refl at (((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) =
+                                     ((Vec t (S m')) -> (funtp n' ~vecs_term (Vec ret (S m'))))))
+                       (join 12 12)) : (((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) = (abort Type))
+           | ! -> 
+                 morejoin { symm ts_eq , n_eq, vecs_term }) :
             ((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) = 
             (funtp n (vecs n (S m') ts) (Vec ret (S m'))))

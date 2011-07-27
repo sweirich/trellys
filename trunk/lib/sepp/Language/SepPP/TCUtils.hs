@@ -306,6 +306,8 @@ erase (Let binding) = do
 
 erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t
+erase (Abort _) = return EAbort
+erase (Show t) = erase t
 
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show (downAll t)

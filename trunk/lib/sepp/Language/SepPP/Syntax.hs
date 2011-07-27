@@ -90,6 +90,7 @@ data Expr = Var EName                                 -- Expr, Proof
 
           -- The term argument is the type you wish to ascribe
           | Abort Expr                                -- Expr
+          | Show Expr                                 -- Expr
 
 
           -- The bool associated with the equality proof is whether or not the
@@ -215,6 +216,7 @@ data EExpr = EVar EEName
            | ECase EExpr [Bind (String,[EEName]) EExpr]
            | ELet (Bind (EEName, Embed EExpr) EExpr)
            | EType
+           | EAbort
            | EPi Stage (Bind (EEName, Embed EExpr) EExpr)
   deriving (Show)
 
