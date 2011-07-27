@@ -40,12 +40,12 @@ data Term = T (TermF (Name Term) Term)
 
 $(derive [''Term,''TermF])
 
-instance Alpha (TermF (Name Term) Term)
+instance (Alpha a, Alpha b) => Alpha (TermF (Name a) b)
 instance Alpha Term
 
-instance Subst Term (TermF (Name Term) Term) where
-  isvar (Var v) = error "I belive it should never reach" -- Just (SubstName v)
-  isvar _       = Nothing
+instance (Alpha a, Alpha b, Subst t b) => Subst t (TermF (Name a) b) where
+--  isvar (Var v) = error "what do I have to write here???"
+--  isvar _       = Nothing
 
 instance Subst Term Term where
   isvar (T (Var v)) = Just (SubstName v)
