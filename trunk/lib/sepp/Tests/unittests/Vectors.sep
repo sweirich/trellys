@@ -53,6 +53,7 @@ proof cons_term_tail = \(a:Type)(x:a)(xs:List a)(p:Cons [a]  x xs !) =>
 --   termcase Cons [a] x xs
 
 
+
 theorem append_term : forall(a:Type)(xs:List a)(xs_term:xs!)(ys:List a)(ys_term:ys!).(append [a] xs ys)!
 proof ind append_term [a:Type](xs:List a){xs_term} = \(ys:List a)(ys_term:ys!) =>
    case xs {xs_eq} xs_term of
@@ -82,18 +83,31 @@ proof ind append_assoc [a:Type](xs:List a){xs_term} =
                     in case xs {xs_eq} xs_term of
                          Nil -> let u1 [u1_eq] = morejoin {sym xs_eq, ys_term, xs_term} :
                                       ys = append [a] xs ys;
-                                    u2 [u2_eq] = morejoin {sym xs_eq, xs_term, term_ys_zs} :
-                                       append [a] xs (append [a] ys zs) =  append [a] ys zs;
+                                    u2 [u2_eq] = morejoin {sym xs_eq, xs_term} :
+                                       append [a] xs
+                                                  (tcast (append [a] ys zs) by term_ys_zs)
+                                       =  append [a] ys zs;
                                     u3 [u3_eq] = morejoin {sym xs_eq, xs_term, ys_term} :
                                         ys = append [a] xs ys
                                  in conv u2 at append [a] xs (append [a] ys zs) =  append [a] ~u3 zs
 
-                        | Cons x xs' -> let unroll_app [ua]  = morejoin {sym xs_eq,xs_term} :
-                                                append [a] xs (append [a] ys zs) =
-                                                 Cons x (append [a] xs' (append [a] ys zs))
-                                        in unroll_app
+                        | Cons x xs' -> let  unroll_app [ua]  = morejoin {sym xs_eq,xs_term} :
+                                                 append [a] xs
+                                                    (tcast (append [a] ys zs) by term_ys_zs) =
+                                                  Cons [a] x (append [a] xs' (tcast (append [a] ys zs) by term_ys_zs));
+                                            ih [ih_eq] = append_assoc [a] xs' (ord xs_eq) ys zs;
+                                            u1 [u1_eq] = conv unroll_app at append [a] xs (append [a] ys zs) = Cons [a] x ~ih;
+                                            u2 [u2_eq] = morejoin {sym xs_eq, xs_term, ys_term} : append [a] xs ys = Cons [a] x (append [a] xs' ys);
+                                            x_term [x_term_eq] = cons_term_head a x xs' (conv xs_term at ~(sym xs_eq) !);
+                                            xs'_term [xs'_term_eq] = cons_term_tail a x xs' (conv xs_term at ~(sym xs_eq) !);
+                                            term_xs'_ys [asdfa] = append_term [a] xs' xs'_term ys ys_term;
+                                            u3 [u3_eq] = morejoin {sym xs_eq, xs_term,ys_term} :
+                                                          append [a] (append [a] xs ys) zs = (append [a] (Cons [a] x (append [a] xs' ys)) zs);
+                                            u4 [u4_eq] = morejoin {zs_term, ys_term} : append [a] (Cons [a] (tcast x by x_term) (tcast (append [a] xs' ys) by term_xs'_ys)) zs =
+                                                                                      Cons [a] x (append [a] (tcast (append [a] xs' ys) by term_xs'_ys) zs);
+                                            u5 [u5_eq] = sym (trans u3 u4 : append [a] (append [a] xs ys) zs = Cons [a] x (append [a] (tcast (append [a] xs' ys) by term_xs'_ys) zs))
 
-
+                                        in conv u1 at append [a] xs (append [a] ys zs) = ~u5
 
 
 {-

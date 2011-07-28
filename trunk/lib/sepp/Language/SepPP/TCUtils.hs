@@ -238,6 +238,7 @@ synValue x = return False
 erasedSynValue (EVar x) = do
   do (term,valuep) <- lookupBinding (translate x)
      return valuep
+erasedSynValue (ETCast t) = return True
 erasedSynValue (ECon c) = return True
 erasedSynValue EType = return True
 -- erasedSynValue (Pi stg bdngs) = return True
@@ -308,6 +309,7 @@ erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t
 erase (Abort _) = return EAbort
 erase (Show t) = erase t
+erase (TCast t p) = ETCast <$> erase t
 
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show (downAll t)

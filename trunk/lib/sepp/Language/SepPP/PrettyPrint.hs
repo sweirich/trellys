@@ -226,6 +226,13 @@ instance Display Expr where
                      return $ dt <+> text "!"
 
 
+  display w@(TCast t p) = do
+    dt <- termParen (precedence w) t
+    dp <- termParen (precedence w) p
+    return $ text "tcast" <+> dt <+> text "by" <+> dp
+
+
+
   display (t@(Contra t0)) = do
     d0 <- termParen (precedence t) t0
     return $ text "contra" <+> d0
@@ -489,6 +496,11 @@ instance Display EExpr where
      return $ bindingWrap stage (dn <+> colon <+> dt) <+> text "->" <+> dbody
 
 
+  display (ETCast t) = do
+     dt <- display t
+     return $ text "tcast" <+> dt
+
+
 
   precedence (EVar _) = 12
   precedence (ECon _) = 12
@@ -496,6 +508,7 @@ instance Display EExpr where
   precedence (ERec _) = 0
   precedence (ELambda _) = 0
   precedence (ECase _ _) = 1
+  precedence (ETCast _) = 11
 
 
 
@@ -526,7 +539,6 @@ instance Disp ParseError where
   where sem = text $ showErrorMessages "or" "unknown parse error"
               "expecting" "unexpected" "end of input"
               (errorMessages pe)
-
 
 
 instance Display Tele where

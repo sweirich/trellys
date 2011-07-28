@@ -66,6 +66,8 @@ reduce steps tm@(EApp t1 t2) k = do
           typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
+
+        k' steps (ETCast e) = k' steps e
         k' steps v1 = do
           ev <- erasedSynValue v1
           if isCon v1 && ev
@@ -138,6 +140,7 @@ reduce steps t@(EPi s binding) k = do
   reduce steps tp k'
 reduce steps t@(ELambda _) k = k steps t
 reduce steps EType k = k steps EType
+reduce steps (ETCast t) k = reduce steps t (\steps' val -> k steps' (ETCast val))
 
 patMatch (c,args) [] = err "No Pattern Match"
 patMatch t@(ECon c,args) (b:bs) = do
