@@ -80,6 +80,7 @@ data Expr = Var EName                                 -- Expr, Proof
           | Val Expr                                  -- Proof
                                                       -- intros a
           | Terminates Expr                           -- Predicate
+          | TCast Expr Expr
 
           -- Contra is used when you have an equation between
           -- distinct constructors.
@@ -114,6 +115,8 @@ data Expr = Var EName                                 -- Expr, Proof
           | Ind (Bind (EName, Tele, EName) Expr) -- proof
           | Rec (Bind (EName,Tele) Expr) -- term
 
+
+
           -- In a conversion context, the 'Escape' term splices in an equality
           -- proof (or an expression that generates an equality proof).
           | Escape Expr
@@ -143,6 +146,8 @@ $(derive [''Expr, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
 instance Alpha Expr where
   aeq' c (Pos _ t1) t2 = t1 `aeq` t2
   aeq' c t1 (Pos _ t2) = t1 `aeq` t2
+  aeq' c (TCast t1 _) t2 = t1 `aeq` t2
+  aeq' c t1 (TCast t2 _) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
 
 instance Alpha Module
@@ -217,6 +222,7 @@ data EExpr = EVar EEName
            | ELet (Bind (EEName, Embed EExpr) EExpr)
            | EType
            | EAbort
+           | ETCast EExpr
            | EPi Stage (Bind (EEName, Embed EExpr) EExpr)
   deriving (Show)
 
@@ -238,7 +244,11 @@ data EExpr = EVar EEName
 
 $(derive [''EExpr])
 
-instance Alpha EExpr
+instance Alpha EExpr where
+  aeq' c (ETCast t1) t2 = t1 `aeq` t2
+  aeq' c t1 (ETCast t2) = t1 `aeq` t2
+  aeq' c t1 t2 = aeqR1 rep1 c t1 t2
+
 instance Subst EExpr EExpr where
   isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing

@@ -147,7 +147,7 @@ sepPPStyle = haskellStyle {
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
             "let","in",
-            "sym","symm","trans","refl",
+            "sym","symm","trans","refl", "tcast",
             "set" -- for flags
            ],
            Token.reservedOpNames = ["\\", "=>", "|"]
@@ -315,6 +315,9 @@ morejoinExpr = do
 valExpr = reserved "value" >> Val <$> innerExpr
 
 
+tcastExpr = reserved "tcast" >>TCast <$> innerExpr <* reserved "by" <*> innerExpr
+
+
 -- FIXME: I think the 'at' annotations are unnecessary, if we have annotations.
 contraExpr = do
   reserved "contra"
@@ -470,6 +473,7 @@ innerExpr = wrapPos $
               ,indExpr
               ,recExpr
               ,valExpr
+              ,tcastExpr
               ,ordExpr
               ,ordTrans
               ,letExpr

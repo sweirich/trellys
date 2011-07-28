@@ -575,7 +575,10 @@ check ProofMode (t@(Val x)) expected = do
                 return ans
         else do die $ "Non Value:" <++> t
 
-
+check mode (TCast t p) expected = do
+  ty <- check mode t expected
+  check ProofMode p (Just (Terminates t))
+  return ty
 
 -- Terminates
 
@@ -1070,6 +1073,7 @@ isTerm (Escape t) = isTerm t
 isTerm (Case t tbang binding) =  isTerm t && maybe True isTerm tbang
    where (n,alts) = unsafeUnbind binding
          altsOk = and [isTerm body | alt <- alts, ((_,_),body) <- [unsafeUnbind alt]]
+isTerm (TCast t p) = isTerm t && isProof p
 
 isTerm t = False
 
@@ -1108,9 +1112,9 @@ join lSteps rSteps t1 t2 = do
   -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
   -- s2 <- substDefs t2
-  t1' <- withErrorInfo "While evaluating the first term given to join." [(text "the term", disp t1)] 
+  t1' <- withErrorInfo "While evaluating the first term given to join." [(text "the term", disp t1)]
            $ eval lSteps t1
-  t2' <- withErrorInfo "While evaluating the second term given to join." [(text "the term", disp t2)] 
+  t2' <- withErrorInfo "While evaluating the second term given to join." [(text "the term", disp t2)]
            $ eval rSteps t2
   -- Top level definitions cause problems with alpha equality. Try to subsitute
   -- those in...
