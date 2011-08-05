@@ -51,11 +51,13 @@ reduce steps tm@(EApp t1 t2) k = do
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
-          reduce steps t2 (\steps' v -> do
+          tp <- lookupTermProof t2
+          let t2' = maybe t2 ETCast tp
+          reduce steps t2' (\steps' v -> do
                        val <- isValue v
                        if steps' == 0 || not val
                           then do
-                            emit $ "Stuck term" $$$ EApp t1' v
+                            -- emit $ "Stuck term" $$$ EApp t1' v
                             k steps (EApp t1' v)
                           else do
                             let tm' = subst x v body
@@ -89,16 +91,16 @@ reduce steps tm@(EApp t1 t2) k = do
               emit $ "Found a termination proof for non-value" <++> t
               return True
 
-
+-- FIXME: Need to be more careful with unTCast than I am currently.
 reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
   where k' 0 t = k 0 (ECase t alts)
-        k' steps v = case findCon v [] of
+        k' steps v = case findCon (unTCast v) [] of
                        (ECon c:args) -> do
                          branch <- substPat c args alts
                          logReduce (ECase v alts) branch
                          reduce (steps - 1) branch k
                        _ -> do
-                         rw <- lookupRewrite scrutinee
+                         rw <- lookupRewrite (unTCast scrutinee)
                          case rw of
                            Just rhs -> do
                                    reduce steps rhs k'
@@ -115,6 +117,8 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
           if string2Name c' == c
              then return $ substs (zip vs args) body
              else substPat c args alts
+        unTCast (ETCast t) = unTCast t
+        unTCast t = t
 
 
 reduce steps (ELet binding) k = do

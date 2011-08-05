@@ -218,7 +218,8 @@ check mode tm@(Var n) expected = do
   case mode of
     ProgMode -> return ()
     ProofMode -> do
-      requireA ty
+      withErrorInfo "When checking that a variable is of the syntactic class 'A'."
+                    [(text "The expression", disp tm)] $ requireA ty
       pty <- predSynth' ty
       requireQ pty
     PredMode -> typeError "Can't check variables in pred mode."
@@ -416,14 +417,23 @@ check ProofMode (Lambda Form _ pfBinding)
 
 check ProgMode (Lambda Program progStage progBinding) (Just ty@(Pi piStage piBinding)) = do
   unless (progStage == piStage) $
-         err $ "Lambda stage annotation " ++ show progStage ++ " does not " ++
-               "match arrow annotation " ++ show piStage
+         typeError "When checking a lambda-term against a pi-type, the stage annotations do not match."
+                   [(text "The Lambda stage annotation", disp $ show progStage)
+                   ,(text "The Pi stage annotation", disp $ show piStage)
+                   ]
 
   Just ((progName,Embed progTy), progBody,(piName,Embed piTy), piBody) <-
     unbind2 progBinding piBinding
 
   -- TODO: Several side conditions on stage annotations
   extendBinding progName progTy True $ typeAnalysis' progBody piBody
+
+
+check ProgMode (Lambda Program stage binding) Nothing = do
+  ((nm,Embed ty),body) <- unbind binding
+  bodyTy <- extendBinding nm ty True $ check ProgMode body Nothing
+  return $ Pi stage (bind (nm,Embed ty) bodyTy)
+
 
 
 
@@ -497,12 +507,24 @@ check mode (Case s pf binding) expected = do
 
 
 -- TerminationCase
-check ProofMode (TerminationCase s binding) (Just ty) = do
+check mode t@(TerminationCase s binding) expected = do
+  unless (mode `elem` [ProofMode, ProgMode]) $
+         typeError "Termination case is not valid in this mode."
+                     [(text "The term", disp t)
+                     ,(text "The mode", disp $ show mode)]
   sty <- typeSynth' s
   (w,(abort,terminates)) <- unbind binding
-  extendBinding w (Equal (Abort sty) s) True (proofAnalysis' abort ty)
-  extendBinding w (Terminates s) True (proofAnalysis' terminates ty)
-  return ty
+  ty1 <- extendBinding w (Equal (Abort sty) s) True  (check mode abort expected)
+  ty2 <- extendBinding w (Terminates s) True (check mode terminates expected)
+  unless (ty1 `aeq` ty2) $
+    typeError "Termination case branch types do not match"
+        [(text "The term", disp t)
+        ,(text "Aborts branch type", disp ty1)
+        ,(text "Terminates branch type", disp ty2)
+        ]
+  return ty1
+
+
 
 -- Join
 check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
@@ -514,7 +536,11 @@ check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
 
 -- MoreJoin
 
-check ProofMode (MoreJoin ps) (Just eq@(Equal t0 t1)) = do
+check mode t@(MoreJoin ps) (Just eq@(Equal t0 t1)) = do
+  unless (mode `elem` [ProofMode,ProgMode]) $
+     typeError "Morejoin is only valid in proof and programming mode."
+               [(text "The Term", disp t)
+               ,(text "The Mode", disp $ show mode)]
   (rs,ts) <- checkProofs ps
   withErrorInfo "When evaluating with rewrite rules, while checking a morejoin proof." []
     $ withTermProofs ts $ withRewrites rs (join 10000 10000 t0 t1)
@@ -592,7 +618,13 @@ check mode (Terminates t) expected = do -- Pred_Terminates rule
 
 -- Contra
 
-check ProofMode (Contra p) (Just ty) = do
+check mode tm@(Contra p) (Just ty) = do
+ unless (mode `elem` [ProofMode, ProgMode]) $
+   typeError "Can only check contradictions in proof or program mode."
+     [(text "The mode", disp $ show mode)
+     ,(text "The term", disp tm)
+     ,(text "The type", disp ty)]
+
  ty' <- proofSynth' p
  case down ty' of
    (Equal t1 t2) ->
@@ -618,11 +650,12 @@ check ProofMode (Contra p) (Just ty) = do
 
 -- ContraAbort
 
-check ProofMode (ContraAbort taborts tterminates) (Just ty) = do
+check ProofMode t@(ContraAbort taborts tterminates) (Just ty) = do
   aborts <- proofSynth' taborts
   terminates <- proofSynth' tterminates
   case (down aborts,down terminates) of
-    (Equal (Abort _) s, Terminates s') -> do
+    (Equal abrt s, Terminates s')
+      | isAbort abrt -> do
        ensure (down s `aeq` down s') $
                 "Can't use contrabort'" <++> s <++> "' doesn't match '" <++>
                 s' <++> "'"
@@ -630,13 +663,22 @@ check ProofMode (ContraAbort taborts tterminates) (Just ty) = do
 
 
 
-    _ -> die $ "Can't use contrabort: " <++> aborts <++> "and" <++>
-              terminates <++> "are the wrong form."
+    _ -> typeError "Contraabort requires a proof of divergence and a proof of termination."
+                 [(text "The term", disp t)
+                 ,(text "The 'abort' term", disp taborts)
+                 ,(text "The inferred type of the abort term", disp aborts)
+                 ,(text "The 'terminates' term", disp tterminates)
+                 ,(text "The inferred type of the terminates term", disp terminates)
+                 ]
 
--- Abort
--- TODO: Is this even used?
-check ProgMode (Abort t) Nothing = do
+  where isAbort (Pos _ t) = isAbort t
+        isAbort (Abort _) = True
+        isAbort _ = False
+
+
+check ProgMode (Abort t) expected = do
   typeAnalysis' t Type
+  t `sameType` expected
   return t
 
 check m (Show t) expected = do
@@ -659,11 +701,19 @@ check mode (ConvCtx p ctx) expected = do
                   ProofMode -> PredMode
                   ProgMode -> ProgMode
                   _ -> error "Unreachable case in check of ConvCtx def."
-  l <- copyEqualInEsc LeftContext ctx
+
+  -- lhs <- withErrorInfo "LHS Check" [(text "The context", disp ctx)] $
+  --        withEscapeContext LeftContext $ check submode ctx Nothing
+  -- emit "LHS is:"
+  -- emit $ disp lhs
+
+
+  l <- withErrorInfo "LHS escCopy" [(text "the context", disp ctx)] $ copyEqualInEsc LeftContext ctx
+  -- emit $ "l is" <++> disp l
+
 
   withErrorInfo "When checking the left hand side of a context." [] $
                   check mode p (Just l)
-
   withErrorInfo
            "When checking the left hand side of a context."
            [(text "The context", disp l)] $
@@ -857,7 +907,7 @@ check ProofMode (Aborts c) expected = withEscapeContext StrictContext $ do
       eqTy <- typeSynth' e
       case down eqTy of
         (Equal (Abort t) e2) -> do
-           let ty' = Equal (Abort t) (f e2)
+           let ty' = Equal (Abort cty) (f e2)
            ty' `sameType` expected
            return ty'
         _ -> throwError $ strMsg
@@ -906,11 +956,15 @@ check mode Refl (Just ty) =
       _ -> die $ err
     return ty
 
-check mode (Trans t1 t2) (Just ty) = do
-  case down ty of
-    (Equal ty0 ty1) -> do
-       (Equal a b) <- checkEqual mode t1
-       (Equal b' c) <- checkEqual mode t2
+
+
+check mode (Trans t1 t2) expected = do
+  ty1@(Equal a b) <- checkEqual mode t1
+  ty2@(Equal b' c) <- checkEqual mode t2
+  withErrorInfo "" [(text "The first equality", disp ty1),
+                    (text "The second equality", disp ty2)] $ do
+  case fmap down expected of
+    Just (Equal ty0 ty1) -> do
        ensure (a `aeq` ty0) $
                 "When checking a trans, the LHS of first equality" $$$
                 a $$$ "does not match the LHS of the expected type." $$$
@@ -919,16 +973,17 @@ check mode (Trans t1 t2) (Just ty) = do
                 "When checking a trans, the RHS of second equality" $$$
                 c $$$ "does not match the RHS of the expected type" $$$
                 ty1
+    Nothing -> return ()
 
-       ensure (b `aeq` b') $
-                "When checking a trans, the RHS of first equality" $$$
-                b $$$ "does not match the LHS of the second equality" $$$
-                b'
+  ensure (b `aeq` b') $
+             "When checking a trans, the RHS of first equality" $$$
+             b $$$ "does not match the LHS of the second equality" $$$
+             b'
 
-       return ty
+  return (Equal a c)
 
-    _ -> die $ "The type expected for a refl-proof is not an equation." $$$
-                 "1. the type: "<++> ty
+    -- _ -> die $ "The type expected for a refl-proof is not an equation." $$$
+    --              "1. the type: "<++> ty
 
 
 
@@ -1021,7 +1076,9 @@ isPred _ = False
 isProof (Var x) = True
 isProof (Lambda Form  Static binding) = isB ty && isProof body
   where ((n,Embed ty),body) = unsafeUnbind binding
-isProof (App t0 Static t1) = isProof t0 && is_b t1
+-- NOTE: This used to require that the annotation be 'static', but that didn't
+-- work out, because we don't annotate stages on proof applications.
+isProof (App t0 _ t1) = isProof t0 && is_b t1
 isProof (Join _ _) = True
 isProof (Conv p ps binding) = isProof p &&
                               and [is_q t | t <- ps] &&
@@ -1103,7 +1160,10 @@ require p cls (Var n) = do
   require p cls v
 
 require p cls t =
-  ensure (p t) $ t <++> "is not the proper syntactic class (" <++> cls <++> ")."
+  unless (p t) $
+         typeError "The expression is not of the propper syntactic class."
+                   [(text "The expression", disp t)
+                   ,(text "The class", text (show  cls))]
 
 
 
@@ -1112,9 +1172,9 @@ join lSteps rSteps t1 t2 = do
   -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
   -- s2 <- substDefs t2
-  t1' <- withErrorInfo "While evaluating the first term given to join." [(text "the term", disp t1)]
+  t1' <- withErrorInfo "While evaluating the first term given to join." [(text "The term", disp t1)]
            $ eval lSteps t1
-  t2' <- withErrorInfo "While evaluating the second term given to join." [(text "the term", disp t2)]
+  t2' <- withErrorInfo "While evaluating the second term given to join." [(text "The term", disp t2)]
            $ eval rSteps t2
   -- Top level definitions cause problems with alpha equality. Try to subsitute
   -- those in...
@@ -1144,7 +1204,7 @@ data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
 getClassification (Pos _ t) = getClassification t
 getClassification t = do
   ta `comb` pa `comb` la `comb` end
-  where ta = typeAnalysis' t Type >> return SortType
+  where ta = typeAnalysis' t Type {- `catchError` (\err -> emit (disp err) >> throwError err) -}  >> return SortType
         pa = do sort <- predSynth' t
                 unless (isLK (down sort)) $ err "Not a predicate"
                 return SortPred
@@ -1152,8 +1212,9 @@ getClassification t = do
                 return SortLK
         comb a b = a `catchError` (\_ -> b)
         end = do env <- ask
-                 emit $ disp env
-                 die $ "Can't classify " <++> t
+                 -- emit $ disp env
+                 typeError "Cannot classify an expression."
+                           [(text "The expression", disp t)]
 
 classToMode SortType = ProgMode
 classToMode SortPred = PredMode
@@ -1162,10 +1223,157 @@ classToMode SortLK = error "classToMode: No case for SortLK"
 -----------------------------------------------
 -- Generic function for copying a term and
 -- handling the escape clause in a specific manner
-escCopy :: (Expr -> TCMonad Expr) -> Expr -> TCMonad Expr
-escCopy f t = everywhereM (mkM f') t
-  where f' (Escape t) = f t
-        f' t = return t
+-- escCopy :: (Expr -> TCMonad Expr) -> Expr -> TCMonad Expr
+-- escCopy f t = everywhereM (mkM f') t
+--   where f' (Escape t) = f t
+--         f' t = return t
+
+-- escCopy' b (Escape (Equal l r)) =
+--   case b of
+--     LeftContext -> return l
+--     RightContext -> return r
+--     _ -> throwError $ strMsg $ "Copy can't reach this."
+-- escCopy' b (Escape t) = do
+--   ty <- withErrorInfo "When checking a proof of an equality in an escape."
+--               [(text "The term", text $ show t)] $ proofSynth' t
+--   case down ty of
+--     (Equal l r) ->
+--        case b of
+--          LeftContext -> return l
+--          RightContext -> return r
+--          _ -> throwError $ strMsg $ "Copy can't reach this."
+--     _ -> typeError "Can't escape to something not an equality."
+--                [(text "The proof type", disp ty)]
+-- escCopy' b
+escCopy f (Escape e) = do
+  e' <- escCopy f e
+  f e'
+
+escCopy f t@(Var _) = return t
+escCopy f t@(Con _) = return t
+escCopy f t@(Formula _) = return t
+escCopy f Type = return Type
+escCopy f (Pi st binding) = do
+   ((n,Embed ty),body) <- unbind binding
+   ty' <- escCopy f ty
+   body' <- escCopy f body
+   return $ Pi st (bind (n,Embed ty') body')
+escCopy f (Forall binding) = do
+   ((n,Embed ty),body) <- unbind binding
+   ty' <- escCopy f ty
+   body' <- escCopy f body
+   return $ Forall (bind (n,Embed ty') body')
+escCopy f (App e1 st e2) = do
+  e1' <- escCopy f e1
+  e2' <- escCopy f e2
+  return $ App e1' st e2'
+escCopy f (Lambda kind st binding) = do
+   ((n,Embed ty),body) <- unbind binding
+   ty' <- escCopy f ty
+   body' <- escCopy f body
+   return $ Lambda kind st (bind (n,Embed ty') body')
+escCopy f (Case s term binding) = do
+  s' <- escCopy f s
+  (n,alts) <- unbind binding
+  alts' <- mapM cpyAlt alts
+  return $ Case s' term (bind n alts')
+  where cpyAlt alt = do
+          ((c,vars),body) <- unbind alt
+          body' <-  escCopy f body
+          return $ bind (c,vars) body'
+escCopy f (TerminationCase e binding) = do
+  e' <- escCopy f e
+  (n,(a,bang)) <- unbind binding
+  a' <- escCopy f a
+  bang' <- escCopy f bang
+  return $ TerminationCase e' (bind n (a',bang'))
+escCopy f t@(Join _ _) = return t
+escCopy f (Equal l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ Equal l' r'
+escCopy f (Val e) = do
+  e' <- escCopy f e
+  return $ Val e'
+escCopy f (Terminates e) = do
+  e' <- escCopy f e
+  return $ Terminates e'
+escCopy f (Contra e) = do
+  e' <- escCopy f e
+  return $ Contra e'
+escCopy f (ContraAbort l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ ContraAbort l' r'
+escCopy f (Abort e) = do
+  e' <- escCopy f e
+  return $ Abort e'
+escCopy f (Show e) = do
+  e' <- escCopy f e
+  return $ Show e'
+escCopy f (Conv e ps binding) = do
+  e' <- escCopy f e
+  (holes,ctx) <- unbind binding
+  ctx' <- escCopy f ctx
+  return $ Conv e' ps (bind holes ctx')
+escCopy f (ConvCtx l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ ConvCtx l' r'
+escCopy f (IndLT l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ IndLT l' r'
+escCopy f (OrdTrans l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ OrdTrans l' r'
+escCopy f (Ind binding) = do
+  ((n,tele,ord),body) <- unbind binding
+  body' <- escCopy f body
+  tele' <- escCopyTele f tele
+  return $ Ind (bind (n,tele',ord) body')
+escCopy f (Rec binding) = do
+  ((n,tele),body) <- unbind binding
+  body' <- escCopy f body
+  tele' <- escCopyTele f tele
+  return $ Rec (bind (n,tele') body')
+escCopy f (Let binding) = do
+  ((n,eq,Embed val),body) <- unbind binding
+  val' <- escCopy f val
+  body' <- escCopy f body
+  return $ Let (bind (n,eq,Embed val') body')
+escCopy f (Aborts e) = do
+  e' <- escCopy f e
+  return $ Aborts e'
+escCopy f (Sym e) = do
+  e' <- escCopy f e
+  return $ Sym e'
+escCopy f Refl = return Refl
+escCopy f (Trans l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ Trans l' r'
+escCopy f (MoreJoin ps) = do
+  ps' <- mapM (escCopy f) ps
+  return $ MoreJoin ps
+escCopy f (Ann l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ Ann l' r'
+escCopy f (Pos p e) = do
+  e' <- escCopy f e
+  return $ Pos p e'
+
+
+escCopyTele f Empty = return Empty
+escCopyTele f (TCons rebinding) = do
+    e' <- escCopy f e
+    rest' <- escCopyTele f rest
+    return $ TCons (rebind (n,st,Embed e') rest')
+  where ((n,st,Embed e),rest) = unrebind rebinding
+
+
 
 copyEqualInEsc b x = escCopy f x
  where f (Equal l r) = case b of
@@ -1174,8 +1382,10 @@ copyEqualInEsc b x = escCopy f x
                          _ -> throwError $ strMsg $ "Copy can't reach this."
 
 
-       f (Pos _ t) = f t
-       f t  = do ty <- proofSynth' t
+       f (Pos p t) =  f t
+       f t  = do ty <-
+                  withErrorInfo "When checking a proof of an equality in an escape."
+                     [(text "The term", disp t)] $ proofSynth' t
                  case down ty of
                   (Equal l r) ->
                      case b of

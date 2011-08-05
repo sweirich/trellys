@@ -11,30 +11,129 @@ data Vec : (a:Type)(n:Nat) -> Type where
  | VCons : [size:Nat] -> [p:n = S size] ->
            (x:a) -> (xs:Vec a size) -> Vec a n
 
+-- Map a function over a vector.
 type vmap : [a:Type] -> [b:Type] -> (f:a -> b) -> [n:Nat] -> (l:Vec a n) -> Vec b n
 prog vmap = \[a:Type][b:Type](f:a -> b) -> rec vmap[n:Nat](l:Vec a n) .
   case l { l_eq } of
     VNil n_eq -> (VNil [b] [n] [n_eq])
   | VCons sz n_eq x l' -> (VCons [b] [n] [sz] [n_eq] (f x) (vmap[sz] l'))
 
+-- axiom vmap : forall (a:Type)(b:Type)(f:a -> b)(n:Nat)(l:Vec a n)
+--               (f_term:forall (x:a)(x_term:x!).(f x) !)(l_term:l!).
+--               (vmap a b f l)!
 --- funtp n [ t1 , ... , tn ] t = t1 -> ... -> tn -> t
 
-type funtp : (n:Nat) -> Vec Type n -> Type -> Type
-prog rec funtp (n:Nat)(ts:Vec Type n) =
+-- Given a list of domain types and a range type, calculate a corresponding
+-- function type.
+type funtp : [n:Nat] -> Vec Type n -> Type -> Type
+prog rec funtp [n:Nat](ts:Vec Type n) =
   \(ret:Type) ->
    case ts { ts_eq } of
      VNil n_eq -> ret
-   | VCons sz n_eq t ts' -> t -> funtp sz ts' ret
+   | VCons sz n_eq t ts' -> t -> funtp [sz] ts' ret
 
+-- Wrap a 'Vector _ m' around each type in the input vector.
 type vecs : (n:Nat) -> (m:Nat) -> (ts:Vec Type n) -> Vec Type n
 prog vecs = \ (n:Nat)(m:Nat)(ts:Vec Type n) -> (vmap [Type] [Type] (\(x:Type) -> Vec x m) [n] ts)
 
+-- FIXME: This needs to be proven.
+axiom vecs_term : forall (n:Nat)(n_term:n!)(m:Nat)(m_term:m!)(ts:Vec Type n)(ts_term:ts!).(vecs n m ts)!
+
+-- The type of zipn. Currently not used.
 type zipn_t : Type
 prog zipn_t =
   (n:Nat) -> (m:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
-   (f:funtp n ts ret) ->
-    funtp n (vecs n m ts) (Vec ret m)
+   (f:funtp [n] ts ret) ->
+    funtp [n] (vecs n m ts) (Vec ret m)
 
+-- The predecessor function, needed to prove injectivity of successor.
+type pred : (n:Nat) -> Nat
+prog pred = \(n:Nat) ->
+   case n {n_eq} of
+       Z -> Z
+     | S n' -> n'
+
+
+-- The successor function is injective.
+theorem succ_inj_term : forall (m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(pf:S m = S n) . m = n
+proof succ_inj_term = \(m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(pf:S m = S n) =>
+   let u1 [u1_eq] = join 100 100 : m = pred (S (tcast m by m_term));
+       u2 [u2_eq] = join 100 100 : pred (S (tcast n by n_term)) = n;
+       u3 [u3_eq] = conv u1 at m = pred ~pf
+    in trans u3 u2
+
+-- Wrapper for injectivity of successor, hiding the termination proof arguments.
+theorem succ_inj : forall (m:Nat)(n:Nat)(pf:S m = S n) . m = n
+proof succ_inj = \(m:Nat)(n:Nat)(pf:S m = S n) =>
+  termcase m {m_term} of
+    abort -> termcase n {n_term} of
+                abort -> trans (sym m_term) n_term
+              | ! -> let u1 [u1_eq] = conv aborts (S ~m_term ) at ((abort Nat) = ~pf);
+                         u2 [u2_eq] = value (S ~n_term)
+                     in contraabort u1 u2
+   | ! -> termcase n {n_term} of
+                abort -> let u1 [u1_eq] = conv aborts (S ~n_term) at ((abort Nat) = ~(sym pf));
+                             u2 [u2_eq] = value (S ~m_term)
+                         in contraabort u1 u2
+              | ! -> succ_inj_term m m_term n n_term pf
+
+-- If a vector built with a cons is terminating, then the tail of the vector is terminating.
+-- This lemma isn't actually needed.
+theorem vec_tail_term : forall(a:Type)(n:Nat)(pred:Nat)(x:a)(v1:Vec a n)(v1_term:v1!)(v2:Vec a pred)(p1:n = S pred)(pf:v1 = VCons [a] [n] [pred] [p1] x v2) . v2!
+proof vec_tail_term = \(a:Type)(n:Nat)(pred:Nat)(x:a)(v1:Vec a n)(v1_term:v1!)(v2:Vec a pred)(p1:n = S pred)(pf:v1 = VCons [a] [n] [pred] [p1] x v2) =>
+ termcase v2 {v2_term} of
+   abort -> let u1 [u1_eq] = (aborts (VCons [a] [n] [pred] [p1] x ~v2_term)); --  : (abort (Vec a n) = (VCons [a] [n] [pred] [p1] x v2))
+                u2 [u2_eq] = trans pf (sym u1)
+            in contraabort (sym u2) v1_term
+ | ! -> v2_term
+
+
+-- Create a vector of n copies of the argument.
+type replicate : (n:Nat) -> (s:Type) -> (x:s) -> Vec s n
+prog rec replicate (n:Nat) = \(s:Type) -> \(x:s) ->
+   case n {n_eq} of
+      Z -> VNil [s] [n] [sym n_eq]
+    | S n' -> VCons [s] [n] [n'] [sym n_eq] x (replicate n' s x)
+
+-- Apply a vector of functions (of homogeneous type) to a vector of arguments.
+type vapp : [n:Nat] -> [s:Type] -> [t:Type] -> (fs:(Vec (s -> t) n)) -> (xs:Vec s n) -> Vec t n
+prog rec vapp [n:Nat] [s:Type] [t:Type] (fs:(Vec (s -> t) n)) (xs:Vec s n) =
+  case n {n_eq} of
+    Z -> VNil [t] [n] [sym n_eq]
+  | S n' -> case fs {fs_eq} of
+               VNil nz -> abort (Vec t n)
+             | VCons sz nsuc f fs' ->
+                 case xs {xs_eq} of
+                    VNil nz -> abort (Vec t n)
+                  | VCons sz' nsuc' x xs' ->
+                    let xs'_sz [xs_sz_eq] = conv xs' at Vec s ~(succ_inj sz' sz (trans (sym nsuc') nsuc))
+                    in VCons [t] [n] [sz] [nsuc] (f x) (vapp [sz] [s] [t] fs' xs'_sz)
+
+
+
+
+type zip : (n:Nat) -> (m:Nat) -> (dom:Vec Type n) -> (ran:Type) -> (acc:Vec (funtp [n] dom ran) m) -> (funtp [n] (vecs n m dom) (Vec ran m))
+prog rec zip (n:Nat)(m:Nat)(dom:Vec Type n)(ran:Type)(acc:Vec (funtp [n] dom ran) m) =
+  case dom {dom_eq} of
+     VNil nz -> let p1 [p1_eq] = morejoin {nz,sym dom_eq} : Vec (funtp [n] dom ran) m = funtp [n] (vecs n m dom) (Vec ran m)
+                in conv acc at ~p1
+   | VCons pred prf t ts -> let acc' [acc'_eq] = conv acc at Vec ~((morejoin {sym dom_eq}) : (funtp [n] dom ran = (t -> funtp [pred] ts ran))) m;
+                                p1 [p1_eq] = (\(x:Vec t m) ->
+                                               let newAccum [newAccum_eq] = vapp [m] [t] [(funtp [pred] ts ran)] acc' x
+                                               in zip pred m ts ran newAccum);
+                                u1 [u1_eq] = morejoin { sym dom_eq }  :
+                                  ((x:Vec t m) -> funtp [pred] (vecs pred m ts) (Vec ran m)) =
+                                  funtp [n] (tcast (vecs n m dom) by (vecs_term n (value n) m (value m) dom (value dom)))  (Vec ran m)
+                           in conv p1 at ~u1
+
+
+type zipn : (n:Nat) -> (m:Nat) -> (dom:Vec Type n) -> (ran:Type) -> (f:(funtp [n] dom ran)) -> (funtp [n] (vecs n m dom) (Vec ran m))
+prog zipn = \(n:Nat)(m:Nat)(dom:Vec Type n)(ran:Type)(f:(funtp [n] dom ran)) ->
+   (zip n m dom ran (replicate m (funtp [n] dom ran) f))
+
+
+
+{-
 type zipn :
   (m':Nat) -> (n:Nat) -> (ts:Vec Type n) -> (ret:Type) ->
   (f:funtp n ts ret) ->
@@ -44,16 +143,16 @@ prog rec zipn (m':Nat) =
   \ (n:Nat)
     (ts:Vec Type n)
     (ret:Type)
-    (f:funtp n ts ret) 
+    (f:funtp n ts ret)
     (acc : funtp n (vecs n m' ts) (Vec ret m')) ->
   case ts {ts_eq} of
-    VNil n_eq -> conv 
-                 (VCons [ret] [(S m')] [m'] [refl] 
+    VNil n_eq -> conv
+                 (VCons [ret] [(S m')] [m'] [refl]
                     (conv f at ~(morejoin { symm ts_eq } : funtp n ts ret = ret))
-                    conv acc at ~(morejoin { symm ts_eq } 
+                    conv acc at ~(morejoin { symm ts_eq }
                                   : funtp n (vecs n m' ts) (Vec ret m') = Vec ret m'))
                  at ~(morejoin { symm ts_eq } : Vec ret (S m') = funtp n (vecs n (S m') ts) (Vec ret (S m')))
-  | VCons n' n_eq t ts' -> 
+  | VCons n' n_eq t ts' ->
       conv
         (\ (v : Vec t (S m')) ->
         case v { v_eq } of
@@ -62,14 +161,15 @@ prog rec zipn (m':Nat) =
         | Vcons m'' m''_eq x v' ->
           (zipn m' n' ts' ret
              ((conv f at ~(morejoin { symm ts_eq } : funtp n ts ret = (t -> funtp n' ts' ret))) x)
-             ((conv acc at ~(morejoin { symm ts_eq } 
+             ((conv acc at ~(morejoin { symm ts_eq }
                               : funtp n (vecs n m' ts) (Vec ret m') = ((Vec t m') -> vecs n' m ts'))) v')))
-      at ~((termcase (vecs n' (S m') ts') { vecs_term } of
+       at ~((termcase (vecs n' (S m') ts') { vecs_term } of
              abort ->
                  (trans (conv refl at (((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) =
                                      ((Vec t (S m')) -> (funtp n' ~vecs_term (Vec ret (S m'))))))
                        (join 12 12)) : (((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) = (abort Type))
-           | ! -> 
+           | ! ->
                  morejoin { symm ts_eq , n_eq, vecs_term }) :
-            ((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) = 
+            ((Vec t (S m')) -> (funtp n' (vecs n' (S m') ts') (Vec ret (S m')))) =
             (funtp n (vecs n (S m') ts) (Vec ret (S m'))))
+-}
