@@ -1,0 +1,33 @@
+module scratch where
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+data Fin : (m:Nat) -> Type where
+  FZ : [n:Nat] -> [u:S n = m] -> Fin m
+| FS : [n:Nat] -> [u:S n = m] -> (i : Fin n) -> Fin m
+
+type a : Fin (S (S (S Z)))
+prog a = FZ [(S (S (S Z)))] [(S (S Z))] [refl]
+
+type b : Fin (S (S (S Z)))
+prog b = FS [(S (S (S Z)))] [(S (S Z))] [refl] (FZ [(S (S Z))] [(S Z)] [refl])
+
+type c : Fin (S (S (S Z)))
+prog c = FS [(S (S (S Z)))] [(S (S Z))] [refl] (FS [(S (S Z))] [(S Z)] [refl] (FZ [(S Z)] [Z] [refl]))
+
+type emb : (m:Nat) -> (i:Fin m) -> Fin (S m)
+prog rec emb (m:Nat)(i:Fin m) = 
+  case i {i_eq} of
+    FZ n u -> FZ [(S m)] [m] [refl]
+  | FS n u i -> FS [(S m)] [m] [refl] conv (emb n i) at Fin ~u
+
+type vect : (A:Type) -> (n:Nat) -> Type
+prog vect = \(A:Type)(n:Nat) -> (Fin n) -> A
+
+type vec : (A:Type) -> (a:A) -> (n:Nat) -> (vect A n)
+prog vec = \(A:Type)(a:A)(n:Nat) ->
+  conv (\(x:Fin n) -> a)
+  at ~(join 10 10 : ((Fin n) -> A) = vect A n)
+                     
