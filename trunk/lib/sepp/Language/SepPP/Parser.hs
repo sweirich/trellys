@@ -61,12 +61,12 @@ sepProgDecl = do
     fail "Type signature name does not match value name"
   return $ ProgDecl n ty val
  <?> "top-level binding"
- where sig = reserved "type" >> (,) <$> exprName <* colon <*> expr <?> "top-level program type signature"
+ where sig = reserved "type" >> (,) <$> varName <* colon <*> expr <?> "top-level program type signature"
        decl = reserved "prog" >> (valDecl <|> recDecl)
-       valDecl = (,) <$> exprName <* reservedOp "="  <*> expr <?> "top-level program declaration "
+       valDecl = (,) <$> varName <* reservedOp "="  <*> expr <?> "top-level program declaration "
        recDecl = do
                 reserved "rec"
-                n <- exprName
+                n <- varName
                 tele <- telescope <?> "rec parameters"
                 reservedOp "="
                 body <- expr
@@ -74,7 +74,7 @@ sepProgDecl = do
 
 sepAxiomDecl = do
   reserved "axiom"
-  n <- exprName
+  n <- varName
   colon
   ty <- innerExpr
   return $ AxiomDecl n ty
@@ -86,16 +86,16 @@ sepProofDecl = do
     unexpected "Theorem name does not match proof name"
   return $ ProofDecl n ty val
  <?> "top-level binding"
- where sig = reserved "theorem" >> (,) <$> exprName <* colon <*> expr <?> "top-level theorem"
+ where sig = reserved "theorem" >> (,) <$> varName <* colon <*> expr <?> "top-level theorem"
        decl = reserved "proof" >> (nonIndDecl <|> indDecl)
-       nonIndDecl = (,) <$> exprName <* reservedOp "="  <*> expr <?>
+       nonIndDecl = (,) <$> varName <* reservedOp "="  <*> expr <?>
                        "top-level proof "
        indDecl = do
           reserved "ind"
-          f <- exprName
+          f <- varName
           tele <- telescope
-          -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
-          u <- braces exprName
+          -- (x,ty) <- parens $ (,) <$> varName <* colon <*> expr
+          u <- braces varName
           reservedOp "="
           body <- expr
           return $ (f,Ind (bind (f,tele,u) body))
@@ -103,7 +103,7 @@ sepProofDecl = do
 
 sepDataDecl = do
   reserved "data"
-  n <- name
+  n <- consName
   colon
   ps <- params
   reserved "Type"
@@ -179,17 +179,26 @@ alts p = do
        else sepBy p (reservedOp "|")
 
 -- name :: Rep a => Parser (Name a)
-name = string2Name <$> identifier
+-- name = string2Name <$> identifier
 
--- exprName :: Parser EName
-exprName = name
+-- varName :: Parser EName
+varName = do
+  n <- identifier
+  when (null n || isUpper (head n)) $
+       unexpected "Variable names must begin with a lowercase letter"
+  return (string2Name n)
+consName = do
+  n <- identifier
+  when (null n || isLower (head n)) $
+       unexpected "Constructor names must begin with an uppercase letter"
+  return (string2Name n)
 
 
 piBinding =
     (((,) Static <$> brackets binding) <?> "Static Argument Declaration") <|>
-    (((,) Dynamic <$> parens binding) <?> "Dynamic Argument Declaration") <|>
-    (do { v <- variable; return(Dynamic,(wildcard,v))})
-  where binding = try ((,) <$> exprName <* colon <*> expr) <|>
+    (((,) Dynamic <$> parens binding) <?> "Dynamic Argument Declaration") -- <|>
+    -- (do { v <- variable; return(Dynamic,(wildcard,v))})
+  where binding = try ((,) <$> varName <* colon <*> expr) <|>
                   (do { e <- expr; return(wildcard,e)})
 
 nestPi [] body = body
@@ -217,7 +226,7 @@ piType = do
 absBinding =
     ((,) Static <$> brackets binding) <|>
     ((,) Dynamic <$> parens binding)
-  where binding = (,) <$> exprName <* colon <*> expr
+  where binding = (,) <$> varName <* colon <*> expr
 
 
 abstraction = unicodeAbstraction <|> asciiAbstraction
@@ -256,15 +265,15 @@ quantification = do
   return $ nestForall pairs body -- Forall (bind (n,Embed ty) body)
 
 
-quantBinding = parens $ (,) <$> exprName <* colon <*> expr
+quantBinding = parens $ (,) <$> varName <* colon <*> expr
 
 
--- FIXME: The 'brackets' around termWitness are necessary because 'exprName'
+-- FIXME: The 'brackets' around termWitness are necessary because 'varName'
 -- matches 'of'. This needs to be refactored.
 caseExpr = do
   reserved "case"
   scrutinee <- expr
-  consEq <- braces exprName
+  consEq <- braces varName
   termWitness <- option Nothing (Just <$> expr)
   reserved "of"
   alts <- alts (alt <?> "case alternative")
@@ -272,7 +281,7 @@ caseExpr = do
   where alt = do cons <- identifier
                  unless (isUpper (head cons)) $
                    unexpected "Pattern requires an uppercase constructor name"
-                 vars <- many exprName
+                 vars <- many varName
                  reservedOp "->"
                  body <- expr
                  return (bind (cons,vars) body)
@@ -281,7 +290,7 @@ caseExpr = do
 termCase = do
   reserved "termcase"
   scrutinee <- expr
-  pf <- braces exprName
+  pf <- braces varName
   reserved "of"
   (a,t) <- do
     -- Diverges case
@@ -362,7 +371,7 @@ convExpr = do
              reserved "by"
              bs <- commaSep1 expr
              reserved "at"
-             xs <- many1 exprName
+             xs <- many1 varName
              dot
              c <- expr
              return $ Conv a bs (bind xs c)
@@ -375,7 +384,7 @@ convExpr = do
 
 recExpr = do
   reserved "rec"
-  f <- exprName
+  f <- varName
   tele <- telescope
   -- u <- brackets termName
   reservedOp "."
@@ -386,10 +395,10 @@ recExpr = do
 
 indExpr = do
   reserved "ind"
-  f <- exprName
-  -- (x,ty) <- parens $ (,) <$> exprName <* colon <*> expr
+  f <- varName
+  -- (x,ty) <- parens $ (,) <$> varName <* colon <*> expr
   tele <- telescope
-  u <- braces exprName
+  u <- braces varName
   reservedOp "."
   body <- expr
   return $ Ind (bind (f,tele,u) body)
@@ -523,7 +532,7 @@ telescope = do
   ps <- many1 argBinding
   return $ teleFromList ps
  where binding stage = do
-           n <- exprName
+           n <- varName
            colon
            ty <- expr
            return (stage,(n,ty))
