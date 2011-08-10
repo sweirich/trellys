@@ -4,6 +4,9 @@ CeilingDivision:
 ZipN:
 	sep --file=ZipN.sep
 
+fullbintree:
+	sep --file=fullbintree.sep
+
 Vectors:
 	sep --file=Vectors.sep
 
