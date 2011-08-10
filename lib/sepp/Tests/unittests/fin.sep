@@ -18,16 +18,15 @@ type c : Fin (S (S (S Z)))
 prog c = FS [(S (S (S Z)))] [(S (S Z))] [refl] (FS [(S (S Z))] [(S Z)] [refl] (FZ [(S Z)] [Z] [refl]))
 
 type emb : (m:Nat) -> (i:Fin m) -> Fin (S m)
-prog rec emb (m:Nat)(i:Fin m) = 
+prog rec emb (m:Nat)(i:Fin m) =
   case i {i_eq} of
     FZ n u -> FZ [(S m)] [m] [refl]
   | FS n u i -> FS [(S m)] [m] [refl] conv (emb n i) at Fin ~u
 
-type vect : (A:Type) -> (n:Nat) -> Type
-prog vect = \(A:Type)(n:Nat) -> (Fin n) -> A
+type vect : (a:Type) -> (n:Nat) -> Type
+prog vect = \(a:Type)(n:Nat) -> (Fin n) -> a
 
-type vec : (A:Type) -> (a:A) -> (n:Nat) -> (vect A n)
-prog vec = \(A:Type)(a:A)(n:Nat) ->
-  conv (\(x:Fin n) -> a)
-  at ~(join 10 10 : ((Fin n) -> A) = vect A n)
-                     
+type vec : (a:Type) -> (x:a) -> (n:Nat) -> (vect a n)
+prog vec = \(a:Type)(x:a)(n:Nat) ->
+  conv (\(y:Fin n) -> x)
+  at ~(join 10 10 : ((Fin n) -> a) = vect a n)
