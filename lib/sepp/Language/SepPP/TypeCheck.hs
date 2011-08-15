@@ -316,8 +316,8 @@ check mode (Forall _) _ = do
 -- App
 
 check mode term@(App t0 stage t1) expected = do
-  imp <- getOptImplicitArgs
-  if imp
+ imp <- getOptImplicitArgs
+ if imp
   then implicit mode term expected -- checkImp is defined way at the bottom.
   else do -- No implicit arguments
    ty0 <- check mode t0 Nothing
