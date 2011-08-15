@@ -23,6 +23,7 @@ sepPPArgs = SepPPOpts {
 -- FIXME: This should be calculated from sepPPArgs
 flags = [("ShowReductions", False)
         ,("DisableValueRestriction", False)
+        ,("ImplicitArgs", False)
         ]
 flagMap = M.fromList flags
 
@@ -38,7 +39,8 @@ getFlag n = do
    Nothing -> throwError $ strMsg $ "Could not find flag " ++ n ++ show opts
 
 
-getOptShowReductions, getOptDisableValueRestriction ::
+getOptShowReductions, getOptDisableValueRestriction, getOptImplicitArgs ::
   (Error e, MonadError e m, MonadState Flags m) => m Bool
 getOptShowReductions = getFlag "ShowReductions"
 getOptDisableValueRestriction = getFlag "DisableValueRestriction"
+getOptImplicitArgs = getFlag "ImplicitArgs"

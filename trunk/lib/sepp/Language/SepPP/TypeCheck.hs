@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
 NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
-PackageImports,ParallelListComp #-}
+PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables #-}
 
 module Language.SepPP.TypeCheck where
 
@@ -11,7 +11,10 @@ import Language.SepPP.TCUtils
 import Language.SepPP.Options
 
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
+
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
+import qualified Unbound.LocallyNameless.Alpha as Alpha
+import qualified Generics.RepLib as RL
 
 import Text.PrettyPrint
 
@@ -23,7 +26,7 @@ import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
-import Data.List(nubBy, nub, (\\))
+import Data.List(nubBy, nub, (\\),intersect,sortBy,groupBy)
 import qualified Data.Map as M
 
 
@@ -47,7 +50,7 @@ data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
             | FlagResult String Bool
 
 -- | Typecheck a single definition
-
+checkDef :: Decl -> TCMonad DefRes
 checkDef (FlagDecl nm b) = return $ FlagResult nm b
 
 checkDef (AxiomDecl nm theorem) = do
@@ -90,18 +93,11 @@ checkDef (DataDecl (Con nm) binding) = do
 
 
   where arrowRange (Pi _ binding) = do
-          ((n,_),body) <- unbind binding
+          ((n,_,_),body) <- unbind binding
           arrowRange body
         arrowRange (Pos _ t) = arrowRange t
         arrowRange ty = return ty
 
-
-        arrowDom (Pos _ t) = arrowDom t
-        arrowDom (Pi stage binding) = do
-          (pat,body) <- unbind binding
-          doms <- arrowDom body
-          return $ (stage,pat):doms
-        arrowDom t = return []
 
         appHead (App t0 _ _) = appHead t0
         appHead (Pos _ t) = appHead t
@@ -149,8 +145,8 @@ checkDefs (d:ds) = do
            comp
         staticTele Empty = Empty
         staticTele (TCons binding) =
-            TCons (rebind (n,Static,ty) (staticTele body))
-          where ((n,_,ty),body) = unrebind binding
+            TCons (rebind (n,Static,ty,inf) (staticTele body))
+          where ((n,_,ty,inf),body) = unrebind binding
 
 
 
@@ -178,7 +174,7 @@ valJudgment t@(App _ _ _ ) =
 -- The S,G |- LK : LogicalKind judgment
 lkJudgment (Formula _ ) = return True
 lkJudgment (Forall binding) = do
-  ((n,Embed ty),body) <- unbind binding
+  ((n,Embed ty,inf),body) <- unbind binding
   ensure (isA ty) $
     "Expecting the classifier for a logical kind argument to be syntax class"
     <++> "'A'."
@@ -194,7 +190,7 @@ guardLK t = do
 
 
 
-data CheckMode = PredMode | ProofMode | ProgMode deriving (Show,Eq)
+data CheckMode = LKMode | PredMode | ProofMode | ProgMode deriving (Show,Eq)
 
 
 check :: CheckMode -> Expr -> Maybe Expr -> TCMonad Expr
@@ -253,7 +249,7 @@ check _ Type _ = err "Can't check Type in non-programmatic mode."
 -- Pi
 
 check ProgMode tm@(Pi stage binding) expected = do -- Expr_Pi
-  ((n,Embed ty),body) <- unbind binding
+  ((n,Embed ty,inf),body) <- unbind binding
   cls <- getClassification ty
   case cls of
     SortType -> return ()
@@ -282,7 +278,7 @@ check mode tm@(Pi _ _) ty = do
 
 -- Forall
 check PredMode (Forall binding) Nothing = do
-  ((n,Embed t),body) <- unbind binding
+  ((n,Embed t,inf),body) <- unbind binding
   -- We need to do a syntactic case-split on ty. Going to use backtracking for now.
   case down t of
     Formula i -> do  -- Pred_Forall3 rule
@@ -320,17 +316,14 @@ check mode (Forall _) _ = do
 -- App
 
 check mode term@(App t0 stage t1) expected = do
-  ty0 <- check mode t0 Nothing
-  case (mode, down ty0) of
+  imp <- getOptImplicitArgs
+  if imp
+  then implicit mode term expected -- checkImp is defined way at the bottom.
+  else do -- No implicit arguments
+   ty0 <- check mode t0 Nothing
+   case (mode, down ty0) of
     (ProgMode, Pi piStage binding) -> do
-        unless (piStage == stage) $ do
-           typeError "The stage for the arrow does not match the stage for the application"
-                        [(text "Arrow stage:",disp piStage),
-                         (text "Application stage", disp stage)]
-                 -- "Stage" <++> show piStage <++>  "for arrow" <++>
-                 --  "does not match stage for application " <++> show stage
-
-        ((x,Embed dom),body) <- unbind binding
+        ((x,Embed dom,inf),body) <- unbind binding
         cls <- getClassification dom
         argMode <- case cls of
                      SortPred -> return ProofMode
@@ -341,7 +334,17 @@ check mode term@(App t0 stage t1) expected = do
                                      (text "The classifier", disp dom)]
 
         argTy <- check argMode t1 (Just dom)
-        withErrorInfo "requireA" [] $  requireA argTy
+        withErrorInfo "The argument type does not have the syntactic classification A."
+                        [(text "The argument", disp argTy)
+                        ,(text "The application", disp term)
+                        ] $  requireA argTy
+
+        unless (piStage == stage) $ do
+           typeError "The stage for the arrow does not match the stage for the application"
+                        [(text "Arrow stage:",disp piStage),
+                         (text "Application stage", disp stage)]
+
+
         -- withErrorInfo "require_a" [] $ require_a t1
         let sub = subst x t1 body
         sub `sameType` expected
@@ -354,12 +357,12 @@ check mode term@(App t0 stage t1) expected = do
 
     (PredMode, Forall binding) -> do
         ensure (stage == Static) $ "Application of a predicate must be in the static stage."
-        ((n,Embed ty),body) <- unbind binding
+        ((n,Embed ty,inf),body) <- unbind binding
         guardLK body
         typeAnalysis' t1 ty -- TODO: Check on this, should it be typeAnalysis?
         return $ subst n t1 body
     (ProofMode, Forall binding) -> do
-        ((n,Embed ty),body) <- unbind binding
+        ((n,Embed ty,inf),body) <- unbind binding
         requireB ty
         requirePred body
         bty <- bAnalysis t1 ty
@@ -368,7 +371,7 @@ check mode term@(App t0 stage t1) expected = do
         return snb
     (ProofMode, Pi stage binding) -> do
              -- FIXME: Do something with the stage?
-             ((n,Embed ty),body) <- unbind binding
+             ((n,Embed ty,inf),body) <- unbind binding
              -- requireB ty
              -- requirePred body
              bty <- bAnalysis t1 ty
@@ -397,12 +400,12 @@ check PredMode (Lambda Form Static binding) Nothing = do -- Pred_Lam rule
   form <- extendBinding n ty False (predSynth' body)
   lk <- lkJudgment form
   ensure lk $ form <++> " is not a valid logical kind."
-  return (Forall (bind (n,Embed ty) form))
+  return (Forall (bind (n,Embed ty,False) form))
 
 check ProofMode (Lambda Form _ pfBinding)
               (Just out@(Forall predBinding)) = do -- Prf_Forall.
 
-  Just ((proofName,Embed pfTy),pfBody,(predName,Embed predTy),predBody) <-
+  Just ((proofName,Embed pfTy),pfBody,(predName,Embed predTy,predInf),predBody) <-
     unbind2  pfBinding predBinding
 
   cls <- getClassification pfTy
@@ -422,7 +425,7 @@ check ProgMode (Lambda Program progStage progBinding) (Just ty@(Pi piStage piBin
                    ,(text "The Pi stage annotation", disp $ show piStage)
                    ]
 
-  Just ((progName,Embed progTy), progBody,(piName,Embed piTy), piBody) <-
+  Just ((progName,Embed progTy), progBody,(piName,Embed piTy,piInf), piBody) <-
     unbind2 progBinding piBinding
 
   -- TODO: Several side conditions on stage annotations
@@ -432,7 +435,7 @@ check ProgMode (Lambda Program progStage progBinding) (Just ty@(Pi piStage piBin
 check ProgMode (Lambda Program stage binding) Nothing = do
   ((nm,Embed ty),body) <- unbind binding
   bodyTy <- extendBinding nm ty True $ check ProgMode body Nothing
-  return $ Pi stage (bind (nm,Embed ty) bodyTy)
+  return $ Pi stage (bind (nm,Embed ty,False) bodyTy)
 
 
 
@@ -490,7 +493,7 @@ check mode (Case s pf binding) expected = do
         substPat (n:ns) ty m =
           case down ty of
             (Pi _ binding) -> do
-             ((n',Embed ty),body) <- unbind binding
+             ((n',Embed ty,inf),body) <- unbind binding
              extendBinding n ty True $ substPat ns (subst n' (Var n) body) m
             _ -> typeError
                   ("When checking a pattern, expected constructor to have" <++>
@@ -499,7 +502,7 @@ check mode (Case s pf binding) expected = do
 
         getStages (Pos _ t) = getStages t
         getStages (Pi st binding) = do
-          ((n',_),body) <- unbind binding
+          ((n',_,_),body) <- unbind binding
           vs <- getStages body
           return $ st:vs
         getStages _ = return []
@@ -781,7 +784,7 @@ check ProofMode t@(OrdTrans p1 p2) (Just ty@(IndLT y x)) = do
 check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
   -- FIXME: This is a hack, because there are different number of binders in the
   -- Ind and Forall forms.
-  let clean m = (\((n,Embed ty),t) -> ((n,Embed (down ty)),down t)) <$> m
+  let clean m = (\((n,Embed ty,inf),t) -> ((n,Embed (down ty),inf),down t)) <$> m
   (p1@(fun,_,witness),_) <- unbind prfBinding
   (a1,Forall predBinding') <- clean $ unbind predBinding
 
@@ -790,19 +793,19 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
 
 
   case (reverse args, down rest) of
-    ((iarg,iargTy):rargs,Forall predBody) -> do
+    ((iarg,iargTy,iInf):rargs,Forall predBody) -> do
       -- FIXME: Check to make sure targ == Terminates iarg
-      ((targ,Embed tyTArg'),predBody) <- unbind predBody
+      ((targ,Embed tyTArg',predInf),predBody) <- unbind predBody
       let xvar = Var iarg
           y = string2Name "y"
           yvar = Var y
-          fty = foldr (\(n,ty) r -> Forall (bind (n,Embed ty) r))
-                      (Forall (bind (u,Embed (IndLT yvar (Var iarg)))
+          fty = foldr (\(n,ty,inf) r -> Forall (bind (n,Embed ty,inf) r))
+                      (Forall (bind (u,Embed (IndLT yvar (Var iarg)),False)
                               (subst iarg yvar predBody)))
-                      (reverse ((y,iargTy):rargs))
+                      (reverse ((y,iargTy,False):rargs))
 
       extendBinding f fty True $
-        foldr (\(arg,ty) m -> extendBinding arg ty False m)
+        foldr (\(arg,ty,_) m -> extendBinding arg ty False m)
             (extendBinding u (Terminates xvar) True $
               check ProofMode prfBody (Just predBody))
             args
@@ -820,8 +823,8 @@ check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Ter
   let pairTele tele (Pos _ t) = pairTele tele t
       pairTele Empty body = return ([],body)
       pairTele (TCons teleBinding) (Pi stage binding) = do
-        ((piName,Embed piTy),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy),rest) = unrebind teleBinding
+        ((piName,Embed piTy,piInf),piBody) <- unbind binding
+        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
         piMode <- getClassification piTy
         check (classToMode piMode) piTy Nothing
         teleMode <- getClassification teleTy
@@ -1055,7 +1058,7 @@ isQ t = isLK t
 isLK (Pos _ t) = isLK t
 isLK (Formula _) = True
 isLK (Forall binding) = isA ty && isLK body
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((n,Embed ty,_),body) = unsafeUnbind binding
 isLK _ = False
 
 
@@ -1064,7 +1067,7 @@ isPred (Lambda Form Static binding) = isA ty && isPred body
   where ((n,Embed ty),body) = unsafeUnbind binding
 isPred (App t0 Static t1) = isPred t0 && is_a t1
 isPred (Forall binding) = isB ty && isPred body
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((n,Embed ty,_),body) = unsafeUnbind binding
 isPred (Equal t0 t1) = isTerm t0 && isTerm t1
 isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
 isPred (Terminates t) = isTerm t
@@ -1112,7 +1115,7 @@ isTerm (Var _) = True
 isTerm (Con _) = True
 isTerm Type = True
 isTerm (Pi _ binding) = isA ty && isTerm body
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((n,Embed ty,_),body) = unsafeUnbind binding
 isTerm (Lambda Program _ binding) = isA ty && isTerm body
   where ((n,Embed ty),body) = unsafeUnbind binding
 isTerm (Conv t ts binding) = isTerm t &&
@@ -1136,7 +1139,7 @@ isTerm t = False
 
 isTermTele Empty = True
 isTermTele (TCons rebinding) = isTerm ty && isTermTele rest
-  where ((_,_,Embed ty),rest) = unrebind rebinding
+  where ((_,_,Embed ty,_),rest) = unrebind rebinding
 
 
 is_a t = isTerm t || isProof t || isLK t
@@ -1202,19 +1205,24 @@ join lSteps rSteps t1 t2 = do
 -- Get the classification of a classifier (Type,Predicate,LogicalKind)
 data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
 getClassification (Pos _ t) = getClassification t
-getClassification t = do
-  ta `comb` pa `comb` la `comb` end
-  where ta = typeAnalysis' t Type {- `catchError` (\err -> emit (disp err) >> throwError err) -}  >> return SortType
+getClassification t =
+  ta `catchError` (\te ->
+  pa `catchError` (\pe ->
+  la `catchError` (\le -> do env <- ask
+                             emit $ disp env
+                             emit te
+                             emit pe
+                             emit le
+                             typeError "Cannot classify an expression."
+                                        [(text "The expression", disp t)])))
+
+  where ta = typeAnalysis' t Type >> return SortType
         pa = do sort <- predSynth' t
                 unless (isLK (down sort)) $ err "Not a predicate"
                 return SortPred
         la = do unless (isLK t) (err "Could not classify classifier")
                 return SortLK
-        comb a b = a `catchError` (\_ -> b)
-        end = do env <- ask
-                 -- emit $ disp env
-                 typeError "Cannot classify an expression."
-                           [(text "The expression", disp t)]
+
 
 classToMode SortType = ProgMode
 classToMode SortPred = PredMode
@@ -1254,15 +1262,15 @@ escCopy f t@(Con _) = return t
 escCopy f t@(Formula _) = return t
 escCopy f Type = return Type
 escCopy f (Pi st binding) = do
-   ((n,Embed ty),body) <- unbind binding
+   ((n,Embed ty,inf),body) <- unbind binding
    ty' <- escCopy f ty
    body' <- escCopy f body
-   return $ Pi st (bind (n,Embed ty') body')
+   return $ Pi st (bind (n,Embed ty',inf) body')
 escCopy f (Forall binding) = do
-   ((n,Embed ty),body) <- unbind binding
+   ((n,Embed ty,inf),body) <- unbind binding
    ty' <- escCopy f ty
    body' <- escCopy f body
-   return $ Forall (bind (n,Embed ty') body')
+   return $ Forall (bind (n,Embed ty',inf) body')
 escCopy f (App e1 st e2) = do
   e1' <- escCopy f e1
   e2' <- escCopy f e2
@@ -1370,8 +1378,8 @@ escCopyTele f Empty = return Empty
 escCopyTele f (TCons rebinding) = do
     e' <- escCopy f e
     rest' <- escCopyTele f rest
-    return $ TCons (rebind (n,st,Embed e') rest')
-  where ((n,st,Embed e),rest) = unrebind rebinding
+    return $ TCons (rebind (n,st,Embed e',inf) rest')
+  where ((n,st,Embed e,inf),rest) = unrebind rebinding
 
 
 
@@ -1433,14 +1441,12 @@ checkCaseCoverage tyS alts = do
 pairTele tele (Pos _ t) = pairTele tele t
 pairTele Empty body = return ([],body)
 pairTele (TCons teleBinding) (Pi stage binding) = do
-        ((piName,Embed piTy),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy),rest) = unrebind teleBinding
+        ((piName,Embed piTy,piInf),piBody) <- unbind binding
+        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
         piMode <- getClassification piTy
         check (classToMode piMode) piTy Nothing
         teleMode <- getClassification teleTy
         check (classToMode teleMode) teleTy Nothing
-
-
         unless (teleTy `aeq` piTy) $
                typeError ("The type ascribed to a Rec-bound variable does not" <++>
                          "the type ascribed to the associated Pi bound variable")
@@ -1449,19 +1455,19 @@ pairTele (TCons teleBinding) (Pi stage binding) = do
         (args,body') <- extendBinding teleName teleTy False $
                          pairTele rest (subst piName (Var teleName) piBody)
         return ((teleName,teleTy):args,body')
-
 pairTele tele ps = typeError (show tele ++ "\n" ++ show ps) []
 
+-- Given a telescope representing a series of bindings, and a (nested) Forall
+-- formula, pair up the bindings in the telesope with the bindings in the formula.
 pairTelePrf tele (Pos _ t) = pairTelePrf tele t
 pairTelePrf Empty body = return ([],body)
 pairTelePrf (TCons teleBinding) (Forall binding) = do
-        ((piName,Embed piTy),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy),rest) = unrebind teleBinding
+        ((piName,Embed piTy,piInf),piBody) <- unbind binding
+        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
         piMode <- getClassification piTy
         check (classToMode piMode) piTy Nothing
         teleMode <- getClassification teleTy
         check (classToMode teleMode) teleTy Nothing
-
 
         unless (teleTy `aeq` piTy) $
                typeError ("The type ascribed to a Rec-bound variable does not" <++>
@@ -1470,5 +1476,273 @@ pairTelePrf (TCons teleBinding) (Forall binding) = do
                ,(text "The Pi argument type", disp piTy)]
         (args,body') <- extendBinding teleName teleTy False $
                          pairTelePrf rest (subst piName (Var teleName) piBody)
-        return ((teleName,teleTy):args,body')
+        return ((teleName,teleTy,teleInf):args,body')
+
+
+
+
+
+-- * Implicit arguments.
+
+
+implicit mode t expected = do
+  (f,actuals) <- unroll t []
+  -- let (stages,args) = unzip actuals
+  fTy <- check mode f Nothing
+
+  -- Calculate an initial substitution.
+  (iSub,indices) <- initialSub fTy actuals [] expected
+  (ty,vars,sub) <- loop fTy (0,indices) [] actuals iSub
+
+  -- emit $ "Final Sub" $$$ show vars
+  -- emit $ "Resulting type" <++> ty
+  ty `sameType` expected
+  return ty
+  where -- unroll the application, return the function applied and the arguments
+        unroll (Pos _ t) acc = unroll t acc
+        unroll (App f s x) acc = unroll f ((s,x):acc)
+        unroll t acc = return (t,acc)
+
+        -- process the arguments w.r.t. the type.
+        -- arguments:
+        --    (idx,imap) the number of quantifiers crossed and a mapping between indices and variables in sub
+        --    vars, metavars
+        --    args, actual arguments to the application
+        --    sub, the cumulative substitution
+        loop (Pos p t) ix vars args sub = loop t ix vars args sub `catchError` addErrorPos p t
+        loop piTy@(Pi piStage binding) (idx,imap) vars args@((argStage,a):as) sub = do
+
+
+
+
+          ((n,Embed dom,inf),body) <- unbind binding
+          let Just old = lookup idx imap -- The variable name in the initial substitution
+          -- There has to be a better way to do the substitution.
+          let sub' = swaps (single (AnyName old) (AnyName n)) sub
+
+          if inf
+             -- The the argument is to be inferred, then we check to see if we already have
+             -- an instantiation as an input.
+             then do
+               case lookup n sub' of
+                 Just ty' -> do
+                   check mode ty' (Just dom)
+                   loop (subst n ty' body) (idx + 1,imap) vars args sub
+                 Nothing -> loop body (idx+1,imap) ((n,dom,piStage):vars) args sub
+             else do
+                 -- Get the sort of the argument type, so we can check it in the correct mode.
+                 cls <- getClassification dom
+                 argMode <- case cls of
+                     SortPred -> return ProofMode
+                     SortType -> return ProgMode
+                     _ -> typeError ("The classifier of the argument to a programmatic application" <++>
+                                    "should either be a predicate or program.")
+                                    [(text "FIXME: Reconstruct term", disp a),
+                                     (text "The classifier", disp dom)]
+
+                 -- See if there are any metavariables in the expected type. If there are, then we have
+                 -- to synthesize a type, because we can't check on uninstantiated metavars.
+                 let argType = isInstantiated [v | (v,_,_) <- vars] dom
+
+                 aTy <- check argMode a argType
+
+                 when (mode == ProgMode) $ do
+                    withErrorInfo "The argument type does not have the syntactic classification A."
+                           [(text "The argument", disp a)] $  requireA aTy
+
+
+                 -- when (mode ==  ProofMode) $ do
+                 --      ensure (constrApp term) $ term <++> "is not a construction."
+
+                 unless (piStage == argStage) $ do
+                   typeError "The stage for the arrow does not match the stage for the application"
+                       [(text "Arrow stage:",disp piStage),
+                        (text "Application stage", disp argStage)]
+
+
+
+
+                 newSub <- match [n | (n,_,_) <- vars] dom aTy
+                 vars' <- checkSub vars sub
+                 body' <- applySub ((n,a):sub') body
+                 loop body' (idx + 1,imap) vars' as sub'
+
+        loop piTy@(Forall binding) (idx,imap) vars args@((argStage,a):as) sub = do
+          ((n,Embed dom,inf),body) <- unbind binding
+          let Just old = lookup idx imap
+          let sub' = swaps (single (AnyName old) (AnyName n)) sub
+          if inf
+             then do
+               case lookup n sub' of
+                 Just ty' -> do
+                   check mode ty' (Just dom)
+                   loop (subst n ty' body) (idx + 1,imap) vars args sub
+                 Nothing -> loop body (idx+1,imap) ((n,dom,Static):vars) args sub
+             else do
+                 -- See if there are any metavariables in the expected type. If there are, then we have
+                 -- to synthesize a type, because we can't check on uninstantiated metavars.
+                 let argExpected = isInstantiated [v | (v,_,_) <- vars] dom
+                 aTy <- check mode a argExpected
+                 newSub <- match [n | (n,_,_) <- vars] dom aTy
+                 vars' <- checkSub vars sub
+                 body' <- applySub ((n,a):sub') body
+
+
+                 when (mode == PredMode) $ guardLK body
+                 when (mode == ProofMode) $ do
+                     requireB aTy
+                     requirePred body
+
+                 loop body' (idx + 1,imap) vars' as sub'
+
+
+        loop ty idx vars [] sub = return (ty,vars,sub)
+        loop t  idx vars ((_,a):as) sub =
+            typeError "Trying to apply a term that is not a quantification"
+                        [(text "The type", disp t), (text "The arg", disp a)]
+
+        checkSub vars sub = do
+          -- FIXME: Check to see if the substitution is consistent.
+          return vars
+        applySub sub t = do
+          let t' = substs sub t
+          return t'
+
+
+-- | initialSub calculates the initial substitution for an application based on
+-- the expected type of the application. Because 'unbind' gives a fresh name to
+-- the variables in the pattern, we can't directly use those names later when
+-- inferring arguments. To get around this issue, we assign indices (with 0
+-- being the outermost binding), which we will then use when looking up
+-- variables.
+initialSub ty args vars Nothing = return ([],[])
+initialSub (Pos _ t) args vars  expected = initialSub t args vars expected
+initialSub (Pi _ binding) args@(a:as) vars expected
+    | inf = initialSub body args (n:vars) expected
+    | otherwise = initialSub body as (n:vars) expected
+  where ((n,_,inf),body) = unsafeUnbind binding
+initialSub (Forall binding) args@(a:as) vars expected
+    | inf = initialSub body args (n:vars) expected
+    | otherwise = initialSub body as (n:vars) expected
+  where ((n,_,inf),body) = unsafeUnbind binding
+
+initialSub ty [] vars (Just expected) = do
+  subst <- match vars ty expected
+  let idxs = [(i,v) | i<- [0..] | v <- reverse vars]
+  return (subst,idxs)
+
+initialSub ty args _ (Just expected) =
+  typeError "Can't calculate initial substitution."
+              ([(text "The input type", disp ty)
+              ,(text "The expected type", disp expected)] ++
+              [(text "Argument", disp a) | (_,a) <- args])
+
+
+
+
+-- Check to see if the input type contains any of the marked metavars in vars.
+
+isInstantiated vars ty
+  | null metavars = Just ty
+  | otherwise = Nothing
+  where allvars = fv ty
+        metavars = allvars `intersect` vars
+
+
+
+-- * Pattern matching
+class (Rep1 MatchD t, Rep t) => Match t where
+  match :: (MonadError TypeError m, Monad m) => [EName] -> t -> t -> m [(EName,Expr)]
+  match  = matchR1 rep1
+
+
+data MatchD t = MatchD {  matchD :: forall m s. (Monad m, MonadError TypeError m) =>  [EName] -> t -> t -> m [(EName,Expr)]  }
+instance Match t => Sat (MatchD t) where
+  dict = MatchD match
+
+
+instance Match Expr where
+
+  match vars (Pos _ t1) t2 = match vars t1 t2
+  match vars t1 (Pos _ t2) = match vars t1 t2
+  match vars t v@(Var _) = typeError "When matching, meta-variable cannot occur on RHS" []
+  -- Note: The Var/Var case and Term/Var case should never happen, since we're doing matching and not unification.
+  match vars (Var n) t
+      | n `elem` vars = return [(n,t)]
+      | Var n' <- t = do
+         unless (n' == n) $ typeError "Cannot match dissimilar variables"
+                                       [(text "First variable", disp n)
+                                       ,(text "Second variable", disp n')]
+         return []
+      | otherwise = typeError "Cannot match non-metavariable with a term"
+                      [(text "The variable", disp n)
+                      ,(text "The term", disp t)]
+
+
+
+  match vars t u = matchR1 rep1 vars t u
+
+
+
+matchR1 :: (MonadError TypeError m) => R1 MatchD t -> [EName] -> t -> t -> m [(EName,Expr)]
+matchR1 Int1 _  x y  = unless (x == y) ( matchError x y) >> return []
+matchR1 Integer1 _ x y = unless (x == y) (matchError x y) >> return []
+matchR1 Char1 _  x y = unless (x == y) (matchError x y) >> return []
+matchR1 (Data1 _ cons) vars x y = loop cons x y where
+   loop (RL.Con emb reps : rest) x y =
+     case (from emb x, from emb y) of
+      (Just p1, Just p2) -> match1 reps vars p1 p2
+      (Nothing, Nothing) -> loop rest x y
+      (_,_)              -> matchError x y
+matchR1 _ _ _ _ = typeError "Could not match values." []
+
+match1 ::  MonadError TypeError m => MTup MatchD l -> [EName] -> l -> l -> m [(EName,Expr)]
+match1 MNil _ Nil Nil = return []
+match1 (r :+: rs) vars (p1 :*: t1) (p2 :*: t2) = do
+  s1 <- matchD r vars p1 p2
+  s2 <- match1 rs vars t1 t2
+  return $ s1 ++ s2
+
+
+matchError t1 t2 = typeError "Could not match values." [] -- [(text "First value", disp t1), (text "Second value", disp t2)]
+instance Disp Integer where
+  disp = text . show
+
+instance Disp Char where
+  disp = char
+
+instance Match Int where
+  match _ x y = do
+    when (x /= y) $ fail "Match failed on Int."
+    return []
+instance Match Char where
+  match _ x y = do
+    when (x /= y) $ fail "Match failed on Char."
+    return []
+
+instance (Match p, Match n) => Match (Bind p n)
+instance (Match l, Match r) => Match (l,r)
+instance (Match x, Match y, Match z) => Match (x,y,z)
+instance (Match w, Match x, Match y, Match z) => Match (w,x,y,z)
+instance Match Bool
+instance Match t => Match (Embed t)
+instance Match SourcePos
+instance Match a => Match [a]
+instance Match Stage
+instance Match Tele
+instance Match Kind
+instance Match Integer
+instance Match EName where
+  match _ x y = do
+    when (x /= y) (typeError "Match Failed on names." [(text "First Name", disp x), (text "Second Name", disp y)])
+    return []
+
+instance Match a => Match (Maybe a)
+instance (Match a, Match  b) => Match (Rebind a b)
+
+-- No idea why this is required...
+instance (Match t) => Match (R t)
+
+
+
 

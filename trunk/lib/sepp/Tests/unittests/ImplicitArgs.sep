@@ -1,0 +1,55 @@
+module ImplicitArgs where
+
+flag ImplicitArgs true
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+
+type one : Nat
+prog one = S Z
+
+data Vec : (a:Type)(n:Nat) -> Type where
+   VNil : [p:n=Z] -> Vec a n
+ | VCons : [size:Nat] -> [p:n = S size] ->
+           (x:a) -> (xs:Vec a size) -> Vec a n
+
+
+
+type id : (? a:Type) -> (x:a) -> a
+prog id = \(a:Type) (x:a) -> x
+
+type zero : Nat
+prog zero = id Z
+
+
+type idvec : (? a:Type) -> (?n:Nat) -> (x:Vec a n) -> Vec a n
+prog idvec = \(a:Type)(n:Nat)(x:Vec a n)->  x
+
+
+
+
+type idz : Vec Nat Z
+prog idz = idvec (VNil Nat Z [refl])
+
+
+
+
+theorem irefl : forall(?a:Type)(t:a).(t = t)
+proof irefl = \(a:Type)(t:a) => join 0 0
+
+Theorem irefl' : forall(?a:Type)(t:a).(t = t) :=
+        join 0 0
+
+Program idvec : (? a:Type)(?n:Nat)(x:Vec a n) -> Vec a n := x
+Inductive irefl'' : forall(?a:Type)(t:a){tterm}.(t=t) := join 0 0
+Recursive f : (?a:Type)(x:a) -> a := x
+
+
+Theorem s_term : forall(m:Nat)(m':Nat)(p:S m' = m)(u:m!).m' ! :=
+   let S_m'_term [wc] = conv u at (~(sym p))! -- (S m') !
+   in termcase m' {u} of
+        abort -> contraabort (aborts (S ~u)) S_m'_term
+      | ! -> u
+

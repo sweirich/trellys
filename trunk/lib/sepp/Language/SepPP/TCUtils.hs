@@ -72,7 +72,7 @@ extendBinding n ty isVal m = do
 extendTele :: Tele -> TCMonad a -> TCMonad a
 extendTele Empty m = m
 extendTele (TCons binding) m = extendBinding n ty False $ extendTele rest m
-  where ((n,st,Embed ty),rest) = unrebind binding
+  where ((n,st,Embed ty,_),rest) = unrebind binding
 
 extendDefinition :: EName -> Expr -> Expr -> Bool -> TCMonad a -> TCMonad a
 extendDefinition n ty def isVal m = do
@@ -270,7 +270,7 @@ erase (Lambda _ Dynamic binding) = do
   ((n,_),body) <- unbind binding
   ELambda <$> ((bind (translate n)) <$> erase body)
 erase (Pi s binding) = do
-  ((n,Embed tp),body) <- unbind binding
+  ((n,Embed tp,_),body) <- unbind binding
   et <- erase tp
   EPi s <$> ((bind ((translate n),Embed et)) <$> erase body)
 erase (Rec binding) = do
@@ -280,7 +280,7 @@ erase (Rec binding) = do
   where eraseTele :: Monad m => Tele -> m [EEName]
         eraseTele Empty = return []
         eraseTele (TCons rebinding) = do
-          let ((n,stage,Embed ty),rest) = unrebind rebinding
+          let ((n,stage,Embed ty,inf),rest) = unrebind rebinding
           ns <- eraseTele rest
           case stage of
             Dynamic -> return (translate n:ns)

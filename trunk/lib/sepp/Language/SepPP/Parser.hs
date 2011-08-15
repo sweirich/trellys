@@ -52,7 +52,10 @@ sepModule = do
 
 -- | Top-level binding
 -- sepBinding :: Parser Binding
-sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|> sepFlag
+sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|>
+          sepTheoremDecl <|> sepProgramDecl <|>
+          sepInductiveDecl <|> sepRecursiveDecl <|>
+          sepFlag
 
 sepProgDecl = do
   (n,ty) <- sig
@@ -101,6 +104,75 @@ sepProofDecl = do
           return $ (f,Ind (bind (f,tele,u) body))
 
 
+sepTheoremDecl = do
+  reserved "Theorem"
+  n <- varName
+  colon
+  reserved "forall"
+  qvars <- many1 piBinding
+  reservedOp "."
+  ran <- expr
+  reservedOp ":="
+  body <- expr
+  let ty = foldr (\(_,(inf,n,ty)) rest -> Forall (bind (n,Embed ty,inf) rest)) ran qvars
+      term = foldr (\(_,(_,n,ty)) rest -> Lambda Form Static (bind (n,Embed ty) rest)) body qvars
+  return $ ProofDecl n ty term
+
+sepProgramDecl = do
+  reserved "Program"
+  n <- varName
+  colon
+  qvars <- many1 piBinding
+  reservedOp "->"
+  ran <- expr
+  reservedOp ":="
+  body <- expr
+  let ty = foldr (\(stage,(inf,n,ty)) rest -> Pi stage (bind (n,Embed ty,inf) rest)) ran qvars
+      term = foldr (\(stage,(_,n,ty)) rest -> Lambda Program stage (bind (n,Embed ty) rest)) body qvars
+  return $ ProgDecl n ty term
+
+sepRecursiveDecl = do
+  reserved "Recursive"
+  n <- varName
+  colon
+  tele <- telescope
+  reservedOp "->"
+  ran <- expr
+  reservedOp ":="
+  body <- expr
+  let ty = fTele (\(n,stage,ty,inf) rest -> Pi stage (bind (n,ty,inf) rest)) ran tele
+      term = Rec (bind (n,tele) body)
+  return $ ProgDecl n ty term
+
+sepInductiveDecl = do
+  reserved "Inductive"
+  n <- varName
+  colon
+  reserved "forall"
+  tele1 <- telescope <?> "tele1"
+  iv <- braces varName <?> "inductive size proof"
+  tele2 <- option Empty telescope
+  reservedOp "."
+  ran <- expr
+  reservedOp ":="
+  body <- expr
+  (ind,_,_,_) <- lastTele tele1
+  let ty2 = fTele (\(n,stage,ty,inf) rest -> Forall (bind (n,ty,inf) rest)) ran tele2
+
+      ty3 = Forall (bind (iv,Embed (Terminates (Var ind)),False) ty2)
+      ty1 = fTele (\(n,stage,ty,inf) rest -> Forall (bind (n,ty,inf) rest)) ty3 tele1
+      terms2 = fTele (\(n,_,ty,inf) rest -> Lambda Form Static (bind (n,ty) rest)) body tele2
+      -- terms3 = Lambda Form Static (bind (n,Terminates (Var ind)) terms2)
+      -- terms1 = fTele (\(n,_,ty,inf) rest -> Lambda Form Static (bind (n,ty) rest)) terms3 tele2
+  return $ ProofDecl n ty1 (Ind (bind (n,tele1,iv) terms2))
+
+  where lastTele (TCons rebinding) =
+          case unrebind rebinding of
+            (pat,Empty) -> return pat
+            (_,t@(TCons _)) -> lastTele t
+        lastTele Empty = unexpected "Argument list for inductive definition must be non-empty"
+
+
 sepDataDecl = do
   reserved "data"
   n <- consName
@@ -123,8 +195,8 @@ sepDataDecl = do
         params = option Empty $ do
                    ps <- many1 piBinding
                    reservedOp "->"
-                   return $ foldr (\(st,(n,ty)) r ->
-                             TCons (rebind (n,st,Embed ty) r))  Empty ps
+                   return $ foldr (\(st,(inf,n,ty)) r ->
+                             TCons (rebind (n,st,Embed ty,inf) r))  Empty ps
 
 
 
@@ -148,9 +220,10 @@ sepPPStyle = haskellStyle {
             "ord","ordtrans",
             "let","in",
             "sym","symm","trans","refl", "tcast",
-            "set" -- for flags
+            "set", -- for flags
+            "Theorem", "Program", "Inductive", "Recursive"
            ],
-           Token.reservedOpNames = ["\\", "=>", "|"]
+           Token.reservedOpNames = ["\\", "=>", "|","?",".",":="]
            }
 
 
@@ -195,15 +268,15 @@ consName = do
 
 
 piBinding =
-    (((,) Static <$> brackets binding) <?> "Static Argument Declaration") <|>
-    (((,) Dynamic <$> parens binding) <?> "Dynamic Argument Declaration") -- <|>
-    -- (do { v <- variable; return(Dynamic,(wildcard,v))})
-  where binding = try ((,) <$> varName <* colon <*> expr) <|>
-                  (do { e <- expr; return(wildcard,e)})
+    (((,) Static <$> (try $ brackets binding)) <?> "Static Argument Declaration") <|>
+    (((,) Dynamic <$> (try $ parens binding)) <?> "Dynamic Argument Declaration") <|>
+    (do { v <- variable; return(Dynamic,(False,wildcard,v))})
+  where binding = try ((,,) <$> infOption <*> varName <* colon <*> expr) <|>
+                  (do { e <- expr; return(False,wildcard,e)})
 
 nestPi [] body = body
-nestPi ((stage,(n,ty)):more) body =
-   Pi stage (bind (n,Embed ty) (nestPi more body))
+nestPi ((stage,(inf,n,ty)):more) body =
+   Pi stage (bind (n,Embed ty,inf) (nestPi more body))
 
 -- "Pi(x:A)(y:x)z(List y)(q:Z) -> z x y q"
 -- means  "(x : A) -> (y1 : x) -> (_2 : z) -> (_3 : List y1) -> (q4 : Z) -> z x y1 q4"
@@ -216,17 +289,17 @@ explicitPi = do
   <?> "Dependent product type with explicit 'Pi'"
 
 piType = do
-  (stage,(n,ty)) <- absBinding
+  (stage,(inf,n,ty)) <- absBinding
   reservedOp "->"
   range <- expr
-  return $ Pi stage (bind (n,Embed ty) range)
+  return $ Pi stage (bind (n,Embed ty,inf) range)
   <?> "Dependent product type"
 
 
 absBinding =
     ((,) Static <$> brackets binding) <|>
     ((,) Dynamic <$> parens binding)
-  where binding = (,) <$> varName <* colon <*> expr
+  where binding = (,,) <$> infOption <*> varName <* colon <*> expr
 
 
 abstraction = unicodeAbstraction <|> asciiAbstraction
@@ -242,7 +315,7 @@ asciiAbstraction = do
   return $ nestLambda kind (map g args) body -- Lambda kind stage' (bind (n,Embed ty) body)
 
 nestLambda kind [] body = body
-nestLambda kind ((stage,(n,ty)):more) body =
+nestLambda kind ((stage,(_,n,ty)):more) body =
    Lambda kind stage (bind (n,Embed ty) (nestLambda kind more body))
 
 unicodeAbstraction = do
@@ -253,9 +326,9 @@ unicodeAbstraction = do
   body <- expr
   return $ nestLambda kind args body -- Lambda kind stage (bind (n,Embed ty) body)
 
-nestForall :: [(EName, Expr)] -> Expr -> Expr
+nestForall :: [(Bool, EName, Expr)] -> Expr -> Expr
 nestForall [] body = body
-nestForall ((n,ty):more) body = Forall $ bind (n,Embed ty) (nestForall more body)
+nestForall ((inf,n,ty):more) body = Forall $ bind (n,Embed ty,inf) (nestForall more body)
 
 quantification = do
   reservedOp "?" <|> reservedOp "forall"
@@ -265,8 +338,7 @@ quantification = do
   return $ nestForall pairs body -- Forall (bind (n,Embed ty) body)
 
 
-quantBinding = parens $ (,) <$> varName <* colon <*> expr
-
+quantBinding = parens $ (,,) <$> infOption <*> varName <* colon <*> expr
 
 -- FIXME: The 'brackets' around termWitness are necessary because 'varName'
 -- matches 'of'. This needs to be refactored.
@@ -511,9 +583,9 @@ expr = wrapPos $ buildExpressionParser table factor
                 ,[postOp "!" Terminates]
                 ,[binOp AssocLeft ":" Ann]
                 ,[binOp AssocRight "->"
-                          (\d r -> Pi Dynamic (bind (wildcard,Embed d) r))
+                          (\d r -> Pi Dynamic (bind (wildcard,Embed d,False) r))
                  ,binOp AssocRight "=>"
-                          (\d r -> Pi Static (bind (wildcard,Embed d) r))]
+                          (\d r -> Pi Static (bind (wildcard,Embed d,False) r))]
                 ]
         binOp assoc op f = Infix (reservedOp op >> return f) assoc
         postOp op f = Postfix (reservedOp op >> return f)
@@ -529,17 +601,12 @@ wrapPos p = pos <$> getPosition <*> p
 
 
 telescope = do
-  ps <- many1 argBinding
+  ps <- many1 piBinding
   return $ teleFromList ps
- where binding stage = do
-           n <- varName
-           colon
-           ty <- expr
-           return (stage,(n,ty))
-       argBinding = parens (binding Dynamic) <|>
-                    brackets (binding Static)
+ <?> "telescope"
 
-
+-- Parameters marked with ? before a name are supposed to be inferred.
+infOption = option False $ (reservedOp "?" >> return True)
 
 -- Flag handling
 sepFlag = do
@@ -552,3 +619,5 @@ sepFlag = do
   b <- ((reserved "true" >> return True) <|> (reserved "false" >> return False))
   return $ FlagDecl id b
   <?> "flag"
+
+

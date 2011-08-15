@@ -7,7 +7,7 @@ module Language.SepPP.Syntax (
   EName, ModName,
   EExpr(..), EEName,
   down,downAll,
-  Tele(..),teleArrow,subTele,teleFromList,
+  Tele(..),teleArrow,subTele,teleFromList,fTele,
   splitApp, splitApp', isStrictContext, var, app,
   okCtx) where
 
@@ -25,7 +25,7 @@ import Data.Typeable
 type EName = Name Expr
 
 -- Telescopes. Hmmmm.
-data Tele = Empty | TCons (Rebind (EName, Stage, Embed Expr) Tele) deriving (Show)
+data Tele = Empty | TCons (Rebind (EName, Stage, Embed Expr, Bool) Tele) deriving (Show)
 
 
 
@@ -34,8 +34,8 @@ type ModName = Name Module
 data Module = Module ModName [Decl] deriving (Show)
 
 -- Name, type, value
-data Decl =  ProgDecl EName Expr Expr
-          |  ProofDecl EName Expr Expr
+data Decl = ProgDecl EName Expr Expr
+          | ProofDecl EName Expr Expr
           | DataDecl Expr (Bind Tele [(EName,Expr)])
           | AxiomDecl EName Expr
           | FlagDecl String Bool
@@ -55,8 +55,8 @@ data Expr = Var EName                                 -- Expr, Proof
           | Formula Integer                           -- LogicalKind
           | Type                                      -- Expr
             -- |
-          | Pi Stage (Bind (EName, Embed Expr) Expr)  -- Expr
-          | Forall (Bind (EName, Embed Expr) Expr)    -- Predicate
+          | Pi Stage (Bind (EName, Embed Expr, Bool) Expr)  -- Expr
+          | Forall (Bind (EName, Embed Expr, Bool) Expr)    -- Predicate
 
             -- We keep a stage annotation around so that we can erase an
             -- application without knowing its type.
@@ -128,6 +128,7 @@ data Expr = Var EName                                 -- Expr, Proof
           | Refl -- Should be a derived form
           | Trans Expr Expr -- Should be a derived form
           | MoreJoin [Expr] -- Should be a derived form
+          | WildCard -- For marking arguments that should be inferred.
 
           | Ann Expr Expr  -- Predicate, Proof, Expr (sort of meta)
           | Pos SourcePos Expr
@@ -257,8 +258,8 @@ instance Subst EExpr Stage where
   isvar _ = Nothing
 
 teleArrow Empty end = end
-teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
- where ((n,stage,ty),rest) = unrebind binding
+teleArrow (TCons binding) end = Pi stage (bind (n,ty,inferred) arrRest)
+ where ((n,stage,ty,inferred),rest) = unrebind binding
        arrRest = teleArrow rest end
 
 
@@ -268,15 +269,18 @@ teleArrow (TCons binding) end = Pi stage (bind (n,ty) arrRest)
 subTele :: Tele -> [Expr] -> Expr -> Expr
 subTele Empty [] x = x
 subTele (TCons binding) (ty:tys) x = subst n ty $ subTele rest tys x
-  where ((n,_,_),rest) = unrebind binding
+  where ((n,_,_,_),rest) = unrebind binding
 subTele _ _ _ =
   error "Can't construct a telescope substitution, arg lengths don't match"
 
+-- FIXME: Add in the inferred argument
+teleFromList args =
+  foldr (\(st,(inf,n,ty)) r -> TCons (rebind (n,st,Embed ty, inf) r))
+        Empty args
 
-teleFromList args = foldr (\(st,(n,ty)) r -> TCons (rebind (n,st,Embed ty) r))
-                    Empty args
-
-
+fTele f i (TCons rebinding) = let (pat,rest) = unrebind rebinding
+                                      in f pat (fTele f i rest)
+fTele f i Empty = i
 
 
 
@@ -293,9 +297,9 @@ okCtx expr = and $ map okCtx $ children expr
 
 -- FIXME: Replace with RepLib...
 children (Pi _ binding) = [ty,body]
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((n,Embed ty,_),body) = unsafeUnbind binding
 children (Forall binding) = [ty,body]
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((n,Embed ty,_),body) = unsafeUnbind binding
 children (App t1 _ t2) = [t1,t2]
 children (Lambda _ _  binding) = [ty,body]
   where ((n,Embed ty),body) = unsafeUnbind binding
@@ -336,4 +340,4 @@ children _ = []
 
 childrenTele Empty = []
 childrenTele (TCons rebinding) = e:(childrenTele rest)
-  where ((_,_,Embed e),rest) = unrebind rebinding
+  where ((_,_,Embed e,_),rest) = unrebind rebinding

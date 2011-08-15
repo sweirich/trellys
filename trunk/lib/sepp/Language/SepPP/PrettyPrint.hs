@@ -55,6 +55,7 @@ initDI = DI S.empty
 -- variables with their indicies, for debugging purposes.
 type M = FreshMT (Reader DispInfo)
 
+-- If we set 'barenames' to true, then we don't try to do any clever name stuff with lfresh.
 barenames = True
 instance LFresh M where
   lfresh nm = do
@@ -145,21 +146,23 @@ instance Display Expr where
 
   display (Pi stage binding) = do
       lunbind binding fmt
-    where fmt ((n,ty),ran) = do
+    where fmt ((n,ty,inf),ran) = do
                         dn <- display n
                         dty <- display ty
                         dran <- display ran
-                        return $ bindingWrap stage (dn <+> colon <+> dty) <+> text "->" <+> dran
+                        let dinf = if inf then text "?" else empty
+                        return $ bindingWrap stage (dinf <+> dn <+> colon <+> dty) <+> text "->" <+> dran
           wrap Dynamic = parens
           wrap Static =  brackets
 
 
   display (Forall binding) = do
-    lunbind binding $ \((n,ty),ran) -> do
+    lunbind binding $ \((n,ty,inf),ran) -> do
     dn <- display n
     dty <- display ty
     dran <- display ran
-    return $ text "forall" <+> parens (dn <+> colon <+> dty) <+> text "." <+> dran
+    let dinf = if inf then text "?" else empty
+    return $ text "forall" <+> parens (dinf <+> dn <+> colon <+> dty) <+> text "." <+> dran
 
   display (t@(App t0 stage t1)) = do
     d0 <- dParen (precedence t - 1) t0
@@ -546,13 +549,14 @@ instance Disp ParseError where
 instance Display Tele where
     display Empty = return empty
     display (TCons binding) = do
-      let ((n,stage,Embed ty),tele) = unrebind binding
+      let ((n,stage,Embed ty,inf),tele) = unrebind binding
       dn <- display n
       dty <- display ty
       drest <- display tele
+      let dinf = if inf then text "?" else empty
       case stage of
-        Static -> return $ brackets (dn <> colon <> dty) <> drest
-        Dynamic -> return $ parens (dn <> colon <> dty) <> drest
+        Static -> return $ brackets (dinf <+> dn <> colon <> dty) <> drest
+        Dynamic -> return $ parens (dinf <+> dn <> colon <> dty) <> drest
 
 
 
