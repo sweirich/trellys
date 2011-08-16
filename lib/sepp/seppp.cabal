@@ -63,7 +63,7 @@ Library
     cmdargs
 
   -- Modules not exported by this package.
-  -- Other-modules:
+  Other-modules: Language.SepPP.Match
 
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
   -- Build-tools:
