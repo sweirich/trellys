@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
 NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
-PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables #-}
+PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables, TemplateHaskell #-}
 
 module Language.SepPP.TypeCheck where
 
@@ -9,12 +9,14 @@ import Language.SepPP.PrettyPrint
 import Language.SepPP.Eval
 import Language.SepPP.TCUtils
 import Language.SepPP.Options
+import Language.SepPP.Match
 
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
 
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import qualified Unbound.LocallyNameless.Alpha as Alpha
 import qualified Generics.RepLib as RL
+import Generics.RepLib hiding (Con,Val)
 
 import Text.PrettyPrint
 
@@ -1513,8 +1515,6 @@ implicit mode t expected = do
         loop piTy@(Pi piStage binding) (idx,imap) vars args@((argStage,a):as) sub = do
 
 
-
-
           ((n,Embed dom,inf),body) <- unbind binding
           let Just old = lookup idx imap -- The variable name in the initial substitution
           -- There has to be a better way to do the substitution.
@@ -1524,7 +1524,7 @@ implicit mode t expected = do
              -- The the argument is to be inferred, then we check to see if we already have
              -- an instantiation as an input.
              then do
-               case lookup n sub' of
+               case lookupMatch n sub' of
                  Just ty' -> do
                    check mode ty' (Just dom)
                    loop (subst n ty' body) (idx + 1,imap) vars args sub
@@ -1563,9 +1563,10 @@ implicit mode t expected = do
 
 
                  newSub <- match [n | (n,_,_) <- vars] dom aTy
-                 vars' <- checkSub vars sub
-                 body' <- applySub ((n,a):sub') body
-                 loop body' (idx + 1,imap) vars' as sub'
+                 nextSub <- extendMatch n a =<< extendMatches newSub sub'
+
+                 let body' = applyMatch nextSub body
+                 loop body' (idx + 1,imap) vars as sub'
 
         loop piTy@(Forall binding) (idx,imap) vars args@((argStage,a):as) sub = do
           ((n,Embed dom,inf),body) <- unbind binding
@@ -1573,7 +1574,7 @@ implicit mode t expected = do
           let sub' = swaps (single (AnyName old) (AnyName n)) sub
           if inf
              then do
-               case lookup n sub' of
+               case lookupMatch n sub' of
                  Just ty' -> do
                    check mode ty' (Just dom)
                    loop (subst n ty' body) (idx + 1,imap) vars args sub
@@ -1584,8 +1585,8 @@ implicit mode t expected = do
                  let argExpected = isInstantiated [v | (v,_,_) <- vars] dom
                  aTy <- check mode a argExpected
                  newSub <- match [n | (n,_,_) <- vars] dom aTy
-                 vars' <- checkSub vars sub
-                 body' <- applySub ((n,a):sub') body
+                 nextSub <- extendMatch n a =<< extendMatches newSub sub'
+                 let body' = applyMatch nextSub body
 
 
                  when (mode == PredMode) $ guardLK body
@@ -1593,7 +1594,7 @@ implicit mode t expected = do
                      requireB aTy
                      requirePred body
 
-                 loop body' (idx + 1,imap) vars' as sub'
+                 loop body' (idx + 1,imap) vars as nextSub
 
 
         loop ty idx vars [] sub = return (ty,vars,sub)
@@ -1601,12 +1602,6 @@ implicit mode t expected = do
             typeError "Trying to apply a term that is not a quantification"
                         [(text "The type", disp t), (text "The arg", disp a)]
 
-        checkSub vars sub = do
-          -- FIXME: Check to see if the substitution is consistent.
-          return vars
-        applySub sub t = do
-          let t' = substs sub t
-          return t'
 
 
 -- | initialSub calculates the initial substitution for an application based on
@@ -1615,7 +1610,7 @@ implicit mode t expected = do
 -- inferring arguments. To get around this issue, we assign indices (with 0
 -- being the outermost binding), which we will then use when looking up
 -- variables.
-initialSub ty args vars Nothing = return ([],[])
+initialSub ty args vars Nothing = return (emptyMatch,[])
 initialSub (Pos _ t) args vars  expected = initialSub t args vars expected
 initialSub (Pi _ binding) args@(a:as) vars expected
     | inf = initialSub body args (n:vars) expected
@@ -1636,113 +1631,3 @@ initialSub ty args _ (Just expected) =
               ([(text "The input type", disp ty)
               ,(text "The expected type", disp expected)] ++
               [(text "Argument", disp a) | (_,a) <- args])
-
-
-
-
--- Check to see if the input type contains any of the marked metavars in vars.
-
-isInstantiated vars ty
-  | null metavars = Just ty
-  | otherwise = Nothing
-  where allvars = fv ty
-        metavars = allvars `intersect` vars
-
-
-
--- * Pattern matching
-class (Rep1 MatchD t, Rep t) => Match t where
-  match :: (MonadError TypeError m, Monad m) => [EName] -> t -> t -> m [(EName,Expr)]
-  match  = matchR1 rep1
-
-
-data MatchD t = MatchD {  matchD :: forall m s. (Monad m, MonadError TypeError m) =>  [EName] -> t -> t -> m [(EName,Expr)]  }
-instance Match t => Sat (MatchD t) where
-  dict = MatchD match
-
-
-instance Match Expr where
-
-  match vars (Pos _ t1) t2 = match vars t1 t2
-  match vars t1 (Pos _ t2) = match vars t1 t2
-  match vars t v@(Var _) = typeError "When matching, meta-variable cannot occur on RHS" []
-  -- Note: The Var/Var case and Term/Var case should never happen, since we're doing matching and not unification.
-  match vars (Var n) t
-      | n `elem` vars = return [(n,t)]
-      | Var n' <- t = do
-         unless (n' == n) $ typeError "Cannot match dissimilar variables"
-                                       [(text "First variable", disp n)
-                                       ,(text "Second variable", disp n')]
-         return []
-      | otherwise = typeError "Cannot match non-metavariable with a term"
-                      [(text "The variable", disp n)
-                      ,(text "The term", disp t)]
-
-
-
-  match vars t u = matchR1 rep1 vars t u
-
-
-
-matchR1 :: (MonadError TypeError m) => R1 MatchD t -> [EName] -> t -> t -> m [(EName,Expr)]
-matchR1 Int1 _  x y  = unless (x == y) ( matchError x y) >> return []
-matchR1 Integer1 _ x y = unless (x == y) (matchError x y) >> return []
-matchR1 Char1 _  x y = unless (x == y) (matchError x y) >> return []
-matchR1 (Data1 _ cons) vars x y = loop cons x y where
-   loop (RL.Con emb reps : rest) x y =
-     case (from emb x, from emb y) of
-      (Just p1, Just p2) -> match1 reps vars p1 p2
-      (Nothing, Nothing) -> loop rest x y
-      (_,_)              -> matchError x y
-matchR1 _ _ _ _ = typeError "Could not match values." []
-
-match1 ::  MonadError TypeError m => MTup MatchD l -> [EName] -> l -> l -> m [(EName,Expr)]
-match1 MNil _ Nil Nil = return []
-match1 (r :+: rs) vars (p1 :*: t1) (p2 :*: t2) = do
-  s1 <- matchD r vars p1 p2
-  s2 <- match1 rs vars t1 t2
-  return $ s1 ++ s2
-
-
-matchError t1 t2 = typeError "Could not match values." [] -- [(text "First value", disp t1), (text "Second value", disp t2)]
-instance Disp Integer where
-  disp = text . show
-
-instance Disp Char where
-  disp = char
-
-instance Match Int where
-  match _ x y = do
-    when (x /= y) $ fail "Match failed on Int."
-    return []
-instance Match Char where
-  match _ x y = do
-    when (x /= y) $ fail "Match failed on Char."
-    return []
-
-instance (Match p, Match n) => Match (Bind p n)
-instance (Match l, Match r) => Match (l,r)
-instance (Match x, Match y, Match z) => Match (x,y,z)
-instance (Match w, Match x, Match y, Match z) => Match (w,x,y,z)
-instance Match Bool
-instance Match t => Match (Embed t)
-instance Match SourcePos
-instance Match a => Match [a]
-instance Match Stage
-instance Match Tele
-instance Match Kind
-instance Match Integer
-instance Match EName where
-  match _ x y = do
-    when (x /= y) (typeError "Match Failed on names." [(text "First Name", disp x), (text "Second Name", disp y)])
-    return []
-
-instance Match a => Match (Maybe a)
-instance (Match a, Match  b) => Match (Rebind a b)
-
--- No idea why this is required...
-instance (Match t) => Match (R t)
-
-
-
-

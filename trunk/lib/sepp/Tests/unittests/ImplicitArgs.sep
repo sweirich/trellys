@@ -28,13 +28,8 @@ type idvec : (? a:Type) -> (?n:Nat) -> (x:Vec a n) -> Vec a n
 prog idvec = \(a:Type)(n:Nat)(x:Vec a n)->  x
 
 
-
-
 type idz : Vec Nat Z
-prog idz = idvec (VNil Nat Z [refl])
-
-
-
+prog idz = idvec (VNil [Nat] [Z] [refl])
 
 theorem irefl : forall(?a:Type)(t:a).(t = t)
 proof irefl = \(a:Type)(t:a) => join 0 0
