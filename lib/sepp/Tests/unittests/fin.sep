@@ -1,8 +1,39 @@
 module scratch where
 
+data Bool : Type where
+  False : Bool
+| True : Bool
+  
+type eq_bool : Bool -> Bool -> Bool
+prog eq_bool = \(b1:Bool)(b2:Bool) ->
+  case b1 {b1_eq} of
+    False -> (case b2 {b2_eq} of
+      False -> True
+    | True -> False)
+  | True -> case b2 {b2_eq} of
+      False -> False
+    | True -> True
+
+data Unit : Type where
+  Un : Unit
+
+type eq_unit : Unit -> Unit -> Bool
+prog eq_unit = \(a1:Unit)(a2:Unit) ->
+  True  
+
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
+
+type eq_nat : Nat -> Nat -> Bool
+prog rec eq_nat (n:Nat)(m:Nat) =
+  case n {n_eq} of
+    Z -> (case m {m_eq} of
+      Z -> True
+    | S m' -> False)
+  | S n' -> case m {m_eq} of
+      Z -> False
+    | S m' -> (eq_nat n' m')
 
 data Fin : (m:Nat) -> Type where
   FZ : [n:Nat] -> [u:S n = m] -> Fin m
@@ -11,13 +42,7 @@ data Fin : (m:Nat) -> Type where
 type a : Fin (S (S (S Z)))
 prog a = FZ [(S (S (S Z)))] [(S (S Z))] [refl]
 
-type b : Fin (S (S (S Z)))
-prog b = FS [(S (S (S Z)))] [(S (S Z))] [refl] (FZ [(S (S Z))] [(S Z)] [refl])
-
-type c : Fin (S (S (S Z)))
-prog c = FS [(S (S (S Z)))] [(S (S Z))] [refl] (FS [(S (S Z))] [(S Z)] [refl] (FZ [(S Z)] [Z] [refl]))
-
-type emb : (m:Nat) -> (i:Fin m) -> Fin (S m)
+type emb : (n:Nat) -> (x:Fin n) -> Fin (S n)
 prog rec emb (m:Nat)(i:Fin m) =
   case i {i_eq} of
     FZ n u -> FZ [(S m)] [m] [refl]
@@ -30,3 +55,103 @@ type vec : (a:Type) -> (x:a) -> (n:Nat) -> (vect a n)
 prog vec = \(a:Type)(x:a)(n:Nat) ->
   conv (\(y:Fin n) -> x)
   at ~(join 10 10 : ((Fin n) -> a) = vect a n)
+
+-- universe showcased in paper  
+data U : Type where
+  UNat : U
+| UArrow : (a : U) -> (b : U) -> U
+
+-- custom universe
+data U' : Type where
+  UNat : U'
+| UUnit : U'
+| UBool : U'
+
+-- decoding function (from paper)
+type el : U -> Type
+prog rec el (a:U) =
+  case a {a_eq} of
+      UNat -> Nat
+    | UArrow b c -> (el b) -> (el c)
+
+-- decoding function for my custom universe    
+type el' : U' -> Type
+prog rec el' (a:U') =
+  case a {a_eq} of
+      UNat -> Nat
+    | UUnit -> Unit
+    | UBool -> Bool
+
+-- a generic equals function    
+type gen_eq : (a:U') -> (el' a) -> (el' a) -> Bool
+prog gen_eq = \(a:U')(x:(el' a))(y:(el' a)) ->
+  case a {a_eq} of
+    UUnit -> eq_unit (conv x at ~(morejoin {sym a_eq}: el' a = Unit))
+                     (conv y at ~(morejoin {sym a_eq}: el' a = Unit))
+  | UNat -> eq_nat (conv x at ~(morejoin {sym a_eq}: el' a = Nat))
+                   (conv y at ~(morejoin {sym a_eq}: el' a = Nat))
+  | UBool -> eq_bool (conv x at ~(morejoin {sym a_eq}: el' a = Bool))
+                     (conv y at ~(morejoin {sym a_eq}: el' a = Bool))
+
+-- the UArrow case encounters an error		     
+-- type zero : (a:U) -> (el a)
+-- prog rec zero (a:U) =
+--    case a {a_eq} of
+--      UNat -> conv Z at ~(morejoin {sym a_eq}: Nat = el a)
+--    | UArrow b c -> (el b -> zero c) 
+
+data Lam : (m:Nat) -> Type where
+  LVar : (n:Nat) -> (x : Fin n) -> Lam n
+| LApp : (n:Nat) -> (f : Lam n) -> (a : Lam n) -> Lam n
+| LLam : [n:Nat] -> [u:S n = m] -> (t : Lam m) -> Lam n
+
+-- type close : (n:Nat) -> (t : Lam n) -> Lam Z
+-- prog rec close (n:Nat)(t : Lam n) =     
+--   case n {n_eq} of
+--     Z -> t
+--   | S n' -> close n' (LLam t)
+
+data Bush : (a:Type) -> Type where
+  Nil : Bush a
+| Cons : (x:a) -> (y:(Bush (Bush a))) -> Bush a
+
+data WBush : Type where
+  W : (Bush WBush) -> WBush
+
+-- kinds
+data Kind : Type where
+  KStar : Kind
+| KArrow : (x:Kind) -> (y:Kind) -> Kind
+
+-- sequences of kinds
+data Sig : Type where
+  SEps : Sig -- empty sequence
+| SCons : (x:Kind) -> (xs:Sig) -> Sig
+
+-- signature corresponding to the declaration of Bush and WBush
+type deltaW : Sig
+prog deltaW =
+  (SCons (KArrow KStar KStar) (SCons KStar SEps))
+
+-- typed de Bruijn variables  
+data Var : (s:Sig)(k:Kind) -> Type where
+  VZ : Var (SCons k s) k
+| VS : (j:Kind) -> (v:Var s k) -> Var (SCons j s) k -- not sure where j is introduced in the defn?
+
+-- polynomial type expressions representing the RHS of a datatype declaration
+data Ty : (d:Sig)(l:Sig)(k:Kind) -> Type where
+  D : (v:Var d k) -> Ty d l k
+| V : (v:Var l k) -> Ty d l k
+| Dot : (j:Kind) -> (f:Ty d l (KArrow j k)) -> (x:Ty d l j) -> Ty d l k -- j?
+| Zero : Ty d l KStar
+| One : Ty d l KStar  
+| Sum : (s:Ty d l KStar) -> (t:Ty d l KStar) -> Ty d l KStar
+| Prod : (s:Ty d l KStar) -> (t:Ty d l KStar) -> Ty d l KStar
+
+-- a representation of the RHS of WBush
+-- type wBush : Ty deltaW (SCons KStar SEps) KStar
+-- prog wBush = Dot (D VZ) (D (VS VZ))
+
+
+
+  
