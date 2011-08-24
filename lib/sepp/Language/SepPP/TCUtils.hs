@@ -193,7 +193,6 @@ actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected = do
   printAST <- getOptPrintAST
-  emit $  "printAST is " <++> show printAST
   unless (down actual `aeq` down expected) $
     typeError "Couldn't match expected type with actual type."
                 ([(text "Expected Type",disp expected)
