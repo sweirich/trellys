@@ -1,9 +1,11 @@
 module scratch where
 
+flag PrintAST true
+
 data Bool : Type where
   False : Bool
 | True : Bool
-  
+
 type eq_bool : Bool -> Bool -> Bool
 prog eq_bool = \(b1:Bool)(b2:Bool) ->
   case b1 {b1_eq} of
@@ -19,7 +21,7 @@ data Unit : Type where
 
 type eq_unit : Unit -> Unit -> Bool
 prog eq_unit = \(a1:Unit)(a2:Unit) ->
-  True  
+  True
 
 data Nat : Type where
   Z : Nat
@@ -56,7 +58,7 @@ prog vec = \(a:Type)(x:a)(n:Nat) ->
   conv (\(y:Fin n) -> x)
   at ~(join 10 10 : ((Fin n) -> a) = vect a n)
 
--- universe showcased in paper  
+-- universe showcased in paper
 data U : Type where
   UNat : U
 | UArrow : (a : U) -> (b : U) -> U
@@ -74,7 +76,7 @@ prog rec el (a:U) =
       UNat -> Nat
     | UArrow b c -> (el b) -> (el c)
 
--- decoding function for my custom universe    
+-- decoding function for my custom universe
 type el' : U' -> Type
 prog rec el' (a:U') =
   case a {a_eq} of
@@ -82,7 +84,7 @@ prog rec el' (a:U') =
     | UUnit -> Unit
     | UBool -> Bool
 
--- a generic equals function    
+-- a generic equals function
 type gen_eq : (a:U') -> (el' a) -> (el' a) -> Bool
 prog gen_eq = \(a:U')(x:(el' a))(y:(el' a)) ->
   case a {a_eq} of
@@ -93,12 +95,12 @@ prog gen_eq = \(a:U')(x:(el' a))(y:(el' a)) ->
   | UBool -> eq_bool (conv x at ~(morejoin {sym a_eq}: el' a = Bool))
                      (conv y at ~(morejoin {sym a_eq}: el' a = Bool))
 
--- the UArrow case encounters an error		     
+-- the UArrow case encounters an error
 -- type zero : (a:U) -> (el a)
 -- prog rec zero (a:U) =
 --    case a {a_eq} of
 --      UNat -> conv Z at ~(morejoin {sym a_eq}: Nat = el a)
---    | UArrow b c -> (el b -> zero c) 
+--    | UArrow b c -> (el b -> zero c)
 
 data Lam : (m:Nat) -> Type where
   LVar : (n:Nat) -> (x : Fin n) -> Lam n
@@ -106,7 +108,7 @@ data Lam : (m:Nat) -> Type where
 | LLam : [n:Nat] -> [u:S n = m] -> (t : Lam m) -> Lam n
 
 -- type close : (n:Nat) -> (t : Lam n) -> Lam Z
--- prog rec close (n:Nat)(t : Lam n) =     
+-- prog rec close (n:Nat)(t : Lam n) =
 --   case n {n_eq} of
 --     Z -> t
 --   | S n' -> close n' (LLam [n'] [n_eq] t)
@@ -133,18 +135,18 @@ type deltaW : Sig
 prog deltaW =
   (SCons (KArrow KStar KStar) (SCons KStar SEps))
 
--- typed de Bruijn variables  
+-- typed de Bruijn variables
 data Var : (s:Sig)(k:Kind) -> Type where
   VZ : Var (SCons k s) k
-| VS : (j:Kind) -> (v:Var s k) -> Var (SCons j s) k 
+| VS : (j:Kind) -> (v:Var s k) -> Var (SCons j s) k
 
 -- polynomial type expressions representing the RHS of a datatype declaration
 data Ty : (d:Sig)(l:Sig)(k:Kind) -> Type where
   D : Var d k -> Ty d l k
 | V : Var l k -> Ty d l k
-| Dot : (j:Kind) -> Ty d l (KArrow j k) -> Ty d l j -> Ty d l k 
+| Dot : (j:Kind) -> Ty d l (KArrow j k) -> Ty d l j -> Ty d l k
 | Zero : Ty d l KStar
-| One : Ty d l KStar  
+| One : Ty d l KStar
 | Sum : Ty d l KStar -> Ty d l KStar -> Ty d l KStar
 | Prod : Ty d l KStar -> Ty d l KStar -> Ty d l KStar
 
@@ -159,20 +161,20 @@ prog args = \(d:Sig)(k:Kind) -> (j:Kind) ->
 --type aHd : (j:Kind) -> (k:Kind) -> (s:Sig) -> ((Var (SCons k s) j)  -> (Ty s SEps j)) -> (Ty s SEps j)
 --prog aHd = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) j)  -> (Ty s SEps j))) ->
 --  xs (VZ [s] [k])
- 
+
 type aHd :
   (j:Kind) -> (k:Kind) -> (s:Sig) -> ((Var (SCons k s) k)  -> (Ty s SEps k)) ->
   (Ty s SEps k)
 prog aHd = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) k)  -> (Ty s SEps k))) ->
-  xs (VZ [s] [k]) 
+  xs (VZ [s] [k])
 
 type aTl :
   (j:Kind) -> (k:Kind) -> (s:Sig) ->
   ((Var (SCons k s) k)  -> (Ty s SEps k)) ->
   (Ty s SEps k)
 prog aTl = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) k)  -> (Ty s SEps k))) ->
-  (v:(Var s k)) -> xs (VS [s] [k] k v) 
-  
+  (v:(Var s k)) -> xs (VS [s] [k] k v)
+
 type app :
   (d:Sig) -> (k:Kind) -> (Ty d SEps k) ->
   ((Var (SCons k d) k)  -> (Ty d SEps k)) ->
@@ -185,4 +187,4 @@ prog rec app (d:Sig)(k:Kind)(x:Ty d SEps k)(y:((Var (SCons k d) k) -> (Ty d SEps
       (Dot [d] [SEps] [k] j
         (conv x at Ty d SEps ~(sym k_eq))
         (aHd j k d y))
-      (aTl j k d y)     
+      (aTl j k d y)
