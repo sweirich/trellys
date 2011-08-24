@@ -190,15 +190,18 @@ emit m = liftIO $ print m
 actual `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
-actual `expectType` expected =
+
+actual `expectType` expected = do
+  printAST <- getOptPrintAST
+  emit $  "printAST is " <++> show printAST
   unless (down actual `aeq` down expected) $
     typeError "Couldn't match expected type with actual type."
-                [(text "Expected Type",disp expected)
-                , (text "Actual Type", disp actual)
---                , (text "Expected AST", text $ show $ downAll  expected)
---                , (text "Actual AST", text $ show $ downAll actual)
-                ]
-
+                ([(text "Expected Type",disp expected)
+               , (text "Actual Type", disp actual)] ++ ast printAST)
+ where ast True =  [(text "Expected AST", text $ show $ downAll  expected)
+                   , (text "Actual AST", text $ show $ downAll actual)
+                   ]
+       ast False = []
 
 (<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc
 t1 <++> t2 = disp t1 <+> disp t2
