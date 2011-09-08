@@ -1,11 +1,9 @@
 module scratch where
 
-flag PrintAST true
-
 data Bool : Type where
   False : Bool
 | True : Bool
-
+  
 type eq_bool : Bool -> Bool -> Bool
 prog eq_bool = \(b1:Bool)(b2:Bool) ->
   case b1 {b1_eq} of
@@ -21,7 +19,7 @@ data Unit : Type where
 
 type eq_unit : Unit -> Unit -> Bool
 prog eq_unit = \(a1:Unit)(a2:Unit) ->
-  True
+  True  
 
 data Nat : Type where
   Z : Nat
@@ -58,7 +56,7 @@ prog vec = \(a:Type)(x:a)(n:Nat) ->
   conv (\(y:Fin n) -> x)
   at ~(join 10 10 : ((Fin n) -> a) = vect a n)
 
--- universe showcased in paper
+-- universe showcased in paper  
 data U : Type where
   UNat : U
 | UArrow : (a : U) -> (b : U) -> U
@@ -76,7 +74,7 @@ prog rec el (a:U) =
       UNat -> Nat
     | UArrow b c -> (el b) -> (el c)
 
--- decoding function for my custom universe
+-- decoding function for my custom universe    
 type el' : U' -> Type
 prog rec el' (a:U') =
   case a {a_eq} of
@@ -84,7 +82,7 @@ prog rec el' (a:U') =
     | UUnit -> Unit
     | UBool -> Bool
 
--- a generic equals function
+-- a generic equals function    
 type gen_eq : (a:U') -> (el' a) -> (el' a) -> Bool
 prog gen_eq = \(a:U')(x:(el' a))(y:(el' a)) ->
   case a {a_eq} of
@@ -95,12 +93,12 @@ prog gen_eq = \(a:U')(x:(el' a))(y:(el' a)) ->
   | UBool -> eq_bool (conv x at ~(morejoin {sym a_eq}: el' a = Bool))
                      (conv y at ~(morejoin {sym a_eq}: el' a = Bool))
 
--- the UArrow case encounters an error
+-- the UArrow case encounters an error		     
 -- type zero : (a:U) -> (el a)
 -- prog rec zero (a:U) =
 --    case a {a_eq} of
 --      UNat -> conv Z at ~(morejoin {sym a_eq}: Nat = el a)
---    | UArrow b c -> (el b -> zero c)
+--    | UArrow b c -> (el b -> zero c) 
 
 data Lam : (m:Nat) -> Type where
   LVar : (n:Nat) -> (x : Fin n) -> Lam n
@@ -108,7 +106,7 @@ data Lam : (m:Nat) -> Type where
 | LLam : [n:Nat] -> [u:S n = m] -> (t : Lam m) -> Lam n
 
 -- type close : (n:Nat) -> (t : Lam n) -> Lam Z
--- prog rec close (n:Nat)(t : Lam n) =
+-- prog rec close (n:Nat)(t : Lam n) =     
 --   case n {n_eq} of
 --     Z -> t
 --   | S n' -> close n' (LLam [n'] [n_eq] t)
@@ -125,66 +123,113 @@ data Kind : Type where
   KStar : Kind
 | KArrow : Kind -> Kind -> Kind
 
--- sequences of kinds
-data Sig : Type where
-  SEps : Sig -- empty sequence
-| SCons : Kind -> Sig -> Sig
-
 -- signature corresponding to the declaration of Bush and WBush
-type deltaW : Sig
+type deltaW : Kind
 prog deltaW =
-  (SCons (KArrow KStar KStar) (SCons KStar SEps))
+  (KArrow (KArrow KStar KStar) (KArrow KStar KStar))
 
--- typed de Bruijn variables
-data Var : (s:Sig)(k:Kind) -> Type where
-  VZ : Var (SCons k s) k
-| VS : (j:Kind) -> (v:Var s k) -> Var (SCons j s) k
+-- typed de Bruijn variables  
+data Var : (s:Kind)(k:Kind) -> Type where
+  VZ : Var (KArrow k s) k
+| VS : (j:Kind) -> (v:Var s k) -> Var (KArrow j s) k 
 
 -- polynomial type expressions representing the RHS of a datatype declaration
-data Ty : (d:Sig)(l:Sig)(k:Kind) -> Type where
+data Ty : (d:Kind)(l:Kind)(k:Kind) -> Type where
   D : Var d k -> Ty d l k
 | V : Var l k -> Ty d l k
-| Dot : (j:Kind) -> Ty d l (KArrow j k) -> Ty d l j -> Ty d l k
+| Dot : (j:Kind) -> Ty d l (KArrow j k) -> Ty d l j -> Ty d l k 
 | Zero : Ty d l KStar
-| One : Ty d l KStar
+| One : Ty d l KStar  
 | Sum : Ty d l KStar -> Ty d l KStar -> Ty d l KStar
 | Prod : Ty d l KStar -> Ty d l KStar -> Ty d l KStar
 
-type interpret_sig : Sig -> Type
-prog interpret_sig = \(d:Sig) -> (k:Kind) ->
- (Var d k) -> (Ty d (SCons k SEps) KStar)
+-- type bush : (Ty deltaW (KArrow KStar KStar) KStar)
+-- prog bush =
+--   Sum
+--     (One deltaW (KArrow KStar KStar) KStar)
+--     (Prod deltaW (KArrow KStar KStar) KStar
+--       (V (KArrow KStar KStar) KStar KStar
+--          (VZ KStar KStar))
+--       (Dot deltaW (KArrow KStar KStar) KStar KStar
+--         (D deltaW deltaW (KArrow KStar KStar)
+--            (VZ (KArrow KStar KStar) (KArrow KStar KStar))
+--         (Dot 
+--            (D VZ) (V VZ))))
+  
+type meaning : Kind -> Type
+prog meaning = \(d:Kind) -> (k:Kind) ->
+  ((Var d k) -> (Ty d k KStar))
 
-type args : Sig -> Kind -> Type
-prog args = \(d:Sig)(k:Kind) -> (j:Kind) ->
-     (Var (SCons k SEps) j) -> (Ty d SEps j)
+-- type deltaw : (k:Kind) -> (Var deltaW k) -> (meaning deltaW)
+-- prog deltaw : \(k:Kind)(v:Var deltaW k) =     
+--   case v {v_eq} of
+--     VZ -> bush
+--   | KArrow j l ->
 
---type aHd : (j:Kind) -> (k:Kind) -> (s:Sig) -> ((Var (SCons k s) j)  -> (Ty s SEps j)) -> (Ty s SEps j)
+-- TY = Ty s KStar
+
+type args : (d:Kind) -> (k:Kind) -> Type
+prog args = \(d:Kind)(k:Kind) -> (j:Kind) ->
+     ((Var k j) -> (Ty d KStar j))
+
+type gen_eq : (d:Kind) -> (k:Kind) -> (x:(Ty d KStar k)) -> Type
+prog rec gen_eq (d:Kind)(k:Kind)(x:(Ty d KStar k)) = 
+  case k {k_eq} of
+    KStar -> (meaning KStar) -> (meaning KStar) -> Bool
+  | KArrow j l -> (f:(Ty d KStar (KArrow j l))) -> (y:(Ty d KStar j))
+      -> (gen_eq d j y) -> (gen_eq d l (Dot d KStar l j f y))
+    
+-- type app : (k:Kind) -> (d:Kind) -> (x:Ty d KStar k) -> (y:(args d k)) -> (Ty d KStar KStar)
+-- prog app :     
+--  VZ : Var (KArrow k s) k
+--| VS : (j:Kind) -> (v:Var s k) -> Var (KArrow j s) k 
+-- type interpret_sig : Sig -> Type
+-- prog interpret_sig = \(d:Sig) -> (k:Kind) ->
+--  (Var d k) -> (Ty d (SCons k SEps) KStar)
+
+-- type args : Sig -> Kind -> Type
+-- prog args = \(d:Sig)(k:Kind) -> (j:Kind) ->
+--      (Var (SCons k SEps) j) -> (Ty d SEps j)
+
+--type aHd : (j:Kind) -> (k:Kind) -> (s:Sig)
+--     -> ((Var (KArrow k s) j)  -> (Ty s SEps j)) -> (Ty s SEps j)
 --prog aHd = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) j)  -> (Ty s SEps j))) ->
 --  xs (VZ [s] [k])
+ 
+-- type aHd :
+--   (j:Kind) -> (k:Kind) -> (s:Sig) ->
+--   ((Var (SCons (KArrow k j) SEps) (KArrow k j))  -> (Ty s SEps (KArrow k j))) ->
+--   (Ty s SEps (KArrow k j))
+-- prog aHd = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons (KArrow k j) SEps) (KArrow k j))  -> (Ty s SEps (KArrow k j)))) ->
+--   xs (VZ [SEps] [(KArrow k j)]) 
+  
+-- type aTl :
+--   (j:Kind) -> (k:Kind) -> (s:Sig) ->
+--   ((Var (SCons k s) k)  -> (Ty s SEps k)) -> ((Var s k) -> (Ty s SEps k))
+-- prog aTl = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) k)  -> (Ty s SEps k))) ->
+--   (v:(Var s k)) -> xs (VS [s] [k] k v)
+  --xs (VS [s] [k] k)
+  
+-- type app :
+--   (d:Sig) -> (k:Kind) -> (Ty d SEps k) ->
+--   ((Var (SCons k d) k)  -> (Ty d SEps k)) ->
+--   (Ty d SEps KStar)
+-- prog rec app (d:Sig)(k:Kind)(x:Ty d SEps k)(y:((Var (SCons k d) k) -> (Ty d SEps k))) =
+--   case k {k_eq} of
+--     KStar -> conv x at Ty d SEps ~(sym k_eq)
+--   | KArrow j l ->
+--     app
+      -- (Dot [d] [SEps] [(KArrow j l)] (KArrow j l)
+      --   (conv x at Ty d SEps ~(sym k_eq))
+      --   aHd (KArrow j l) (KArrow j l) d y)
+      -- (aTl KStar KStar d y)
+     -- (Dot ? ? ? ? x aHd ? ? ? y)
+     -- (aTl ? ? ? y)
 
-type aHd :
-  (j:Kind) -> (k:Kind) -> (s:Sig) -> ((Var (SCons k s) k)  -> (Ty s SEps k)) ->
-  (Ty s SEps k)
-prog aHd = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) k)  -> (Ty s SEps k))) ->
-  xs (VZ [s] [k])
+      -- (Dot [d] [SEps] [(KArrow j l)] (KArrow j l)
+      --   (conv x at Ty d SEps ~(sym k_eq))
+      --   aHd (KArrow j l) (KArrow j l) d)
+      --     (conv y at (Var (SCons ~(sym k_eq) d) ~(sym k_eq)) -> (Ty d SEps ~(sym k_eq)))
+      --   --)
+      -- (aTl KStar KStar d y)     
 
-type aTl :
-  (j:Kind) -> (k:Kind) -> (s:Sig) ->
-  ((Var (SCons k s) k)  -> (Ty s SEps k)) ->
-  (Ty s SEps k)
-prog aTl = \(j:Kind)(k:Kind)(s:Sig)(xs:((Var (SCons k s) k)  -> (Ty s SEps k))) ->
-  (v:(Var s k)) -> xs (VS [s] [k] k v)
-
-type app :
-  (d:Sig) -> (k:Kind) -> (Ty d SEps k) ->
-  ((Var (SCons k d) k)  -> (Ty d SEps k)) ->
-  (Ty d SEps k)
-prog rec app (d:Sig)(k:Kind)(x:Ty d SEps k)(y:((Var (SCons k d) k) -> (Ty d SEps k))) =
-  case k {k_eq} of
-    KStar -> x
-  | KArrow j k ->
-    app
-      (Dot [d] [SEps] [k] j
-        (conv x at Ty d SEps ~(sym k_eq))
-        (aHd j k d y))
-      (aTl j k d y)
