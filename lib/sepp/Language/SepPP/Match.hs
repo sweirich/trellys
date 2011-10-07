@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes, TemplateHaskell, FlexibleContexts, FlexibleInstances,
-TypeSynonymInstances, GADTs, ScopedTypeVariables, MultiParamTypeClasses, UndecidableInstances #-}
+TypeSynonymInstances, GADTs, ScopedTypeVariables, MultiParamTypeClasses,
+UndecidableInstances, PackageImports #-}
 
 module Language.SepPP.Match
  (PatMatch(..),Match,
@@ -20,7 +21,7 @@ import Text.Parsec.Pos
 
 import Text.PrettyPrint
 import qualified Data.Map as M
-import Control.Monad.Error
+import "mtl" Control.Monad.Error
 import Data.List(intersect)
 
 
