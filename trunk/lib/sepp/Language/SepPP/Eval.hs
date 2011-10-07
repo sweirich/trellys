@@ -69,11 +69,16 @@ reduce steps tm@(EApp t1 t2) k = do
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
 
-        k' steps (ETCast e) = k' steps e
+        k' steps (ETCast e) = k' steps (ETCast e)
         k' steps v1 = do
           ev <- erasedSynValue v1
+
           if isCon v1 && ev
-             then reduce steps t2 (\steps' v2 -> k steps (EApp v1 v2))
+             then reduce steps t2
+                    (\steps' v2 -> do
+                       tp <- lookupTermProof v2
+                       let v2' = maybe v2 (\_ -> ETCast v2) tp
+                       k steps (EApp v1 v2'))
              else k steps (EApp v1 t2)
 
         isCon (ECon _) = True
@@ -85,6 +90,7 @@ reduce steps tm@(EApp t1 t2) k = do
           tp <- lookupTermProof t
           disableValueRestriction <- getOptDisableValueRestriction
           ev <- erasedSynValue t
+          emit $ "esv" <++> show ev <++> t
           case tp of
             Nothing -> return (ev || disableValueRestriction)
             Just _ -> do
