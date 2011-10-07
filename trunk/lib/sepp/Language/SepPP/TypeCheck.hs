@@ -1374,6 +1374,11 @@ escCopy f (Ann l r) = do
 escCopy f (Pos p e) = do
   e' <- escCopy f e
   return $ Pos p e'
+escCopy f (TCast l r) = do
+  l' <- escCopy f l
+  r' <- escCopy f r
+  return $ TCast l' r'
+
 
 
 escCopyTele f Empty = return Empty
