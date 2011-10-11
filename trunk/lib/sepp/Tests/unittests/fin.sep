@@ -42,11 +42,11 @@ data Fin : (m:Nat) -> Type where
 type a : Fin (S (S (S Z)))
 prog a = FZ [(S (S (S Z)))] [(S (S Z))] [refl]
 
-type emb : (n:Nat) -> (x:Fin n) -> Fin (S n)
-prog rec emb (m:Nat)(i:Fin m) =
+type emb : [n:Nat] -> (x:Fin n) -> Fin (S n)
+prog rec emb [m:Nat](i:Fin m) =
   case i {i_eq} of
     FZ n u -> FZ [(S m)] [m] [refl]
-  | FS n u i -> FS [(S m)] [m] [refl] conv (emb n i) at Fin ~u
+  | FS n u i -> FS [(S m)] [m] [refl] conv (emb [n] i) at Fin ~u
 
 type vect : (a:Type) -> (n:Nat) -> Type
 prog vect = \(a:Type)(n:Nat) -> (Fin n) -> a
