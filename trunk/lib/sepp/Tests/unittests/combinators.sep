@@ -1,0 +1,97 @@
+module Combinators where
+
+data Comb : Type where
+  K : Comb
+  | S : Comb 
+  | App : Comb -> Comb -> Comb
+
+Program appf : (v1:Comb)(v2 : Comb)(r:Comb -> Comb) -> Comb :=
+  case v1 {v1_eq} of
+    K -> (App v1 v2)
+  | S -> (App v1 v2)
+  | App v1a v2a ->
+    case v1a {v1a_eq} of
+      K -> v2a
+    | S -> (App v1 v2)
+    | App v1aa v1ab ->
+      case v1aa {v1aa_eq}  of
+        K -> (App v1 v2)  -- should never happen
+      | S -> (r (App (App v1ab v2) (App v2a v2)))
+      | App v1aaa v1aab -> (App v1 v2)
+
+Recursive interp : (c:Comb) -> Comb :=
+  case c {c_eq} of
+    K -> K
+  | S -> S
+  | App c1 c2 -> 
+    appf (interp c1) (interp c2) interp 
+      
+Theorem test : forall (c:Comb). ((interp (App (App K S) (App K S))) = S) :=
+  join 100 100 
+  
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+type plus : (x:Nat) -> (y:Nat) -> Nat
+prog rec plus (x:Nat) = \(y:Nat) ->
+    case x {x_eq} of
+      Z -> y
+    | S x' -> S (plus x' y)
+
+type times : Nat -> Nat -> Nat
+prog rec times (x:Nat) = \(y:Nat) ->
+              case x {x_eq} of
+                Z -> Z
+              | S x' -> plus y (times x' y)
+
+data Bool : Type where
+  True : Bool
+| False : Bool
+
+Recursive ks : (n:Nat) -> Comb :=
+  case n {n_eq} of
+    Z -> K
+  | S n' -> (App (ks n') K)
+
+Inductive ks_tot : forall(n:Nat){nterm}. (ks n)! :=
+  case n {n_eq} nterm of
+    Z -> conv (value K) at (~(morejoin { sym n_eq , nterm } : K = (ks n))!)
+  | S n' -> 
+    let u [u_eq] = ks_tot n' (ord n_eq) in
+      conv (value (App (tcast (ks n') by u) K)) at (~(morejoin { sym n_eq , nterm } : (App (ks n') K) = (ks n))!) 
+
+Recursive double : (n:Nat) -> Nat :=
+  case n {n_eq} of
+    Z -> Z
+  | S n' -> (S (S (double n')))
+
+Inductive double_tot : forall(x:Nat){xterm}.(double x)! :=
+  case x {x_eq} xterm of
+    Z -> conv (value Z) at (~(morejoin { xterm, sym x_eq } : Z = (double x))!)
+  | S x' -> let u [u_eq] = (double_tot x' (ord x_eq)) in
+             conv (value (S (S (tcast (double x') by u))))
+             at (~(morejoin { xterm, sym x_eq } : (S (S (double x'))) = (double x))!)
+
+Program lhs : (b:Bool)(n:Nat) -> Comb :=
+  case b {b_eq} of
+    True -> (ks (double n))
+  | False -> (ks (S (double n)))
+
+Program rhs : (b:Bool) -> Comb :=
+  case b {b_eq} of
+    True -> K
+  | False -> (App K K)
+
+Inductive ks_even : forall (n:Nat){nterm}(b:Bool)(bterm:b!). ((interp (lhs b n)) = (rhs b)) :=
+  case b {b_eq} bterm of
+    True -> 
+    (case n {n_eq} nterm of
+      Z -> morejoin { sym b_eq , bterm , sym n_eq , nterm }
+    | S n' -> 
+      morejoin { sym b_eq , bterm , sym n_eq , nterm , (ks_even n' (ord n_eq) False (value False)), (ks_tot n nterm),
+                 (double_tot n' (value n')) }
+      )
+  | False -> join 0 0
+    
+    
