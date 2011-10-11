@@ -40,6 +40,12 @@ prog rec plus (x:Nat) = \(y:Nat) ->
       Z -> y
     | S x' -> S (plus x' y)
 
+Inductive plus_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(plus x y)! :=
+  case x {x_eq} xterm of
+    Z -> conv (value (tcast y by yterm)) at (~(morejoin { xterm, sym x_eq , yterm } : y = (plus x y))!)
+  | S x' -> let u [u_eq] = (plus_tot x' (ord x_eq) y yterm) in
+             conv (value (S (tcast (plus x' y) by u))) 
+             at (~(morejoin { xterm, sym x_eq, yterm } : (S (plus x' y)) = (plus x y))!)
 
 -- Typical unary subtraction. Z - n = Z
 type minus : (x:Nat) -> (y:Nat) -> Nat
@@ -76,6 +82,12 @@ prog rec times (x:Nat) = \(y:Nat) ->
                 Z -> Z
               | S x' -> plus y (times x' y)
 
+Inductive times_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(times x y)! :=
+  case x {x_eq} xterm of
+    Z -> conv (value Z) at (~(morejoin { xterm, sym x_eq , yterm } : Z = (times x y))!)
+  | S x' -> let u [u_eq] = (times_tot x' (ord x_eq) y yterm) in
+             conv (value (tcast (plus (tcast y by yterm) (tcast (times x' y) by u)) by (plus_tot y yterm (times x' y) u))) 
+             at (~(morejoin { xterm, sym x_eq, yterm } : (plus y (times x' y)) = (times x y))!)
 
 
 type lt : (x:Nat) -> (y:Nat) -> Bool

@@ -1,3 +1,6 @@
+combinators:
+	sep --file=combinators.sep
+
 CeilingDivision:
 	sep --file=CeilingDivision.sep
 

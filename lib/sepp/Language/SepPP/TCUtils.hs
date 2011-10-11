@@ -226,6 +226,7 @@ synValue (Lambda k stg bndgs) = return True
 synValue (Pos n t) = synValue t
 synValue (Ann t typ) = synValue t
 synValue (Rec _) = return True
+synValue (TCast _ _) = return True
 synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
   where constrApp (Con c) = return True
         constrApp (App f Static x) = constrApp f
