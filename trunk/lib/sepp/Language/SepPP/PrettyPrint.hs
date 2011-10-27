@@ -140,8 +140,8 @@ instance Rep a => Display (Name a) where
 instance Display Expr where
   display (Var n) = return $ text $ name2String n
   display (Con n) = return $ text $ name2String n
-  display (Formula 0) = return $ text "Form"
-  display (Formula n) = return $ text "Form" <+> integer n
+  display (Formula 0) = return $ text "Formula"
+  display (Formula n) = return $ text "Formula" <+> integer n
   display Type = return $ text "Type"
 
   display (Pi stage binding) = do
