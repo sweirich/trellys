@@ -503,6 +503,8 @@ instance Display EExpr where
      dt <- display t
      return $ text "tcast" <+> dt
 
+  display EAbort = return $ text  "abort"
+
 
 
   precedence (EVar _) = 12
@@ -513,6 +515,7 @@ instance Display EExpr where
   precedence (ECase _ _) = 1
   precedence (ETCast _) = 11
   precedence (EPi _ _) = 4
+  precedence EAbort  = 0
   precedence tm = error $ "precedence is not defined for " ++ (show tm)
 
 
