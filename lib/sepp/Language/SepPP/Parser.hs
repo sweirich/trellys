@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, PackageImports #-}
+{-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, PackageImports,ParallelListComp #-}
 module Language.SepPP.Parser where
 
 import Language.SepPP.Syntax
@@ -213,7 +213,7 @@ sepPPStyle = haskellStyle {
             "data", "where",
             "rec", "ind",
             "prog","type", "theorem", "proof", "axiom",
-            "value", "values",
+            "value", "values","valax",
             "show",
             "abort","aborts",
             "LogicalKind","Form", "Type","Pi",
@@ -393,7 +393,7 @@ morejoinExpr = do
   MoreJoin <$> braces (commaSep1 innerExpr)
 
 
-valExpr = reserved "value" >> Val <$> innerExpr
+valExpr = (reserved "value" <|> reserved "valax") >> Val <$> innerExpr
 
 
 tcastExpr = reserved "tcast" >>TCast <$> innerExpr <* reserved "by" <*> innerExpr
@@ -438,15 +438,20 @@ convExpr = do
   a <- expr
   (convBasic a <|> convContext a)
  <?> "Conv expression"
-  -- Basic-style conversion syntax, where the proofs and holes are separate.
+
   where convBasic a = do
+             -- Basic-style conversion syntax, where the proofs and holes are
+             -- separate. Since the context-style seems to be the preference,
+             -- we'll support this for backward compatibility by just
+             -- translating to the context style.
              reserved "by"
              bs <- commaSep1 expr
              reserved "at"
              xs <- many1 varName
              dot
              c <- expr
-             return $ Conv a bs (bind xs c)
+             -- return $ Conv a bs (bind xs c)
+             return $ ConvCtx a (substs [(n,Escape p) | n <- xs | p <- bs] c)
          -- Context-style conversion syntax
         convContext a = do
              reserved "at"
