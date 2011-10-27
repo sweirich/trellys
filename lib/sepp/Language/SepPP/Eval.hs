@@ -33,6 +33,7 @@ logReduce t t' = do
 
 reduce :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
 reduce 0 t k = k 0 t
+reduce steps EAbort _ = return EAbort
 reduce steps v@(EVar n) k = do
      d <- lookupDef (translate n)
      case d of
@@ -54,15 +55,18 @@ reduce steps tm@(EApp t1 t2) k = do
           tp <- lookupTermProof t2
           let t2' = maybe t2 ETCast tp
           reduce steps t2' (\steps' v -> do
-                       val <- isValue v
-                       if steps' == 0 || not val
-                          then do
-                            -- emit $ "Stuck term" $$$ EApp t1' v
-                            k steps (EApp t1' v)
-                          else do
-                            let tm' = subst x v body
-                            logReduce (EApp t1' v) tm'
-                            reduce (steps - 1) tm' k)
+                              case v of
+                                EAbort -> return EAbort
+                                _ -> do
+                                  val <- isValue v
+                                  if steps' == 0 || not val
+                                  then do
+                                    -- emit $ "Stuck term" $$$ EApp t1' v
+                                    k steps (EApp t1' v)
+                                  else do
+                                    let tm' = subst x v body
+                                    logReduce (EApp t1' v) tm'
+                                    reduce (steps - 1) tm' k)
 
         k' steps t1'@(ERec binding) = do
           typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
