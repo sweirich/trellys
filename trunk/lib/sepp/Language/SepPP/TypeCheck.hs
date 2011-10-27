@@ -181,10 +181,10 @@ lkJudgment (Forall binding) = do
     "Expecting the classifier for a logical kind argument to be syntax class"
     <++> "'A'."
   extendBinding n ty False (lkJudgment body)
-
+lkJudgment (Pos _ t) = lkJudgment t
 lkJudgment t = do
   typeError "Could not classify term as a logical kind"
-            [(text "The Expr", disp t)]
+            [(text "The Expr", disp $ show t)]
 
 guardLK t = do
   lk <- lkJudgment t
