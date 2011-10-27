@@ -526,7 +526,7 @@ varOrCon = do
      then return $ Con (string2Name id)
      else return $ Var (string2Name id)
 
-formula = reserved "Form" >> (Formula <$> option 0 integer)
+formula = reserved "Formula" >> (Formula <$> option 0 integer)
 sepType = reserved "Type" >> return Type
 
 -- FIXME: Relatively certain this will cause the parser to choke.
