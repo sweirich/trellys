@@ -15,7 +15,7 @@ proof id_is_id =
     termcase x {x_term} of
        abort ->
          let u1 [u1_eq] = (join 100 100 : id [a] (abort a) = (abort a))
-         in conv u1 at (id [a] ~x_term = ~x_term)
+         in conv u1 by x_term at hole. (id [a] hole = hole)
      | ! -> id_is_id_term a x x_term
 
 data Nat : Type where
@@ -172,22 +172,32 @@ proof append_assoc =
  \(a:Type) (xs:List a) (ys:List a) (zs:List a) =>
   termcase xs {xs_term} of
      abort ->
-      let aleft [al_eq] = aborts (append [a] ~xs_term (append [a] ys zs));
-          aright [ar_eq] = aborts (append [a] (append [a] ~xs_term ys) zs)
-      in trans (sym aleft) aright
+      let aleft [al_eq] = join 100 100 :
+           (append [a] (abort (List a)) (append [a] ys zs)) = (abort (List a));
+          aright [ar_eq] = join 100 100 :
+           (abort (List a)) = (append [a] (append [a] (abort (List a)) ys) zs);
+          u1 [u1_eq] =  trans aleft aright
+      in conv u1 at append [a] ~xs_term (append [a] ys zs) = append [a] (append [a] ~xs_term ys) zs
    | ! ->
       termcase ys {ys_term} of
          abort ->
-          let aleft [al_eq] = aborts (append [a] xs (append [a] ~ys_term zs));
-              aright [al_eq] = aborts (append [a] (append [a] xs ~ys_term) zs)
-          in trans (sym aleft) aright
+          let aleft [al_eq] = morejoin {xs_term} :
+               (append [a] xs (append [a] (abort (List a)) zs)) = abort (List a) ;
+              aright [al_eq] = morejoin {xs_term} :
+                 (abort (List a)) = (append [a] (append [a] xs (abort (List a))) zs);
+              u1 [u1_eq] = trans aleft aright
+          in conv u1 at append [a] xs (append [a] ~ys_term zs) =
+                        append [a] (append [a] xs ~ys_term) zs
        | ! ->
         termcase zs {zs_term} of
-          abort -> let aleft [al_eq] = aborts (append [a] xs (append [a] ys ~zs_term));
-                       aright [ar_eq] = aborts (append [a] (append [a] xs ys) ~zs_term)
-                   in trans (sym aleft) aright
+          abort -> let aleft [al_eq] = morejoin {xs_term,ys_term} :
+                        (append [a] xs (append [a] ys (abort (List a)))) = abort (List a);
+                       a_x_y_term [axy_eq] = append_term a xs xs_term ys ys_term;
+                       aright [ar_eq] = morejoin {xs_term,ys_term,a_x_y_term} :
+                        (abort (List a)) = (append [a] (append [a] xs ys) (abort (List a)));
+                       u1 [u1_eq] = trans aleft aright
+                   in conv u1 at append [a] xs (append [a] ys ~zs_term) = append [a] (append [a] xs ys) ~zs_term
        | ! -> append_assoc_term [a] xs xs_term ys ys_term zs zs_term
-
 
 {-
 
