@@ -7,18 +7,18 @@ import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 data Stage = Plus | Minus deriving(Show)
 
 data SuperKind = Logical Integer deriving (Show)
- 
+
 data ArgClass = ArgClassTerm Term
 
               | ArgClassPredicate Predicate
 
-              | ArgClassLogicalKind LogicalKind 
- 
+              | ArgClassLogicalKind LogicalKind
+
      deriving(Show)
 
 data Arg = ArgTerm Term
-     
-         | ArgProof Proof 
+
+         | ArgProof Proof
 
          | ArgPredicate Predicate
 
@@ -31,7 +31,7 @@ data LogicalKind = Formula Integer
   deriving(Show)
 
 data Predicate = PredicateVar(Name Predicate)
-   
+
            | PredicateLambda (Bind (Name Arg, Embed ArgClass) Predicate)
 
            | PredicateApplication Predicate Arg
@@ -42,8 +42,8 @@ data Predicate = PredicateVar(Name Predicate)
 
   --         | PredicateLetPredicate (Bind (Name Predicate) Predicate) Predicate
 
-    --       | PredicateLetTerm (Bind (Name Term, Name Proof) Predicate) Term 
-           
+    --       | PredicateLetTerm (Bind (Name Term, Name Proof) Predicate) Term
+
            | Equal Term Term
 
            | Terminate Term
@@ -64,7 +64,7 @@ data Proof =  ProofVar (Name Proof)
              | InjectLeft Proof Predicate
 
              | InjectRight Proof Predicate
-             
+
            -- | DisjunctionElimination (Bind (Name Proof) Proof) (Bind (Name Proof) Proof) Proof
 
              | ProofLambda (Bind (Name Arg, Embed ArgClass) Proof)
@@ -73,7 +73,7 @@ data Proof =  ProofVar (Name Proof)
 
              | ExistentialIntroduction (Arg, Proof) Predicate
 
---             | ProofLetProof (Bind (Name Proof) Proof) Proof 
+--             | ProofLetProof (Bind (Name Proof) Proof) Proof
 
          --    | ProofLetPredicate (Bind (Name Predicate) Proof) Predicate
 
@@ -100,36 +100,36 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
-data Term = TermVar (Name Term) 
+data Term = TermVar (Name Term)
 
            | Type Integer
-          
+
            | Pi (Bind (Name Arg, Embed ArgClass) Term) Stage
-        
+
            | TermLambda (Bind (Name Arg, Embed ArgClass) Term) Stage
-        
+
   --         | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
-          
+
     --       | TermLetProof (Bind (Name Proof) Term) Proof
 
       --     | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
-        
-       
+
+
 
 --           | Conv Term [] [] -- Troublesome, maybe later
 
 --           | Case Term Variable Branches, maybe later
 
 
-           | Tcast Term Proof 
+           | Tcast Term Proof
 
-           | TermApplication Term Arg Stage 
+           | TermApplication Term Arg Stage
 
            | DataConstr String
 
            | Abort Term
 
-     --      | Rec (Bind (Name Term, Name Term, Embed Term) Term) 
+     --      | Rec (Bind (Name Term, Name Term, Embed Term) Term)
 
   deriving(Show)
 
@@ -145,14 +145,14 @@ instance Subst LogicalKind Stage
 instance Subst LogicalKind Value
 instance Subst LogicalKind Arg
 instance Subst LogicalKind ArgClass
-instance Subst LogicalKind Predicate 
-instance Subst LogicalKind Term 
-instance Subst LogicalKind Proof 
+instance Subst LogicalKind Predicate
+instance Subst LogicalKind Term
+instance Subst LogicalKind Proof
 instance Subst LogicalKind LogicalKind
 
 
 instance Subst Arg Stage
-instance Subst Arg ArgClass 
+instance Subst Arg ArgClass
 instance Subst Arg LogicalKind
 
 instance Subst Arg Predicate where
@@ -188,8 +188,8 @@ instance Subst Arg Proof where
 
 
 
-instance Subst Proof Arg 
-instance Subst Proof Term 
+instance Subst Proof Arg
+instance Subst Proof Term
 instance Subst Proof Predicate
 instance Subst Proof Stage
 instance Subst Proof LogicalKind
@@ -204,8 +204,8 @@ instance Subst Proof Proof where
 instance Subst Term Arg
 instance  Subst Term ArgClass
 instance Subst Term Proof
-instance Subst Term Predicate 
-instance Subst Term LogicalKind 
+instance Subst Term Predicate
+instance Subst Term LogicalKind
 instance Subst Term Stage
 instance Subst Term Value
 instance Subst Term Term where
@@ -213,9 +213,9 @@ instance Subst Term Term where
   isvar _ = Nothing
 
 
-instance Subst Predicate Term 
-instance Subst Predicate Proof 
-instance Subst Predicate LogicalKind 
+instance Subst Predicate Term
+instance Subst Predicate Proof
+instance Subst Predicate LogicalKind
 instance Subst Predicate Stage
 instance Subst Predicate Value
 instance Subst Predicate Arg
@@ -254,7 +254,15 @@ z :: Term
 z = (TermVar nz)
 
 t :: Term
-t = TermLambda ( bind ( (translate nz), Embed (ArgClassTerm z)) z) Plus  
+t = TermLambda ( bind ( (translate nz), Embed (ArgClassTerm z))  z) Plus
+
+
+u :: Proof
+u = ProofLambda (bind ((translate nz), Embed (ArgClassTerm z)) (Join z z))
 
 test2 = subst (translate nx) (ArgTerm t) x
--- [t/x]x should give me t but it gives me 
+-- [t/x]x should give me t but it gives me x
+
+
+test3 = subst (translate nz) (ArgTerm t) u
+
