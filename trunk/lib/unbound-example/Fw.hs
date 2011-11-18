@@ -12,10 +12,10 @@ import Unbound.LocallyNameless
 
 import Control.Monad
 import Control.Monad.Trans.Error
-import Data.List as List
+-- import Data.List as List
 import Data.Set as S
 
--- System F with type and term variables
+-- System Fw with type and term variables
 
 type TyName = Name Ty
 type TmName = Name Tm
@@ -79,7 +79,7 @@ polyidty :: Ty
 polyidty = All (bind (a, Embed Star) (Arr (TyVar a) (TyVar a)))
 
 -- \a:*. a
-tyid = TyLam (bind (a,Embed Star) (TyVar a))
+tyid = TyLam (bind (a, Embed Star) (TyVar a))
 -- runM $ tyid =~ tyid tyid
 -- > True
 -- runM $ tyid =~ tyid polyidty
@@ -112,18 +112,18 @@ redTy (TyApp t1 t2) = do
   t1' <- redTy t1
   t2' <- redTy t2
   case t1' of
-    -- look for a beta-redTyuction
+    -- look for a beta-reduction
     TyLam bnd -> do
         ((x,_), t1'') <- unbind bnd
         return $ subst x t2' t1''
-    otherwise -> return $ TyApp t1' t2'
+    _ -> return $ TyApp t1' t2'
 redTy (TyLam bnd) = do
    ((x,ek),t) <- unbind bnd
    t' <- redTy t
    case t of
-     -- look for an eta-redTyuction
+     -- look for an eta-reduction
      TyApp t1 (TyVar y) | y == x && x `S.notMember` fv t1 -> return t1
-     otherwise -> return (TyLam (bind (x,ek) t'))
+     _ -> return (TyLam (bind (x,ek) t'))
 
 
 -----------------------------------------------------------------
@@ -183,7 +183,6 @@ tcty g  (TyApp t1 t2) = do
      KArr k11 k21 | k2 `aeq` k11 ->
        return k21
      _ -> throwError "KindError"
-   return k2
 
 ti :: Ctx -> Tm -> M Ty
 ti g (TmVar x) = lookupTmVar g x
@@ -209,10 +208,11 @@ ti g (TLam bnd) = do
 ti g (TApp t ty) = do
   tyt <- ti g t
   tyt' <- redTy tyt
-  case tyt of
-   (All b) -> do
+  case tyt' of
+    All b -> do
       k <- tcty g ty
       ((n1,Embed k'), ty1) <- unbind b
       unless (k `aeq` k') (throwError "KindError")
       return $ subst n1 ty ty1
+    _ -> throwError "TypeError"
 
