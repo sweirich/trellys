@@ -126,10 +126,6 @@ instance (PatMatch t) => PatMatch (R t)
 newtype Match = Match (M.Map EName Expr) deriving Show
 
 
-instance Alpha Match
-instance Alpha (M.Map EName Expr)
-
-
 emptyMatch = Match M.empty
 singletonMatch n t = extendMatch n t emptyMatch
 -- extendMatch :: EName -> Expr -> Match -> TCMonad Match
@@ -160,3 +156,5 @@ isInstantiated vars ty
 $(derive_abstract [''M.Map])
 $(derive [''Match])
 
+instance Alpha Match
+instance Alpha (M.Map EName Expr)
