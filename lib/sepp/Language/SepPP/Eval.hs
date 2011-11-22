@@ -7,7 +7,7 @@ import Language.SepPP.TCUtils
 import Language.SepPP.Options
 
 import Generics.RepLib hiding (Con(..))
-import Unbound.LocallyNameless hiding (Con(..))
+import Unbound.LocallyNameless hiding (Con(..),Equal,Refl)
 -- import Control.Monad((>=>))
 import "mtl" Control.Monad.Trans
 import Control.Applicative
@@ -60,10 +60,10 @@ reduce steps tm@(EApp t1 t2) k = do
                                 _ -> do
                                   val <- isValue v
                                   if steps' == 0 || not val
-                                  then do
+                                   then do
                                     -- emit $ "Stuck term" $$$ EApp t1' v
                                     k steps (EApp t1' v)
-                                  else do
+                                   else do
                                     let tm' = subst x v body
                                     logReduce (EApp t1' v) tm'
                                     reduce (steps - 1) tm' k)

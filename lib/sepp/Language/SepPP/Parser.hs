@@ -4,7 +4,7 @@ module Language.SepPP.Parser where
 import Language.SepPP.Syntax
 import Language.SepPP.Options
 
-import Unbound.LocallyNameless hiding (name,Infix,Val,Con)
+import Unbound.LocallyNameless hiding (name,Infix,Val,Con,Equal,Refl)
 
 import Text.Parsec hiding (ParseError,Empty)
 import Text.Parsec.Error(errorMessages, messageString)
