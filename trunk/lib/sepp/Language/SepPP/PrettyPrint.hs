@@ -3,7 +3,7 @@ module Language.SepPP.PrettyPrint where
 
 import Language.SepPP.Syntax
 
-import Unbound.LocallyNameless hiding (empty,Val,Con)
+import Unbound.LocallyNameless hiding (empty,Val,Con,Refl,Equal)
 
 import Text.PrettyPrint
 import Control.Applicative hiding (empty)

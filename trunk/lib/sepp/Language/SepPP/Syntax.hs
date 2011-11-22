@@ -11,7 +11,7 @@ module Language.SepPP.Syntax (
   splitApp, splitApp', isStrictContext, var, app,
   okCtx) where
 
-import Unbound.LocallyNameless hiding (Con,Val)
+import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
 import Unbound.LocallyNameless.Alpha(aeqR1)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Text.Parsec.Pos

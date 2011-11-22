@@ -11,12 +11,12 @@ import Language.SepPP.TCUtils
 import Language.SepPP.Options
 import Language.SepPP.Match
 
-import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
+import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl)
 
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import qualified Unbound.LocallyNameless.Alpha as Alpha
 import qualified Generics.RepLib as RL
-import Generics.RepLib hiding (Con,Val)
+import Generics.RepLib hiding (Con,Val,Equal,Refl)
 
 import Text.PrettyPrint
 

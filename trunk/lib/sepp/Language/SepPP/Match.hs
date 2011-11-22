@@ -15,7 +15,7 @@ import Language.SepPP.PrettyPrint
 
 import Generics.RepLib
 import qualified Generics.RepLib as RL
-import Unbound.LocallyNameless hiding (Con,isTerm,Val,join)
+import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Refl,Equal)
 import Text.Parsec.Pos
 
 
@@ -157,5 +157,6 @@ isInstantiated vars ty
         metavars = allvars `intersect` vars
 
 
-$(derive [''M.Map, ''Match])
+$(derive_abstract [''M.Map])
+$(derive [''Match])
 
