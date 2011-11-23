@@ -4,7 +4,8 @@
              MultiParamTypeClasses,
              FlexibleContexts,
              UndecidableInstances,
-             GADTs #-}
+             GADTs,
+             CPP #-}
 -- copied and modified from unbound 0.3.1 example F.hs extending to Fw
 module Fw where
 
@@ -55,37 +56,6 @@ instance Subst Tm Tm where
 instance Subst Ty Ty where
   isvar (TyVar x) = Just (SubstName x)
   isvar _ = Nothing
-
-------------------------------------------------------
--- Example terms
-------------------------------------------------------
-
-x :: Name Tm
-y :: Name Tm
-z :: Name Tm
-(x,y,z) = (string2Name "x", string2Name "y", string2Name "z")
-
-a :: Name Ty
-b :: Name Ty
-c :: Name Ty
-(a,b,c) = (string2Name "a", string2Name "b", string2Name "c")
-
--- /\a. \x:a. x
-polyid :: Tm
-polyid = TLam (bind (a, Embed Star) (Lam (bind (x, Embed (TyVar a)) (TmVar x))))
-
--- All a. a -> a
-polyidty :: Ty
-polyidty = All (bind (a, Embed Star) (Arr (TyVar a) (TyVar a)))
-
--- \a:*. a
-tyid = TyLam (bind (a, Embed Star) (TyVar a))
--- runM $ tyid =~ tyid tyid
--- > True
--- runM $ tyid =~ tyid polyidty
--- > False
-
-
 
 -----------------------------------------------------------------
 -- beta-eta equivalance/reduction for types
@@ -184,13 +154,13 @@ checkTyVar :: Ctx -> TyName -> M Ki
 checkTyVar g v = do
     case lookup v (getDelta g) of
       Just k -> return k
-      Nothing -> throwError "NotFound"
+      Nothing -> throwError ("NotFound "++show v)
 
 lookupTmVar :: Ctx -> TmName -> M Ty
 lookupTmVar g v = do
     case lookup v (getGamma g) of
       Just s -> return s
-      Nothing -> throwError "NotFound"
+      Nothing -> throwError ("NotFound "++show v)
 
 extendTy :: TyName -> Ki -> Ctx -> Ctx
 extendTy n k ctx = ctx { getDelta =  (n, k) : (getDelta ctx) }
@@ -233,12 +203,20 @@ ti g (Lam bnd) = do
 ti g (App t1 t2) = do
   ty1 <- ti g t1
   ty2 <- ti g t2
-  case ty1 of
+  ty1' <- redTy ty1
+  ty2' <- redTy ty2
+  case ty1' of
     Arr ty11 ty21 -> do
       b <- ty2 =~ ty11
-      unless b (throwError "TypeError")
+      unless b (throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
+                           ++"expected the following type to be equal\n"
+                           ++show ty2'++"\n"++show ty11
+                           ++"\n"++show ty1'
+                           ++"\n"++show ty2'
+               )
       return ty21
-    _ -> throwError "TypeError"
+    _ -> throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
+                    ++"expected Arr but "++show ty1
 ti g (TLam bnd) = do
   ((x,Embed k), t) <- unbind bnd
   ty <- ti (extendTy x k g) t
@@ -252,5 +230,6 @@ ti g (TApp t ty) = do
       ((n1,Embed k'), ty1) <- unbind b
       unless (k `aeq` k') (throwError "KindError")
       return $ subst n1 ty ty1
-    _ -> throwError "TypeError"
+    _ -> throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
+                    ++"expected All but "++show tyt'
 
