@@ -57,9 +57,16 @@ tyid = _TyLam a Star (TyVar a)
 
 -- Mu and mcata
 phiType :: TyName -> TyName -> Ki -> Ty
-phiType _f _a k = _All r k $ Arr (TyVar r                    ==> TyVar _a)
-                                 (TyApp (TyVar _f) (TyVar r) ==> TyVar _a)
- where (==>) = hiArr k
+phiType _f _a k = phiType' _f (TyVar _a) k
+
+phiType' :: TyName -> Ty -> Ki -> Ty
+phiType' _f _a k = phiType'' (TyVar _f) _a k
+
+phiType'' :: Ty -> Ty -> Ki -> Ty
+phiType'' _f _a k = _All r k $ Arr (_r ==> _a) (TyApp _f _r ==> _a)
+ where
+ (==>) = hiArr k
+ _r = TyVar r
 
 hiArr :: Ki -> Ty -> Ty -> Ty
 hiArr k = (==>)
@@ -117,15 +124,27 @@ True
 True
 -}
 
-{-
+_InTy :: Ki -> Ty
+_InTy k = _All f (KArr k k) $
+ TyApp (TyVar f) (mu k `TyApp` TyVar f) ==> (mu k `TyApp` TyVar f)
+ where (==>) = hiArr k
+
 _In :: Ki -> Tm
-_In k = _TLam f (Star k k) $ _Lam z undefined $ _Lam s undefined $
+_In k = _TLam f (KArr k k) $
   foldr (\(i,ki) tm -> _TLam i ki tm)
-        (_Lam y mu_f_is $ App (TApp (TmVar y) (TyVar a)) (TmVar x))
+        (_Lam x f_mu_k_f_is $
+         _TLam a k $
+         _Lam y (phiType f a k) $
+          tapp_is ( TApp (TmVar y) mu_k_f `App` 
+                    (TApp mit_k_f (TyVar a) `App` TmVar y) )
+          `App` TmVar x
+        )
         (zip is (kargs k))
   where
   is = [ string2Name("i"++show n) | n <- [1 .. karity k] ]
-  mu_f_is = foldl TyApp (mu k) (TyVar f:map TyVar is)
+  tapp_is tm = foldl TApp tm (map TyVar is)
+  mit_k_f = TApp (mit k) (TyVar f)
+  mu_k_f = mu k `TyApp` TyVar f
+  f_mu_k_f = TyVar f `TyApp` mu_k_f
+  f_mu_k_f_is = foldl TyApp f_mu_k_f (map TyVar is)
 
-  App s 
--}
