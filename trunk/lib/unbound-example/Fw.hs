@@ -57,6 +57,11 @@ instance Subst Ty Ty where
   isvar (TyVar x) = Just (SubstName x)
   isvar _ = Nothing
 
+-- wrapper for unless over monadic conditions
+
+unlessM mb x = do b <- mb
+                  unless b x
+
 -----------------------------------------------------------------
 -- beta-eta equivalance/reduction for types
 -----------------------------------------------------------------
@@ -176,9 +181,9 @@ tcty g  (All b) = do
    tcty (extendTy x k g) ty'
 tcty g  (Arr t1 t2) = do
    k1 <- tcty g  t1
-   unless (k1 `aeq` Star) (throwError "KindError")
+   unless (k1 `aeq` Star) (throwError "KindError 1")
    k2 <- tcty g  t2
-   unless (k2 `aeq` Star) (throwError "KindError")
+   unless (k2 `aeq` Star) (throwError "KindError 2")
    return Star
 tcty g  (TyLam b) = do
    ((x,Embed k), ty') <- unbind b
@@ -190,33 +195,30 @@ tcty g  (TyApp t1 t2) = do
    case k1 of
      KArr k11 k21 | k2 `aeq` k11 ->
        return k21
-     _ -> throwError "KindError"
+     _ -> throwError "KindError 3"
 
 ti :: Ctx -> Tm -> M Ty
 ti g (TmVar x) = lookupTmVar g x
 ti g (Lam bnd) = do
   ((x, Embed ty1), t) <- unbind bnd
   k1 <- tcty g ty1
-  unless (k1 `aeq` Star) (throwError "KindError")
+  unless (k1 `aeq` Star) (throwError "KindError 4")
   ty2 <- ti (extendTm x ty1 g) t
   return (Arr ty1 ty2)
 ti g (App t1 t2) = do
   ty1 <- ti g t1
   ty2 <- ti g t2
   ty1' <- redTy ty1
-  ty2' <- redTy ty2
   case ty1' of
     Arr ty11 ty21 -> do
-      b <- ty2 =~ ty11
-      unless b (throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
-                           ++"expected the following type to be equal\n"
-                           ++show ty2'++"\n"++show ty11
-                           ++"\n"++show ty1'
-                           ++"\n"++show ty2'
-               )
+      unlessM (ty2 =~ ty11)
+              (throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
+                          ++"expected the following types to be equal\n"
+                          ++show ty2++"\n"++show ty11)
       return ty21
     _ -> throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
                     ++"expected Arr but "++show ty1
+
 ti g (TLam bnd) = do
   ((x,Embed k), t) <- unbind bnd
   ty <- ti (extendTy x k g) t
@@ -228,7 +230,10 @@ ti g (TApp t ty) = do
     All b -> do
       k <- tcty g ty
       ((n1,Embed k'), ty1) <- unbind b
-      unless (k `aeq` k') (throwError "KindError")
+      unless (k `aeq` k')
+             (throwError $ "KindError"++__FILE__++":"++show __LINE__++":"
+                         ++"expected the following kinds to be equal\n"
+                         ++show k++"\n"++show k')
       return $ subst n1 ty ty1
     _ -> throwError $ "TypeError:"++__FILE__++":"++show __LINE__++":"
                     ++"expected All but "++show tyt'
