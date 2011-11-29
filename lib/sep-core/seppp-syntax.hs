@@ -176,10 +176,19 @@ instance Subst Arg Stage
 instance Subst Arg ArgName
 instance Subst Arg ArgClass
 instance Subst Arg LogicalKind
+instance Subst Arg Arg 
+
 instance Subst Arg Predicate where
+  subst n (ArgPredicate t) tm = subst (translate n) t tm
+  subst n t t' = substR1 rep1 n t t'
+
 instance Subst Arg Term where
-instance Subst Arg Arg where
+  subst n (ArgTerm t) tm = subst (translate n) t tm
+  subst n t t' = substR1 rep1 n t t'
+
 instance Subst Arg Proof where
+  subst n (ArgProof t) tm = subst (translate n) t tm
+  subst n t t' = substR1 rep1 n t t'
 
 
 instance Subst Proof Arg
@@ -255,6 +264,87 @@ instance Alpha ArgName
 
 3. Show [proof/proofvar]predicate, [term/termvar]predicate, [predicate/predicatevar]predicate is working correctly.
 
-4. Example: [yz/x](\x.x) , [yz/x](\z.x)
+4. Show [arg/argname]predicate, [arg/argname]term, [arg/argname]proof is working correctly.
+
+5. Example: [yz/x](\x.x) , [yz/x](\z.x)
 -}
 
+x_term, y_term, z_term, u_term :: Name Term 
+
+x_proof, y_proof, z_proof :: Name Proof 
+
+x_pred, y_pred, z_pred :: Name Predicate
+
+x_term = string2Name "x_term"
+y_term = string2Name "y_term"
+z_term = string2Name "z_term"
+u_term = string2Name "u_term"
+x_proof = string2Name "x_proof"
+y_proof = string2Name "y_proof"
+z_proof = string2Name "z_proof"
+x_pred = string2Name "x_pred"
+y_pred = string2Name "y_pred"
+z_pred = string2Name "z_pred"
+
+--1. Test Case for [proof/proofvar]proof:
+-- \x:Z.x a proof
+plxZx = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar z_pred)))) (ProofVar x_proof)) 
+-- yz a proof
+pyz = ProofApplication (ProofVar y_proof) (ArgProof (ProofVar z_proof))
+
+-- [yz/x](\x:Z.x)=\x:Z.x
+test1a = subst x_proof pyz plxZx
+
+-- \z:Z.xz a proof, z is a proofvar
+plzZxz = ProofLambda (bind (ArgNameProof z_proof, (Embed (ArgClassPredicate (PredicateVar z_pred)))) (ProofApplication (ProofVar x_proof) (ArgProof (ProofVar z_proof)))) 
+
+-- [yz/x]\z:Z.xz = \z.yz'z
+test1b = subst x_proof pyz plzZxz
+
+--2. Test Case for [term/termvar]proof
+--yz is term
+tyz = TermApplication (TermVar y_term) (ArgTerm (TermVar z_term)) Plus
+-- \z:U.xz is a proof, but z is a termvar
+plzUxz = ProofLambda (bind (ArgNameTerm z_term, (Embed (ArgClassTerm (TermVar u_term)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
+
+-- [yz/z](\z:U.xz)
+
+test2a = subst z_term tyz plzUxz
+
+-- \x:Z.xz is a proof, but x is a proofvar, z is a termvar
+plzUxz2 = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar x_pred)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
+--[yz/z]\x:U.xz= \x:U.x(yz)
+test2b = subst z_term tyz plzUxz2
+
+--3. Test Case for [pred/predvar]proof
+
+--yz is pred, y is a predvar, z is a termvar
+pdyz = PredicateApplication (PredicateVar y_pred) (ArgTerm (TermVar z_term)) 
+
+-- \z:F0.xz is a proof, but z is a predvar
+pdlzF0xz = ProofLambda (bind (ArgNamePredicate z_pred, (Embed (ArgClassLogicalKind (Formula 0)))) (ProofApplication (ProofVar x_proof) (ArgPredicate (PredicateVar z_pred)))) 
+
+--[yz/z]\z:F0.xz=\z:F0.xz
+test3a = subst z_pred pdyz pdlzF0xz
+
+-- \x:Y.xz is a proof, but z is a predvar, x is a proofvar
+pdlxYxz = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar y_pred)))) (ProofApplication (ProofVar x_proof) (ArgPredicate (PredicateVar z_pred)))) 
+
+--[yz/z]\x:Y.xz=\x:Y.x(yz)
+test3b = subst z_pred pdyz pdlxYxz
+
+--4. Test Case for [arg/argname]proof
+
+--yz is term being promoted to arg 
+atyz = ArgTerm (TermApplication (TermVar y_term) (ArgTerm (TermVar z_term)) Plus)
+-- \z:U.xz is a proof, but z is a termvar
+--plzUxz = ProofLambda (bind (ArgNameTerm z_term, (Embed (ArgClassTerm (TermVar u_term)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
+
+-- [yz/z](\z:U.xz)
+
+test4a = subst (translate z_term) atyz plzUxz
+
+-- \x:Z.xz is a proof, but x is a proofvar, z is a termvar
+--plzUxz2 = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar x_pred)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
+--[yz/z]\x:U.xz= \x:U.x(yz)
+test4b = subst (translate z_term) atyz plzUxz2
