@@ -10,7 +10,6 @@ data Stage = Plus | Minus deriving(Show)
 
 data SuperKind = Logical Integer deriving (Show)
 
-
 data LogicalKind = Formula Integer
 
          | QuasiForall ArgClass LogicalKind
@@ -23,68 +22,66 @@ data Predicate = PredicateVar (Name Predicate)
 
            | PredicateApplication Predicate Arg
 
-           | Forall (Bind (Name ArgName, Embed ArgClass) Predicate)
+           | Forall (Bind (ArgName, Embed ArgClass) Predicate)
 
+           | PredicateLetProof (Bind (Name Proof) Predicate) Proof
 
+           | PredicateLetPredicate (Bind (Name Predicate) Predicate) Predicate
 
-           -- | PredicateLetProof (Bind (Name Proof) Predicate) Proof
+           | PredicateLetTerm (Bind (Name Term, Name Proof) Predicate) Term
 
-           -- | PredicateLetPredicate (Bind (Name Predicate) Predicate) Predicate
+           | Equal Term Term
 
-           -- | PredicateLetTerm (Bind (Name Term, Name Proof) Predicate) Term
+           | Terminate Term
 
-           -- | Equal Term Term
+           | Disjunction Predicate Predicate
 
-           -- | Terminate Term
+           | Exist (Bind (ArgName, Embed ArgClass) Predicate)
 
-           -- | Disjunction Predicate Predicate
+           | Bottom Integer
 
-           -- | PredicateExist (Bind (Name Arg, Embed ArgClass) Predicate)
-
-           -- | Bottom Integer
-
-           -- | Order Term Term
-
+           | Order Term Term
 
   deriving(Show)
 
 data Proof =  ProofVar (Name Proof)
 
-             -- | InjectLeft Proof Predicate
+             | InjectLeft Proof Predicate
 
-             -- | InjectRight Proof Predicate
+             | InjectRight Proof Predicate
 
-             -- | DisjunctionElimination (Bind (Name Proof) Proof) (Bind (Name Proof) Proof) Proof
+             | DisjunctionElimination (Bind (Name Proof) Proof) (Bind (Name Proof) Proof) Proof
 
              | ProofLambda (Bind (ArgName, Embed ArgClass) Proof)
 
              | ProofApplication Proof Arg
 
-             -- | ExistentialIntroduction (Arg, Proof) Predicate
+             | ExistentialIntroduction (Arg, Proof) Predicate
 
-             -- | ProofLetProof (Bind (Name Proof) Proof) Proof
+             | ProofLetProof (Bind (Name Proof) Proof) Proof
 
-             -- | ProofLetPredicate (Bind (Name Predicate) Proof) Predicate
+             | ProofLetPredicate (Bind (Name Predicate) Proof) Predicate
 
-             -- | ProofLetTerm (Bind (Name Term, Name Proof) Proof) Term --Bind a term var and a proof var in a proof.
+             | ProofLetTerm (Bind (Name Term, Name Proof) Proof) Term --Bind a term var and a proof var in a proof.
 
-            -- | Join Term Term
+             | Join Term Term
 
 --             | Pconv Proof [Q] [V] Need to ask question.
 
-             -- | Valax Term
+             | Valax Term
 
-             -- | ProofOrder Term Term
+             | ProofOrder Term Term
 
          --  | Case
          --  | TCase
 
---             | Ind (Bind (Name Term, Name Proof, Embed Term, Name Proof) Proof)
+             | Ind (Bind (Name Term, Name Proof, Embed Term, Name Proof) Proof)
 
 --bind three variable in a proof
 
-             -- | Contra Proof
-             -- | Contraval Proof Proof
+             | Contra Proof
+            
+             | Contraval Proof Proof
 
 
     deriving(Show)
@@ -95,15 +92,13 @@ data Term =  TermVar (Name Term)
 
            | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
 
-           | TermLambda (Bind (ArgName, Embed Term) Term) Stage
+           | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
 
+           | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
 
-          -- | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
+           | TermLetProof (Bind (Name Proof) Term) Proof
 
-           -- | TermLetProof (Bind (Name Proof) Term) Proof
-
-           -- | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
-
+           | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
 
 
 --           | Conv Term [] [] -- Troublesome, maybe later
@@ -111,17 +106,18 @@ data Term =  TermVar (Name Term)
 --           | Case Term Variable Branches, maybe later
 
 
-           -- | Tcast Term Proof
+            | Tcast Term Proof
 
             | TermApplication Term Arg Stage
 
+            | DataConstr String
 
-           -- | DataConstr String
+            | Abort Term
 
-           -- | Abort Term
+            | Rec (Bind (Name Term, Name Term, Embed Term) Term)
 
-           -- | Rec (Bind (Name Term, Name Term, Embed Term) Term)
 --bind two term in a term.
+
   deriving(Show)
 
 data ArgClass = ArgClassTerm Term
@@ -152,9 +148,6 @@ data ArgName = ArgNameProof (Name Proof)
 data Value = Value | NonValue deriving (Show)
 
 
-
-
-         
          
 
 $(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind])
@@ -179,26 +172,24 @@ instance Subst Arg LogicalKind
 instance Subst Arg Arg 
 
 instance Subst Arg Predicate where
-  subst n (ArgPredicate t) tm = subst (translate n) t tm
-  subst n t t' = substR1 rep1 n t t'
+  subst n (ArgPredicate pd) prd = subst (translate n) pd prd
+  subst n a prd = substR1 rep1 n a prd
+
+-- | here we do a implicit mutually recursive call on the 'substR1' defined in (Subst Arg Term) and (Subst Arg Proof)
 
 instance Subst Arg Term where
   subst n (ArgTerm t) tm = subst (translate n) t tm
-  subst n t t' = substR1 rep1 n t t'
+  subst n a tm = substR1 rep1 n a tm
 
 instance Subst Arg Proof where
-  subst n (ArgProof t) tm = subst (translate n) t tm
-  subst n t t' = substR1 rep1 n t t'
+  subst n (ArgProof p) pf = subst (translate n) p pf
+  subst n a pf = substR1 rep1 n a pf
 
 
 instance Subst Proof Arg
 instance Subst Proof ArgName
-instance Subst Proof Term where
-  subst n p t = substR1 rep1 n p t 
-
-instance Subst Proof Predicate where
-  subst n t p = substR1 rep1 n t p 
-
+instance Subst Proof Term 
+instance Subst Proof Predicate 
 instance Subst Proof Stage
 instance Subst Proof LogicalKind
 instance Subst Proof Value
@@ -211,34 +202,24 @@ instance Subst Proof Proof where
 instance Subst Term Arg
 instance Subst Term ArgClass
 instance Subst Term ArgName
-instance Subst Term Proof where
-  subst n t p = substR1 rep1 n t p 
-
-instance Subst Term Predicate where
-  subst n t p = substR1 rep1 n t p 
-
+instance Subst Term Proof 
+instance Subst Term Predicate 
 instance Subst Term LogicalKind
 instance Subst Term Stage
 instance Subst Term Value
-
 instance Subst Term Term where
   isvar (TermVar x) = Just (SubstName x)
   isvar _ = Nothing
 
 
-instance Subst Predicate Term where
-  subst n pred tm = substR1 rep1 n pred tm 
-
-instance Subst Predicate Proof where
-  subst n pred prf = substR1 rep1 n pred prf 
-
+instance Subst Predicate Term 
+instance Subst Predicate Proof
 instance Subst Predicate LogicalKind
 instance Subst Predicate Stage
 instance Subst Predicate Value
 instance Subst Predicate Arg
 instance Subst Predicate ArgClass
 instance Subst Predicate ArgName
-
 instance Subst Predicate Predicate where
         isvar (PredicateVar x) = Just (SubstName x)
         isvar _ = Nothing
@@ -254,19 +235,19 @@ instance Alpha ArgClass
 instance Alpha Arg
 instance Alpha ArgName
 
-{- Building a complete test case for substitution:
-
-0. For each substitution, test both bind variable(b) and unbind variable(a).
+{- Building a small-scale test case for substitution:
  
-1. Show: [proof/proofvar]proof, [term/termvar]proof, [predicate/predicatevar]proof is working correctly.
+1. Show: [proof/proofvar]proof is working correctly.
 
-2. Show [proof/proofvar]term, [term/termvar]term, [predicate/predicatevar]term is working correctly.
+2. Show: [term/termvar]term  is working correctly.
 
-3. Show [proof/proofvar]predicate, [term/termvar]predicate, [predicate/predicatevar]predicate is working correctly.
+3. Show: [predicate/predicatevar]predicate is working correctly.
 
-4. Show [arg/argname]predicate, [arg/argname]term, [arg/argname]proof is working correctly.
+4. Show: [arg/argname]proof is working correctly.
 
-5. Example: [yz/x](\x.x) , [yz/x](\z.x)
+5. Show: [term/termvar]predicate is working correctly.
+
+6. Example: [yz/x](\z.zx)
 -}
 
 x_term, y_term, z_term, u_term :: Name Term 
@@ -287,64 +268,58 @@ y_pred = string2Name "y_pred"
 z_pred = string2Name "z_pred"
 
 --1. Test Case for [proof/proofvar]proof:
--- \x:Z.x a proof
-plxZx = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar z_pred)))) (ProofVar x_proof)) 
+
+-- \z:Z.zx a proof
+plzZzx = ProofLambda (bind (ArgNameProof z_proof, (Embed (ArgClassPredicate (PredicateVar z_pred)))) (ProofApplication (ProofVar z_proof) (ArgProof (ProofVar x_proof)))) 
+
 -- yz a proof
 pyz = ProofApplication (ProofVar y_proof) (ArgProof (ProofVar z_proof))
 
--- [yz/x](\x:Z.x)=\x:Z.x
-test1a = subst x_proof pyz plxZx
+-- [yz/x](\z:Z.zx)=\z:Z.z(yz')
+test1 = subst x_proof pyz plzZzx
 
--- \z:Z.xz a proof, z is a proofvar
-plzZxz = ProofLambda (bind (ArgNameProof z_proof, (Embed (ArgClassPredicate (PredicateVar z_pred)))) (ProofApplication (ProofVar x_proof) (ArgProof (ProofVar z_proof)))) 
+--2. Test Case for [term/termvar]term
 
--- [yz/x]\z:Z.xz = \z.yz'z
-test1b = subst x_proof pyz plzZxz
-
---2. Test Case for [term/termvar]proof
 --yz is term
 tyz = TermApplication (TermVar y_term) (ArgTerm (TermVar z_term)) Plus
--- \z:U.xz is a proof, but z is a termvar
-plzUxz = ProofLambda (bind (ArgNameTerm z_term, (Embed (ArgClassTerm (TermVar u_term)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
 
--- [yz/z](\z:U.xz)
+-- \z:Y.zx is a term
+tlzYzx = TermLambda (bind (ArgNameTerm z_term, (Embed (ArgClassTerm (TermVar y_term)))) (TermApplication (TermVar z_term) (ArgTerm (TermVar x_term)) Plus)) Plus 
 
-test2a = subst z_term tyz plzUxz
+-- [yz/x](\z:Z.zx)=\z:Z.z(yz')
+test2 = subst x_term tyz tlzYzx
 
--- \x:Z.xz is a proof, but x is a proofvar, z is a termvar
-plzUxz2 = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar x_pred)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
---[yz/z]\x:U.xz= \x:U.x(yz)
-test2b = subst z_term tyz plzUxz2
+--3. Test Case for [pred/predvar]pred
 
---3. Test Case for [pred/predvar]proof
+--yz is pred
+pdyz = PredicateApplication (PredicateVar y_pred) (ArgPredicate (PredicateVar z_pred)) 
 
---yz is pred, y is a predvar, z is a termvar
-pdyz = PredicateApplication (PredicateVar y_pred) (ArgTerm (TermVar z_term)) 
+-- \z:F0.zx is a pred
+pdlzF0zx = PredicateLambda (bind (ArgNamePredicate z_pred, (Embed (ArgClassLogicalKind (Formula 0)))) (PredicateApplication (PredicateVar z_pred) (ArgPredicate (PredicateVar x_pred)))) 
 
--- \z:F0.xz is a proof, but z is a predvar
-pdlzF0xz = ProofLambda (bind (ArgNamePredicate z_pred, (Embed (ArgClassLogicalKind (Formula 0)))) (ProofApplication (ProofVar x_proof) (ArgPredicate (PredicateVar z_pred)))) 
-
---[yz/z]\z:F0.xz=\z:F0.xz
-test3a = subst z_pred pdyz pdlzF0xz
-
--- \x:Y.xz is a proof, but z is a predvar, x is a proofvar
-pdlxYxz = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar y_pred)))) (ProofApplication (ProofVar x_proof) (ArgPredicate (PredicateVar z_pred)))) 
-
---[yz/z]\x:Y.xz=\x:Y.x(yz)
-test3b = subst z_pred pdyz pdlxYxz
+--[yz/x]\z:F0.zx=\z:F0.z(yz')
+test3 = subst x_pred pdyz pdlzF0zx
 
 --4. Test Case for [arg/argname]proof
 
 --yz is term being promoted to arg 
 atyz = ArgTerm (TermApplication (TermVar y_term) (ArgTerm (TermVar z_term)) Plus)
--- \z:U.xz is a proof, but z is a termvar
---plzUxz = ProofLambda (bind (ArgNameTerm z_term, (Embed (ArgClassTerm (TermVar u_term)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
 
--- [yz/z](\z:U.xz)
+-- \z:U.zx is a proof, but x is termvar
+plzUxz = ProofLambda (bind (ArgNameProof z_proof, (Embed (ArgClassPredicate (PredicateVar y_pred)))) (ProofApplication (ProofVar z_proof) (ArgTerm (TermVar x_term)))) 
 
-test4a = subst (translate z_term) atyz plzUxz
+-- [yz/x](\z:U.zx)=\z:U.z(yz')
+test4 = subst (translate x_term) atyz plzUxz
 
--- \x:Z.xz is a proof, but x is a proofvar, z is a termvar
---plzUxz2 = ProofLambda (bind (ArgNameProof x_proof, (Embed (ArgClassPredicate (PredicateVar x_pred)))) (ProofApplication (ProofVar x_proof) (ArgTerm (TermVar z_term)))) 
---[yz/z]\x:U.xz= \x:U.x(yz)
-test4b = subst (translate z_term) atyz plzUxz2
+-- 5. Test case for [term/termvar]pred
+
+-- tyz is term
+
+
+-- \z:Z.zx is a pred, but x is a termvar
+
+pdlzZxz = PredicateLambda (bind (ArgNamePredicate z_pred, (Embed (ArgClassLogicalKind (Formula 0)))) (PredicateApplication (PredicateVar z_pred) (ArgTerm (TermVar x_term)))) 
+
+--[yz/z]\z:U.zx= \z:U.z(yz')
+test5 = subst x_term tyz pdlzZxz
+
