@@ -58,6 +58,8 @@ data Proof =  ProofVar (Name Proof)
 
              | ExistentialIntroduction (Arg, Proof) Predicate
 
+             | ExistentialElimination Proof (Bind (ArgName, Name Predicate) Proof)
+
              | ProofLetProof (Bind (Name Proof) Proof) Proof
 
              | ProofLetPredicate (Bind (Name Predicate) Proof) Predicate
@@ -66,14 +68,15 @@ data Proof =  ProofVar (Name Proof)
 
              | Join Term Term
 
---             | Pconv Proof [Q] [V] Need to ask question.
+             | ConvProof Proof [Equality] (Bind [(Name Term)] Predicate) 
 
              | Valax Term
 
              | ProofOrder Term Term
 
-         --  | Case
-         --  | TCase
+--             | ProofCase Term (Name Proof) Proof ProofBranch
+ 
+--             | TerminationCase Term (Bind ((Name Proof), Embed Term) Proof) (Bind ((Name Proof), Embed Term) Proof)--suspecious 
 
              | Ind (Bind (Name Term, Name Proof, Embed Term, Name Proof) Proof)
 
@@ -86,6 +89,18 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
+data Equality = Equality Predicate
+            
+              | EqualityProof Proof
+
+    deriving(Show)    
+
+-- data ProofBranch = Done
+--                | NextBranch Term [()] ProofBranch
+--         deriving(Show)
+
+
+-- data TermBranch = 
 data Term =  TermVar (Name Term)
 
            | Type Integer
@@ -100,11 +115,9 @@ data Term =  TermVar (Name Term)
 
            | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
 
+           | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
 
---           | Conv Term [] [] -- Troublesome, maybe later
-
---           | Case Term Variable Branches, maybe later
-
+--         | TermCase Term (Name Proof) TermBranch
 
             | Tcast Term Proof
 
@@ -150,7 +163,7 @@ data Value = Value | NonValue deriving (Show)
 
          
 
-$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind])
+$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind, ''Equality])
 
 type TypingContext = [(ArgName, ArgClass,Value )]
 
@@ -163,7 +176,7 @@ instance Subst LogicalKind Predicate
 instance Subst LogicalKind Term
 instance Subst LogicalKind Proof
 instance Subst LogicalKind LogicalKind
-
+instance Subst LogicalKind Equality
 
 instance Subst Arg Stage
 instance Subst Arg ArgName
@@ -185,6 +198,7 @@ instance Subst Arg Proof where
   subst n (ArgProof p) pf = subst (translate n) p pf
   subst n a pf = substR1 rep1 n a pf
 
+instance Subst Arg Equality
 
 instance Subst Proof Arg
 instance Subst Proof ArgName
@@ -194,6 +208,7 @@ instance Subst Proof Stage
 instance Subst Proof LogicalKind
 instance Subst Proof Value
 instance Subst Proof ArgClass
+instance Subst Proof Equality
 instance Subst Proof Proof where
   isvar (ProofVar x) = Just (SubstName x)
   isvar _ = Nothing
@@ -203,6 +218,7 @@ instance Subst Term Arg
 instance Subst Term ArgClass
 instance Subst Term ArgName
 instance Subst Term Proof 
+instance Subst Term Equality
 instance Subst Term Predicate 
 instance Subst Term LogicalKind
 instance Subst Term Stage
@@ -214,6 +230,7 @@ instance Subst Term Term where
 
 instance Subst Predicate Term 
 instance Subst Predicate Proof
+instance Subst Predicate Equality
 instance Subst Predicate LogicalKind
 instance Subst Predicate Stage
 instance Subst Predicate Value
@@ -224,7 +241,7 @@ instance Subst Predicate Predicate where
         isvar (PredicateVar x) = Just (SubstName x)
         isvar _ = Nothing
 
-
+instance Alpha Equality
 instance Alpha Predicate
 instance Alpha Term
 instance Alpha Proof
