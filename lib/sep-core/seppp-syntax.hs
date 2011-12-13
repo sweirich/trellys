@@ -51,7 +51,7 @@ data Proof =  ProofVar (Name Proof)
              | InjectRight Proof Predicate
 
              | DisjunctionElimination (Bind (Name Proof) Proof) (Bind (Name Proof) Proof) Proof
-
+             
              | ProofLambda (Bind (ArgName, Embed ArgClass) Proof)
 
              | ProofApplication Proof Arg
@@ -74,9 +74,9 @@ data Proof =  ProofVar (Name Proof)
 
              | ProofOrder Term Term
 
---             | ProofCase Term (Name Proof) Proof ProofBranch
+             | ProofCase Term Proof (Bind (Name Proof)  [(Term, [ArgName],Proof )])
  
---             | TerminationCase Term (Bind ((Name Proof), Embed Term) Proof) (Bind ((Name Proof), Embed Term) Proof)--suspecious 
+             | TerminationCase Term (Bind (Name Proof) (Proof,Proof)) 
 
              | Ind (Bind (Name Term, Name Proof, Embed Term, Name Proof) Proof)
 
@@ -95,12 +95,6 @@ data Equality = Equality Predicate
 
     deriving(Show)    
 
--- data ProofBranch = Done
---                | NextBranch Term [()] ProofBranch
---         deriving(Show)
-
-
--- data TermBranch = 
 data Term =  TermVar (Name Term)
 
            | Type Integer
@@ -117,17 +111,17 @@ data Term =  TermVar (Name Term)
 
            | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
 
---         | TermCase Term (Name Proof) TermBranch
+           | TermCase Term (Bind (Name Term)  [(Term, [ArgName],Term)])
 
-            | Tcast Term Proof
+           | Tcast Term Proof
 
-            | TermApplication Term Arg Stage
+           | TermApplication Term Arg Stage
 
-            | DataConstr String
+           | DataConstr String
 
-            | Abort Term
+           | Abort Term
 
-            | Rec (Bind (Name Term, Name Term, Embed Term) Term)
+           | Rec (Bind (Name Term, Name Term, Embed Term) Term)
 
 --bind two term in a term.
 
