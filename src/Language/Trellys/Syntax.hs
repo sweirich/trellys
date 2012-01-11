@@ -14,6 +14,7 @@ import qualified Generics.RepLib as RL
 import Language.Trellys.GenericBind
 
 import Text.ParserCombinators.Parsec.Pos
+import Data.Maybe (fromMaybe)
 
 type TName = Name Term
 type EName = Name ETerm
@@ -119,6 +120,18 @@ delPosParen tm         = tm
 delPosParenDeep :: Rep a => a -> a
 delPosParenDeep = everywhere (mkT delPosParen)
 
+-- | Partial inverse of Pos
+unPos :: Term -> Maybe SourcePos
+unPos (Pos p _) = Just p
+unPos _         = Nothing
+
+-- | Tries to find a Pos anywhere inside a term
+unPosDeep :: Term -> Maybe SourcePos
+unPosDeep = something (mkQ Nothing unPos)
+
+-- | Tries to find a Pos inside a term, otherwise just gives up.
+unPosFlaky :: Term -> SourcePos
+unPosFlaky t = fromMaybe (newPos "unknown location" 0 0) (unPosDeep t)
 
 -- | A Module has a name, a list of imports, and a list of declarations
 data Module = Module { moduleName :: MName,

@@ -684,11 +684,11 @@ tcEntry (Def n term) = do
             -- Put the elaborated version of term into the context.
             return $ AddCtx [Sig n theta ty, Def n eterm]
     die term' =
-      let (Pos p t) = term
-          (Pos p' _) = term'
-          msg = disp [DS "Multiple definitions of", DD n,
-                      DS "Previous definition at", DD p']
-      in do throwError $ Err [(p,t)] msg
+      throwError $ 
+         Err [(unPosFlaky term,term)] 
+             (disp [DS "Multiple definitions of", DD n,
+                    DS "Previous definition at", DD (unPosFlaky term'),
+                    DS " was", DD term'])
 
 -- rule Decl_data
 tcEntry dt@(Data t delta th lev cs) =
