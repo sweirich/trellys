@@ -261,10 +261,10 @@ cov : [p:Nat -> Type 0]
    -> ((n:Nat) -> p n)
 cov = \[p] f .
   -- g _ n _ : (m:Nat) -> LT m n -> p m, and so proves p n via f
-  let g [_] = ((recnat g [i] = \n [n_lt_i] m [m_lt_n] .
+  let g [_] = ((ind g [i] = \n [n_lt_i] m [m_lt_n] .
     let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in       -- i = S (pred i)
     let [m_lt_i'] [_] = lt_trans_pred m n i m_lt_n n_lt_i in -- m < pred i
-    f m (g [pred i] [i_eq] m [m_lt_i'])
+    f m (g [pred i] [ord i_eq] m [m_lt_i'])
            ): [i:Nat] -> (n:Nat) -> [ltT n i] -> ((m:Nat) -> [ltT m n] -> p m))
   in \n . f n (g [Succ n] n [m_lt_Sm n])
 
@@ -282,7 +282,7 @@ strongNat : [p:Nat -> Type 0]
          -> ((n:Nat) -> p n)
 strongNat = \[p] f .
   -- g n : (m:Nat) -> LT m n -> p m, and so proves p n via f
-  let g [_] = ((recnat g n = case n [eq_n] of
+  let g [_] = ((ind g n = case n [eq_n] of
     -- m < 0, a contradiction
     Zero    -> \m [lt_p] .
       poe [p m] [lt_0__F [m] [conv lt_p by eq_n at h.LT m h]]
@@ -290,9 +290,9 @@ strongNat = \[p] f .
     Succ n' -> \m [lt_p] .
       case (lt__lteq [m] [n'] [conv lt_p by eq_n at h.LT m h]) [_] of
         -- m < n', so g n' recursively proves p m
-        InL lt_p'  -> g n' [eq_n] m [lt_p']
+        InL lt_p'  -> g n' [ord eq_n] m [lt_p']
         -- n' = m, so f proves p m via g n'
-        InR n_eq_m -> (conv (f n' (g n' [eq_n])) by n_eq_m at h.p h)
+        InR n_eq_m -> (conv (f n' (g n' [ord eq_n])) by n_eq_m at h.p h)
            -- this is g's type annotation, is there a better way to do
            -- this?
            ): (n:Nat) -> ((m:Nat) -> [LT m n] -> p m))
@@ -447,7 +447,7 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
 --                      = S (n' + (m' - n'))   (by join)
 --                   rewrite the first equality in the second.
 minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plusP n (minus m n))
-recnat minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
+ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
   Zero    -> conv (conv join -- (join : (plusP Zero (minus m Zero)) = minus m Zero)
                    by (lemma_minus_zero_id m)
                    at h . h = (plusP Zero (minus m Zero)))
@@ -464,7 +464,7 @@ recnat minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
                                         at m n . lt m n = False)
                                   by (join : lt (Succ m') (Succ n') = lt m' n')
                                   at h . h = False
-               in let ih [_] = minus_plus_id n' [n_eq] m' [m'_lt_n']
+               in let ih [_] = minus_plus_id n' [ord n_eq] m' [m'_lt_n']
                in let eq1 [_] = (join : Succ (plusP n' (minus m' n'))
                                      = plusP (Succ n') (minus (Succ m') (Succ n')))
                in let eq2 [_] = conv (conv join by ih at h . Succ m' = Succ h)
@@ -480,10 +480,10 @@ m_lt_n__Sm_lt_Sn' = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn m n
                                   at t.t
 
 plus_le : (m:Nat) -> (n:Nat) -> (k:Nat) -> leP (plusP k m) (plusP k n) = leP m n
-plus_le = \m n . recnat plus_le k = case k [k_eq] of
+plus_le = \m n . ind plus_le k = case k [k_eq] of
   Zero    -> conv join by (sym Nat Nat k Zero k_eq)
              at k . leP (plusP k m) (plusP k n) = leP m n
-  Succ k' -> let ih [_] = plus_le k' [k_eq]
+  Succ k' -> let ih [_] = plus_le k' [ord k_eq]
              in let step [_] = (join : leP (plusP k' m) (plusP k' n)
                                      = leP (plusP (Succ k') m) (plusP (Succ k') n))
              in let step' [_] = conv step
@@ -537,14 +537,14 @@ plus_le_specialized : (m:Nat) -> (n:Nat) -> (k:Nat) ->
   =
   leP (multP (fdiv m n) n)
       m
-plus_le_specialized = \m n . recnat plus_le k = case k [k_eq] of
+plus_le_specialized = \m n . ind plus_le k = case k [k_eq] of
   Zero    -> conv join by (sym Nat Nat k Zero k_eq)
              at k . leP (plusP k (multP (fdiv m n) n))
                         (plusP k m)
                     =
                     leP (multP (fdiv m n) n)
                         m
-  Succ k' -> let ih [_] = plus_le k' [k_eq]
+  Succ k' -> let ih [_] = plus_le k' [ord k_eq]
              in let step [_] = (join : leP (plusP k' (multP (fdiv m n) n))
                                            (plusP k' m)
                                      = leP (plusP (Succ k') (multP (fdiv m n) n))

@@ -60,11 +60,11 @@ sm_lt_Sn__m_lt_n_LT = \m n sm_lt_Sn . case sm_lt_Sn [_] of
 -- THIS IS NOT USED: but it's a little simpler than the generic
 -- version in LessThan so I'm keeping it around for comparison.
 m_lt_n__m_lt_Sn_LT : (m:Nat) -> (n:Nat) -> LT m n -> LT m (Succ n)
-recnat m_lt_n__m_lt_Sn_LT m = \n lt_p . case lt_p [_] of
+ind m_lt_n__m_lt_Sn_LT m = \n lt_p . case lt_p [_] of
   LZ [z_eq_m] _ [_]                       ->
     LZ [m] [Succ n] [z_eq_m] n [join]
   LS m' [m_eq_Sm'] n' [n_eq_Sn'] m'_lt_n' ->
-    let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn_LT m' [m_eq_Sm'] n' m'_lt_n' in
+    let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn_LT m' [ord m_eq_Sm'] n' m'_lt_n' in
     LS [m] [Succ n] m' [m_eq_Sm'] n [join]
        (conv m'_lt_Sn' by (sym Nat Nat n (Succ n') n_eq_Sn') at n.LT m' n)
 

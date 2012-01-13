@@ -18,7 +18,7 @@ rec plus n = \m .
 
 log plus_assoc' : (k : Nat) -> (n : Unit -> Nat) => (m : Unit -> Nat)
                  => ((plus k (plus (n U) (m U))) = (plus (plus k (n U)) (m U)))
-recnat plus_assoc' k = \n m .
+ind plus_assoc' k = \n m .
   case k [k_eq] of
     Zero -> let    e1 [_] = (join : (plus (n U) (m U)) = (plus (n U) (m U)))
             in let e2 [_] = conv e1

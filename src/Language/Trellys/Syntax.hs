@@ -76,6 +76,12 @@ data Term = Var TName    -- | variables
           | Arrow Theta Epsilon (Bind (TName, Embed Term) Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
           | Case Term (Bind TName [Match])
+          -- | The heterogenous structural order type, @a < b@
+          | Smaller Term Term
+          -- | Constructor for the structural order, @ord a@
+          | OrdAx Term 
+          -- | Proof term for transitivity of the structural order, @ord a1 a2@.
+          | OrdTrans Term Term
           -- | The type of a proof that the two terms join, @a = b@
           | TyEq Term Term
           -- | The 'join' expression, written @join k1 k2@.  We
@@ -88,9 +94,9 @@ data Term = Var TName    -- | variables
           -- | The @abort@ expression.
           | Abort
           -- | Recursive Definitions
-          --  @recnat f x = body@ is represented as @(Bind (f,x) body)@
+          --  @ind f x = body@ is represented as @(Bind (f,x) body)@
           | Rec Epsilon (Bind (TName, TName) Term)
-          | NatRec Epsilon (Bind (TName, TName) Term)
+          | Ind Epsilon (Bind (TName, TName) Term)
           -- | Annotated terms
           | Ann Term Term
           -- | 'Paren' is for a parenthesized term, useful for pretty printing.
@@ -223,6 +229,12 @@ isTyEq (Paren t) = isTyEq  t
 isTyEq (TyEq ty0 ty1) = Just (ty0,ty1)
 isTyEq _ = Nothing
 
+isSmaller :: Term -> Maybe (Term, Term)
+isSmaller (Pos _ t) = isSmaller t
+isSmaller (Paren t) = isSmaller t
+isSmaller (Smaller a b) = Just (a,b)
+isSmaller _ = Nothing 
+
 isArrow :: Term -> Maybe (Theta, Epsilon, Bind (TName, Embed Term) Term)
 isArrow (Pos _ t)            = isArrow t
 isArrow (Paren t)            = isArrow t
@@ -272,6 +284,9 @@ data ETerm = EVar EName
            | EArrow Theta Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
            | EApp ETerm ETerm
+           | ESmaller ETerm ETerm
+           | EOrdAx
+           | EOrdTrans
            | ETyEq ETerm ETerm
            | EJoin
            | EAbort

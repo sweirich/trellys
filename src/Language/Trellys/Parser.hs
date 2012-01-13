@@ -51,6 +51,9 @@ import Data.List
     | case a [y] of            Case expressions, roughly
         C1 [x] y z -> b1
         C2 x [y]   -> b2
+    | a < b                    Order type
+    | ord a                    Axiomatic ordering proof
+    | ordtrans a1 a2           Proof of transitivity of ordering
     | a = b                    Equality type
     | join k                   Equality proof
     | conv a by b at EqC       Conversion
@@ -58,8 +61,8 @@ import Data.List
     | abort                    Abort
     | rec f x = a              Runtime rec
     | rec f [x] = a            Erased rec
-    | recnat f x = a           Runtime natrec
-    | recnat f [x] = a         Erased natrec
+    | ind f x = a              Runtime ind
+    | ind f [x] = a            Erased ind
     | (a : A)                  Annotations
     | @th A                   At
 
@@ -119,10 +122,10 @@ import Data.List
 
      This gets parsed as \ x . \ [y] . \ z . a
 
-   - You can make a top level declaration a rec or recnat:
+   - You can make a top level declaration a rec or ind:
 
      foo : (n : Nat) -> A
-     recnat foo x = ...
+     ind foo x = ...
 
 -}
 
@@ -179,9 +182,11 @@ trellysStyle = Token.LanguageDef
                 , Token.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
                 , Token.caseSensitive  = True
                 , Token.reservedNames =
-                  ["join"
+                  ["ord"
+                  ,"ordtrans"
+                  ,"join"
                   ,"rec"
-                  ,"recnat"
+                  ,"ind"
                   ,"Type"
                   ,"data"
                   ,"where"
@@ -198,7 +203,7 @@ trellysStyle = Token.LanguageDef
                   ,"termcase"
                   ]
                , Token.reservedOpNames =
-                 ["!","?","\\",":",".", "=", "+", "-", "^", "()", "_", "@"]
+                 ["!","?","\\",":",".", "<", "=", "+", "-", "^", "()", "_", "@"]
                 }
 
 tokenizer :: Token.GenTokenParser String [Column] FreshM
@@ -316,8 +321,8 @@ eitherArrow =     (reservedOp "->" >> return Logic)
 --- Top level declarations
 ---
 
-decl,dataDef,sigDef,valDef,recNatDef,recDef :: LParser Decl
-decl = dataDef <|> sigDef <|> valDef <|> recNatDef <|> recDef
+decl,dataDef,sigDef,valDef,indDef,recDef :: LParser Decl
+decl = dataDef <|> sigDef <|> valDef <|> indDef <|> recDef
 
 -- datatype declarations.
 dataDef = do
@@ -354,8 +359,8 @@ valDef = do
   return $ Def n val
 
 -- recursive nat definitions
-recNatDef = do
-  r@(NatRec _ b) <- recNat
+indDef = do
+  r@(Ind _ b) <- ind
   let ((n,_),_) = unsafeUnbind b
   return $ Def n r
 
@@ -396,6 +401,16 @@ termCase = do
   return $ TerminationCase scrutinee (bind pf (a,t))
 
 
+ordax :: LParser Term
+ordax = 
+  do reserved "ord"
+     liftM OrdAx factor
+
+ordtrans :: LParser Term
+ordtrans =
+  do reserved "ordtrans"
+     liftM2 OrdTrans factor factor
+      
 join :: LParser Term
 join =
   do reserved "join"
@@ -413,7 +428,8 @@ expr,term,factor :: LParser Term
 expr = do
     p <- getPosition
     Pos p <$> (buildExpressionParser table term)
-  where table = [[ifix  AssocLeft "=" TyEq],
+  where table = [[ifix  AssocLeft "<" Smaller],
+                 [ifix  AssocLeft "=" TyEq],
                  [ifixM AssocRight "=>" (mkArrow Program),
                   ifixM AssocRight "->" (mkArrow Logic)]
                 ]
@@ -434,14 +450,16 @@ factor = choice [ varOrCon <?> "an identifier"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
                 , lambda <?> "a lambda"
-                , recNat <?> "recnat"
+                , ind <?> "ind"
                 , rec    <?> "rec"
                 , letExpr   <?> "a let"
                 , contra    <?> "a contra"
                 , abort     <?> "abort"
                 , caseExpr  <?> "a case"
                 , convExpr  <?> "a conv"
-                , join      <?> "a join"
+                , ordax     <?> "ord"
+                , ordtrans  <?> "ordtrans"
+                , join      <?> "join"
                 , at        <?> "an @"
                 , termCase  <?> "a termcase"
                 , impProd   <?> "an implicit function type"
@@ -474,15 +492,15 @@ lambda = do reservedOp "\\"
             return $ foldr (\(ep,nm) m -> Lam ep (bind nm m))
                            body binds
 
--- recursive abstractions, with the syntax 'recnat f x = e', no type annotation.
-recNat :: LParser Term
-recNat = do
-  reserved "recnat"
+-- recursive abstractions, with the syntax 'ind f x = e', no type annotation.
+ind :: LParser Term
+ind = do
+  reserved "ind"
   n <- variable
   (stage,var) <- impOrExpBind
   reservedOp "="
   body <- expr
-  return $ (NatRec stage (bind (n,var) body))
+  return $ (Ind stage (bind (n,var) body))
 
 -- recursive abstractions, with the syntax 'rec f x = e', no type annotation.
 rec :: LParser Term

@@ -13,7 +13,7 @@ plusSucc = \[n] [m] . join 42
 -- there is a much nicer looking append in Lists that existentially
 -- quantifies the length of the returned list. NC
 append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
-append = \[a] . recnat app [n] = \[m] . \xs ys .
+append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] -> 
       let [neq'] [p] = (sym Nat Nat n 0 neq) in -- evidence of backwards equality. NC
@@ -29,7 +29,7 @@ appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
                    -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
                    -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
                     = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
     -- Question: why does this proof style work, but below does not???
     {- VNil: app (app xs ys) zs = app ys zs
@@ -93,7 +93,7 @@ a2 = y2.  This case is simpler:
         in x
 
 -- TODO: improve error message to point to which branch fails (the line number given is for the `case`!)
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
     {- VNil: app (app xs ys) zs = app ys zs
                                 = app xs (app ys zs) -}
@@ -107,7 +107,7 @@ appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
     VCons [i'] [ieq] x xs -> xs
 
 
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
     {- VNil: app (app xs ys) zs = app ys zs
                                 = app xs (app ys zs) -}
@@ -129,7 +129,7 @@ appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
                                            = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
     VCons [i'] [ieq] x xs -> xs
 
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
     VNil [ieq] -> let e [p] =  (join 42 : append [a] [plus 0 j] [k] (append [a] [0] [j] (VNil [a] [0] [(join 42)]) ys) zs 
                                           = append [a] [0] [plus j k] (VNil [a] [0] [(join 42)]) (append [a] [j] [k] ys zs))
@@ -163,7 +163,7 @@ appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
                     = append [a] [i] [jk] xs (append [a] [j] [k] ys zs)))
 -}
 {-
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [p] of
     VNil [ieq] -> join 42
     VCons [i'] [ieq] x xs -> xs

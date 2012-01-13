@@ -247,7 +247,7 @@ plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
 plusSucc = \[n] [m] . join 42
 
 append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
-append = \[a] . recnat app [n] = \[m] . \xs ys .
+append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] -> 
       let [neq'] [p] = (sym Nat Nat n 0 neq) in -- evidence of backwards equality. NC
@@ -263,4 +263,4 @@ appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
                    -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
                    -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
                     = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
--- appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+-- appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .

@@ -37,10 +37,13 @@ erase (Lam ep bnd)   =
        else return body'
 erase (App Runtime a b) = liftM2 EApp (erase a) (erase b)
 erase (App Erased  a _) = erase a
+erase (Smaller a b)     = liftM2 ESmaller (erase a) (erase b)
+erase (OrdAx a)         = return EOrdAx
+erase (OrdTrans a b)    = return EOrdTrans
 erase (TyEq a b)        = liftM2 ETyEq (erase a) (erase b)
 erase (Join _ _)        = return EJoin
 erase Abort             = return EAbort
-erase (NatRec ep bnd)   =
+erase (Ind ep bnd)   =
   do ((f,x),body) <- unbind bnd
      body' <- erase body
      if ep == Runtime
@@ -213,17 +216,15 @@ isValue (Var _)            = True
 isValue (Con _)            = True
 isValue (Type _)           = True
 isValue (Arrow _ _ b)      = True
-{-
-  -- SCW:  Why are Arrow types strict? I don't understand
-  let ((_,t1),t2) = unsafeUnbind b in
-  isValue (unembed t1) && isValue t2
--}
 isValue (Lam _ _)          = True
 isValue e@(App _ _ _)      = isConValue e
+isValue (Smaller _ _)      = True
+isValue (OrdAx _)          = True
+isValue (OrdTrans _ _)     = True
 isValue (TyEq _ _)         = True
 isValue (Join _ _)         = True
 isValue Abort              = False
-isValue (NatRec ep _)      = ep == Runtime
+isValue (Ind ep _)         = ep == Runtime
 isValue (Rec ep _)         = ep == Runtime
 isValue (Case _ _)         = False
 isValue (Let _ Erased a) =
@@ -253,12 +254,11 @@ isEValue (EVar _)         = True
 isEValue (ECon _)         = True
 isEValue (EType _)        = True
 isEValue (EArrow _ _ t1 b) = True
-{-
-  let (_,t2) = unsafeUnbind b in
-   isEValue t1 && isEValue t2
--}
 isEValue (ELam _)         = True
 isEValue e@(EApp _ _)     = isEConValue e
+isEValue (ESmaller _ _)   = True
+isEValue EOrdAx           = True
+isEValue EOrdTrans        = True
 isEValue (ETyEq _ _)      = True
 isEValue EJoin            = True
 isEValue EAbort           = False

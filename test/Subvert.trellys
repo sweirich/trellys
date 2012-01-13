@@ -21,20 +21,20 @@ data Index (n:Nat) -> Type 0 where
   ISucc : [n':Nat] -> [Succ n' = n] -> Index n' -> Index n
 
 convert : [n:Nat] -> Index n -> Index (Succ n)
-recnat convert [n] = \i . case i [i_eq] of
+ind convert [n] = \i . case i [i_eq] of
   IZero -> IZero [Succ n]
   ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
                            conv (ISucc [Succ (Succ n')] [Succ n'] [join]
-                                   (convert [n'] [n'_eq'] i'))
+                                   (convert [n'] [ord n'_eq'] i'))
                            by n'_eq
                            at n . Index (Succ n)
 
 convert_id : [n : Nat] -> (i : Index n) -> convert [n] i = i
-recnat convert_id [n] = \i . case i [i_eq] of
+ind convert_id [n] = \i . case i [i_eq] of
   IZero -> let [i_eq'] [_] = sym (Index n) (Index n) i (IZero [n]) i_eq in
            conv join by i_eq' at i . convert [n] i = i
   ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
-                           let ih [_] = convert_id [n'] [n'_eq'] i' in
+                           let ih [_] = convert_id [n'] [ord n'_eq'] i' in
                            let step [_] = (join : convert [n] (ISucc [n] [n'] [n'_eq] i')
                                                 = ISucc [Succ (Succ n')] [Succ n'] [join] (convert [n'] i')) in
                            let isucc_eq [_] = (join : ISucc [Succ (Succ n')] [Succ n'] [join]

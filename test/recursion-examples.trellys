@@ -16,7 +16,7 @@ data LT : [n : Nat] -> [m : Nat] -> Type 0 where
 
 
 lt : (x : Nat) -> (y:Nat) -> Bool
-recnat lt x = \y ->
+ind lt x = \y ->
    case x of
      (Zero) xw -> (case y of
                     (Zero) yw -> False
@@ -33,7 +33,7 @@ sig cvrec : (x:Nat) -> (A : (x:Nat) -> Type) ->
             (step : (x:Nat) -> (IH:(y:Nat) -> (p:lt y x = True) -> (A y)) -> A x) ->
             (y:Nat) -> (p:lt y x = True) -> A y
 val cvrec =
-  recnat cvrec x = \ A . \ step . \ y . \ p .
+  ind cvrec x = \ A . \ step . \ y . \ p .
     case x of
    	 Zero xw ->  |
    	 Succ m xw -> False

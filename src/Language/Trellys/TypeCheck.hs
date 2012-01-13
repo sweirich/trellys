@@ -28,9 +28,6 @@ import qualified Data.Set as S
 
 -- import System.IO.Unsafe (unsafePerformIO)
 
-natType :: Term
-natType = Con (string2Name "Nat")
-
 {-
   We rely on two mutually recursive judgements:
 
@@ -84,6 +81,29 @@ ta th (Join s1 s2) (TyEq a b) =
             DS "are not joinable."]
      return (Join s1 s2)
 
+    -- rule T_ord
+ta _ (OrdAx a) (Smaller b1 b2) = do
+     (ea,tyA) <- ts Logic a
+     case isTyEq tyA of
+       Just (a1, cvs) ->
+         case splitApp cvs of 
+           (Con _, vs) -> do
+             unless (a1 `aeqSimple` b2) $
+               err [DS "The left side of the equality supplied to ord ",
+                    DS "should be", DD b2, 
+                    DS "Here it is", DD a1]
+             unless (any (\ (ai,_) -> ai `aeqSimple` b1) vs) $
+                err [DS "The right side of the equality supplied to ord ",
+                     DS "should be a constructor application involving", DD b1,
+                     DS "Here it is", DD cvs]
+             return (OrdAx ea)
+           _ -> err [DS "The right side of the equality supplied to ord ",
+                     DS "must be a constructor application.",
+                     DS "Here it is", DD cvs]
+       Nothing -> err [DS "The argument to ord must be an equality proof.",
+                       DS "Here its type is", DD tyA]
+
+
 -- rule T_contra
 ta th (Contra a) b =
   do kc th b
@@ -105,8 +125,8 @@ ta th (Contra a) b =
            _ -> err [DS "The equality proof supplied to contra must show",
                      DS "two different constructor forms are equal.",
                      DS "Here it shows", DD tyA]
-       _ -> err [DS "The argument to contra must be an equality proof.",
-                 DS "Here its type is", DD tyA]
+       Nothing -> err [DS "The argument to contra must be an equality proof.",
+                       DS "Here its type is", DD tyA]
 
 
 -- rule T_abort
@@ -173,55 +193,54 @@ ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
 
 
 
--- rules T_rnexp and T_rnimp
-ta _ (NatRec ep binding) arr@(Arrow ath aep abnd) = do
+-- rules T_ind1 and T_ind2
+ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
   kc Logic arr
 
   unless (ath == Logic) $
-    err [DS "ta: recnat defines a function which takes a logical argument,",
+    err [DS "ta: ind defines a function which takes a logical argument,",
          DS "here a computational argument was specified"]
 
   unless (ep == aep) $
-     err [DS "ta : expecting argument of recnat to be", DD aep,
+     err [DS "ta : expecting argument of ind to be", DD aep,
           DS "got", DD ep]
 
-  ((dumbvar,nat),dumbbody) <- unbind abnd
-  unless (unembed nat `aeqSimple` natType) $
-     err [DS "ta: expecting argument of recnat to be Nat got ", DD (unembed nat)]
+  ((dumbvar,tyA),dumbbody) <- unbind abnd
 
   ((f,y),a) <- unbind binding
   -- to get the body "tyB" as it appears on paper, we must replace the
   -- extra variable we got from opening the binding
   let tyB = subst dumbvar (Var y) dumbbody
+  
 
-  -- next we must construct the type A.  we need new variables for x and z
+  -- next we must construct the type C.  we need new variables for x and z
   x <- fresh (string2Name "x")
   z <- fresh (string2Name "z")
   let xTyB = subst y (Var x) tyB
-      eqType = TyEq (Var y)
-                    (App Runtime (Con $ string2Name "Succ") (Var x))
+      smallerType = Smaller (Var x)
+                            (Var y)
 
-      tyA = Arrow Logic ep (bind (x,embed natType)
-                  (Arrow Logic Erased (bind (z,embed eqType)
+      tyC = Arrow Logic ep (bind (x, tyA) --Is this right or do we need, like (embed(unembedd tyA))?
+                  (Arrow Logic Erased (bind (z,embed smallerType)
                          xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
-  ea <- extendCtx (Sig f Logic tyA) $
-          extendCtx (Sig y Logic natType) $ ta Logic a tyB
+  ea <- extendCtx (Sig f Logic tyC) $
+          extendCtx (Sig y Logic (unembed tyA)) $ ta Logic a tyB
   -- in the case where ep is Erased, we have the two extra checks:
   aE <- erase a
   when (ep == Erased && translate y `S.member` fv aE) $
-       err [DS "ta: In implicit recnat, variable", DD y,
+       err [DS "ta: In implicit ind, variable", DD y,
             DS "appears free in body", DD a]
 
   when (ep == Erased) $ do
        chk <- checkQ a
        unless chk $
-              err [DS "ta : The body of an implicit natrec must be quantifiable",
+              err [DS "ta : The body of an implicit ind must be quantifiable",
                    DS "but here is:", DD a]
-  return (NatRec ep (bind (f,y) ea))
+  return (Ind ep (bind (f,y) ea))
 
 
--- rules T_rexp and T_rimp
+-- rules T_rec1 and T_rec2
 ta Logic (Rec _ _) _ =
   err [DS "rec must be P."]
 
@@ -502,6 +521,26 @@ ts tsTh tsTm =
                              ta Program b (unembed tyA)) -}
              return (App ep ea eb, b_for_x_in_B)
 
+    -- rule T_smaller
+    ts' _ (Smaller a b) = do
+      (ea,_) <- ts' Program a
+      (eb,_) <- ts' Program b
+      return $ (Smaller ea eb, Type 0)
+
+    -- rule T_ordtrans
+    ts' _ (OrdTrans a b) = do
+      (ea,tyA) <- ts' Logic a
+      (eb,tyB) <- ts' Logic b
+      case (isSmaller tyA, isSmaller tyB) of 
+        (Just (a1,a2), Just (b1,b2)) -> do
+          unless (a2 `aeqSimple` b1) $
+            err [DS "The middle terms of the inequalities given to ordtrans must match, ",
+                 DS "but here they are", DD a2, DS "and", DD b1]
+          return $ (OrdTrans ea eb, Smaller a1 b2)
+        (Nothing, _) -> err [DS "The arguments to ordtrans must be proofs of <, ",
+                             DS "but here the first argument has type", DD tyA]
+        (_, Nothing) -> err [DS "The arguments to ordtrans must be proofs of <, ",
+                             DS "but here the second argument has type", DD tyB]
 
     -- rule T_eq
     ts' _ (TyEq a b) = do

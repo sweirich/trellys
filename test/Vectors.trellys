@@ -17,7 +17,7 @@ recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
                  c [n] (VCons [a] [n] [n'] [n_eq] x xs)) ->
          [n:Nat] -> (v:Vector a n) -> (c [n] v)
 recvec = \ [a] . \ [c] . \ base . \ step .
-           recnat recvec[n] = \ v .
+           ind recvec[n] = \ v .
              case v [v_eq] of
                VNil [n_eq] -> 
  
@@ -26,14 +26,14 @@ recvec = \ [a] . \ [c] . \ base . \ step .
                 
                       
                VCons [n'] [n_eq] x xs ->
-	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [n_eq] xs)
+	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
                  by sym (Vector a n) (Vector a n) v (VCons [a] [n] [n'] [n_eq] x xs) v_eq
                  at x.(c [n] x)
 
 
 vmap : [a : Type 0] -> [b : Type  0] -> ((x:a) -> b) ->
       [n : Nat] -> (xs : Vector a n) -> Vector b n
-vmap = \ [a] . \ [b] . \ f . recnat vmap [n] = \ xs .
+vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
         case xs [xs_eq] of
           VNil [n_eq] -> VNil [b] [n] [n_eq]
-          VCons [n'] [n_eq] x xs -> VCons [b] [n] [n'] [n_eq] (f x) (vmap [n'] [n_eq] xs) 
+          VCons [n'] [n_eq] x xs -> VCons [b] [n] [n'] [n_eq] (f x) (vmap [n'] [ord n_eq] xs) 

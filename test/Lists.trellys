@@ -10,28 +10,28 @@ data List (a : Type 0) (n : Nat) -> Type 0 where
 
 map : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
       [n : Nat] -> (xs : List a n) -> List b n
-map = \ [a] . \ [b] . \ f . recnat map [n] = \ xs .
+map = \ [a] . \ [b] . \ f . ind map [n] = \ xs .
         case xs [xs_eq] of
           Nil -> Nil [b] [n]
           Cons [m] [pf] x xs -> Cons [b] [n] [m] [pf] (f x) 
- 	                          (map [m] [pf] xs)
+ 	                          (map [m] [ord pf] xs)
 
 append : [a:Type 0] -> [n:Nat] -> List a n -> [m:Nat] -> List a m -> Exists Nat (List a)
-append = \[a]. recnat append [n] = \xs. \[m]. \ys.
+append = \[a]. ind append [n] = \xs. \[m]. \ys.
                  case xs [xs_eq] of
 		   Nil -> Ex [Nat] [List a] [m] ys
 		   Cons [n'] [pf] x xs -> 
-		     case (append [n'] [pf] xs [m] ys) [append_eq] of
+		     case (append [n'] [ord pf] xs [m] ys) [append_eq] of
 		       Ex [l] zs ->  Ex [Nat] [List a] [Succ l] (Cons [a] [Succ l] [l] [join 0] x zs)
 
 concat : [a:Type 0] -> [n:Nat] -> List (Exists Nat (List a)) n -> Exists Nat (List a)
-concat = \[a]. recnat concat [n] = \xs.
+concat = \[a]. ind concat [n] = \xs.
                  case xs [xs_eq] of 
 		   Nil -> Ex [Nat] [List a] [0] (Nil [a] [0])
 		   Cons [n'] [pf] x xs -> 
   		     case x [x_eq] of
 		       Ex [m] ys ->
-		         case (concat [n'] [pf] xs) [concat_eq] of
+		         case (concat [n'] [ord pf] xs) [concat_eq] of
 			   Ex [l] zs ->
 			     append [a] [m] ys [l] zs
 

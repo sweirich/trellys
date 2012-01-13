@@ -22,21 +22,21 @@ primrec : [p: (n:Nat) -> Type 0]
        -> (base:p 0)
        -> (step: (n:Nat) -> (pn:p n) -> p (Succ n))
        -> (n:Nat) -> p n
-primrec = \[p]. \base. \step. recnat pr n =
+primrec = \[p]. \base. \step. ind pr n =
   case n [neq] of
     -- sym is evidence of backwards equality.
-    Zero    -> conv base                  by (sym Nat Nat n Zero      neq) at x.p x
-    Succ n' -> conv step n' (pr n' [neq]) by (sym Nat Nat n (Succ n') neq) at x.p x
+    Zero    -> conv base                      by (sym Nat Nat n Zero      neq) at x.p x
+    Succ n' -> conv step n' (pr n' [ord neq]) by (sym Nat Nat n (Succ n') neq) at x.p x
 
 -- Higher order primitive recursion with a constant predicate / nat
 -- elimination: easier to compute terms with, when it works, but not
 -- much use for proofs.
 foldNat : [p: Type 0] -> (base:p) -> (step: (pn:p) -> p) -> (n:Nat) -> p
-foldNat = \[p]. \base. \step. recnat pr n =
+foldNat = \[p]. \base. \step. ind pr n =
   case n [neq] of
     -- sym is evidence of backwards equality.
     Zero    -> base
-    Succ n' -> step (pr n' [neq])
+    Succ n' -> step (pr n' [ord neq])
 
 
 -- Addition
@@ -98,12 +98,12 @@ ack : (m:Nat) -> (n:Nat) -> Nat
 ack = foldNat [(w:Nat) -> Nat] (\n.Succ n)
         (\a_m. foldNat [Nat] (a_m 1) (\a_Sm_n. a_m a_Sm_n))
 
--- recnat version
+-- ind version
 ack' : (m:Nat) -> (n:Nat) -> Nat
-ack' = recnat a m =
+ack' = ind a m =
   case m [meq] of
     Zero    -> \n. Succ n
-    Succ m' -> recnat am n =
+    Succ m' -> ind am n =
       case n [neq] of
-        Zero    -> a m' [meq] 1
-        Succ n' -> a m' [meq] (am n' [neq])
+        Zero    -> a m' [ord meq] 1
+        Succ n' -> a m' [ord meq] (am n' [ord neq])
