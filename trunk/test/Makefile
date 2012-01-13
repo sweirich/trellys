@@ -13,10 +13,11 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 TypeTest NatElimination Ott \
-     OttAppend CastShiftTrick ErasedConv ProgList Test_Q_Cons StrongNat LessThanNat \
+PASS=Prelude Arithmetic Vectors LetRebind Lists Trees Append2 TypeTest NatElimination \
+     CastShiftTrick ErasedConv ProgList Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
-     TerminationAsValueRestrictionWorkaround Subvert
+     TerminationAsValueRestrictionWorkaround Subvert \
+     BasicOrd
 # FAIL are tests that *should* always fail.
 FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug\
      bad_datatype ErasedConvBad Test_T_Let_2_FV_1 Test_T_Rec2_FV Test_T_Let_1_FV\

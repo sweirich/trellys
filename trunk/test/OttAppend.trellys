@@ -275,7 +275,7 @@ example = e0'' Nat Nat
 -----------------------------------------------------------
 
 plus : (n : Nat) -> (m : Nat) -> Nat
-recnat plus n = \m .
+ind plus n = \m .
   case n [cw] of
     Zero -> m
     Succ pred -> Succ (plus pred [cw] m)
@@ -283,7 +283,7 @@ recnat plus n = \m .
 -- Decidable equality for natural numbers
 -- 'x = y'
 eq : (x:Nat) -> (y:Nat) -> Bool
-recnat eq x = \y. 
+ind eq x = \y. 
   case x [xpf] of 
      Zero -> case y [ypf] of 
                  Zero -> True
@@ -338,7 +338,7 @@ consinj = \ a n x y xs ys eq.
 {-
 log eqvec : (a : Type 0) -> [n:Nat] -> [m:Nat] ->  (xs : Vector a n) -> (ys : Vector a m) -> 
     (eq : xs = ys) -> (n = m)
-eqvec = \a . recnat eqv [n] = \ [m] xs ys eq .
+eqvec = \a . ind eqv [n] = \ [m] xs ys eq .
   case xs [pxs] of 
     VNil [n0] -> case ys [pys] of 
                      VNil  [m0] -> conv n0 by (sym Nat m 0 m0) at x. n = x 
@@ -359,7 +359,7 @@ eqvec = \a . recnat eqv [n] = \ [m] xs ys eq .
 
 
 append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
-append = \[a] . recnat app [n] = \[m] . \xs ys .
+append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] -> 
       let [neq'] [p] = (sym Nat n 0 neq) in -- evidence of backwards equality. NC
@@ -377,7 +377,7 @@ appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
                    -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
                    -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
                     = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
-appendAssociates = \[a] . recnat aa [i] = \[j] [k] [xs] [ys] [zs] .
+appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
      VNil [ieq] -> 
 -}

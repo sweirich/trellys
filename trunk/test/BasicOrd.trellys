@@ -1,0 +1,22 @@
+-- some simple tests of the structural order type
+
+module BasicOrd where
+import Prelude
+import Arithmetic
+
+test1 : Zero < Succ Zero
+test1 = ord (join : Succ Zero = Succ Zero)
+
+test2 : Succ Zero < Succ (Succ Zero)
+test2 = ord (join : Succ (Succ Zero) = Succ (Succ Zero))
+
+test3 : Zero < (Succ (Succ Zero))
+test3 = (ordtrans test1 test2)
+
+fib : Nat -> Nat
+ind fib n = case n [n_eq] of
+  Zero -> Succ Zero
+  Succ m -> case m [m_eq] of
+              Zero -> Succ Zero
+              Succ r -> plus (fib m [ord n_eq]) 
+                             (fib r [ordtrans (ord m_eq : r<m) (ord n_eq : m<n)]) 

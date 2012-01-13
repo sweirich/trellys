@@ -196,7 +196,7 @@ instance Disp Module where
            vcat (map disp (moduleEntries m))
 
 instance Disp Decl where
-  disp (Def n r@(NatRec _ bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
+  disp (Def n r@(Ind _ bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
@@ -242,12 +242,12 @@ instance Display Term where
       return $ text "\\" <+> bindParens ep dn
                <+> text "." <+> db
 
-  display (NatRec ep binding) =
+  display (Ind ep binding) =
     lunbind binding $ \ ((n,x),body) -> do
       dn <- display n
       dx <- display x
       db <- display body
-      return $ text "recnat" <+> dn <+> bindParens ep dx <+> text "="
+      return $ text "ind" <+> dn <+> bindParens ep dx <+> text "="
                <+> db
 
   display (Rec ep binding) =
@@ -327,6 +327,19 @@ instance Display Term where
       where displayErased (True,pf) = liftM brackets $ display pf
             displayErased (False, pf) = display pf
 
+  display (Smaller a b) = do
+      da <- display a
+      db <- display b
+      return $ da <+> text "<" <+> db
+
+  display (OrdAx a) = do
+      da <- display a
+      return $ text "ord" <+> da
+
+  display (OrdTrans a b) = do
+      da <- display a
+      db <- display b
+      return $ text "ordtrans" <+> da <+> db
 
   display (TyEq a b)   = do
       da <- display a

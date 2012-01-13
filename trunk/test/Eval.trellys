@@ -3,7 +3,7 @@ module Eval where
 import Prelude
 
 plus : Nat -> Nat -> Nat
-recnat plus n = \m .
+ind plus n = \m .
   case n [cw] of
     Zero -> m
     Succ pred -> Succ (plus pred [cw] m)
