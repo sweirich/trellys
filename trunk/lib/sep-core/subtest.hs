@@ -22,7 +22,8 @@ data Proof = ProofLambda (Bind (Name Arg, Embed ArgClass) Proof) -- Proofs abstr
 
 -- | Simplified programming language. Don't need abstraction/application to demonstrate the issue.
 data Program = ProgVar (Name Program)
-             | Type
+            | App Program Program
+            | Type
                deriving Show
 
 -- Lifting syntactic classes.
@@ -54,21 +55,21 @@ instance Subst Proof Proof where
   isvar _ = Nothing
 
 instance Subst Arg Proof where
-  subst n (ArgProof p) pf = subst (translate n) p pf
-  subst n tm pf = substR1 rep1 n tm pf
-
+    subst n (ArgProof p) pf = subst (translate n) p pf
+    subst n tm pf = substR1 rep1 n tm pf 
+  
 instance Subst Proof Arg
 instance Subst Proof ArgClass
 instance Subst Proof Program
 instance Subst Proof Pred
 
 instance Subst Program Program where
-  isvar (ProgVar n) = Just (SubstName n)
-  isvar _ = Nothing
+   isvar (ProgVar n) = Just (SubstName n)
+   isvar _ = Nothing
 
 instance Subst Arg Program where
-  subst n (ArgProg t) tm = subst (translate n) t tm
-  subst n t t' = substR1 rep1 n t t'
+   -- subst n (ArgProg t) tm = subst (translate n) t tm
+   -- subst n q tm = substR1 rep1 n q tm
 
 
 instance Subst Program Proof
@@ -82,7 +83,9 @@ instance Subst Program Pred
 
 instance Subst Arg Pred
 instance Subst Arg ArgClass
-instance Subst Arg Arg
+instance Subst Arg Arg where
+
+
 
 instance Subst Proof ArgName
 instance Subst Program ArgName
@@ -101,10 +104,27 @@ b_proof = string2Name "b_proof"
 
 
 -- | 'Type'
-t1 = ProofLambda (bind (translate x_prog, ArgClassType Type) (Join (ProgVar x_prog) (ProgVar x_prog)))
-t2 = ProofLambdaAN (bind (ANProg x_prog, ArgClassType Type) (Join (ProgVar x_prog) (ProgVar x_prog)))
+
+t1 = ProofLambda (bind (translate x_prog, Embed ( ArgClassType Type)) (Join (ProgVar x_prog) (ProgVar x_prog)))
+
+--                            Name Arg                                           Program          Program
+
+t2 = ProofLambdaAN (bind (ANProg x_prog, Embed (ArgClassType Type)) (Join (ProgVar x_prog) (ProgVar x_prog)))
+
+--                            ArgName                                        Program               Program
+
+t3 = subst (translate x_prog)   (ArgProg (ProgVar y_prog))   (Join (ProgVar x_prog) (ProgVar x_prog))
+    --        Name Arg                 Arg (prog)               Proof          
+--   need to use Subst Program Proof, but we can't. So appeal to Subst Arg Proof, that makes sense. but how about this?
+
+t4 = subst x_prog  (App (ProgVar y_prog) (ProgVar z_prog)) (Join (ProgVar x_prog) (ProgVar x_prog))
+
+--             Name prg                  prog                       Proof
+
+--t5 = subst a_prog (Join (ProgVar x_prog) (ProgVar x_prog)) (ProgVar a_prog)
+--   
 
 
+t6 = substR1 rep1  x_prog Type t1
 
-
-
+t7 = subst (translate x_prog)  (ArgProg (App (ProgVar y_prog) (ProgVar z_prog))) (Join (ProgVar x_prog) (ProgVar x_prog))
