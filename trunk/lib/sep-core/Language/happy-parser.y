@@ -12,6 +12,9 @@ import Unbound.LocallyNameless.Subst(substR1)
 
 %token 
        data
+       formula
+       string
+       int
        proof      
        theorem
        type 
@@ -21,10 +24,34 @@ import Unbound.LocallyNameless.Subst(substR1)
        data
        where      
        lambda
-       pi
+       Lambda
+       Pi
        forall
-       formula
-       name
+       rec
+       let
+       in
+       conv
+       by
+       at
+       case
+       of
+       cast
+       abort
+       inl 
+       inr
+       with
+       join
+       predconv
+       valax
+       ord
+       contr 
+       ind 
+       contraval
+
+
+
+
+        '='
         '+'
         '-' 
         ':'  
@@ -34,21 +61,96 @@ import Unbound.LocallyNameless.Subst(substR1)
         ')'   
         '|'   
         '.'
+        '['
+        ']'
+        ','
+        "=>"
+        '!'
 %%
+
+{-Top level definitions and declarations -}
+
 Datadecl : data Identifier Term where ConstrPair 
+
 Theoremdecl : theorem Identifier "::" Predicate
+
 Proofdef : proof Identifier ":=" Proof 
-Typedecl : type Indentifier "::" Term
-Progdef : term Indentifier ":=" Term
-Predicatedecl : kind Indentifier "::" LogicalKind
+
+Typedecl : type Identifier "::" Term
+
+Progdef : term Identifier ":=" Term
+
+LogicalKinddecl : kind Identifier "::" LogicalKind
+
 Predicatedef : predicate Identifier ":=" Predicate
 
+{-Non Top level definitions-}
+
+Identifier : string
+
+Dataconstr : string
+
+ArgClass : Term 
+         | Predicate
+         | LogicalKind
+
+Arg : Term 
+    | Proof 
+    | Predicate 
+
+Stage : '+' | '-'
+
+Variables : Identifier | Variables ',' Variables
+
+Equalities : Term '=' Term | Indentifier | Equalities ',' Equalities 
+
+Termbranches : Dataconstr Variables Term | Termbranches '|' Termbranches
+
+Term : Identifier
+     | type int
+     | Pi Stage Identifier ':' ArgClass '.' Term  
+     | lambda Stage Identifier ':' ArgClass '.' Term
+     | let Identifier '=' Term '['Identifier']' in Term     
+     | let Identifier '=' Proof in Term 
+     | let Identifier '=' Predicate in Term
+     | conv Term by '[' Equalities ']' at '['Variables']' '.' Term 
+     | case Term '[' Identifier ']'of Termbranches  
+
+     | cast Term by Proof
+     | '(' Term Arg ')'
+     | abort Term
+     | rec Identifier Identifier ':' Term '.' Term
+     | Dataconstr
 
 
-Identifier :
-Term :
-ConstrPair :
-Proof : 
+
+ConstrPair : Dataconstr ':' Term | ConstrPair '|' ConstrPair
+
+Proofbranches : Dataconstr Variables Proof | Proofbranches '|' Proofbranches
+
+Proof : Identifier 
+      | inl Proof with Predicate
+      | inr Proof with Predicate
+      | case Proof of Identifier '.' Proof ',' Identifier '.' Proof
+      | Lambda Identifier ':' ArgClass '.' Proof
+      | '(' Proof Arg ')'
+      | '(' Arg ',' Proof ')' as Predicate
+      | case Proof of '(' Identifier ',' Identifier ')' '.' Proof 
+      | let Identifier '=' Proof in Proof 
+      | let Identifier '=' Term '[' Identifier ']'in Proof 
+      | let Identifier '=' Predicate in Proof 
+      | join Term Term 
+      | conv Proof by Equalities at Variables '.' Predicate
+      | predconv Proof Predicate
+      | valax Term
+      | ord Term Term
+      | case Term '[' Identifier ']' Proof  of Proofbranches
+      | tcase Term '[' Identifier ']' of abort '=>' Proof '|' '!'
+'=>' Proof
+
+      | ind Identifier Identifier ':' Term ',' Proof '.' Proof
+      | contr Proof 
+      | contraval Proof Proof
 
 
 
