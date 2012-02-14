@@ -2,7 +2,7 @@
   FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
   UndecidableInstances, TypeSynonymInstances  #-}
 
-module Language.InterSep.Syntax where 
+module Language.SepCore.Syntax where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
@@ -119,6 +119,8 @@ data Term =  TermVar (Name Term)
            | TermApplication Term Arg Stage
 
            | DataConstr String
+             
+           | DataType String
 
            | Abort Term
 
