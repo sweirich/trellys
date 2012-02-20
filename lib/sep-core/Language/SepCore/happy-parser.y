@@ -27,7 +27,9 @@ import Data.Char
        lambda     {TokenLM}
        Lambda     {TokenLamb}
        abort      {TokenAb}
-       join {TokenJoin}
+       join       {TokenJoin}
+       contr      {TokenContr}
+       valax      {TokenValax}
        '!'        {TokenEx}
        '('        {TokenBL}
        ')'        {TokenBR}
@@ -39,8 +41,6 @@ import Data.Char
        ":="       {TokenDef}
        ':'        {TokenCL}
        '.'        {TokenDot}
-
-
 
 
 
@@ -135,21 +135,166 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | '(' Proof Predicate ')'                           {ProofApplication $2 (ArgPredicate $3)}
 
+| contr Proof                                       {Contra $2}
+
+| valax Term                                        {Valax $2}
 
 
 {
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
 
- data Logicdecl = Logicdecl String Predicate 
+data Logicdecl = Logicdecl String Predicate 
              deriving (Show)
   
- data Predicate = PredicateVar String
 
-                | PredicateLambda String  Predicate
-                
-                | PredicateApplication 
-                | Forall 
+data LogicalKind = Formula Integer
+
+         | QuasiForall ArgClass LogicalKind
+
+  deriving(Show)
+
+data Predicate = PredicateVar (Name Predicate)
+
+           | PredicateLambda (Bind (ArgName, Embed ArgClass) Predicate)
+
+           | PredicateApplication Predicate Arg
+
+           | Forall (Bind (ArgName, Embed ArgClass) Predicate)
+
+           | PredicateLetProof (Bind (Name Proof) Predicate) Proof
+
+           | PredicateLetPredicate (Bind (Name Predicate) Predicate) Predicate
+
+           | PredicateLetTerm (Bind (Name Term, Name Proof) Predicate) Term
+
+           | Equal Term Term
+
+           | Terminate Term
+
+           | Disjunction Predicate Predicate
+
+           | Exist (Bind (ArgName, Embed ArgClass) Predicate)
+
+           | Bottom Integer
+
+           | Order Term Term
+
+  deriving(Show)
+
+data Proof =  ProofVar (Name Proof)
+
+             | InjectLeft Proof Predicate
+
+             | InjectRight Proof Predicate
+
+             | DisjunctionElimination (Bind (Name Proof) Proof) (Bind (Name Proof) Proof) Proof
+             
+             | ProofLambda (Bind (ArgName, Embed ArgClass) Proof)
+
+             | ProofApplication Proof Arg
+
+             | ExistentialIntroduction (Arg, Proof) Predicate
+
+             | ExistentialElimination Proof (Bind (ArgName, Name Predicate) Proof)
+
+             | ProofLetProof (Bind (Name Proof) Proof) Proof
+
+             | ProofLetPredicate (Bind (Name Predicate) Proof) Predicate
+
+             | ProofLetTerm (Bind (Name Term, Name Proof) Proof) Term --Bind a term var and a proof var in a proof.
+
+             | Join Term Term
+
+             | ConvProof Proof [Equality] (Bind [(Name Term)] Predicate) 
+
+             | Valax Term
+
+             | ProofOrder Term Term
+
+             | ProofCase Term Proof (Bind (Name Proof)  [(Term, [ArgName],Proof )])
+ 
+             | TerminationCase Term (Bind (Name Proof) (Proof,Proof)) 
+
+             | Ind (Bind (Name Term, Name Proof, Embed Term, Name Proof) Proof)
+
+--bind three variable in a proof
+
+             | Contra Proof
+            
+             | Contraval Proof Proof
+
+
+    deriving(Show)
+
+data Equality = Equality Predicate
+            
+              | EqualityProof Proof
+
+    deriving(Show)    
+
+data Term =  TermVar (Name Term)
+
+           | Type Integer
+
+           | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
+
+           | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
+
+           | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
+
+           | TermLetProof (Bind (Name Proof) Term) Proof
+
+           | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
+
+           | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
+
+           | TermCase Term (Bind (Name Term)  [(Term, [ArgName],Term)])
+
+           | Tcast Term Proof
+
+           | TermApplication Term Arg Stage
+
+           | DataConstr String
+             
+           | DataType String
+
+           | Abort Term
+
+           | Rec (Bind (Name Term, Name Term, Embed Term) Term)
+
+--bind two term in a term.
+
+  deriving(Show)
+
+data ArgClass = ArgClassTerm Term
+
+               | ArgClassPredicate Predicate
+
+               | ArgClassLogicalKind LogicalKind
+
+      deriving(Show)
+
+data Arg = ArgTerm Term
+
+          | ArgProof Proof
+
+          | ArgPredicate Predicate
+
+        deriving(Show)
+
+data ArgName = ArgNameProof (Name Proof)
+           
+          | ArgNameTerm (Name Term)
+        
+          | ArgNamePredicate (Name Predicate)   
+
+         deriving Show
+
+
+         
+
+  $(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Equality, ''Stage, ''ArgClass, ''LogicalKind])
 
 
 {- Our temp main loop. -}
