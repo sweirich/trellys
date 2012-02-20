@@ -13,7 +13,6 @@ import Data.Char
 %token 
        type       {TokenType}
        data       {TokenData}
-       string     {TokenString $$}
        int        {TokenInt $$}
        where      {TokenWhere}
        theorem    {TokenTheorem}
@@ -292,9 +291,308 @@ data ArgName = ArgNameProof (Name Proof)
          deriving Show
 
 
-         
+$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Equality, ''Stage, ''ArgClass, ''LogicalKind])
 
-  $(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Equality, ''Stage, ''ArgClass, ''LogicalKind])
+instance Subst LogicalKind Stage
+instance Subst LogicalKind ArgName
+
+instance Subst LogicalKind Arg
+instance Subst LogicalKind ArgClass
+instance Subst LogicalKind Predicate
+instance Subst LogicalKind Term
+instance Subst LogicalKind Proof
+instance Subst LogicalKind LogicalKind
+instance Subst LogicalKind Equality
+
+instance Subst Arg Stage
+instance Subst Arg ArgName
+instance Subst Arg ArgClass
+instance Subst Arg LogicalKind
+instance Subst Arg Arg 
+
+instance Subst Arg Predicate where
+  subst n (ArgPredicate pd) prd = subst (translate n) pd prd
+  subst n a prd = substR1 rep1 n a prd
+
+-- | here we do a implicit mutually recursive call on the 'substR1' defined in (Subst Arg Term) and (Subst Arg Proof)
+
+instance Subst Arg Term where
+  subst n (ArgTerm t) tm = subst (translate n) t tm
+  subst n a tm = substR1 rep1 n a tm
+
+instance Subst Arg Proof where
+  subst n (ArgProof p) pf = subst (translate n) p pf
+  subst n a pf = substR1 rep1 n a pf
+
+instance Subst Arg Equality
+
+instance Subst Proof Arg
+instance Subst Proof ArgName
+instance Subst Proof Term 
+instance Subst Proof Predicate 
+instance Subst Proof Stage
+instance Subst Proof LogicalKind
+instance Subst Proof ArgClass
+instance Subst Proof Equality
+instance Subst Proof Proof where
+  isvar (ProofVar x) = Just (SubstName x)
+  isvar _ = Nothing
+
+
+instance Subst Term Arg
+instance Subst Term ArgClass
+instance Subst Term ArgName
+instance Subst Term Proof 
+instance Subst Term Equality
+instance Subst Term Predicate 
+instance Subst Term LogicalKind
+instance Subst Term Stage
+instance Subst Term Term where
+  isvar (TermVar x) = Just (SubstName x)
+  isvar _ = Nothing
+
+
+instance Subst Predicate Term 
+instance Subst Predicate Proof
+instance Subst Predicate Equality
+instance Subst Predicate LogicalKind
+instance Subst Predicate Stage
+instance Subst Predicate Arg
+instance Subst Predicate ArgClass
+instance Subst Predicate ArgName
+instance Subst Predicate Predicate where
+        isvar (PredicateVar x) = Just (SubstName x)
+        isvar _ = Nothing
+
+instance Alpha Equality
+instance Alpha Predicate
+instance Alpha Term
+instance Alpha Proof
+instance Alpha LogicalKind
+instance Alpha Stage
+instance Alpha ArgClass
+instance Alpha Arg
+instance Alpha ArgName
+
+
+data Token =
+
+         TokenType
+
+       | TokenData
+
+       | TokenInt Integer
+
+       | TokenWhere
+
+       | TokenTheorem
+
+       | TokenProofVar String
+
+       | TokenPredVar String
+
+       | TokenTermVar String
+
+       | TokeFm 
+
+       | TokenPi
+
+       | TokenEq
+
+       | TokenBot
+
+       | TokenLM
+
+       | TokenLamb
+
+       | TokenAb
+
+       | TokenJoin
+
+       | TokenContr
+
+       | TokenValax
+
+       | TokenEx
+
+       | TokenBL
+
+       | TokenBR
+
+       | TokenBll
+
+       | TokenBrr
+
+       | TokenDC
+
+       | TokenPlus
+
+       | TokenMinus
+
+       | TokenDef
+
+       | TokenCL
+
+       | TokenDot
+
+		  deriving (Show)
+
+instance Subst Arg Stage
+instance Subst Arg ArgName
+instance Subst Arg ArgClass
+instance Subst Arg LogicalKind
+instance Subst Arg Arg 
+
+instance Subst Arg Predicate where
+  subst n (ArgPredicate pd) prd = subst (translate n) pd prd
+  subst n a prd = substR1 rep1 n a prd
+
+-- | here we do a implicit mutually recursive call on the 'substR1' defined in (Subst Arg Term) and (Subst Arg Proof)
+
+instance Subst Arg Term where
+  subst n (ArgTerm t) tm = subst (translate n) t tm
+  subst n a tm = substR1 rep1 n a tm
+
+instance Subst Arg Proof where
+  subst n (ArgProof p) pf = subst (translate n) p pf
+  subst n a pf = substR1 rep1 n a pf
+
+instance Subst Arg Equality
+
+instance Subst Proof Arg
+instance Subst Proof ArgName
+instance Subst Proof Term 
+instance Subst Proof Predicate 
+instance Subst Proof Stage
+instance Subst Proof LogicalKind
+instance Subst Proof ArgClass
+instance Subst Proof Equality
+instance Subst Proof Proof where
+  isvar (ProofVar x) = Just (SubstName x)
+  isvar _ = Nothing
+
+
+instance Subst Term Arg
+instance Subst Term ArgClass
+instance Subst Term ArgName
+instance Subst Term Proof 
+instance Subst Term Equality
+instance Subst Term Predicate 
+instance Subst Term LogicalKind
+instance Subst Term Stage
+instance Subst Term Term where
+  isvar (TermVar x) = Just (SubstName x)
+  isvar _ = Nothing
+
+
+instance Subst Predicate Term 
+instance Subst Predicate Proof
+instance Subst Predicate Equality
+instance Subst Predicate LogicalKind
+instance Subst Predicate Stage
+instance Subst Predicate Arg
+instance Subst Predicate ArgClass
+instance Subst Predicate ArgName
+instance Subst Predicate Predicate where
+        isvar (PredicateVar x) = Just (SubstName x)
+        isvar _ = Nothing
+
+instance Alpha Equality
+instance Alpha Predicate
+instance Alpha Term
+instance Alpha Proof
+instance Alpha LogicalKind
+instance Alpha Stage
+instance Alpha ArgClass
+instance Alpha Arg
+instance Alpha ArgName
+
+
+data Token =
+
+         TokenType
+
+       | TokenData
+
+       | TokenInt Integer
+
+       | TokenWhere
+
+       | TokenTheorem
+
+       | TokenProofVar String
+
+       | TokenPredVar String
+
+       | TokenTermVar String
+
+       | TokeFm 
+
+       | TokenPi
+
+       | TokenEq
+
+       | TokenBot
+
+       | TokenLM
+
+       | TokenLamb
+
+       | TokenAb
+
+       | TokenJoin
+
+       | TokenContr
+
+       | TokenValax
+
+       | TokenEx
+
+       | TokenBL
+
+       | TokenBR
+
+       | TokenBll
+
+       | TokenBrr
+
+       | TokenDC
+
+       | TokenPlus
+
+       | TokenMinus
+
+       | TokenDef
+
+       | TokenCL
+
+       | TokenDot
+
+		  deriving (Show)
+
+lexer :: String -> [Token]
+lexer [] = []
+lexer (c:cs)
+      | isSpace c = lexer cs
+      | isAlpha c = lexVar (c:cs)
+      | isDigit c = lexNum (c:cs)
+
+lexer ('=':cs) = TokenEq : lexer cs
+lexer ('+':cs) = TokenPlus : lexer cs
+lexer ('-':cs) = TokenMinus : lexer cs
+lexer ('*':cs) = TokenTimes : lexer cs
+lexer ('/':cs) = TokenDiv : lexer cs
+lexer ('(':cs) = TokenOB : lexer cs
+lexer (')':cs) = TokenCB : lexer cs
+
+lexNum cs = TokenInt (read num) : lexer rest
+      where (num,rest) = span isDigit cs
+
+lexVar cs =
+   case span isAlpha cs of
+      ("let",rest) -> TokenLet : lexer rest
+      ("in",rest)  -> TokenIn : lexer rest
+      (var,rest)   -> TokenVar var : lexer rest
 
 
 {- Our temp main loop. -}
