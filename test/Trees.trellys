@@ -2,18 +2,17 @@ module Trees where
 
 import Prelude
 
+data List (a : Type 0) -> Type 0 where
+  Nil 
+  Cons of (x:a) (xs:List a)
 
-data List [a : Type 0] -> Type 0 where
-  Nil : List a
-  Cons : (x:a) -> (xs:List a) -> List a
+data Rose (a : Type 0) -> Type 0 where
+  ForkR of (x:a)  (r:List (Rose a))
 
-data Rose [a : Type 0] -> Type 0 where
-  ForkR : (x:a) -> (r:List (Rose a)) -> Rose a
+data Pair (a : Type 0) (b : Type 0) -> Type 0 where
+  Prod of (x:a)  (y:b)
 
-data Pair [a : Type 0] [b : Type 0] -> Type 0 where
-  Prod : (x:a) -> (y:b) -> Pair a b
-
--- data Bin [a : Type 0] -> Type 0 where
---   ForkB : (x:a) -> Bin (Pair a a) -> Bin a
+-- data Bin (a : Type 0) -> Type 0 where
+--   ForkB of (x:a) (Bin (Pair a a))  (Bin a)
 
 

@@ -4,8 +4,8 @@ import Prelude
 
 
 data Nat -> Type 0 where
- Zero : Nat
- Succ : (x:Nat) -> Nat
+ Zero 
+ Succ of (x:Nat) 
 
 x = 1
 
@@ -51,8 +51,8 @@ ind mult x = \y .
    	 Succ m -> add y (mult m [ord z] y)
 
 data Bool -> Type 0 where
-   True :  Bool
-   False : Bool
+   True 
+   False
 
 
 not : (x: Bool) -> Bool
@@ -60,15 +60,13 @@ not = \x . case x [z] of
   True -> False
   False -> True
 
-data Id [a : Type 0] -> Type 0 where
-  IdC : Id a
+data Id (a : Type 0) -> Type 0 where
+  IdC
 
 unId : (a : Type 0) -> (x : Id a) -> Type 0
 unId = \a v .
    case v [z] of
     IdC -> a
-
-
 
 id : [aTy : Type 0] -> (a : aTy) -> aTy
 id = \ [aTy] a . a
@@ -92,10 +90,10 @@ join_test = join 20
 -- val join_test_bug = add Zero Zero ^ Zero
 
 
-data Vector [a : Type 0] [n : Nat] -> Type 0 where
-   VNil  : [pf : n = 0] -> Vector a n
-   VCons : [size : Nat] -> [pf : Succ size = n] 
-        -> (x:a) -> (xs : Vector a size) -> Vector a n
+data Vector (a : Type 0) (n : Nat) -> Type 0 where
+   VNil  of [pf : n = 0] 
+   VCons of [size : Nat]  [pf : Succ size = n] 
+            (x:a)  (xs : Vector a size)
 
 
 head : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> a
@@ -118,9 +116,9 @@ v1 = VCons [Bool] [1] [0] [join 1] True (VNil [Bool] [0] [join 1])
 -- MiniAgda-style "sized nats"
 
 -- Type 0 of nats smaller than n.
-data SNat [n : Nat] -> Type 0 where
-    SZero : [i : Nat] -> [pf : n = Succ i] -> SNat n
-    SSucc : [i : Nat] -> [pf : n = Succ i] -> (s : SNat i) -> SNat n
+data SNat (n : Nat) -> Type 0 where
+    SZero of [i : Nat] [pf : n = Succ i] 
+    SSucc of [i : Nat] [pf : n = Succ i] (s : SNat i) 
 
 minus : [i : Nat] -> (x : SNat i) -> [j : Nat] -> (y : SNat j) -> SNat i
 minus =

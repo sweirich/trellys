@@ -1,5 +1,5 @@
 
-{-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts, TupleSections #-}
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
   (
@@ -73,10 +73,8 @@ import Data.List
   telescopes:
     D ::=
                                Empty
-     | (x : A) D               Logical, runtime cons
-     | (prog x : A) D              Programmatic, runtime cons
-     | [x : A] D               Logical, erased cons
-     | [prog x : A] D              Programmatic, erased cons
+     | (x : A) D               runtime cons
+     | [x : A] D               erased cons
 
   declarations:
 
@@ -102,16 +100,16 @@ import Data.List
     For logical datatype declarations:
 
        data T D -> Type l where
-         C1 : A1
+         C1 of Del1
          ...
-         Cn : An
+         Cn of Deln
 
     For programmatic datatype declarations:
 
        data T D => Type l where
-         C1 : A1
+         C1 of Del1
          ...
-         Cn : An
+         Cn of Deln
 
 
   Syntax sugar:
@@ -242,13 +240,13 @@ constructor =
            then fail "Expected a constructor, but a variable was found"
            else return $ string2Name i
 
--- variables or constructors
+-- variables or zero-argument constructors
 varOrCon :: LParser Term
 varOrCon = do i <- identifier
               let n = string2Name i
               case i of
                 [] -> fail "Internal error: empty identifier"
-                (c:_) -> if isUpper c then return (Con n)
+                (c:_) -> if isUpper c then return (Con n [])
                                       else return (Var n)
 
 
@@ -272,13 +270,12 @@ natural = Token.natural tokenizer
 commaSep1 :: LParser a -> LParser [a]
 commaSep1 = Token.commaSep1 tokenizer
 
-
 natenc :: LParser Term
 natenc =
   do n <- natural
-     return $ foldr (\a b -> Paren (App Runtime a b))
-                    (Con $ string2Name "Zero")
-                    (replicate (fromInteger n) (Con $ string2Name "Succ"))
+     return $ encode n 
+   where encode 0 = Con (string2Name "Zero") []
+         encode n = Con (string2Name "Succ") [(encode (n-1), Runtime)]
 
 moduleDef :: LParser Module
 moduleDef = do
@@ -294,28 +291,23 @@ importDef = do reserved "import" >>  (ModuleImport <$> importName)
   where importName = string2Name <$> identifier
 
 
+
 telescope :: LParser Telescope
 telescope = many teleBinding
   where
-    annot :: Epsilon -> LParser (TName,Term,Theta,Epsilon)
-    annot ep =
-      do th <- option Logic $ choice [reserved "prog" >> return Program,
-                                      reserved "log"  >> return Logic]
-         n <- variable
-         colon
-         ty <- expr
-         return (n,ty,th,ep)
-
-    teleBinding :: LParser (TName,Term,Theta,Epsilon)
+    annot :: Epsilon -> LParser (TName,Term,Epsilon)
+    annot ep = do
+      (x,ty) <-    try (liftM2 (,) variableOrWild (colon >> expr))
+                <|>    (liftM2 (,) (fresh (string2Name "_")) expr)
+      return (x,ty,ep)
+    teleBinding :: LParser (TName,Term,Epsilon)
     teleBinding =
       (    parens (annot Runtime)
        <|> brackets (annot Erased)) <?> "binding"
-        where
 
 eitherArrow :: LParser Theta
 eitherArrow =     (reservedOp "->" >> return Logic)
               <|> (reservedOp "=>" >> return Program)
-
 
 ---
 --- Top level declarations
@@ -337,9 +329,8 @@ dataDef = do
   return $ Data name params th level cs
   where con = do
             cname <- constructor
-            colon
-            ty <- expr
-            return $ (cname,ty)
+            args <- option [] (reserved "of" >> telescope)
+            return $ ConstructorDef cname args
           <?> "Constructor"
 
 sigDef = do
@@ -438,15 +429,29 @@ expr = do
         mkArrow th = do x <- fresh (string2Name "_")
                         return $ \tyA tyB -> Arrow th Runtime (bind (x,embed tyA) tyB)
 
-term = do -- This eliminates left-recursion in (<expr> := <expr> <expr>)
+-- A "term" is either a function application or a constructor
+-- application.  Breaking it out as a seperated category both
+-- eliminates left-recursion in (<expr> := <expr> <expr>) and
+-- allows us to keep constructors fully applied in the abstract syntax.
+term = try conapp <|> funapp
+
+conapp :: LParser Term
+conapp = do 
+  c <- constructor
+  args <- many bfactor
+  return $ Con c args
+  where bfactor = ((,Erased)  <$> brackets expr) <|>
+                  ((,Runtime) <$> factor)
+
+funapp :: LParser Term
+funapp = do 
   f <- factor
   foldl' app f <$> many bfactor
-
   where bfactor = ((,) Erased  <$> brackets expr) <|>
                   ((,) Runtime <$> factor)
         app e1 (ep,e2)  =  App ep e1 e2
 
-factor = choice [ varOrCon <?> "an identifier"
+factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
                 , lambda <?> "a lambda"

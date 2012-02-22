@@ -37,45 +37,44 @@ main = do
              putStrLn $ show parseError
              exitFailure
     Right val -> do
-             when (TypeCheck `elem` flags || Reduce `elem` flags) $ do
-               putStrLn "TypeChecking"
-               contents <- runTcMonad (emptyEnv flags) (tcModules val)
-               case contents of
-                 Left typeError -> do
-                          putStrLn "Type Error:"
-                          putStrLn $ render $ disp typeError
-                          exitFailure
-                 Right defs ->
-                   if (Elaborate `elem` flags)
-                     then do
-                          putStrLn "Elaboration pass successful. Typechecking the core terms."
-                          --writeModules defs --can uncomment this line for debugging.
-                          contents' <- runTcMonad (emptyEnv (delete Elaborate flags)) (tcModules defs)
-                          case contents' of
-                            Left typeError -> do
-                                    putStrLn "Internal error, elaborated term fails type check:"
-                                    putStrLn $ render $ disp typeError
-                                    exitFailure
-                            Right _ -> do
-                              putStrLn "Type check successful. Writing elaborated terms."
-                              writeModules prefixes defs
+             putStrLn "TypeChecking"
+             contents <- runTcMonad (emptyEnv flags) (tcModules val)
+             case contents of
+               Left typeError -> do
+                        putStrLn "Type Error:"
+                        putStrLn $ render $ disp typeError
+                        exitFailure
+               Right defs ->
+                 if (Elaborate `elem` flags)
+                   then do
+                        putStrLn "Elaboration pass successful. Typechecking the core terms."
+                        --writeModules defs --can uncomment this line for debugging.
+                        contents' <- runTcMonad (emptyEnv (delete Elaborate flags)) (tcModules defs)
+                        case contents' of
+                          Left typeError -> do
+                                  putStrLn "Internal error, elaborated term fails type check:"
+                                  putStrLn $ render $ disp typeError
+                                  exitFailure
+                          Right _ -> do
+                            putStrLn "Type check successful. Writing elaborated terms."
+                            writeModules prefixes defs
 
-                     else do
-                          putStrLn "Type check successful"
-                          if (Reduce `elem` flags)
-                             then do
-                                let eenv = concatMap makeModuleEnv defs
-                                -- print defs -- comment out for debuggging
-                                r <- runTcMonad
-                                       (emptyEnv flags)
-                                       (extendCtxs (concatMap moduleEntries defs)
-                                          (cbvNSteps 100 =<< erase
-                                                         =<< substDefs (snd $ last eenv)))
-                                case r of
-                                  Left err -> do putStrLn "Reduce Error:"
-                                                 putStrLn $ render $ disp err
-                                  Right x -> putStrLn $ render $ disp x
-                             else return ()
+                   else do
+                        putStrLn "Type check successful"
+                        if (Reduce `elem` flags)
+                           then do
+                              let eenv = concatMap makeModuleEnv defs
+                              -- print defs -- comment out for debuggging
+                              r <- runTcMonad
+                                     (emptyEnv flags)
+                                     (extendCtxs (concatMap moduleEntries defs)
+                                        (cbvNSteps 100 =<< erase
+                                                       =<< substDefs (snd $ last eenv)))
+                              case r of
+                                Left err -> do putStrLn "Reduce Error:"
+                                               putStrLn $ render $ disp err
+                                Right x -> putStrLn $ render $ disp x
+                           else return ()
 
 
 getOptions :: [String] -> IO ([Flag], [String])

@@ -1,14 +1,9 @@
 module Vectors where
-
 import Prelude
 
-data Vector [a : Type 0] [n : Nat] -> Type 0 where
-   VNil  : [n = 0] -> Vector a n
-   VCons : [size : Nat] -> [n = Succ size]
-        -> (x:a) -> (xs : Vector a size) -> Vector a n
-
--- not needed:
--- hole : (a : Type 0) -> a
+data Vector (a : Type 0) (n : Nat) -> Type 0 where
+   VNil  of [n = 0] 
+   VCons of [size : Nat] [n = Succ size]  (x:a) (xs : Vector a size)
 
 -- terminating recursor for the vector type
 recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
