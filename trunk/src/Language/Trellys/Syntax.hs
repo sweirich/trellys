@@ -50,20 +50,19 @@ instance Ord Theta where
 
 ------------------------------
 ------------------------------
---- Annotated Language
+--- Source Language
 ------------------------------
 ------------------------------
 
 deriving instance Show Term
 
 -- | The 'Term' representation is derived from the Ott language definition. In
--- the Trellys core, there is no distinction between types and terms. Moreover,
--- in contrast to the langauge definition, we do not draw a distinction between
+-- the Trellys core, there is no distinction between types and terms. Moreover, in contrast to the langauge definition, we do not draw a distinction between
 -- names of datatypes and constructors introduced via datatype definitions (and
 -- eliminated by case expressions) and variables introduced by lambda
 -- abstractions and dependent products).
 data Term = Var TName    -- | variables
-          | Con TName   -- | term and type constructors
+          | Con TName [(Term,Epsilon)]   -- | term and type constructors (fully applied)
           | Type Int   -- | The 'Type' terminal
           -- | Functions: @\x.e@ and @\[x].e@
           -- No type annotations since we are bidirectional
@@ -153,53 +152,59 @@ newtype ModuleImport = ModuleImport MName
 data Decl = Sig  TName Theta Term
           | Axiom TName Theta Term
           | Def TName Term
-          | Data TName Telescope Theta Int [Constructor]
+          | Data TName Telescope Theta Int [ConstructorDef]
           | AbsData TName Telescope Theta Int
   deriving (Show)
 
 
--- | A Constructor has a name and a type
-type Constructor = (TName,Term)
+-- | A Constructor has a name and a telescope of arguments
+data ConstructorDef = ConstructorDef TName Telescope
+  deriving (Show)
 
 -------------
 -- Telescopes
 -------------
 -- | This definition of 'Telescope' should be replaced by the one from LangLib.
-type Telescope = [(TName,Term,Theta,Epsilon)]
+type Telescope = [(TName,Term,Epsilon)]
 
 -- | teleApp applies some term to all the variables in a telescope
 teleApp :: Term -> Telescope -> Term
 teleApp tm tms =
-  foldl (\a (nm,_,_,ep) -> App ep a (Var nm)) tm tms
+  foldl (\a (nm,_,ep) -> App ep a (Var nm)) tm tms
 
-telePi :: Telescope -> Term -> Term
-telePi tele tyB =
-  foldr (\(n,tm,th,ep) ret -> Arrow th ep (bind (n,embed tm) ret))
+telePi :: Telescope -> Theta -> Term -> Term
+telePi tele th tyB =
+  foldr (\(n,tm,ep) ret -> Arrow th ep (bind (n,embed tm) ret))
         tyB tele
+
+domTele :: Telescope -> [TName]
+domTele = map (\(v,_,_) -> v)
 
 domTeleMinus :: Telescope -> [TName]
 domTeleMinus tele =
-  [n | (n,_,_,ep) <- tele, ep == Erased]
-
-teleVars :: Telescope -> [TName]
-teleVars = map (\(v,_,_,_) -> v)
+  [n | (n,_,ep) <- tele, ep == Erased]
 
 -- FIXME horribly inefficient.
 swapTeleVars :: Telescope -> [TName] -> Telescope
 swapTeleVars [] [] = []
-swapTeleVars ((v,a,th,ep):tele) (v':vs) =
-  (v',a,th,ep):(subst v (Var v') $ swapTeleVars tele vs)
+swapTeleVars ((v,a,ep):tele) (v':vs) =
+  (v',a,ep):(subst v (Var v') $ swapTeleVars tele vs)
 swapTeleVars _ _ =
   error "Internal error: lengths don't match in swapTeleVars"
+
+setTeleEps :: Epsilon -> Telescope -> Telescope
+setTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 
 -- (changeStage args tele) changes the stage annotation of each term
 -- in args to be the one given by the corresponding element of tele.
 -- This assumes the lists are the same length.
+{-
 changeStage :: [(Term,Epsilon)] -> Telescope -> [(Term,Epsilon)]
 changeStage [] [] = []
 changeStage ((t,_):args) ((_,_,_,ep):tele) = (t,ep):(changeStage args tele)
 changeStage _ _ =
   error "Internal error: lengths don't match in changeStage"
+-}
 
 --------------
 -- Basic query and manipulation functions on annotated terms
@@ -210,13 +215,6 @@ isVar (Paren t) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
-isCon :: Term -> Maybe TName
-isCon (Pos _ t) = isCon t
-isCon (Paren t) = isCon t
-isCon (Con n)   = Just n
-isCon _         = Nothing
-
-
 isType :: Term -> Maybe Int
 isType (Pos _ t)  = isType t
 isType (Paren t)  = isType t
@@ -226,13 +224,13 @@ isType _          = Nothing
 isTyEq :: Term -> Maybe (Term, Term)
 isTyEq (Pos _ t) = isTyEq t
 isTyEq (Paren t) = isTyEq  t
-isTyEq (TyEq ty0 ty1) = Just (ty0,ty1)
+isTyEq (TyEq ty0 ty1) = Just (delPosParenDeep ty0, delPosParenDeep ty1)
 isTyEq _ = Nothing
 
 isSmaller :: Term -> Maybe (Term, Term)
 isSmaller (Pos _ t) = isSmaller t
 isSmaller (Paren t) = isSmaller t
-isSmaller (Smaller a b) = Just (a,b)
+isSmaller (Smaller a b) = Just (delPosParenDeep a, delPosParenDeep b)
 isSmaller _ = Nothing 
 
 isArrow :: Term -> Maybe (Theta, Epsilon, Bind (TName, Embed Term) Term)
@@ -256,6 +254,7 @@ multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 
 -- splitPi pulls apart a dependent product returning all the arguments and
 -- the final return type
+{-
 splitPi :: (Fresh m) => Term -> m (Telescope,Term)
 splitPi tm = splitPi' tm []
   where
@@ -265,8 +264,7 @@ splitPi tm = splitPi' tm []
       do ((nm,tmA),tmB) <- unbind bd
          splitPi' tmB ((nm,unembed tmA,th,ep):acc)
     splitPi' tm'                  acc = return (reverse acc, tm')
-
-
+-}
 
 
 ------------------------
@@ -279,7 +277,7 @@ deriving instance Show ETerm
 
 -- ETerm for "erased" term
 data ETerm = EVar EName
-           | ECon EName
+           | ECon EName [(ETerm,Epsilon)]
            | EType Int
            | EArrow Theta Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
@@ -304,10 +302,6 @@ type EMatch = (EName, Bind [EName] ETerm)
 isEVar :: ETerm -> Maybe EName
 isEVar (EVar n)   = Just n
 isEVar _          = Nothing
-
-isECon :: ETerm -> Maybe EName
-isECon (ECon n)   = Just n
-isECon _          = Nothing
 
 -- splitEApp makes sure a term is an application and returns the
 -- two pieces

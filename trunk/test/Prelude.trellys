@@ -1,13 +1,12 @@
 module Prelude where
 
 data Bool -> Type 0 where
-  True : Bool
-  False : Bool
-
+  True 
+  False
 
 data Nat -> Type 0 where
-    Zero : Nat
-    Succ : (x : Nat) => Nat
+    Zero
+    Succ of (x : Nat)
 
 pred : Nat -> Nat
 pred = \n . case n [_] of
@@ -105,12 +104,12 @@ uneraseEq = \ [_][_][a][b][eq] . conv join by eq at x . a = x
 -- Existential types.
 
 data Exists (a : Type 0) (p : (x:a) -> Type 0) -> Type 0 where
-  Ex : [x : a] -> (witness : p x) -> Exists a p
+  Ex of [x : a] (witness : p x)
 
 -- Unit
 
 data Unit -> Type 0 where
-  U : Unit
+  U
 
 -- Void
 --

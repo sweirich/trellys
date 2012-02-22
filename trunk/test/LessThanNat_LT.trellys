@@ -6,13 +6,12 @@ import Prelude
 import Arithmetic
 
 -- less-than relation
-data LT [m:Nat] [n:Nat] -> Type 0 where
-  LZ : [m = Zero]
-    -> (n':Nat) -> [n = Succ n']
-    -> LT m n
-  LS : (m':Nat) -> [m = Succ m']
-    -> (n':Nat) -> [n = Succ n']
-    -> (LT m' n') -> LT m n
+data LT (m:Nat) (n:Nat) -> Type 0 where
+  LZ of [m = Zero]  (n':Nat) [n = Succ n']
+
+  LS of (m':Nat) [m = Succ m']
+        (n':Nat) [n = Succ n']
+        (LT m' n')
 
 ltT : Nat -> Nat -> Type 0
 ltT = \m n . LT m n

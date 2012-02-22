@@ -17,8 +17,8 @@ import LessThanNat_lt_eq_True
 --   convert (ISucc x) = ISucc (convert x)
 
 data Index (n:Nat) -> Type 0 where
-  IZero : Index n
-  ISucc : [n':Nat] -> [Succ n' = n] -> Index n' -> Index n
+  IZero 
+  ISucc of [n':Nat] [Succ n' = n] (Index n')
 
 convert : [n:Nat] -> Index n -> Index (Succ n)
 ind convert [n] = \i . case i [i_eq] of
@@ -36,14 +36,11 @@ ind convert_id [n] = \i . case i [i_eq] of
   ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
                            let ih [_] = convert_id [n'] [ord n'_eq'] i' in
                            let step [_] = (join : convert [n] (ISucc [n] [n'] [n'_eq] i')
-                                                = ISucc [Succ (Succ n')] [Succ n'] [join] (convert [n'] i')) in
-                           let isucc_eq [_] = (join : ISucc [Succ (Succ n')] [Succ n'] [join]
-                                                    = ISucc [n] [n'] [n'_eq]) in
+                                                = ISucc [Succ (Succ n')] [Succ n'] [(join : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i')) in
                            let [i_eq'] [_] = sym (Index n) (Index n) i (ISucc [n] [n'] [n'_eq] i') i_eq in
                            let eq [_] =
-                              conv step by isucc_eq, ih, i_eq'
-                              at is ci i . convert [n] i
-                                         = is ci
+                              conv step by [Succ (Succ n') = n], [Succ n' = n'], [(join : Succ (Succ n') = Succ (Succ n')) = n'_eq], ih, i_eq'
+                              at is1 is2 is3 ci i . convert [n] i = ISucc [is1] [is2] [is3] ci
                            in conv eq by i_eq' at ii . convert [n] i = ii
 
 -- Garrin's suggestion (non-Haskell): leverage dependent types to use
@@ -55,7 +52,7 @@ ind convert_id [n] = \i . case i [i_eq] of
 -- Now conversion is O(1).
 
 data Index' (n:Nat) -> Type 0 where
-  MkIndex' : (m:Nat) -> [ltT m n] -> Index' n
+  MkIndex' of (m:Nat)  [ltT m n] 
 
 convert' : [n1:Nat] -> [n2:Nat] -> [ltT n1 n2] -> Index' n1 -> Index' n2
 convert' = \[n1] [n2] [n1_lt_n2] i. case i [i_eq] of

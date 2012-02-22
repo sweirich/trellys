@@ -77,8 +77,8 @@ lookupDef v = do
 
 -- | Find a constructor in the context - left is type con, right is term con
 lookupCon :: (MonadReader Env m, MonadError Err m) 
-          => TName -> m (Either (Telescope,Theta,Int,Maybe [Constructor]) 
-                               (Telescope,Theta,Term))
+          => TName -> m (Either (Telescope,Theta,Int,Maybe [ConstructorDef]) 
+                                (TName,Telescope,Theta,ConstructorDef))
 lookupCon v = do
   g <- asks ctx
   scanGamma g
@@ -87,9 +87,9 @@ lookupCon v = do
     scanGamma ((Data v' delta th lev cs):g) = 
       if v == v' 
         then return $ Left (delta,th,lev,Just cs) 
-        else case lookup v cs of
+        else case find (\(ConstructorDef v'' tele) -> v''==v ) cs of
                Nothing -> scanGamma g
-               Just tm -> return $ Right (delta, th, tm)
+               Just c -> return $ Right (v', delta, th, c)
     scanGamma ((AbsData v' delta th lev):g) =
       if v == v'
          then return $ Left (delta,th,lev,Nothing)
@@ -107,9 +107,9 @@ extendCtxs ds =
   local (\ m@(Env {ctx = cs}) -> m { ctx = ds ++ cs })
 
 -- | Extend the context with a telescope
-extendCtxTele :: (MonadReader Env m) => Telescope -> m a -> m a
-extendCtxTele bds m = 
-  foldr (\(x,tm,th,_) -> extendCtx (Sig x th tm)) m bds
+extendCtxTele :: (MonadReader Env m) => Telescope -> Theta -> m a -> m a
+extendCtxTele bds th m = 
+  foldr (\(x,tm,_) -> extendCtx (Sig x th tm)) m bds
 
 -- | Extend the context with a module
 extendCtxMod :: (MonadReader Env m) => Module -> m a -> m a

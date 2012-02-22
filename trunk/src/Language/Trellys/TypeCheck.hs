@@ -53,7 +53,14 @@ kc th tm = do
   when (isNothing $ isType ty) $
     err [DD tm, DS "is not a well-formed type at", DD th]
 
--- | type analysis
+-- Apply kc to an entire telescope
+kcTele :: Theta -> Telescope -> TcMonad ()
+kcTele th [] = return ()
+kcTele th ((x,ty,_):tele') = do
+   kc th ty
+   extendCtx (Sig x th ty) $  kcTele th tele'
+
+-- | Type analysis
 ta :: Theta -> Term -> Term -> TcMonad Term
 -- Position terms wrap up an error handler
 ta th (Pos p t) ty = do
@@ -86,8 +93,8 @@ ta _ (OrdAx a) (Smaller b1 b2) = do
      (ea,tyA) <- ts Logic a
      case isTyEq tyA of
        Just (a1, cvs) ->
-         case splitApp cvs of 
-           (Con _, vs) -> do
+         case cvs of 
+           (Con _ vs) -> do
              unless (a1 `aeqSimple` b2) $
                err [DS "The left side of the equality supplied to ord ",
                     DS "should be", DD b2, 
@@ -110,8 +117,8 @@ ta th (Contra a) b =
      (ea, tyA) <- ts Logic a
      case isTyEq tyA of
        Just (cvs1, cvs2) ->
-         case (splitApp cvs1, splitApp cvs2) of
-           ((Con c1, vs1), (Con c2, vs2)) ->
+         case (cvs1, cvs2) of
+           ((Con c1 vs1), (Con c2 vs2)) ->
               do when (c1 == c2) $
                    err [DS "The equality proof", DD tyA,
                         DS "isn't necessarily contradictory because the",
@@ -127,7 +134,6 @@ ta th (Contra a) b =
                      DS "Here it shows", DD tyA]
        Nothing -> err [DS "The argument to contra must be an equality proof.",
                        DS "Here its type is", DD tyA]
-
 
 -- rule T_abort
 ta Logic Abort _ = err [DS "abort must be in P."]
@@ -152,46 +158,19 @@ ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
   -- The free variables function fv is ad-hoc polymorphic in its
-  -- return type
-  --
-  --   fv :: (Rep b, Alpha a) => a -> Set (Name b)
-  --
-  -- and returns the free (Name b)'s in its argument.  Now, here
-  --
-  --   a :: ETerm
-  --
-  -- and
-  --
-  --   x :: Name Term
-  --
-  -- and we need to check if there are any free (Name ETerm)s with
-  -- name x in a.  So, x needs to be converted into a (Name ETerm).
-  -- The translate function can do this, but it's also ad-hoc
-  -- polymorphic in its return type
-  --
-  --   translate :: (Rep b) => Name a -> Name b
-  --
-  -- so we fix the return type to avoid ambiguity:
+  -- return type, so we fix the type of xE.
+  -- If we did (x `S.member` fv bodyE), fv would always return an empty set...
   let xE = translate x :: EName
-  -- Q: What happens if we instead do
-  --
-  --   x `S.member` fv bodyE
-  --
-  -- below? A: fv bodyE is always empty and the FV check always
-  -- passes!
   when (lep == Erased && xE `S.member` fv bodyE) $
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
 
   when (th == Program && lep == Erased) $ do
-    gen <- checkQ body
-    unless gen $
-        err [DS "ta : The body of an implicit lambda must be a quantifiable term",
+    unless (isValue body) $
+        err [DS "ta : The body of an implicit lambda must be a value",
              DS "but here is:", DD body]
 
   return (Lam lep (bind x ebody))
-
-
 
 -- rules T_ind1 and T_ind2
 ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
@@ -233,9 +212,8 @@ ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
             DS "appears free in body", DD a]
 
   when (ep == Erased) $ do
-       chk <- checkQ a
-       unless chk $
-              err [DS "ta : The body of an implicit ind must be quantifiable",
+       unless (isValue a) $
+              err [DS "The body of an implicit ind must be a value",
                    DS "but here is:", DD a]
   return (Ind ep (bind (f,y) ea))
 
@@ -264,9 +242,8 @@ ta Program (Rec ep binding) fty@(Arrow ath aep abnd) = do
        err [DS "ta: In implicit rec, variable", DD y,
             DS "appears free in body", DD a]
   when (ep == Erased) $ do
-    chk <- checkQ a
-    unless chk $
-       err [DS "ta : The body of an implicit rec must be quantifiable",
+    unless (isValue a) $
+       err [DS "ta : The body of an implicit rec must be a value",
             DS "but here is:", DD a]
   return (Rec ep (bind (f,y) ea))
 
@@ -277,8 +254,8 @@ ta th (Case b bnd) tyA = do
   -- SCW: can relax and check this at P even with th is v if b is "valuable"
   (eb,bty) <- ts th b
   (d,bbar,delta,cons) <-
-    case splitApp bty of
-      (Con d, apps) -> do
+    case bty of
+      (Con d apps) -> do
          ent <- lookupCon d
          case ent of
            (Left (delta,th',_,Just cons)) ->
@@ -307,30 +284,28 @@ ta th (Case b bnd) tyA = do
   -- premises 4 and 5: we define a function to map over the
   -- branches that checks each is OK (and elaborates it)
   (y,mtchs) <- unbind bnd
-  unless (   (length mtchs == length cons)
-          && (length (nub $ map fst cons) == length cons)) $
+  unless (length mtchs == length cons) $
      err [DS "Wrong number of pattern match branches for datatype", DD d]
   let
     checkBranch :: Match -> TcMonad Match
     checkBranch (c, cbnd) =
-      case lookup c cons of
+      case find (\(ConstructorDef c' _) -> c'==c) cons of
         Nothing -> err [DD c, DS "is not a constructor of type", DD d]
-        Just ctyp ->
+        Just (ConstructorDef _ dumbdeltai)  ->
           do (deltai',ai) <- unbind cbnd
-             (dumbdeltai,_) <- splitPi ctyp
              unless (length deltai' == length dumbdeltai) $
                 err [DS "wrong number of argument variables for constructor",
                      DD c, DS "in pattern match."]
              unless (   (map snd deltai')
-                     == map (\(_,_,_,e) -> e) dumbdeltai) $
+                     == map (\(_,_,e) -> e) dumbdeltai) $
                 err [DS "wrong epsilons on argument variables for constructor",
                      DD c, DS "in pattern match."]
              let deltai = swapTeleVars dumbdeltai (map fst deltai')
-                 subdeltai = substs (zip (teleVars delta) (map fst bbar)) deltai
-                 eqtype = TyEq b (teleApp (multiApp (Con c) bbar) deltai)
+                 subdeltai = substs (zip (domTele delta) (map fst bbar)) deltai
+                 eqtype = TyEq b (Con c (bbar ++ map (\(x,_,ep) -> (Var x, ep)) deltai))
              -- premise 5
              eai <- extendCtx (Sig y Logic eqtype) $
-                      extendCtxTele subdeltai $ ta th ai tyA
+                      extendCtxTele subdeltai th $ ta th ai tyA
              -- premise 6
              aE <- erase ai
              let yEs = map translate $ y : domTeleMinus deltai
@@ -413,6 +388,19 @@ ta th a tyB = do
                     DS "was inferred, and it isn't a subtype:\n", DD e]
   return ea
 
+-- | Checks a list of terms against a telescope of types
+-- Returns list of elaborated terms.
+-- Precondition: the two lists have the same length.
+taTele :: Theta -> [(Term,Epsilon)] -> Telescope -> TcMonad [(Term,Epsilon)]
+taTele th [] [] = return []
+taTele th ((t,ep1):ts) ((x,ty,ep2):tele')  = do
+  unless (ep1 == ep2) $
+    err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
+  et <- ta th t ty
+  ets <- taTele th ts (subst x t tele')
+  return $ (et,ep1) : ets
+    
+
 ------------------------------
 ------------------------------
 -------- Synthesis
@@ -462,20 +450,30 @@ ts tsTh tsTm =
            (_,_)            -> err [DD (unembed tyA), DS "is not a type."]
 
     -- Rules T_tcon, T_acon and T_dcon
-    ts' th (Con c) =
+    ts' th (Con c args) =
       do typC <- lookupCon c
          case typC of
            (Left (delta, th', lev, _)) ->
              do unless (th' <= th) $
-                  err [DS "Constructor", DD c,
+                  err [DS "Datatype constructor", DD c,
                        DS "is programmatic, but it was checked logically."]
-                return (Con c, telePi (map (\(t,a,b,_) -> (t,a,b,Runtime)) delta)
-                                      (Type lev))
-           (Right (delta, th', tm)) ->
+                unless (length args == length delta) $
+                  err [DS "Datatype constructor", DD c, 
+                       DS $ "should have " ++ show (length delta) ++
+                       "parameters, but was given", DD (length args)]
+                eargs <- taTele th args delta
+                return (Con c eargs, (Type lev))
+           (Right (tname, delta, th', ConstructorDef _ deltai)) ->
              do unless (th' <= th) $
-                  err [DS "Constructor", DD c,
+                  err [DS "Data constructor", DD c,
                        DS "is programmatic, but it was checked logically."]
-                return $ (Con c, telePi (map (\(t,a,b,_) -> (t,a,b,Erased)) delta) tm)
+                unless (length args == length delta + length deltai) $
+                  err [DS "Constructor", DD c,
+                       DS $ "should have " ++ show (length delta) ++ " parameters and " ++ show (length deltai)
+                       ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
+                eargs <- taTele th args (setTeleEps Erased delta ++ deltai)
+                let eindices = map (\(t,_)->(t,Runtime)) (take (length delta) eargs)
+                return $ (Con c eargs, Con tname eindices)
 
     -- rule T_app
     ts' th tm@(App ep a b) =
@@ -496,29 +494,6 @@ ts tsTh tsTm =
              -- if the arg is implicit, make sure that it is total
              let thb = if ep == Erased then Logic else th
              eb <- ta thb b (At (unembed tyA) th')
-
-{-
-             -- To implement app1 and app2 rules, we first try to
-             -- check the argument Logically and check the resulting
-             -- substitution.  If either fails, we would have to use
-             -- App2.  In that case, th' must be Program and the argument
-             -- must be a value.
-
-             let b_for_x_in_B = subst x b tyB
-
-             eb <- ((kc th b_for_x_in_B >> ta Logic b (unembed tyA))
-                    `catchError`
-                      \e ->
-                        if th' == Logic then throwError e else
-                          do tot <- isTotal Program b
-                             unless (tot || th==Program) $
-                                    err [DS "When applying to an argument with classifier P in a logical context,",
-                                         DS "the term must be classified Total, but",
-                                         DD b, DS "is not.",
-                                         DS "This is the dreaded value restriction:",
-                                         DS "use a let-binding to make the term a value."]
-
-                             ta Program b (unembed tyA)) -}
              return (App ep ea eb, b_for_x_in_B)
 
     -- rule T_smaller
@@ -559,13 +534,14 @@ ts tsTh tsTm =
                (e,t) <- ts Logic pf
                return ((False,e),t)
              chkTy (True,pf) var = do
-               (e,_) <- ts Logic pf
-               -- TODO: Check to see if result is a Type 0?
+               --XX (e,_) <- ts Logic pf
                when (translate var `S.member` runtimeVars) $
                    err [DS "Equality proof", DD pf, DS "is marked erased",
                         DS "but the corresponding variable", DD var,
                         DS "appears free in the erased term", DD erasedTerm]
-               return ((True,e),pf)
+--               return ((True,e),
+               return ((True,pf),pf) --fixme, the first pf should really be elaborated,
+                                     -- but we probably need the context from the template to do that...
 
          (eas,atys) <- liftM unzip $ zipWithM chkTy as xs
 
@@ -573,11 +549,9 @@ ts tsTh tsTm =
          let errMsg aty =
                err $ [DS "The second arguments to conv must be equality proofs,",
                       DS "but here has type", DD aty]
---         let isTyEq' aTy = maybe (errMsg aTy) return (isTyEq aTy)
---         (tyA1s,tyA2s) <- liftM unzip $ mapM isTyEq' atys
 
 
-         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\ aty -> do
+         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\ aty ->
               case isTyEq aty of
                 Just (tyA1, tyA2) -> do
                  (_,k1) <- ts Program tyA1
@@ -589,7 +563,8 @@ ts tsTh tsTm =
                     DS "respectively."]
 
                  return (tyA1, tyA2, k1)
-                _ -> errMsg aty) atys
+                _ -> errMsg aty
+              ) atys
 
          let cA1 = substs (zip xs tyA1s) c
          let cA2 = substs (zip xs tyA2s) c
@@ -731,37 +706,28 @@ tcEntry (Def n term) = do
 
 -- rule Decl_data
 tcEntry dt@(Data t delta th lev cs) =
-  do ---- Premise 1
-     kc th (telePi delta (Type lev))
-
-     ---- Premise 2 in two parts.
-     ---- Part 1: make sure the return type of each constructor is right
-     let
-       checkConRet :: TName -> Term -> TcMonad ()
-       checkConRet c tm =
-         do (_,ret) <- splitPi tm
-            let (t',tms) = splitApp ret
-                correctApps = map (\(v,_,_,_) -> (Var v,Runtime)) delta
-            unless (    (Con t `aeqSimple` t')
-                     && (tms `aeqSimple` correctApps)) $
-              err [DS "Constructor", DD c,
-                   DS "must have return type",
-                   DD (multiApp (Con t) correctApps)]
-
-     mapM_ (uncurry checkConRet) cs
-
-     -- Part 2: type check the whole constructor type
+  do -- The parameters of a datatype must all be Runtime.
+     unless (all (\(_,_,ep) -> ep==Runtime) delta) $
+       err [DS "All parameters to a datatype must be marked as relevant."]
+     ---- Premise 1
+     kc th (telePi delta th (Type lev))  
+     ---- Premise 2: check that the telescope provided 
+     ---  for each data constructor is wellfomed.
+     ---  fixme: probably need to worry about universe levels also?
      extendCtx (AbsData t delta th lev) $
-       mapM_ (\(_,tyAi) -> ta th (telePi delta tyAi) (Type lev)) cs
-
+        mapM_ (\(ConstructorDef _ tele) -> kcTele th (delta++tele)) cs
      -- Premise 3: check that types are strictly positive.
-     mapM_ (positivityCheck t) cs
-
-     ---- finally, add the datatype to the env and perform action m
+     when (th == Logic) $
+       mapM_ (positivityCheck t) cs
+     -- Implicitly, we expect the constructors to actually be different...
+     unless (length cnames == length (nub cnames)) $
+       err [DS "Datatype definition", DD t, DS"contains duplicated constructors" ]
+     -- finally, add the datatype to the env and perform action m
      return $ AddCtx [dt]
+     where cnames = map (\(ConstructorDef c _) -> c) cs
 
 tcEntry dt@(AbsData _ delta th lev) =
-  do kc th (telePi delta (Type lev))
+  do kc th (telePi delta th (Type lev))
      return $ AddCtx [dt]
 
 tcEntry s@(Sig n th ty) = do
@@ -812,13 +778,12 @@ isFirstOrder :: Term -> TcMonad Bool
 isFirstOrder (TyEq _ _) = return True
 isFirstOrder (Pos _ ty) = isFirstOrder ty
 isFirstOrder (Paren ty) = isFirstOrder ty
-isFirstOrder ty = case splitApp ty of
-      (Con d, apps) -> do
+isFirstOrder (Con d _) = do
          ent <- lookupCon d
          return $ case ent of 
                     (Left _)  -> True  -- Datatype constructors are considered FO.
                     (Right _) -> False -- Data  constructors are not
-      _ -> return False 
+isFirstOrder _ = return False
 -- isFirstOrder ty = return $ ty `aeqSimple` natType
 
 --debug n v = when False (liftIO (putStr n) >> liftIO (print v))
@@ -831,105 +796,28 @@ isFirstOrder ty = case splitApp ty of
 -- constructor's arguments.
 
 positivityCheck
-  :: (Fresh m, Disp d, MonadError Err m) =>
-     Name Term -> (d, Term) -> m ()
-positivityCheck tName (cName,ty)  = do
-  (tele,_) <- splitPi ty
-  _ <- mapM checkBinding tele
-  return ()
- `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
-  where checkBinding (_,teleTy,Logic,_) = occursPositive tName teleTy
-        checkBinding _ = return True
+  :: (Fresh m, MonadError Err m) =>
+     Name Term -> ConstructorDef -> m ()
+positivityCheck tName (ConstructorDef cName tele)  = do
+  mapM_ checkBinding tele
+   `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
+  where checkBinding (_,teleTy,_) = occursPositive tName teleTy
         msg' = text "When checking the constructor" <+> disp cName
 
-occursPositive
-  :: (Fresh m, MonadError Err m) => Name Term -> Term -> m Bool
+occursPositive  :: (Fresh m, MonadError Err m) => Name Term -> Term -> m ()
 occursPositive tName (Pos p ty) = do
   occursPositive tName ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
-
 occursPositive tName (Paren ty) = occursPositive tName ty
-occursPositive tName aty@(Arrow _ _  _) = do
-  (tele,_) <- splitPi aty
-  let tys = [ty | (_,ty,_,_) <- tele]
-      vars = S.unions $ map fv tys
-      ok = not $ tName `S.member` vars
-  unless ok $ err [DD tName, DS "occurs in non-positive position"]
-  return True
-
+occursPositive tName (Arrow _ _ bnd) = do
+ ((x,etyA), tyB) <- unbind bnd
+ let tyA = unembed etyA
+ when (tName `S.member` (fv tyA)) $
+    err [DD tName, DS "occurs in non-positive position"]
+ occursPositive tName tyB
 occursPositive tName ty = do
   let children = subtrees ty
-  res <- mapM (occursPositive tName) children
-  return $ and res
-
-
-
--- Value restriction relaxation -- 'Q' and 'Total' Judgements
-
--- 'Q m' Judgement
--- Q_LAM
-
-
-checkQ :: (MonadError Err m, Fresh m) => Term -> m Bool
-checkQ (Pos p t) =
-  checkQ t `catchError`
-         \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
-checkQ (Paren t) = checkQ t
-
-checkQ (Lam _ _) = return True
--- Q_REC
-checkQ (Rec Runtime _) = return True
-
--- Q_RECM
-checkQ (Rec Erased binding) = do
-  ((_,_),body) <- unbind binding
-  checkQ body
-
--- Q_CONS
---   base case: zero arguments
-checkQ (Con _) = return True
---   step case: 1 or more arguments
-checkQ t@(App _ (Con _) _) = do
-  qs <- mapM (\(arg,_) -> checkQ arg) args
-  return $ and qs
-  where (_,args) = splitApp t
-
-checkQ _ = return False
-
-
-
--- The 'TOTAL' judgement. In the draft core design, the 'total' does a check
--- that the term that is to be check is well typed. It turns out that this has
--- already been checked in those positions above where isTotal is called, so
--- that check has been commented out for efficency. This is not a particularly
--- safe decision.
-
-isTotal
-  :: Theta
-     -> Term -- Term to check
-     -> FreshMT (ReaderT Env (ErrorT Err IO)) Bool
-isTotal Logic _ = return True
-isTotal Program tm
-  | isValue tm = return True -- TOT_VAL
-  | otherwise =
-    case tm of
-      (Arrow _ _ binding) -> do
-              ((_,tyA), tyB) <- unbind binding
-              kc Program tm
-              kc Program (unembed tyA)
-              kc Program tyB
-              totA <- isTotal Program (unembed tyA)
-              totB <- isTotal Program tyB
-              return (totA && totB)
-      t@(App _ _ _) ->
-        let (f,args) = splitApp t
-        in case f of
-             Con _ -> do
-                    atots <- mapM (isTotal Program . fst) args
-                    return $ and atots
-             _ -> return False
-
-      _ -> return False
+  mapM_ (occursPositive tName) children
 
 
 -- Alpha equality, dropping parens and source positions.

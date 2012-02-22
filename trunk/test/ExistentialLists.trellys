@@ -2,11 +2,16 @@ module Lists where
 
 import Prelude
 
+-- This file no longer compiles because it used partially applied type constructors.
+-- It illustrated how to use existentials to write types for functions that do not 
+-- exactly preserve the size of their input data. It is less relevant now, because
+-- we added a structural ordering to Zombie-Trellys, so not every datastructure needs
+-- to be indexed by size.
+
 -- lists of length <= n.
 data List (a : Type 0) (n : Nat) -> Type 0 where
-  Nil : List a n
-  Cons : [m : Nat] -> [n = Succ m] ->
-         (x : a) -> (xs : List a m) -> List a n
+  Nil
+  Cons of [m : Nat] [n = Succ m] (x : a) (xs : List a m)
 
 map : [a : Type 0] -> [b : Type  0] -> (f : (x:a) -> b) ->
       [n : Nat] -> (xs : List a n) -> List b n

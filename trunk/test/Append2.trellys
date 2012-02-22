@@ -48,11 +48,13 @@ appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
 			   	 VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [join 42] x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
 
 
-			let eq_cons [ign] = (join 0 : VCons [a] [Succ (plus (plus i' j) k)] [(plus (plus i' j) k)] [join 42] x =
-																		VCons [a] [Succ (plus i' (plus j k))] [(plus i' (plus j k))] [join 42] x) in
-
       let e [ign] = conv unfold_xs by unfold_append at hole. lhs = hole in
-			let step_case [ign] = conv e by eq_cons, ih at cons step . lhs = cons step in
+			let step_case [ign] = conv e by [ Succ (plus (plus i' j) k)  = Succ (plus i' (plus j k))], 
+                                                        [(plus (plus i' j) k) = (plus i' (plus j k))],  
+                                                        ih 
+                                                     at n1 n2 step . lhs =  VCons [a] [n1] [n2] [join 42] x step in
+
+
 
 			let rhs_unfold [ign] = (join 42 :
 			  VCons [a] [Succ (plus i' (plus j k))] [plus i' (plus j k)] [join 42] x (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs)) =

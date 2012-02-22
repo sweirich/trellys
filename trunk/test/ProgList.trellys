@@ -3,9 +3,9 @@ module ProgList where
 import Prelude
 
 -- pragrammatic list whose elelments are logical
-data List [a : Type 0] -> Type 0 where
-  Nil : List a
-  Cons : (x:a) -> (xs:List a) => List a
+data List (a : Type 0) -> Type 0 where
+  Nil
+  Cons of (x:@ log a) (xs:List a)
 
 -- programmatic map
 prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) -> b) -> (xs:List a) => List b
@@ -29,12 +29,12 @@ foldr = \ [a] . \ [b] . \ f . \ v0 .
                                   f y ys1
 
 
-data Fix [f : (a:Type 0) -> Type 0] -> Type 0 where
-  In : (x: f (Fix f)) -> Fix f
+data Fix (f : (a:Type 0) -> Type 0) -> Type 0 where
+  In of (x: f (Fix f))
 
-data L [a:Type 0] [c:Type 0] -> Type 0 where
-  N : L a c
-  C : (x:a) -> (y:c) -> L a c
+data L (a:Type 0) (c:Type 0) -> Type 0 where
+  N 
+  C of (x:a) (y:c)
 
 
 nil : [a:Type 0] -> Fix (L a)
@@ -126,13 +126,13 @@ copy' : (t : Fix (L Nat)) -> Fix (L Nat)
 copy' = mcata' [L Nat] [Fix (L Nat)] phi_copy'
 
 
-data FixNat [f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0] [a:Nat] ->
+data FixNat (f : (x:(a:Nat) -> Type 0) -> (a:Nat) -> Type 0) (a:Nat) ->
           Type 0 where
- InNat : (x: f (FixNat f) a) -> FixNat f a
+ InNat of (x: f (FixNat f) a) 
 
-data V [a:Type 0] [c:(n:Nat) -> Type 0] [n:Nat] -> Type 0 where
-  Nv : [n=0] -> V a c n
-  Cv : [m:Nat] -> [pf:n=Succ m] -> (x:a) -> (y:c m) -> V a c n
+data V (a:Type 0) (c:(n:Nat) -> Type 0) (n:Nat) -> Type 0 where
+  Nv of [n=0]
+  Cv of [m:Nat] [pf:n=Succ m] (x:a) (y:c m)
 
 nilv : [a:Type 0] -> FixNat (V a) 0
 nilv = \ [a] . InNat [V a] [0] (Nv [a] [FixNat (V a)] [0] [join 0])

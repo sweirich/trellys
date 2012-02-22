@@ -219,13 +219,22 @@ instance Disp Decl where
         text "data" <+> disp t <+> disp delta <+> thetaArrow th
     <+> text "Type" <+> text (show lev)
 
+instance Disp ConstructorDef where
+  disp (ConstructorDef c tele) = disp c <+> text "of" <+> disp tele
+
 
 instance Disp ModuleImport where
   disp (ModuleImport i) = text "import" <+> disp i
 
 instance Display Term where
   display (Var n) = display n
-  display (Con n) = display n
+  display (Con n args) = do
+    dn <- display n
+    dargs <- mapM displayArg args
+    return $ dn <+> hsep dargs
+      where displayArg (t, ep) = do
+                                      dt <- display t
+                                      return $ bindParens ep dt
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
   display (Arrow th ep bnd) = do
@@ -389,7 +398,12 @@ epParens Erased  l = Dd displays l
 
 instance Display ETerm where
   display (EVar v) = display v
-  display (ECon v) = display v
+  display (ECon n args) = do
+    dn <- display n
+    dargs <- mapM displayArg args
+    return $ dn <+> hsep dargs
+      where displayArg (t, ep) = do dt <- display t
+                                    return $ bindParens ep dt
   display (EType level) = return $ text "Type" <+> int level
   display (EArrow th ep a bnd) = do
      da <- display a
@@ -478,10 +492,10 @@ instance Display Telescope where
     return $ hcat dts where
           prns Runtime = parens
           prns Erased = brackets
-          dentry (n, ty, th, ep) = do
+          dentry (n, ty, ep) = do
             dn <- display n
             dty <- display ty
-            return (prns ep $ dn <+> colon <+> dty <+> thetaArrow th)
+            return (prns ep $ dn <+> colon <+> dty)
 
 
 instance Disp Theta where
@@ -505,6 +519,9 @@ data D = DS String -- ^ String literal
 instance Disp D where
   disp (DS s) = text s
   disp (DD d) = nest 2 $ disp d -- might be a hack to do the nesting here???
+
+instance Disp Int where
+  disp i = text $ show i
 
 instance Disp [D] where
   disp dl = sep $ map disp dl

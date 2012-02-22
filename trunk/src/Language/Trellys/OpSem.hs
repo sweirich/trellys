@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, TupleSections #-}
 -- | The operational semantics for Trellys core. This module currently has been
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
@@ -9,6 +9,7 @@ where
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeMonad
+import Language.Trellys.Error
 
 import Language.Trellys.GenericBind
 
@@ -17,12 +18,12 @@ import Text.PrettyPrint.HughesPJ (nest)
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
 
-import Data.Maybe
-
 -- | erasure function
 erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
-erase (Con c)               = return $ ECon (translate c)
+erase (Con c args)          = 
+  do args' <- mapM (\(t,ep) -> liftM (,ep) (erase t)) (filter ((==Runtime) . snd) args)
+     return $ ECon (translate c) args'
 erase (Type l)              = return $ EType l
 erase (Arrow th ep bnd) =
   do ((x,tyA), tyB) <- unbind bnd
@@ -38,8 +39,8 @@ erase (Lam ep bnd)   =
 erase (App Runtime a b) = liftM2 EApp (erase a) (erase b)
 erase (App Erased  a _) = erase a
 erase (Smaller a b)     = liftM2 ESmaller (erase a) (erase b)
-erase (OrdAx a)         = return EOrdAx
-erase (OrdTrans a b)    = return EOrdTrans
+erase (OrdAx _)         = return EOrdAx
+erase (OrdTrans _ _)    = return EOrdTrans
 erase (TyEq a b)        = liftM2 ETyEq (erase a) (erase b)
 erase (Join _ _)        = return EJoin
 erase Abort             = return EAbort
@@ -75,7 +76,7 @@ erase (AppInf a _)      = erase a
 erase (At a th)         = do
       a' <- erase a 
       return $ EAt a' th
-erase t@(TerminationCase a bnd)  = do
+erase (TerminationCase a bnd)  = do
       (w, (abort, tbind)) <- unbind bnd
       (v, term) <- unbind tbind
       ea <- erase a 
@@ -132,7 +133,14 @@ reduce _ t = do
 -- Returns Nothing when the argument cannot reduce 
 cbvStep :: ETerm -> TcMonad (Maybe ETerm)
 cbvStep (EVar _)         = return Nothing
-cbvStep (ECon _)         = return Nothing
+cbvStep (ECon c args)    = stepArgs [] args
+  where stepArgs _       []         = return Nothing
+        stepArgs prefix ((a,ep):as) = do
+          stpa <- cbvStep a
+          case stpa of
+            Nothing -> stepArgs ((a,ep):prefix) as
+            Just EAbort -> return $ Just EAbort
+            Just a'     -> return $ Just (ECon c (reverse prefix ++ (a',ep) : as))
 cbvStep (EType _)        = return Nothing
 cbvStep (EArrow _ _ _ _) = return Nothing 
 cbvStep (ELam _)         = return Nothing
@@ -175,15 +183,19 @@ cbvStep (ECase b mtchs) =
        Just EAbort -> return $ Just EAbort
        Just b'     -> return $ Just $ ECase b' mtchs
        Nothing     ->
-         case splitEApp b of
-           (ECon c,tms) ->
+         case b of
+           (ECon c tms) ->
              case lookup c mtchs of
                Nothing  -> return Nothing
                Just bnd ->
                  do (delta,mtchbody) <- unbind bnd
                     if (length delta /= length tms) then return Nothing
-                      else return $ Just $ substs (zip delta tms) mtchbody
+                      else return $ Just $ substs (zip delta (map fst tms)) mtchbody
            _ -> return Nothing
+cbvStep (ESmaller _ _) = return Nothing
+cbvStep EOrdAx = return Nothing
+cbvStep EOrdTrans = return Nothing
+cbvStep (ETerminationCase _ _) = err [DS "Tried to excute a termination-case"]
 cbvStep (ELet m bnd)   =
   do stpm <- cbvStep m
      case stpm of
@@ -203,21 +215,14 @@ cbvNSteps n tm =
          Nothing -> return tm
          Just tm' -> cbvNSteps (n - 1) tm'
 
--- | isConValue checks to see if a term is a 
--- a constructor applied to arguments
-isConValue :: Term -> Bool
-isConValue e1 = 
-  (let (hd,tms) = splitApp e1 in
-     (isJust $ isCon hd) && all (isValue . fst) tms)
-
 -- | isValue checks to see if a term is a value
 isValue :: Term -> Bool
 isValue (Var _)            = True
-isValue (Con _)            = True
+isValue (Con _ args)       = all (isValue . fst) args -- fixme: this is broken, params vs args.
 isValue (Type _)           = True
-isValue (Arrow _ _ b)      = True
+isValue (Arrow _ _ _)      = True
 isValue (Lam _ _)          = True
-isValue e@(App _ _ _)      = isConValue e
+isValue (App _ _ _)        = False
 isValue (Smaller _ _)      = True
 isValue (OrdAx _)          = True
 isValue (OrdTrans _ _)     = True
@@ -241,21 +246,14 @@ isValue (At _ _)           = True
 isValue (TerminationCase _ _)     = False
 
 
--- | isConValue checks to see if a term is a 
--- a constructor applied to arguments
-isEConValue :: ETerm -> Bool
-isEConValue e1 = 
-  (let (hd,tms) = splitEApp e1 in
-     (isJust $ isECon hd) && all isEValue tms)
-
 
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
-isEValue (ECon _)         = True
+isEValue (ECon _ args)    = all (isEValue . fst) args -- wrong, fixme...
 isEValue (EType _)        = True
-isEValue (EArrow _ _ t1 b) = True
+isEValue (EArrow _ _ _ _) = True
 isEValue (ELam _)         = True
-isEValue e@(EApp _ _)     = isEConValue e
+isEValue (EApp _ _)     = False
 isEValue (ESmaller _ _)   = True
 isEValue EOrdAx           = True
 isEValue EOrdTrans        = True
@@ -268,6 +266,7 @@ isEValue (ECase _ _)      = False
 isEValue (ELet _ _)       = False
 isEValue EContra          = False
 isEValue (EAt _ _)        = False
+isEValue (ETerminationCase _ _) = False
 
 
 -- | Evaluation environments - a mapping between named values and
