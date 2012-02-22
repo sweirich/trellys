@@ -14,7 +14,6 @@ import Data.Char
        type       {TokenType}
        data       {TokenData}
        int        {TokenInt $$}
-       where      {TokenWhere}
        theorem    {TokenTheorem}
        ProofVar   {TokenProofVar $$}
        PredVar    {TokenPredVar $$}
@@ -373,70 +372,6 @@ instance Alpha Stage
 instance Alpha ArgClass
 instance Alpha Arg
 instance Alpha ArgName
-
-
-data Token =
-
-         TokenType
-
-       | TokenData
-
-       | TokenInt Integer
-
-       | TokenWhere
-
-       | TokenTheorem
-
-       | TokenProofVar String
-
-       | TokenPredVar String
-
-       | TokenTermVar String
-
-       | TokeFm 
-
-       | TokenPi
-
-       | TokenEq
-
-       | TokenBot
-
-       | TokenLM
-
-       | TokenLamb
-
-       | TokenAb
-
-       | TokenJoin
-
-       | TokenContr
-
-       | TokenValax
-
-       | TokenEx
-
-       | TokenBL
-
-       | TokenBR
-
-       | TokenBll
-
-       | TokenBrr
-
-       | TokenDC
-
-       | TokenPlus
-
-       | TokenMinus
-
-       | TokenDef
-
-       | TokenCL
-
-       | TokenDot
-
-		  deriving (Show)
-
 instance Subst Arg Stage
 instance Subst Arg ArgName
 instance Subst Arg ArgClass
@@ -577,22 +512,45 @@ lexer (c:cs)
       | isAlpha c = lexVar (c:cs)
       | isDigit c = lexNum (c:cs)
 
-lexer ('=':cs) = TokenEq : lexer cs
+lexer ('!': cs) = TokenEx : lexer cs 
+lexer ('[': cs) = TokenBll : lexer cs
+lexer (']': cs) = TokenBrr : lexer cs
+lexer ('.': cs) = TokenDot : lexer cs
 lexer ('+':cs) = TokenPlus : lexer cs
 lexer ('-':cs) = TokenMinus : lexer cs
-lexer ('*':cs) = TokenTimes : lexer cs
-lexer ('/':cs) = TokenDiv : lexer cs
 lexer ('(':cs) = TokenOB : lexer cs
 lexer (')':cs) = TokenCB : lexer cs
+lexer (':': cs) = 
+		  let (cs1 : cs2) = cs in 
+		   case cs1 of
+		  ':' -> TokenDC : lexer cs2
+		  '=' -> TokenDef : lexer cs2
+		   _  -> TokenCL : lexer cs
+
 
 lexNum cs = TokenInt (read num) : lexer rest
       where (num,rest) = span isDigit cs
 
 lexVar cs =
    case span isAlpha cs of
-      ("let",rest) -> TokenLet : lexer rest
-      ("in",rest)  -> TokenIn : lexer rest
-      (var,rest)   -> TokenVar var : lexer rest
+      ("valax",rest) -> TokenValax : lexer rest
+      ("contr",rest)  -> TokenContr : lexer rest
+      ("join",rest)  -> TokenJoin : lexer rest
+      ("abort",rest)  -> TokenAb : lexer rest
+      ("Lambda",rest)  -> TokenLamb : lexer rest
+      ("lambda",rest)  -> TokenLM : lexer rest
+      ("Bottom",rest)  -> TokenBot : lexer rest
+      ("Eq",rest)  -> TokenEq : lexer rest
+      ("Pi",rest)  -> TokenPi : lexer rest
+      ("formula",rest)  -> TokenFm : lexer rest
+      ("type",rest)  -> TokenType : lexer rest
+      ("data",rest)  -> TokenData : lexer rest
+      ("theorem",rest)  -> TokenTheorem : lexer rest
+      (var,rest)   -> let (x : xs) = var in 
+                       case x of
+          	       '$' -> TokenProofVar var : lexer rest
+	               '&' -> TokenPredVar var : lexer rest
+        	        _ -> TokenTermVar var : lexer rest
 
 
 {- Our temp main loop. -}
