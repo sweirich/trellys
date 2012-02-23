@@ -400,18 +400,23 @@ lexer ('+':cs) = TokenPlus : lexer cs
 lexer ('-':cs) = TokenMinus : lexer cs
 lexer ('(':cs) = TokenOB : lexer cs
 lexer (')':cs) = TokenCB : lexer cs
-lexer (':': cs) =  let (cs1 : cs2) = cs in \
-                    case cs1 of
-                    ':' -> TokenDC : lexer cs2
-                    '=' -> TokenDef : lexer cs2
-                     _  -> TokenCL : lexer cs
+lexer (':': cs) = case cs of
+		  (':': css) -> TokenDC : lexer css
+		  ('=': css) -> TokenDef : lexer css
+		  ( _ : css) -> TokenCL : lexer cs
+		 
+lexer ('$': cs) = case span isAlpha cs of
+		  (proofvar, rest) -> TokenProofVar proofvar : lexer rest 
+
+lexer ('#': cs) = case span isAlpha cs of
+		  (predvar, rest) -> TokenPredVar predvar : lexer rest 
 
 
 lexNum cs = TokenInt (read num) : lexer rest
       where (num,rest) = span isDigit cs
 
 lexVar cs =
-   case span isAlpha cs of
+    case span isAlpha cs of
       ("valax",rest) -> TokenValax : lexer rest
       ("contr",rest)  -> TokenContr : lexer rest
       ("join",rest)  -> TokenJoin : lexer rest
@@ -425,11 +430,8 @@ lexVar cs =
       ("type",rest)  -> TokenType : lexer rest
       ("data",rest)  -> TokenData : lexer rest
       ("theorem",rest)  -> TokenTheorem : lexer rest
-      (var,rest)   -> let (x : xs) = var in 
-                       case x of
-          	        '$' -> TokenProofVar var : lexer rest
-	                '&' -> TokenPredVar var : lexer rest
-        	         _ -> TokenTermVar var : lexer rest
+      (var,rest) -> TokenTermVar var : lexer rest
+      
 
 
 {- Our temp main loop. -}
