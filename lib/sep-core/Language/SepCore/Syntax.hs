@@ -2,10 +2,18 @@
   FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
   UndecidableInstances, TypeSynonymInstances  #-}
 
-module Language.SepCore.Syntax where 
+module Language.SepCore.Syntax(
+     Logicdecl(..), Stage(..), SuperKind(..),
+     LogicalKind(..), Predicate(..), Proof(..),
+     Term(..), Arg(..), ArgName(..), ArgClass(..),
+     Value(..), Equality(..), TypingContext 
+                               ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
+
+data Logicdecl = Logicdecl String Predicate 
+             deriving (Show)
 
 data Stage = Plus | Minus deriving(Show)
 
