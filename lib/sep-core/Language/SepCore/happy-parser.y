@@ -84,11 +84,11 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 
 LogicalKind : formula int                                            {Formula $2}
 
-            | Qforall PredVar ':' LogicalKind '.' LogicalKind        {QuasiForall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
+            | Qforall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
 
-            | Qforall TermVar ':' Term '.' LogicalKind               {QuasiForall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
+            | Qforall  Term '.' LogicalKind               {QuasiForall (ArgClassTerm $2) $4}
 
-            | Qforall ProofVar ':' Predicate '.' LogicalKind         {QuasiForall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
+            | Qforall  Predicate '.' LogicalKind         {QuasiForall (ArgClassPredicate $2) $4}
 
 
        
