@@ -1,15 +1,17 @@
-
 {- The sepcore Parser -}
 {
-module Main where 
+module Language.SepCore.Happyparser where 
 import Language.SepCore.Syntax
 import Data.Char
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
-
 }
 
-%name parser
+%name parser Predicate
+
+%name parser4Prf Proof
+%name parser4Term Term
+%name parser4LK LogicalKind 
 %tokentype { Token }
 %error { parseError }
 
@@ -21,7 +23,7 @@ import Unbound.LocallyNameless.Subst(substR1)
        ProofVar   {TokenProofVar $$}
        PredVar    {TokenPredVar $$}
        TermVar    {TokenTermVar $$}
-       formula    {TokeFm }
+       formula    {TokenFm}
        Pi         {TokenPi}
        Eq         {TokenEq}
        Bottom     {TokenBot}
@@ -47,7 +49,6 @@ import Unbound.LocallyNameless.Subst(substR1)
        '.'        {TokenDot}
 
 
-
 %%
 
 {-Top level definitions and declarations -}
@@ -70,7 +71,6 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
   
 | '(' Predicate Proof ')'                              {PredicateApplication $2 (ArgProof $3)}
 
-
 | '(' Predicate Term ')'                               {PredicateApplication $2 (ArgTerm $3)}
 
 | '(' Predicate Predicate ')'                          {PredicateApplication $2 (ArgPredicate $3)}
@@ -82,7 +82,7 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 | Bottom  int                                          {Bottom $2}
 
 
-LogicalKind : formula int                                            {Formula $2}
+LogicalKind : formula int                           {Formula $2}
 
             | Qforall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
 
@@ -173,8 +173,6 @@ data Token =
 
        | TokenTermVar String
 
-       | TokeFm 
-
        | TokenPi
 
        | TokenEq
@@ -215,11 +213,10 @@ data Token =
 
        | TokenDot
 
-		  deriving (Show)
+  deriving (Show)
 
 parseError :: [Token] -> a
-parseError _ = error "Parse error"
-
+parseError _ = error "Parse error blah blah"
 
 lexer :: String -> [Token]
 lexer [] = []
@@ -234,8 +231,8 @@ lexer (']': cs) = TokenBrr : lexer cs
 lexer ('.': cs) = TokenDot : lexer cs
 lexer ('+':cs) = TokenPlus : lexer cs
 lexer ('-':cs) = TokenMinus : lexer cs
-lexer ('(':cs) = TokenOB : lexer cs
-lexer (')':cs) = TokenCB : lexer cs
+lexer ('(':cs) = TokenBL : lexer cs
+lexer (')':cs) = TokenBR : lexer cs
 lexer (':': cs) = case cs of
 		  (':': css) -> TokenDC : lexer css
 		  ('=': css) -> TokenDef : lexer css
@@ -259,6 +256,7 @@ lexVar cs =
       ("abort",rest)  -> TokenAb : lexer rest
       ("Lambda",rest)  -> TokenLamb : lexer rest
       ("lambda",rest)  -> TokenLM : lexer rest
+      ("plambda",rest)  -> TokenPlam : lexer rest
       ("Bottom",rest)  -> TokenBot : lexer rest
       ("Eq",rest)  -> TokenEq : lexer rest
       ("Pi",rest)  -> TokenPi : lexer rest
@@ -266,12 +264,32 @@ lexVar cs =
       ("type",rest)  -> TokenType : lexer rest
       ("data",rest)  -> TokenData : lexer rest
       ("theorem",rest)  -> TokenTheorem : lexer rest
+      ("Forall",rest) -> TokenForall : lexer rest
+      ("Qforall",rest) -> TokenQF : lexer rest
       (var,rest) -> TokenTermVar var : lexer rest
       
+-- For test purpose
+readinput1 = do putStrLn "Please input a predicate"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser( lexer inpStr))
+
+readinput2 = do putStrLn "Please input a proof"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Prf( lexer inpStr))
+
+readinput3 = do putStrLn "Please input a term"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Term( lexer inpStr))
+
+readinput4 = do putStrLn "Please input a LogicalKind"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4LK( lexer inpStr))
 
 
-{- Our temp main loop. -}
-main = getContents >>= print . parser . lexer
+
+
+
+
 
 }
 
