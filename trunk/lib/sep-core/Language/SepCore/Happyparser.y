@@ -8,7 +8,12 @@ import Unbound.LocallyNameless.Subst(substR1)
 }
 
 %name parser Predicate
-
+%name parser4Logicdecl Logicdecl
+%name parser4Proofdef Proofdef
+%name parser4Progdecl Progdecl
+%name parser4Progdef Progdef
+%name parser4Preddecl Preddecl
+%name parser4Preddef Preddef
 %name parser4Prf Proof
 %name parser4Term Term
 %name parser4LK LogicalKind 
@@ -44,7 +49,7 @@ import Unbound.LocallyNameless.Subst(substR1)
        "::"       {TokenDC}
        '+'        {TokenPlus}
        '-'        {TokenMinus}
-       ":="       {TokenDef}
+       '='        {TokenDef}
        ':'        {TokenCL}
        '.'        {TokenDot}
 
@@ -53,7 +58,19 @@ import Unbound.LocallyNameless.Subst(substR1)
 
 {-Top level definitions and declarations -}
 
-Logicdecl : ProofVar "::" Predicate                    {Logicdecl $1 $3}
+Logicdecl : ProofVar "::" Predicate                    {Logicdecl (string2Name $1) $3}
+
+Proofdef : ProofVar '=' Proof                          {Proofdef (string2Name $1) $3} 
+
+Progdecl : TermVar "::" Term                           {Progdecl (string2Name $1) $3}
+
+Progdef : TermVar '=' Term                             {Progdef (string2Name $1) $3}
+
+Preddecl : PredVar "::" LogicalKind                    {Preddecl (string2Name $1) $3}
+
+Preddef : PredVar '=' Predicate                        {Preddef (string2Name $1) $3}
+
+{-Low level definitions-}
 
 Predicate : PredVar                                    {PredicateVar (string2Name $1)}
 
@@ -226,6 +243,7 @@ lexer (c:cs)
       | isDigit c = lexNum (c:cs)
 
 lexer ('!': cs) = TokenEx : lexer cs 
+lexer ('=': cs) = TokenDef : lexer cs 
 lexer ('[': cs) = TokenBll : lexer cs
 lexer (']': cs) = TokenBrr : lexer cs
 lexer ('.': cs) = TokenDot : lexer cs
@@ -243,6 +261,7 @@ lexer ('$': cs) = case span isAlpha cs of
 
 lexer ('#': cs) = case span isAlpha cs of
 		  (predvar, rest) -> TokenPredVar predvar : lexer rest 
+
 
 
 lexNum cs = TokenInt (read num) : lexer rest
@@ -285,9 +304,39 @@ readinput4 = do putStrLn "Please input a LogicalKind"
                 inpStr <- getLine 
                 putStrLn $ "Here is the result: " ++ show(parser4LK( lexer inpStr))
 
+readinput5 = do putStrLn "Please input a Proof declaration"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Logicdecl( lexer inpStr))
+
+readinput6 = do putStrLn "Please input a Proof definition"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Proofdef( lexer inpStr))
+
+readinput7 = do putStrLn "Please input a Program declaration"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Progdecl( lexer inpStr))
+
+readinput8 = do putStrLn "Please input a Program definition"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Progdef( lexer inpStr))
+
+readinput9 = do putStrLn "Please input a Predicate declaration"
+                inpStr <- getLine 
+                putStrLn $ "Here is the result: " ++ show(parser4Preddecl( lexer inpStr))
+
+readinput10 = do putStrLn "Please input a Predicate definition"
+                 inpStr <- getLine 
+                 putStrLn $ "Here is the result: " ++ show(parser4Preddef( lexer inpStr))
 
 
 
+ {- %name parser4Logicdel Logicdecl
+%name parser4Proofdef Proofdef
+%name parser4Progdecl Progdecl
+%name parser4Progdef Progdef
+%name parser4Preddecl Preddecl
+%name parser4Preddef Preddef
+  -}
 
 
 
