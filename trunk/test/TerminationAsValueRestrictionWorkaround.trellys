@@ -17,7 +17,7 @@ module TerminationAsValueRestrictionWorkaround where
 import Prelude
 
 axiom prog p : Nat -> Nat
-ex : Nat -> Nat -> Type 0
+ex : (Nat@log) -> (Nat@log) -> Type 0
 ex = \m . (\v . p m = v)
 ex_red : (m:Nat) -> (v:Nat) -> (ex m v) = (p m = v)
 ex_red = \m v . join

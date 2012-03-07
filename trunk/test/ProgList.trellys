@@ -5,7 +5,7 @@ import Prelude
 -- pragrammatic list whose elelments are logical
 data List (a : Type 0) -> Type 0 where
   Nil
-  Cons of (x:@ log a) (xs:List a)
+  Cons of (x:a@log) (xs:List a)
 
 -- programmatic map
 prog map : [a : Type 0] -> [b : Type 0] -> (f : (x:a) -> b) -> (xs:List a) => List b

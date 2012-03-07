@@ -6,7 +6,7 @@ import Prelude
 import Arithmetic
 
 -- less-than relation
-data LT (m:Nat) (n:Nat) -> Type 0 where
+data LT (m:Nat) (n:Nat) : Type 0 where
   LZ of [m = Zero]  (n':Nat) [n = Succ n']
 
   LS of (m':Nat) [m = Succ m']

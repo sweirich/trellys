@@ -10,8 +10,8 @@ import Prelude
 
 axiom tZ : Type 0
 axiom tX : Type 0
-axiom tY : (x:tX) -> Type 0
-axiom f  : (x:tX) -> (y:tY x) -> tZ
+axiom tY : (x:tX@log) -> Type 0
+axiom f  : (x:tX@log) -> (y:tY x @log) -> tZ
 axiom x  : tX
 axiom x' : tX
 axiom y  : tY x
@@ -54,8 +54,8 @@ thm = let symp [w] = sym tX tX x x' p in
       -- (f x : tY x -> tZ) = (f x' : tY x' -> tZ)
       let eq   [w] = conv join by p at h.f x = f h in
       -- (conv (f x) = f x') : (y:tY x') -> tZ
-      let eq   [w] = trans' ((y:tY x') -> tZ) ((y:tY x) -> tZ) ((y:tY x') -> tZ)
-                     (conv f x by p at h.((y : tY h) -> tZ))
+      let eq   [w] = trans' ((y:tY x' @log) -> tZ) ((y:tY x @log) -> tZ) ((y:tY x' @log) -> tZ)
+                     (conv f x by p at h.((y : tY h @log) -> tZ))
                      (f x)
                      (f x')
                      join eq in
@@ -65,13 +65,13 @@ thm = let symp [w] = sym tX tX x x' p in
                      -- (convrl join by eq at h.h y' = f x' y').
                      -- Of course, we could just as well derive the above
                      -- two equations in the reverse direction...
-                     at h.(conv f x by p at h.((y : tY h) -> tZ)) y' = h y' in
+                     at h.(conv f x by p at h.((y : tY h @log) -> tZ)) y' = h y' in
       
       -- (f x y = f x' y') : tZ
       let eq3  [w] = trans4' tZ tZ tZ tZ
                      (f x y)
                      (f x (conv y' by symp at h . tY h))
-                     ((conv f x by p at h . ((y : tY h) -> tZ)) y')
+                     ((conv f x by p at h . ((y : tY h @log) -> tZ)) y')
                      (f x' y')
                      eq1 join eq2
       in eq3

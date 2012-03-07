@@ -8,8 +8,7 @@ import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeCheck
 import Language.Trellys.OpSem
 import Language.Trellys.Environment
-import Control.Monad.Reader
-
+ 
 import Text.PrettyPrint.HughesPJ (render, text, fsep)
 import Text.ParserCombinators.Parsec.Error
 

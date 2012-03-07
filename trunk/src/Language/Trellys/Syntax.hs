@@ -71,8 +71,8 @@ data Term = Var TName    -- | variables
           | App Epsilon Term Term
           -- | A let expression (bound name, equality name, value)
           | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
-          -- | Dependent functions: (x :^{th} A )_{ep} -> B
-          | Arrow Theta Epsilon (Bind (TName, Embed Term) Term)
+          -- | Dependent functions: (x : A )_{ep} -> B
+          | Arrow  Epsilon (Bind (TName, Embed Term) Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
           | Case Term (Bind TName [Match])
           -- | The heterogenous structural order type, @a < b@
@@ -172,9 +172,9 @@ teleApp :: Term -> Telescope -> Term
 teleApp tm tms =
   foldl (\a (nm,_,ep) -> App ep a (Var nm)) tm tms
 
-telePi :: Telescope -> Theta -> Term -> Term
-telePi tele th tyB =
-  foldr (\(n,tm,ep) ret -> Arrow th ep (bind (n,embed tm) ret))
+telePi :: Telescope -> Term -> Term
+telePi tele tyB =
+  foldr (\(n,tm,ep) ret -> Arrow ep (bind (n,embed tm) ret))
         tyB tele
 
 domTele :: Telescope -> [TName]
@@ -233,11 +233,17 @@ isSmaller (Paren t) = isSmaller t
 isSmaller (Smaller a b) = Just (delPosParenDeep a, delPosParenDeep b)
 isSmaller _ = Nothing 
 
-isArrow :: Term -> Maybe (Theta, Epsilon, Bind (TName, Embed Term) Term)
-isArrow (Pos _ t)            = isArrow t
-isArrow (Paren t)            = isArrow t
-isArrow (Arrow th ep bnd) = Just (th,ep,bnd)
-isArrow _                    = Nothing
+isArrow :: Term -> Maybe (Epsilon, Bind (TName, Embed Term) Term)
+isArrow (Pos _ t)      = isArrow t
+isArrow (Paren t)      = isArrow t
+isArrow (Arrow ep bnd) = Just (ep,bnd)
+isArrow _              = Nothing
+
+isAt :: Term -> Maybe (Term, Theta)
+isAt (Pos _ t) = isAt t
+isAt (Paren t) = isAt t
+isAt (At t th) = Just (t, th)
+isAt _         = Nothing
 
 -- splitApp makes sure a term is an application and returns the
 -- two pieces
@@ -252,20 +258,6 @@ splitApp e = splitApp' e []
 multiApp :: Term -> [(Term,Epsilon)] -> Term
 multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 
--- splitPi pulls apart a dependent product returning all the arguments and
--- the final return type
-{-
-splitPi :: (Fresh m) => Term -> m (Telescope,Term)
-splitPi tm = splitPi' tm []
-  where
-    splitPi' (Pos _ tm')          acc = splitPi' tm' acc
-    splitPi' (Paren tm')          acc = splitPi' tm' acc
-    splitPi' (Arrow th ep bd) acc =
-      do ((nm,tmA),tmB) <- unbind bd
-         splitPi' tmB ((nm,unembed tmA,th,ep):acc)
-    splitPi' tm'                  acc = return (reverse acc, tm')
--}
-
 
 ------------------------
 ------------------------
@@ -279,7 +271,7 @@ deriving instance Show ETerm
 data ETerm = EVar EName
            | ECon EName [(ETerm,Epsilon)]
            | EType Int
-           | EArrow Theta Epsilon ETerm (Bind EName ETerm)
+           | EArrow Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
            | EApp ETerm ETerm
            | ESmaller ETerm ETerm

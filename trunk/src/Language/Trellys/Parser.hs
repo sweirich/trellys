@@ -44,10 +44,8 @@ import Data.List
     | let th x [y] = a in b    Runtime let, explicitly prog or log
     | let [x] [y] = a in b     Erased let, default to log
     | let th [x] [y] = a in b  Erased let, default to log
-    | (x : A) -> B             Runtime, logical pi
-    | (x : A) => B             Runtime, programmatic pi
-    | [x : A] -> B             Erased, logical pi
-    | [x : A] => B             Erased, programmatic pi
+    | (x : A) -> B             Runtime pi
+    | [x : A] -> B             Erased pi
     | case a [y] of            Case expressions, roughly
         C1 [x] y z -> b1
         C2 x [y]   -> b2
@@ -64,7 +62,7 @@ import Data.List
     | ind f x = a              Runtime ind
     | ind f [x] = a            Erased ind
     | (a : A)                  Annotations
-    | @th A                   At
+    | A @ th                   At
 
 
    equality contexts
@@ -97,16 +95,16 @@ import Data.List
       axiom log  foo : A -- logical
       axiom foo : A      -- also logical
 
-    For logical datatype declarations:
+    For logical datatype declarations (the log can be omitted):
 
-       data T D -> Type l where
+       log data T D : Type l where
          C1 of Del1
          ...
          Cn of Deln
 
     For programmatic datatype declarations:
 
-       data T D => Type l where
+       prog data T D : Type l where
          C1 of Del1
          ...
          Cn of Deln
@@ -305,23 +303,24 @@ telescope = many teleBinding
       (    parens (annot Runtime)
        <|> brackets (annot Erased)) <?> "binding"
 
-eitherArrow :: LParser Theta
-eitherArrow =     (reservedOp "->" >> return Logic)
-              <|> (reservedOp "=>" >> return Program)
+theta :: LParser Theta
+theta =      (reserved "prog" >> return Program)
+        <|>  (reserved "log" >> return Logic)
 
 ---
 --- Top level declarations
 ---
 
 decl,dataDef,sigDef,valDef,indDef,recDef :: LParser Decl
-decl = dataDef <|> sigDef <|> valDef <|> indDef <|> recDef
+decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef
 
 -- datatype declarations.
 dataDef = do
+  th <- option Logic $ theta
   reserved "data"
   name <- constructor
   params <- telescope
-  th <- eitherArrow
+  colon
   reserved "Type"
   level <- liftM fromInteger natural
   reserved "where"
@@ -335,14 +334,10 @@ dataDef = do
 
 sigDef = do
   axOrSig <- option Sig $ (reserved "axiom" >> return Axiom)
-
-  theta <- option Logic $
-             (reserved "prog" >> return Program) <|>
-             (reserved "log" >> return Logic)
-
+  th <- option Logic $ theta
   n <- try (variable >>= \v -> colon >> return v)
   ty <- expr
-  return $ axOrSig n theta ty
+  return $ axOrSig n th ty
 
 valDef = do
   n <- try (do {n <- variable; reservedOp "="; return n})
@@ -415,22 +410,31 @@ join =
 
 -- Expressions
 
-expr,term,factor :: LParser Term
+expr,compound,term,factor :: LParser Term
+ 
+-- expr is the toplevel expression grammar, the "a,b,A,B" from the ott file.
 expr = do
+    p <- getPosition
+    Pos p <$> (buildExpressionParser table compound)
+  where table = [[Postfix (do reservedOp "@" ; th <- theta; return (\ty -> At ty th))]]
+
+-- A "compound" is an expression not involving @. We can't handle @s using 
+-- this buildExpressionParser because they should bind less tightly than arrows,
+--  and dependent arrows are built using a separate expProdOrAnnotOrParens production.
+compound = do
     p <- getPosition
     Pos p <$> (buildExpressionParser table term)
   where table = [[ifix  AssocLeft "<" Smaller],
                  [ifix  AssocLeft "=" TyEq],
-                 [ifixM AssocRight "=>" (mkArrow Program),
-                  ifixM AssocRight "->" (mkArrow Logic)]
+                 [ifixM AssocRight "->" mkArrow]
                 ]
         ifix  assoc op f = Infix (reservedOp op >> return f) assoc
         ifixM assoc op f = Infix (reservedOp op >> f) assoc
-        mkArrow th = do x <- fresh (string2Name "_")
-                        return $ \tyA tyB -> Arrow th Runtime (bind (x,embed tyA) tyB)
+        mkArrow  = do x <- fresh (string2Name "_")
+                      return $ \tyA tyB -> Arrow Runtime (bind (x,embed tyA) tyB)
 
 -- A "term" is either a function application or a constructor
--- application.  Breaking it out as a seperated category both
+-- application.  Breaking it out as a seperate category both
 -- eliminates left-recursion in (<expr> := <expr> <expr>) and
 -- allows us to keep constructors fully applied in the abstract syntax.
 term = try conapp <|> funapp
@@ -465,7 +469,6 @@ factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                 , ordax     <?> "ord"
                 , ordtrans  <?> "ordtrans"
                 , join      <?> "join"
-                , at        <?> "an @"
                 , termCase  <?> "a termcase"
                 , impProd   <?> "an implicit function type"
                 , expProdOrAnnotOrParens
@@ -520,8 +523,7 @@ rec = do
 letExpr :: LParser Term
 letExpr =
   do reserved "let"
-     th <- option Logic $ choice [reserved "prog" >> return Program,
-                                  reserved "log"  >> return Logic]
+     th <- option Logic $ theta
      (ep,x) <- impOrExpBind
      y <- brackets variableOrWild
      reservedOp "="
@@ -536,9 +538,9 @@ impProd :: LParser Term
 impProd =
   do (x,tyA) <- brackets (try (liftM2 (,) variableOrWild (colon >> expr))
                           <|> (liftM2 (,) (fresh (string2Name "_")) expr))
-     th <- eitherArrow
-     tyB <- expr
-     return $ Arrow th Erased  (bind (x,embed tyA) tyB)
+     reservedOp "->"
+     tyB <- compound
+     return $ Arrow Erased  (bind (x,embed tyA) tyB)
 
 --FIXME: add wildcard
 
@@ -548,9 +550,9 @@ impProd =
 expProdOrAnnotOrParens :: LParser Term
 expProdOrAnnotOrParens =
   let
-    -- afterBinder picks up the arrow and the return type of a pi
-    afterBinder :: LParser (Theta,Term)
-    afterBinder = liftM2 (,) eitherArrow expr
+    -- afterBinder picks up the return type of a pi
+    afterBinder :: LParser Term
+    afterBinder = reservedOp "->" >> compound
 
     -- before binder parses an expression in parens
     -- If it doesn't involve a colon, you get (Right tm)
@@ -567,8 +569,8 @@ expProdOrAnnotOrParens =
        case bd of
          Left (Var x,a) ->
            option (Ann (Var x) a)
-                  (do (th,b) <- afterBinder
-                      return $ Arrow th Runtime (bind (x,embed a) b))
+                  (do b <- afterBinder
+                      return $ Arrow Runtime (bind (x,embed a) b))
          Left (a,b) -> return $ Ann a b
          Right a    -> return $ Paren a
 
@@ -620,12 +622,3 @@ abort :: LParser Term
 abort = do 
   reserved "abort"
   return Abort
-
-at :: LParser Term 
-at = do
-  reservedOp "@"
-  th <- option Logic $
-             (reserved "prog" >> return Program) <|>
-             (reserved "log" >> return Logic)
-  tyA <- term 
-  return $ At tyA th

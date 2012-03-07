@@ -18,9 +18,9 @@ import Logic
 
 -- Higher-order primitive recursion / nat
 -- elimination. Cf. Vecters.recvec.
-primrec : [p: (n:Nat) -> Type 0]
-       -> (base:p 0)
-       -> (step: (n:Nat) -> (pn:p n) -> p (Succ n))
+primrec : [p: (n:Nat) -> Type 0 @log]
+       -> (base:p 0 @log)
+       -> (step: (n:Nat) -> (pn:p n @log) -> p (Succ n) @log)
        -> (n:Nat) -> p n
 primrec = \[p]. \base. \step. ind pr n =
   case n [neq] of
@@ -31,7 +31,7 @@ primrec = \[p]. \base. \step. ind pr n =
 -- Higher order primitive recursion with a constant predicate / nat
 -- elimination: easier to compute terms with, when it works, but not
 -- much use for proofs.
-foldNat : [p: Type 0] -> (base:p) -> (step: (pn:p) -> p) -> (n:Nat) -> p
+foldNat : [p: Type 0@log] -> (base:p@log) -> (step: (pn:p@log) -> p@log) -> (n:Nat) -> p
 foldNat = \[p]. \base. \step. ind pr n =
   case n [neq] of
     -- sym is evidence of backwards equality.
@@ -47,7 +47,7 @@ foldNat = \[p]. \base. \step. ind pr n =
 -- Need a predicate with constant value Nat.
 --
 -- Can build one from const, but it's too much trouble to use ...
-const : [aT:Type 1] -> [bT:Type 0] -> (a:aT) -> (b:bT) -> aT
+const : [aT:Type 1@log] -> [bT:Type 0@log] -> (a:aT@log) -> (b:bT@log) -> aT
 const = \[aT] [bT] a b.a
 
 -- ... it's better to specialize const

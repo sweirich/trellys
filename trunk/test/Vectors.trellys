@@ -1,33 +1,30 @@
 module Vectors where
 import Prelude
 
-data Vector (a : Type 0) (n : Nat) -> Type 0 where
+log data Vector (a : Type 0@log) (n : Nat) : Type 0 where
    VNil  of [n = 0] 
    VCons of [size : Nat] [n = Succ size]  (x:a) (xs : Vector a size)
 
 -- terminating recursor for the vector type
-recvec : [a : Type 0] -> [c : [n : Nat] -> (v:Vector a n) -> Type 0] ->
-         (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [a] [n] [n_eq]))) ->
-         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] -> (x:a) -> (xs : Vector a n') -> (ih : c [n'] xs) ->
-                 c [n] (VCons [a] [n] [n'] [n_eq] x xs)) ->
-         [n:Nat] -> (v:Vector a n) -> (c [n] v)
+recvec : [a : Type 0@log] -> [c : ([n : Nat] -> (v:Vector a n@log) -> Type 0)@log] ->
+          (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [a] [n] [n_eq]))@log) ->
+         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] -> (x:a@log) -> (xs : Vector a n'@log) -> (ih : c [n'] xs @log) ->
+                 c [n] (VCons [a] [n] [n'] [n_eq] x xs)@log) ->
+         [n:Nat] -> (v:Vector a n @log) -> (c [n] v)
 recvec = \ [a] . \ [c] . \ base . \ step .
            ind recvec[n] = \ v .
              case v [v_eq] of
                VNil [n_eq] -> 
- 
                  conv base [n] [n_eq] by sym (Vector a n) (Vector a n) v (VNil [a] [n] [n_eq]) v_eq
                  at x.(c [n] x)
-                
-                      
                VCons [n'] [n_eq] x xs ->
 	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
                  by sym (Vector a n) (Vector a n) v (VCons [a] [n] [n'] [n_eq] x xs) v_eq
                  at x.(c [n] x)
 
 
-vmap : [a : Type 0] -> [b : Type  0] -> ((x:a) -> b) ->
-      [n : Nat] -> (xs : Vector a n) -> Vector b n
+vmap : [a : Type 0@log] -> [b : Type  0@log] -> ((x:a@log) -> b @log) ->
+       [n : Nat] -> (xs : Vector a n@log) -> Vector b n
 vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
         case xs [xs_eq] of
           VNil [n_eq] -> VNil [b] [n] [n_eq]

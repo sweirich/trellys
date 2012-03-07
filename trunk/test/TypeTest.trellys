@@ -3,7 +3,7 @@ module TypeTest where
 import Prelude
 
 
-data Nat -> Type 0 where
+data Nat : Type 0 where
  Zero 
  Succ of (x:Nat) 
 
@@ -19,12 +19,12 @@ lam_term = \ x . x
 x2 = lam_term x
 
 -- -- Explicit product, general
-prog lam_general : (a : Nat) => Nat
+prog lam_general : (a : Nat@prog) -> Nat
 lam_general = \ x . x
 
 
 -- Implicit product.
-ilam_gen : [a : Type 0] -> (x:a) => Nat
+ilam_gen : [a : Type 0@log] -> (x:a@prog) -> Nat
 ilam_gen = \ [a] . \ x . 1
 
 -- -- Implicit product.
@@ -36,7 +36,7 @@ app_pi_term = lam_term 1
 -- Explicit product where the argument type is only
 -- wellformed programmatically.
 log prog_pi_type : Type 0
-prog_pi_type = (a : Type 0) => a => Nat
+prog_pi_type = (a : Type 0@prog) -> (a@prog) -> Nat
 
 add : (x : Nat) -> (y:Nat) -> Nat
 ind add x = \y .
@@ -50,7 +50,7 @@ ind mult x = \y .
    	 Zero -> Zero
    	 Succ m -> add y (mult m [ord z] y)
 
-data Bool -> Type 0 where
+data Bool : Type 0 where
    True 
    False
 
@@ -60,15 +60,15 @@ not = \x . case x [z] of
   True -> False
   False -> True
 
-data Id (a : Type 0) -> Type 0 where
+data Id (a : Type 0@log) : Type 0 where
   IdC
 
-unId : (a : Type 0) -> (x : Id a) -> Type 0
+unId : (a : Type 0@log) -> (x : Id a@log) -> Type 0
 unId = \a v .
    case v [z] of
     IdC -> a
 
-id : [aTy : Type 0] -> (a : aTy) -> aTy
+id : [aTy : Type 0@log] -> (a : aTy@log) -> aTy
 id = \ [aTy] a . a
 
 
@@ -77,11 +77,9 @@ z = id [Nat] Zero
 
 v2 = pred 0 -- (VNil [Nat])
 
-axiom inj_succ :(a:Nat) -> (b:Nat) ->
-					 (p : Succ a = Succ b) -> (a = b)
+axiom inj_succ :(a:Nat) -> (b:Nat) -> (p : Succ a = Succ b) -> (a = b)
 --inj_succ = \a b p .
 -- value restriction makes this one, via the "pred succ" method, hard
-
 
 join_test : (pred (Succ Zero)) = Zero
 join_test = join 20
@@ -90,20 +88,20 @@ join_test = join 20
 -- val join_test_bug = add Zero Zero ^ Zero
 
 
-data Vector (a : Type 0) (n : Nat) -> Type 0 where
+data Vector (a : Type 0@log) (n : Nat) : Type 0 where
    VNil  of [pf : n = 0] 
    VCons of [size : Nat]  [pf : Succ size = n] 
-            (x:a)  (xs : Vector a size)
+            (x:a@log)  (xs : Vector a size@log)
 
 
-head : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> a
+head : (n : Nat) -> [a : Type 0@log] -> (v: Vector a (Succ n)@log) -> a
 head = \ n [a] dis .
 		 case dis [y] of
        VNil [pf] -> contra pf
        VCons [sz] [pf] x xs -> x
 
 
-tail : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> Vector a n
+tail : (n : Nat) -> [a : Type 0@log] -> (v: Vector a (Succ n)@log) -> Vector a n
 tail = \ n [a] dis .
   case dis [diseq] of
     VNil [neq] -> contra neq
@@ -116,7 +114,7 @@ v1 = VCons [Bool] [1] [0] [join 1] True (VNil [Bool] [0] [join 1])
 -- MiniAgda-style "sized nats"
 
 -- Type 0 of nats smaller than n.
-data SNat (n : Nat) -> Type 0 where
+data SNat (n : Nat) : Type 0 where
     SZero of [i : Nat] [pf : n = Succ i] 
     SSucc of [i : Nat] [pf : n = Succ i] (s : SNat i) 
 
@@ -202,7 +200,7 @@ ind plusZero2 a =
            [sym Nat Nat a (Succ x) aeq]]
 
 
-axiom f : (x:Nat) => Nat
+axiom f : (x:Nat@prog) -> Nat
 
 prog foo : (x:Nat) -> Nat
 foo = \ x . let prog y[yeq] = x in f y

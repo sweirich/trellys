@@ -24,6 +24,7 @@ import Control.Monad.Error hiding (join)
 
 import Data.Maybe
 import Data.List
+import Data.Set (Set)
 import qualified Data.Set as S
 
 -- import System.IO.Unsafe (unsafePerformIO)
@@ -52,6 +53,7 @@ kc th tm = do
   (_,ty) <- ts th tm
   when (isNothing $ isType ty) $
     err [DD tm, DS "is not a well-formed type at", DD th]
+--         ,DS "it should have type Type but has type", DD ty]
 
 -- Apply kc to an entire telescope
 kcTele :: Theta -> Telescope -> TcMonad ()
@@ -140,7 +142,7 @@ ta Logic Abort _ = err [DS "abort must be in P."]
 ta Program Abort tyA = do kc Program tyA ; return Abort
 
 -- Rules T_lam1 and T_lam2
-ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
+ta th (Lam lep lbody) a@(Arrow aep abody) = do
 
   -- First check the arrow type for well-formedness
   kc th a
@@ -153,7 +155,7 @@ ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
              DS "does not match arrow annotation", DD aep])
 
   -- typecheck the function body
-  ebody <- extendCtx (Sig x ath (unembed tyA)) (ta th body tyB)
+  ebody <- extendCtx (Sig x th (unembed tyA)) (ta th body tyB)
 
   -- perform the FV and value checks if in T_Lam2
   bodyE <- erase body
@@ -173,12 +175,8 @@ ta th (Lam lep lbody) a@(Arrow ath aep abody) = do
   return (Lam lep (bind x ebody))
 
 -- rules T_ind1 and T_ind2
-ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
+ta _ (Ind ep binding) arr@(Arrow aep abnd) = do
   kc Logic arr
-
-  unless (ath == Logic) $
-    err [DS "ta: ind defines a function which takes a logical argument,",
-         DS "here a computational argument was specified"]
 
   unless (ep == aep) $
      err [DS "ta : expecting argument of ind to be", DD aep,
@@ -199,8 +197,8 @@ ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
       smallerType = Smaller (Var x)
                             (Var y)
 
-      tyC = Arrow Logic ep (bind (x, tyA) --Is this right or do we need, like (embed(unembedd tyA))?
-                  (Arrow Logic Erased (bind (z,embed smallerType)
+      tyC = Arrow ep (bind (x, tyA) --Is this right or do we need, like (embed(unembedd tyA))?
+                  (Arrow Erased (bind (z,embed smallerType)
                          xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
   ea <- extendCtx (Sig f Logic tyC) $
@@ -222,7 +220,7 @@ ta _ (Ind ep binding) arr@(Arrow ath aep abnd) = do
 ta Logic (Rec _ _) _ =
   err [DS "rec must be P."]
 
-ta Program (Rec ep binding) fty@(Arrow ath aep abnd) = do
+ta Program (Rec ep binding) fty@(Arrow aep abnd) = do
   kc Program fty
   unless (ep == aep) $
          err [DS "ta : expecting argument of rec to be",
@@ -233,7 +231,7 @@ ta Program (Rec ep binding) fty@(Arrow ath aep abnd) = do
   let tyB = subst dumby (Var y) dumbbody
 
   ea <- extendCtx (Sig f Program fty) $
-          extendCtx (Sig y ath (unembed tyA)) $
+          extendCtx (Sig y Program (unembed tyA)) $
             ta Program a tyB
 
   -- perform the FV and value checks if in T_RecImp
@@ -274,9 +272,9 @@ ta th (Case b bnd) tyA = do
                    DS "pattern match on it."]
            _ ->
               err [DS "Scrutinee ", DD b,
-                   DS "must be a member of a datatype, but is not"]
+                   DS "must be a member of a datatype, but is not. It has type", DD bty]
       _ -> err [DS "Scrutinee ", DD b,
-                DS "must be a member of a datatype, but is not"]
+                DS "must be a member of a datatype, but is not. It has type", DD bty]
 
   -- premise 2: the return type must be well kinded
   kc th tyA
@@ -399,7 +397,7 @@ taTele th ((t,ep1):ts) ((x,ty,ep2):tele')  = do
   et <- ta th t ty
   ets <- taTele th ts (subst x t tele')
   return $ (et,ep1) : ets
-    
+taTele _ _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
 ------------------------------
 ------------------------------
@@ -412,7 +410,7 @@ taTele th ((t,ep1):ts) ((x,ty,ep2):tele')  = do
 ts :: Theta -> Term -> TcMonad (Term,Term)
 ts tsTh tsTm =
   do (etsTm, typ) <- ts' tsTh tsTm
-     return $ (etsTm, delPosParen typ)
+     return $ (etsTm, delPosParenDeep typ)
   where
     ts' :: Theta -> Term -> TcMonad (Term,Term)
     ts' th (Pos p t) =
@@ -423,31 +421,49 @@ ts tsTh tsTm =
       do (ea,ty) <- ts' th a
          return (Paren ea, ty)
 
-    -- Rule T_var
+    -- Rule T_var/T_unboxVar
+    {- Variables are a bit special, because both the intro and elimination rules for @ always apply.
+       So without loss of generality we can "eagerly" apply unbox to the type we looked up from the
+       context. Another way to look at it is to say that we synthesize both the type and the th
+       for the variable, unlike the other synthesis rules that take th as an input. Finally, if the th
+       we got was not the one we were asked for, we apply either t_fo, or box.
+    -}
     ts' th (Var y) =
       do x <- lookupTy y
          case x of
            Just (th',ty) -> do
-             isFO <- isFirstOrder ty
-             unless (th' <= th || isFO) $
-               err [DS "Variable", DD y, DS "is programmatic, but it was checked",
-                    DS "logically (and ", DD ty, DS " is not a FO type." ]
-             return (Var y, ty)
+             let (th0', ty0) = stripAts th ty  --Repeatedly use T_unboxVar
+             isFO <- isFirstOrder ty0
+             if (th0' <= th) --the th we found is good enough
+              then return (Var y, ty0)
+              else if isFO -- (implicitly) apply T_FO
+                then return (Var y, ty0)
+                else -- (implicity) apply T_box
+                  return (Var y, At ty0 th0')
            Nothing -> err [DS "The variable", DD y, DS "was not found."]
+     where stripAts :: Theta -> Term -> (Theta, Term)
+           stripAts th ty = case isAt ty of
+                              Just (ty', th') -> stripAts th' ty'
+                              _ -> (th, ty)       
 
     -- Rule T_type
     ts' _ (Type l) = return (Type l,  Type (l + 1))
 
     -- Rules T_pi and T_pi_impred
-    ts' th (Arrow th' ep body) =
+    ts' th (Arrow ep body) =
       do ((x,tyA), tyB) <- unbind body
-         (etyA, tytyA) <- ts th' (unembed tyA)
-         (etyB, tytyB) <- extendCtx (Sig x th' (unembed tyA)) $ ts th tyB
+         isFO <- isFirstOrder (unembed tyA)
+         unless isFO $
+           err [DD (unembed tyA), 
+                DS  "can not be used as the domain of a function type, must specify either",
+                DD (At (unembed tyA) Logic), DS "or", DD (At (unembed tyA) Program)]
+         (etyA, tytyA) <- ts th (unembed tyA)
+         (etyB, tytyB) <- extendCtx (Sig x th (unembed tyA)) $ ts th tyB
          case (isType tytyA, isType tytyB) of
-           (Just _, Just 0) -> return $ (Arrow th' ep  (bind (x,embed etyA) etyB), Type 0)
-           (Just n, Just m) -> return $ (Arrow th' ep  (bind (x,embed etyA) etyB), Type (max n m))
+           (Just _, Just 0) -> return $ (Arrow ep  (bind (x,embed etyA) etyB), Type 0)
+           (Just n, Just m) -> return $ (Arrow  ep  (bind (x,embed etyA) etyB), Type (max n m))
            (Just _, _)      -> err [DD tyB, DS "is not a type."]
-           (_,_)            -> err [DD (unembed tyA), DS "is not a type."]
+           (_,_)            -> err [DD (unembed tyA), DS "is not a type.", DS "inferred", DD tytyA, DS "at", DD th]
 
     -- Rules T_tcon, T_acon and T_dcon
     ts' th (Con c args) =
@@ -481,7 +497,7 @@ ts tsTh tsTm =
          case isArrow tyArr of
            Nothing -> err [DS "ts: expected arrow type, for term ", DD a,
                            DS ". Instead, got", DD tyArr]
-           Just (th', epArr, bnd) -> do
+           Just (epArr, bnd) -> do
              ((x,tyA),tyB) <- unbind bnd
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
@@ -490,22 +506,20 @@ ts tsTh tsTm =
              let b_for_x_in_B = subst x b tyB
              -- check that the result kind is well-formed
              kc th b_for_x_in_B
-             -- check the argument, at the "A @ th'" type
-             -- if the arg is implicit, make sure that it is total
-             let thb = if ep == Erased then Logic else th
-             eb <- ta thb b (At (unembed tyA) th')
+             -- check the argument, at the "A" type
+             eb <- ta th b (unembed tyA)
              return (App ep ea eb, b_for_x_in_B)
 
     -- rule T_smaller
     ts' _ (Smaller a b) = do
-      (ea,_) <- ts' Program a
-      (eb,_) <- ts' Program b
+      (ea,_) <- ts Program a
+      (eb,_) <- ts Program b
       return $ (Smaller ea eb, Type 0)
 
     -- rule T_ordtrans
     ts' _ (OrdTrans a b) = do
-      (ea,tyA) <- ts' Logic a
-      (eb,tyB) <- ts' Logic b
+      (ea,tyA) <- ts Logic a
+      (eb,tyB) <- ts Logic b
       case (isSmaller tyA, isSmaller tyB) of 
         (Just (a1,a2), Just (b1,b2)) -> do
           unless (a2 `aeqSimple` b1) $
@@ -519,8 +533,8 @@ ts tsTh tsTm =
 
     -- rule T_eq
     ts' _ (TyEq a b) = do
-      (ea,_) <- ts' Program a
-      (eb,_) <- ts' Program b
+      (ea,_) <- ts Program a
+      (eb,_) <- ts Program b
       return $ (TyEq ea eb, Type 0)
 
     -- rule T_conv
@@ -614,8 +628,9 @@ ts tsTh tsTm =
                DS "expression is."]
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
+    -- T_at
     ts' _ (At tyA th') = do 
-      (ea, s) <- ts' th' tyA
+      (ea, s) <- ts th' tyA
       return (At ea th', s)
 
     ts' _ tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
@@ -710,7 +725,7 @@ tcEntry dt@(Data t delta th lev cs) =
      unless (all (\(_,_,ep) -> ep==Runtime) delta) $
        err [DS "All parameters to a datatype must be marked as relevant."]
      ---- Premise 1
-     kc th (telePi delta th (Type lev))  
+     kc th (telePi delta (Type lev))  
      ---- Premise 2: check that the telescope provided 
      ---  for each data constructor is wellfomed.
      ---  fixme: probably need to worry about universe levels also?
@@ -727,7 +742,7 @@ tcEntry dt@(Data t delta th lev cs) =
      where cnames = map (\(ConstructorDef c _) -> c) cs
 
 tcEntry dt@(AbsData _ delta th lev) =
-  do kc th (telePi delta th (Type lev))
+  do kc th (telePi delta (Type lev))
      return $ AddCtx [dt]
 
 tcEntry s@(Sig n th ty) = do
@@ -774,21 +789,35 @@ subtype _ a b =
   where a' = delPosParenDeep a
         b' = delPosParenDeep b
 
+
 isFirstOrder :: Term -> TcMonad Bool
-isFirstOrder (TyEq _ _) = return True
-isFirstOrder (Pos _ ty) = isFirstOrder ty
-isFirstOrder (Paren ty) = isFirstOrder ty
-isFirstOrder (Con d _) = do
-         ent <- lookupCon d
-         return $ case ent of 
-                    (Left _)  -> True  -- Datatype constructors are considered FO.
-                    (Right _) -> False -- Data  constructors are not
-isFirstOrder _ = return False
--- isFirstOrder ty = return $ ty `aeqSimple` natType
-
---debug n v = when False (liftIO (putStr n) >> liftIO (print v))
---debugNoReally n v = when True (liftIO (putStr n) >> liftIO (print v))
-
+isFirstOrder ty = isFirstOrder' S.empty ty
+  where
+    isFirstOrder' :: Set TName -> Term -> TcMonad Bool
+    isFirstOrder' _ (TyEq _ _) = return True
+    isFirstOrder' _ (Smaller _ _) = return True
+    isFirstOrder' s (Pos _ ty) = isFirstOrder' s ty
+    isFirstOrder' s (Paren ty) = isFirstOrder' s ty
+    isFirstOrder' s (Con d _) | d `S.member` s = return True
+    isFirstOrder' s (Con d _) = do
+      ent <- lookupCon d
+      case ent of
+        (Left (_,_,_,Nothing))  -> 
+          --An abstract datatype constructor. Maybe this is too conservative?
+          return False
+        (Left (_,_,_,Just cons)) ->
+          -- Datatypes are FO if all components are. But in order to not get caught in an
+          -- infinite loop, we should probably give the constructor d the "benefit of the
+          -- doubt" while doing so...
+          allM (\(ConstructorDef _ args) -> allM (\(_,ty,_) -> isFirstOrder' (S.insert d s) ty) args) cons 
+        (Right _) -> 
+          -- Data constructors are never first-order.
+          return False
+    isFirstOrder' _ (At _ _) = return True
+    isFirstOrder' _ _ = return False
+    
+allM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+allM p = liftM and . mapM p
 
 -- Positivity Check
 
@@ -809,8 +838,8 @@ occursPositive tName (Pos p ty) = do
   occursPositive tName ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
 occursPositive tName (Paren ty) = occursPositive tName ty
-occursPositive tName (Arrow _ _ bnd) = do
- ((x,etyA), tyB) <- unbind bnd
+occursPositive tName (Arrow _ bnd) = do
+ ((_,etyA), tyB) <- unbind bnd
  let tyA = unembed etyA
  when (tName `S.member` (fv tyA)) $
     err [DD tName, DS "occurs in non-positive position"]
