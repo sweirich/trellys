@@ -59,7 +59,7 @@ neq = \x.\y.case (eq x y) [_] of
             False -> True
 
 -- 'div' calculates ceiling(n/m+1)
-prog div : Nat => Nat => Nat
+prog div : Nat -> Nat -> Nat
 rec div n = \m .
   case n [_] of
     Zero -> Zero

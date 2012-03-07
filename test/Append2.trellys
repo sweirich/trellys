@@ -10,7 +10,7 @@ plus0 = \[n] . join 3
 plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
 plusSucc = \[n] [m] . join 42
 
-append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append : [a: Type 0@log] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n@log) -> (ys:Vector a m@log) -> Vector a (plus n m)
 append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] ->
@@ -21,8 +21,8 @@ append = \[a] . ind app [n] = \[m] . \xs ys .
       by (sym Nat Nat n (Succ n') neq) at h.Vector a (plus h m)
 
 
-appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
-                   -> (xs:Vector a i) -> (ys:Vector a j) -> (zs:Vector a k)
+appendAssociates : [a: Type 0@log] -> [i:Nat] -> [j:Nat] -> [k:Nat]
+                   -> (xs:Vector a i@log) -> (ys:Vector a j@log) -> (zs:Vector a k@log)
                    -> append [a] [(plus i j)] [k] (append [a] [i] [j] xs ys) zs
                     = append [a] [i] [(plus j k)] xs (append [a] [j] [k] ys zs)
 

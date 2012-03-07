@@ -89,20 +89,20 @@ z_lt_Sn : (n : Nat) -> ltT Zero (Succ n)
 z_lt_Sn = \n . conv (z_lt_Sn_LT n) by (sg Zero (Succ n)) at h.h
 
 -- m < n -> S m < S n
-m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> ltT m n -> ltT (Succ m) (Succ n)
+m_lt_n__Sm_lt_Sn : (m : Nat) -> (n : Nat) -> (ltT m n @log) -> ltT (Succ m) (Succ n)
 m_lt_n__Sm_lt_Sn = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn_LT m n
                                        (conv m_lt_n by (gs m n) at h.h))
                                  by (sg (Succ m) (Succ n)) at h.h
 
 -- S m < S n -> m < n
-sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> ltT (Succ m) (Succ n) -> ltT m n
+sm_lt_Sn__m_lt_n : (m:Nat) -> (n:Nat) -> (ltT (Succ m) (Succ n) @log) -> ltT m n
 sm_lt_Sn__m_lt_n = \m n sm_lt_Sn .
   conv (sm_lt_Sn__m_lt_n_LT m n
         (conv sm_lt_Sn by (gs (Succ m) (Succ n)) at h.h))
   by (sg m n) at h.h
 
 -- not (m < 0)
-lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n) -> (0 = 1)
+lt_0__contra : (m:Nat) -> (n:Nat) -> [n = Zero] -> (ltT m n @log) -> (0 = 1)
 lt_0__contra = \m n [n_eq] m_lt_n .
   lt_0__contra_LT m n [n_eq] (conv m_lt_n by (gs m n) at h.h)
 
@@ -130,15 +130,15 @@ lt_0__contra = \m n [n_eq] m_lt_n .
 -- Not sure how usable this version is: annotations and conv ...
 --
 -- THIS VERSION IS NOT USED: so no NoLaw datatype restriction concerns
-m_lt_n__n_eq_SPn' : (m:Nat) -> (n:Nat) -> ltT m n -> Exists Nat (\n'.n = Succ n' : Nat -> Type 0)
+m_lt_n__n_eq_SPn' : (m:Nat) -> (n:Nat) -> (ltT m n @log) -> Exists Nat (\n'.n = Succ n' : (Nat@log) -> Type 0)
 m_lt_n__n_eq_SPn' = \m n m_lt_n . case n [n_eq] of
   Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
   Succ n' -> let eq [_] = uneraseEq [Nat] [Nat] [n] [Succ n'] [n_eq] in
-             Ex [Nat] [((\n'.n = Succ n') : Nat -> Type 0)]
-                [n']  (conv eq by (join : (n = Succ n') = ((\n'.n = Succ n') : Nat -> Type 0) n') at h.h)
+             Ex [Nat] [((\n'.n = Succ n') : (Nat@log) -> Type 0)]
+                [n']  (conv eq by (join : (n = Succ n') = ((\n'.n = Succ n') : (Nat@log) -> Type 0) n') at h.h)
 
 -- This version works well.
-m_lt_n__n_eq_SPn : (m:Nat) -> (n:Nat) -> ltT m n -> n = Succ (pred n)
+m_lt_n__n_eq_SPn : (m:Nat) -> (n:Nat) -> (ltT m n @log) -> n = Succ (pred n)
 m_lt_n__n_eq_SPn = \m n m_lt_n . case n [n_eq] of
   Zero    -> contra (lt_0__contra m n [n_eq] m_lt_n)
   Succ n' -> let e1 [_] = (conv (join : n' = pred (Succ n'))
@@ -173,7 +173,7 @@ ind m_lt_Sm m = case m [m_eq] of
 --           so m' < P n by sm_lt_Sn__m_lt_n
 --           so m' < n   by IH
 --           so m  < S n by m_lt_n__Sm_lt_Sn
-m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> ltT m n -> ltT m (Succ n)
+m_lt_n__m_lt_Sn : (m:Nat) -> (n:Nat) -> (ltT m n@log) -> ltT m (Succ n)
 ind m_lt_n__m_lt_Sn m = \n m_lt_n . case m [m_eq] of
   Zero    -> conv (z_lt_Sn n)
              by (sym Nat Nat m Zero m_eq)
@@ -203,7 +203,7 @@ ind m_lt_n__m_lt_Sn m = \n m_lt_n . case m [m_eq] of
 --     Z    -> LZ using n' = S (P n')
 --     S l' -> then S l' < S (P m) -> l' < P m and so
 --             LS using (recursion on l' (P m) (P n'))
-lt_trans_pred' : (l:Nat) -> (m:Nat) -> (n':Nat) -> ltT l m -> ltT m (Succ n') -> ltT l n'
+lt_trans_pred' : (l:Nat) -> (m:Nat) -> (n':Nat) -> (ltT l m@log) -> (ltT m (Succ n') @log) -> ltT l n'
 ind lt_trans_pred' l = \m n' l_lt_m m_lt_Sn' .
   let m_eq [_]     = m_lt_n__n_eq_SPn l m l_lt_m in -- m = S (P m)
   let pm_lt_n' [_] = sm_lt_Sn__m_lt_n (pred m) n'
@@ -224,14 +224,14 @@ ind lt_trans_pred' l = \m n' l_lt_m m_lt_Sn' .
                at l n'.ltT l n'
 --               LS [l] [n'] l' [l_eq] (pred n') [n'_eq] l'_lt_Pn'
 
-lt_trans_pred : (l:Nat) -> (m:Nat) -> (n:Nat) -> ltT l m -> ltT m n -> ltT l (pred n)
+lt_trans_pred : (l:Nat) -> (m:Nat) -> (n:Nat) -> (ltT l m @log) -> (ltT m n @log)-> ltT l (pred n)
 lt_trans_pred = \l m n l_lt_m m_lt_n .
   lt_trans_pred' l m (pred n)
                  l_lt_m
                  (conv m_lt_n by (m_lt_n__n_eq_SPn m n m_lt_n) at h.ltT m h) -- LT m (pred n)
 
 -- l < m /\ m < n -> l < n
-lt_trans : (l:Nat) -> (m:Nat) -> (n:Nat) -> ltT l m -> ltT m n -> ltT l n
+lt_trans : (l:Nat) -> (m:Nat) -> (n:Nat) -> (ltT l m @log) -> (ltT m n @log) -> ltT l n
 lt_trans = \l m n l_lt_m m_lt_n .
   let l_lt_Pn [_] = lt_trans_pred l m n l_lt_m m_lt_n in
   let sPn_eq_n [_] = sym Nat Nat n (Succ (pred n)) (m_lt_n__n_eq_SPn m n m_lt_n) in

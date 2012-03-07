@@ -178,10 +178,6 @@ docM xs = do
 
 -------------------------------------------------------------------------
 
-thetaArrow :: Theta -> Doc
-thetaArrow Logic = text "->"
-thetaArrow Program = text "=>"
-
 bindParens :: Epsilon -> Doc -> Doc
 bindParens Runtime d = d
 bindParens Erased  d = brackets d
@@ -211,12 +207,12 @@ instance Disp Decl where
     <+> disp ty
 
   disp (Data n params th lev constructors) =
-    hang (text "data" <+> disp n <+> disp params
-           <+> thetaArrow th <+> text "Type" <+> text (show lev)
+    hang (disp th <+> text "data" <+> disp n <+> disp params
+           <+> colon <+> text "Type" <+> text (show lev)
            <+> text "where")
            2 (vcat $ map disp constructors)
   disp (AbsData t delta th lev) =
-        text "data" <+> disp t <+> disp delta <+> thetaArrow th
+        disp th <+> text "data" <+> disp t <+> disp delta <+> colon
     <+> text "Type" <+> text (show lev)
 
 instance Disp ConstructorDef where
@@ -237,12 +233,12 @@ instance Display Term where
                                       return $ bindParens ep dt
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
-  display (Arrow th ep bnd) = do
+  display (Arrow ep bnd) = do
      lunbind bnd $ \((n,a), b) -> do
         da <- display (unembed a)
         dn <- display n
         db <- display b
-        return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> thetaArrow th <+> db
+        return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> text "->" <+> db
 
   display (Lam ep b) =
     lunbind b $ \(n, body) -> do
@@ -375,7 +371,7 @@ instance Display Term where
 
   display (At ty th) = do 
     da <- display ty
-    return $ text "@" <+> disp th <+> da
+    return $ da <+> text "@" <+> disp th
 
   display (TerminationCase scrutinee binding) =
     lunbind binding $ \(n,(diverge,tbind)) -> do
@@ -405,13 +401,13 @@ instance Display ETerm where
       where displayArg (t, ep) = do dt <- display t
                                     return $ bindParens ep dt
   display (EType level) = return $ text "Type" <+> int level
-  display (EArrow th ep a bnd) = do
+  display (EArrow ep a bnd) = do
      da <- display a
      lunbind bnd $ \ (n,b) -> do
         dn <- display n
         db <- display b
         return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da) <+>
-                    (thetaArrow th) <+> db
+                    text "->" <+> db
   display (ELam  b) =
      lunbind b $ \ (n, body) -> do
        dn <- display n
@@ -470,7 +466,7 @@ instance Display ETerm where
   display EContra = return $ text "contra"
   display (EAt ty th) = do 
       dty <- display ty
-      return $ text "@" <+> disp th <+> dty
+      return $ dty <+> text "@" <+> disp th
 
 instance Display EMatch where
   display (n,bnd) = do

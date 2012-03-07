@@ -2,12 +2,12 @@ module Logic where
 
 import Prelude -- for Void
 
-data And (xT:Type 0) (yT:Type 0) -> Type 0 where
-  And of (x:xT) (y:yT)
+data And (xT:Type 0@log) (yT:Type 0@log) : Type 0 where
+  And of (x:xT@log) (y:yT@log)
 
-data Or (xT:Type 0) (yT:Type 0) -> Type 0 where
-  InL of (x:xT)
-  InR of (y:yT)
+data Or (xT:Type 0@log) (yT:Type 0@log) : Type 0 where
+  InL of (x:xT@log)
+  InR of (y:yT@log)
 
 -- Principle of explosion / ex falso quodlibet
 --
@@ -19,7 +19,7 @@ data Or (xT:Type 0) (yT:Type 0) -> Type 0 where
 -- type you want, whereas POE requires the type as an argument.
 --
 -- Wherever you used Void and POE, use (0=1) and contra instead.
-poe : [t:Type 0] -> [v:Void] -> t
+poe : [t:Type 0@log] -> [v:Void] -> t
 -- A direct case on v, e.g.
 --
 --   \[_] [v] . case v [_] of {}

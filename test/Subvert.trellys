@@ -16,7 +16,7 @@ import LessThanNat_lt_eq_True
 --   convert IZero = IZero
 --   convert (ISucc x) = ISucc (convert x)
 
-data Index (n:Nat) -> Type 0 where
+data Index (n:Nat) : Type 0 where
   IZero 
   ISucc of [n':Nat] [Succ n' = n] (Index n')
 
@@ -51,14 +51,14 @@ ind convert_id [n] = \i . case i [i_eq] of
 --
 -- Now conversion is O(1).
 
-data Index' (n:Nat) -> Type 0 where
+data Index' (n:Nat) : Type 0 where
   MkIndex' of (m:Nat)  [ltT m n] 
 
-convert' : [n1:Nat] -> [n2:Nat] -> [ltT n1 n2] -> Index' n1 -> Index' n2
+convert' : [n1:Nat] -> [n2:Nat] -> [ltT n1 n2 @log] -> (Index' n1 @log) -> Index' n2
 convert' = \[n1] [n2] [n1_lt_n2] i. case i [i_eq] of
   MkIndex' m [m_lt_n1] -> MkIndex' [n2] m [lt_trans m n1 n2 m_lt_n1 n1_lt_n2]
 
-convert_id' : [n1:Nat] -> [n2:Nat] -> [n1_lt_n2:ltT n1 n2] -> (i:Index' n1) -> convert' [n1] [n2] [n1_lt_n2] i = i
+convert_id' : [n1:Nat] -> [n2:Nat] -> [n1_lt_n2:ltT n1 n2 @log] -> (i:Index' n1 @log) -> convert' [n1] [n2] [n1_lt_n2] i = i
 convert_id' = \[n1] [n2] [n1_lt_n2] i . case i [i_eq] of
   MkIndex' m [m_lt_n1] -> let [i_eq'] [_] = sym (Index' n1) (Index' n1) i (MkIndex' [n1] m [m_lt_n1]) i_eq in
                           conv join by i_eq' at i . convert' [n1] [n2] [n1_lt_n2] i = i

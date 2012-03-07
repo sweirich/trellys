@@ -7,17 +7,15 @@ import Arithmetic
 prog zero : Nat
 zero = 0
 
-axiom atype : Type 0
+axiom log atype : Type 0
 axiom a : atype
 
 axiom btype : Type 0
 axiom b : btype
 
-axiom f : Nat -> [t:Type 0] -> t -> Nat
-
+axiom f : Nat -> [t:Type 0 @log] -> (t@log) -> Nat
 
 axiom p : a = b
-
 
 axiom x : Nat
 
@@ -28,7 +26,6 @@ q = join
 easy_goal : (f x [atype] a) = (f x [btype] b)
 easy_goal = conv (join : f x [atype] a = f x [atype] a)
 					      by q, p at g v . f x [atype] a = g v
-
 
 -- goal : ((\x . f x [atype] a) : Nat -> Nat) = ((\x . f x [btype] b) : Nat -> Nat)
 -- goal = join

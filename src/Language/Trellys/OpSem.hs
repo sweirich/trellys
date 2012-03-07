@@ -25,11 +25,11 @@ erase (Con c args)          =
   do args' <- mapM (\(t,ep) -> liftM (,ep) (erase t)) (filter ((==Runtime) . snd) args)
      return $ ECon (translate c) args'
 erase (Type l)              = return $ EType l
-erase (Arrow th ep bnd) =
+erase (Arrow ep bnd) =
   do ((x,tyA), tyB) <- unbind bnd
      tyA' <- erase (unembed tyA)
      tyB' <- erase tyB
-     return $ EArrow th ep tyA' $ bind (translate x) tyB'
+     return $ EArrow ep tyA' $ bind (translate x) tyB'
 erase (Lam ep bnd)   =
   do (x,body) <- unbind bnd
      body' <- erase body
@@ -142,7 +142,7 @@ cbvStep (ECon c args)    = stepArgs [] args
             Just EAbort -> return $ Just EAbort
             Just a'     -> return $ Just (ECon c (reverse prefix ++ (a',ep) : as))
 cbvStep (EType _)        = return Nothing
-cbvStep (EArrow _ _ _ _) = return Nothing 
+cbvStep (EArrow _ _ _)   = return Nothing 
 cbvStep (ELam _)         = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
@@ -220,7 +220,7 @@ isValue :: Term -> Bool
 isValue (Var _)            = True
 isValue (Con _ args)       = all (isValue . fst) args -- fixme: this is broken, params vs args.
 isValue (Type _)           = True
-isValue (Arrow _ _ _)      = True
+isValue (Arrow _ _)        = True
 isValue (Lam _ _)          = True
 isValue (App _ _ _)        = False
 isValue (Smaller _ _)      = True
@@ -251,9 +251,9 @@ isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
 isEValue (ECon _ args)    = all (isEValue . fst) args -- wrong, fixme...
 isEValue (EType _)        = True
-isEValue (EArrow _ _ _ _) = True
+isEValue (EArrow _ _ _)   = True
 isEValue (ELam _)         = True
-isEValue (EApp _ _)     = False
+isEValue (EApp _ _)       = False
 isEValue (ESmaller _ _)   = True
 isEValue EOrdAx           = True
 isEValue EOrdTrans        = True

@@ -256,8 +256,8 @@ import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive 
 -- assuming the equivalence of fixed points, we get
 --
 --   sn = Y o flip.
-cov : [p:Nat -> Type 0]
-   -> ((n:Nat) -> ((m:Nat) -> [ltT m n] -> p m) -> p n)
+cov : [p:Nat -> Type 0 @log]
+   -> ((n:Nat) -> ((m:Nat) -> [ltT m n @log] -> p m @log) -> p n @log)
    -> ((n:Nat) -> p n)
 cov = \[p] f .
   -- g _ n _ : (m:Nat) -> LT m n -> p m, and so proves p n via f
@@ -265,7 +265,7 @@ cov = \[p] f .
     let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in       -- i = S (pred i)
     let [m_lt_i'] [_] = lt_trans_pred m n i m_lt_n n_lt_i in -- m < pred i
     f m (g [pred i] [ord i_eq] m [m_lt_i'])
-           ): [i:Nat] -> (n:Nat) -> [ltT n i] -> ((m:Nat) -> [ltT m n] -> p m))
+           ): [i:Nat] -> (n:Nat) -> [ltT n i@log] -> ((m:Nat) -> [ltT m n@log] -> p m))
   in \n . f n (g [Succ n] n [m_lt_Sm n])
 
 {- And here's the first version of StrongNat.
@@ -321,7 +321,7 @@ cdiv = \m n .
                                    by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
                                    at h.h in
                     conv (Succ recg) by (join : Nat = cdiv_p m) at h.h
-                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m] -> cdiv_p m_minus_sn) -> cdiv_p m))
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m@log] -> cdiv_p m_minus_sn @log) -> cdiv_p m))
        in conv (cov [cdiv_p] f m) by (join : cdiv_p m = Nat) at h.h
 
 -- Tests
@@ -376,57 +376,39 @@ fdiv_caseF = \m n [m_lt_n] .
     False -> Succ (fdiv (minus m n) n)) : Nat) = Succ (fdiv (minus m n) n))
   at h . fdiv m n = h
 
--- poor man's logicality polymorphism
-
-plusP : Nat => Nat => Nat
-plusP = \m n . plus m n
-
-multP : Nat => Nat => Nat
-multP = \m n . mult m n
-
-leP : Nat => Nat => Bool
-leP = \m n . le m n
-
--- Trans is checked logically so (L P) value restriction kill this :P
-transP : (aTy:Type 0) -> (bTy:Type 0) -> (cTy:Type 0) ->
-         (a:aTy)      => (b:bTy)      => (c:cTy)      =>
-         [a = b]      -> [b = c]      -> (a = c)
-transP = \aTy bTy cTy a b c [a_eq_b] [b_eq_c] .
-  conv join by (conv a_eq_b by b_eq_c at h.a=h) at h.a=h
-
--- fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+-- fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 
 fdiv_ub_p : (m:Nat) -> Type 0
-fdiv_ub_p = \m . (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_p = \m . (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 -- expand the definition of fdiv_ub_p: the expanded version helps the
 -- type checker, and doing this join with particular values of m
 -- inserted doesn't always work (but it works here because abstract m
 -- is a value).
 fdiv_ub_p_red : (m:Nat) ->
     (fdiv_ub_p m
-  = ((n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True))
+  = ((n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True))
 fdiv_ub_p_red = \m . join
 -- other direction
 fdiv_ub_p_red' : (m:Nat) ->
-    ((n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True)
+    ((n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True)
   = fdiv_ub_p m
 fdiv_ub_p_red' = \m . join
 
 fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
-              -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
+              -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
 fdiv_ub_f_base = \m n [m_lt_Sn] .
-  let    e1 [_] = (join : leP (multP Zero (Succ n)) m = True)
+  let    e1 [_] = (join : le (mult Zero (Succ n)) m = True)
   in let e2 [_] = conv join
                   by (fdiv_caseT m (Succ n) [m_lt_Sn])
-                  at h . (leP (multP (fdiv m (Succ n)) (Succ n)) m
-                          = leP (multP h (Succ n)) m)
+                  at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
+                          = le (mult h (Succ n)) m)
 
-  in conv e2 by e1 at h. leP (multP (fdiv m (Succ n)) (Succ n)) m = h
+  in conv e2 by e1 at h. le (mult (fdiv m (Succ n)) (Succ n)) m = h
 {- LP value restiction kills this (the fdiv):
 
-  in transP Bool Bool Bool
-            (leP (multP (fdiv m (Succ n)) (Succ n)) m)
-            (leP (multP Zero (Succ n)) Zero)
+  in trans Bool Bool Bool
+            (le (mult (fdiv m (Succ n)) (Succ n)) m)
+            (le (mult Zero (Succ n)) Zero)
             True
             e1
             e2
@@ -446,13 +428,13 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
 --                   S n' + (S m' - S n')
 --                      = S (n' + (m' - n'))   (by join)
 --                   rewrite the first equality in the second.
-minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plusP n (minus m n))
+minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plus n (minus m n))
 ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
-  Zero    -> conv (conv join -- (join : (plusP Zero (minus m Zero)) = minus m Zero)
+  Zero    -> conv (conv join -- (join : (plus Zero (minus m Zero)) = minus m Zero)
                    by (lemma_minus_zero_id m)
-                   at h . h = (plusP Zero (minus m Zero)))
+                   at h . h = (plus Zero (minus m Zero)))
              by (sym Nat Nat n Zero n_eq)
-             at n . m = (plusP n (minus m n))
+             at n . m = (plus n (minus m n))
   Succ n' -> case m [m_eq] of
     Zero    -> contra (conv join
                        by (conv m_lt_n
@@ -465,13 +447,13 @@ ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
                                   by (join : lt (Succ m') (Succ n') = lt m' n')
                                   at h . h = False
                in let ih [_] = minus_plus_id n' [ord n_eq] m' [m'_lt_n']
-               in let eq1 [_] = (join : Succ (plusP n' (minus m' n'))
-                                     = plusP (Succ n') (minus (Succ m') (Succ n')))
+               in let eq1 [_] = (join : Succ (plus n' (minus m' n'))
+                                     = plus (Succ n') (minus (Succ m') (Succ n')))
                in let eq2 [_] = conv (conv join by ih at h . Succ m' = Succ h)
                                 by eq1 at h . Succ m' = h
                in conv eq2 by (sym Nat Nat m (Succ m') m_eq),
                               (sym Nat Nat n (Succ n') n_eq)
-                  at m n . m = (plusP n (minus m n))
+                  at m n . m = (plus n (minus m n))
 
 m_lt_n__Sm_lt_Sn' : (m : Nat) -> (n : Nat) -> lt m n = True -> lt (Succ m) (Succ n) = True
 m_lt_n__Sm_lt_Sn' = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn m n
@@ -479,39 +461,39 @@ m_lt_n__Sm_lt_Sn' = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn m n
                                   by (gs (Succ m) (Succ n))
                                   at t.t
 
-plus_le : (m:Nat) -> (n:Nat) -> (k:Nat) -> leP (plusP k m) (plusP k n) = leP m n
+plus_le : (m:Nat) -> (n:Nat) -> (k:Nat) -> le (plus k m) (plus k n) = le m n
 plus_le = \m n . ind plus_le k = case k [k_eq] of
   Zero    -> conv join by (sym Nat Nat k Zero k_eq)
-             at k . leP (plusP k m) (plusP k n) = leP m n
+             at k . le (plus k m) (plus k n) = le m n
   Succ k' -> let ih [_] = plus_le k' [ord k_eq]
-             in let step [_] = (join : leP (plusP k' m) (plusP k' n)
-                                     = leP (plusP (Succ k') m) (plusP (Succ k') n))
+             in let step [_] = (join : le (plus k' m) (plus k' n)
+                                     = le (plus (Succ k') m) (plus (Succ k') n))
              in let step' [_] = conv step
                                 by (sym Nat Nat k (Succ k') k_eq)
-                                at k . leP (plusP k' m) (plusP k' n)
-                                     = leP (plusP k m) (plusP k n)
-             in conv ih by step' at h . h = leP m n
+                                at k . le (plus k' m) (plus k' n)
+                                     = le (plus k m) (plus k n)
+             in conv ih by step' at h . h = le m n
 
 -- plus_le isn't directly applicable due to LP value restriction and
 -- it can't prove the specializing via let because of the let-P-in-L
 -- restriction :P
-plus_le_P : (m:Nat) => (n:Nat) => (k:Nat) -> leP (plusP k m) (plusP k n) = leP m n
-plus_le_P = \m n k . plus_le m n k
+--plus_le : (m:Nat) => (n:Nat) => (k:Nat) -> le (plus k m) (plus k n) = le m n
+--plus_le = \m n k . plus_le m n k
 
 -- LP restriction trouble
 -- ----------------------
 {-
 plus_le_specialized : (m:Nat) => (n:Nat) =>
-  leP (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n)))
-      (plusP (Succ n) (minus m (Succ n)))
+  le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n)))
+      (plus (Succ n) (minus m (Succ n)))
   =
-  leP (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
       (minus m (Succ n))
 -}
 -- LP value restriction proof
 {-
 plus_le_specialized = \m n .
-  plus_le_P (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  plus_le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
             (minus m (Succ n))
             (Succ n)
 -}
@@ -525,39 +507,39 @@ plus_le_specialized = \m n .
 -- Is this a concern here?  I.e., I'm producing an equality, and
 -- equalities are already normalized (they're values by definition).
 {-
-plus_le_specialized = \m n . let prog d [d_eq] = (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
-  in conv (plus_le_P d (minus m (Succ n)) (Succ n)) by d_eq at
-     h . leP (plusP (Succ n) h) (plusP (Succ n) (minus m (Succ n))) = leP h (minus m (Succ n))
+plus_le_specialized = \m n . let prog d [d_eq] = (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  in conv (plus_le d (minus m (Succ n)) (Succ n)) by d_eq at
+     h . le (plus (Succ n) h) (plus (Succ n) (minus m (Succ n))) = le h (minus m (Succ n))
 -}
 -- For now I will attempt to adapt the proof of plus_le :P
 
 plus_le_specialized : (m:Nat) -> (n:Nat) -> (k:Nat) ->
-  leP (plusP k (multP (fdiv m n) n))
-      (plusP k m)
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
   =
-  leP (multP (fdiv m n) n)
+  le (mult (fdiv m n) n)
       m
 plus_le_specialized = \m n . ind plus_le k = case k [k_eq] of
   Zero    -> conv join by (sym Nat Nat k Zero k_eq)
-             at k . leP (plusP k (multP (fdiv m n) n))
-                        (plusP k m)
+             at k . le (plus k (mult (fdiv m n) n))
+                        (plus k m)
                     =
-                    leP (multP (fdiv m n) n)
+                    le (mult (fdiv m n) n)
                         m
   Succ k' -> let ih [_] = plus_le k' [ord k_eq]
-             in let step [_] = (join : leP (plusP k' (multP (fdiv m n) n))
-                                           (plusP k' m)
-                                     = leP (plusP (Succ k') (multP (fdiv m n) n))
-                                           (plusP (Succ k') m))
+             in let step [_] = (join : le (plus k' (mult (fdiv m n) n))
+                                           (plus k' m)
+                                     = le (plus (Succ k') (mult (fdiv m n) n))
+                                           (plus (Succ k') m))
              in let step' [_] = conv step
                                 by (sym Nat Nat k (Succ k') k_eq)
-                                at k . leP (plusP k' (multP (fdiv m n) n))
-                                           (plusP k' m)
-                                     = leP (plusP k (multP (fdiv m n) n))
-                                           (plusP k m)
-             in conv ih by step' at h . h = leP (multP (fdiv m n) n) m
+                                at k . le (plus k' (mult (fdiv m n) n))
+                                           (plus k' m)
+                                     = le (plus k (mult (fdiv m n) n))
+                                           (plus k m)
+             in conv ih by step' at h . h = le (mult (fdiv m n) n) m
 
-not_lt_S__pred : (m:Nat) => (n:Nat) => [lt m (Succ n) = False] -> m = Succ (pred m)
+not_lt_S__pred : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False] -> m = Succ (pred m)
 not_lt_S__pred = \m n [m_lt_n] . case m [m_eq] of
   Zero    -> let [e1] [_] = (conv m_lt_n by m_eq at m . lt m (Succ n) = False)
              in contra (conv e1 by (join : lt Zero (Succ n) = True) at h . h = False)
@@ -569,36 +551,36 @@ s_minus_s__lt' = \m n . conv (s_minus_s__lt m n)
                         by (gs (minus (Succ m) (Succ n)) (Succ m))
                         at t.t
 
-fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False]
-              -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
-              -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
+fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False @log]
+              -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
+              -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
 fdiv_ub_f_step = \m n [m_lt_Sn] gm .
   let    e1 [_] = conv join by (fdiv_caseF m (Succ n) [m_lt_Sn])
-                  at h . (leP (multP (fdiv m (Succ n)) (Succ n)) m
-                          = leP (multP h (Succ n)) m)
-  -- plusP works here even tho mult is defined in terms of plus ... they both reduce to plus
-  in let e2 [_] = conv e1 by (join : (multP (Succ (fdiv (minus m (Succ n)) (Succ n))) (Succ n))
-                                   = (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))))
-                  at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
-                       = leP h m
+                  at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
+                          = le (mult h (Succ n)) m)
+  -- plus works here even tho mult is defined in terms of plus ... they both reduce to plus
+  in let e2 [_] = conv e1 by (join : (mult (Succ (fdiv (minus m (Succ n)) (Succ n))) (Succ n))
+                                   = (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))))
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = le h m
   in let e3 [_] = conv e2 by (minus_plus_id (Succ n) m [m_lt_Sn])
-                  at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
-                       = leP (plusP (Succ n) (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) h
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) h
   {-
   -- (L P) value restriction here ... maybe I can specialize the lemma?
-  in let e4 [_] = conv e3 by (plus_le (multP (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  in let e4 [_] = conv e3 by (plus_le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
                                       (minus m (Succ n))
                                       (Succ n))
-                  at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
                        = h
   -}
   in let e4 [_] = conv e3 by (plus_le_specialized (minus m (Succ n)) (Succ n) (Succ n))
-                  at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
                        = h
   in let m_eq [_] = not_lt_S__pred m n [m_lt_Sn]
   in let m_eq' [_] = sym Nat Nat m (Succ (pred m)) m_eq
-  in let e5 [_] = conv e4 by m_eq at h . leP (multP (fdiv m (Succ n)) (Succ n)) m
-     = leP (multP (fdiv (minus h (Succ n)) (Succ n)) (Succ n)) (minus h (Succ n))
+  in let e5 [_] = conv e4 by m_eq at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+     = le (mult (fdiv (minus h (Succ n)) (Succ n)) (Succ n)) (minus h (Succ n))
   in let ih1 [_] = gm (minus m (Succ n))
                      [conv (s_minus_s__lt' (pred m) n) by m_eq'
                       at m . lt (minus m (Succ n)) m = True]
@@ -607,24 +589,24 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
   in let ih2 [_] = conv ih1 by (fdiv_ub_p_red (minus m (Succ n))) at t.t
 {-
                    by (join 1000: fdiv_ub_p (minus m (Succ n))
-                            = ((k:Nat) -> leP (multP (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
+                            = ((k:Nat) -> le (mult (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
                                              (minus m (Succ n)) = True))
 
                    at t.t
 -}
   in let ih [_] = ih2 n
-  in conv e4 by ih at h . leP (multP (fdiv m (Succ n)) (Succ n)) m = h
+  in conv e4 by ih at h . le (mult (fdiv m (Succ n)) (Succ n)) m = h
 
 -- combine base and step
-fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
-         -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
+         -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub_f' = \m gm n . case (lt m (Succ n)) [m_lt_n] of
   True  -> fdiv_ub_f_base m n [m_lt_n]
   False -> fdiv_ub_f_step m n [m_lt_n] gm
 
 -- massage lt=True into ltT
-fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k)
-         -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log)
+         -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub_f'' = \m gm .
   let gm' [_] = (\k [k_lt_m] .
                  gm k [conv k_lt_m by (sg k m) at t.t]
@@ -632,16 +614,16 @@ fdiv_ub_f'' = \m gm .
   in fdiv_ub_f' m gm'
 
 -- massage return types into fdiv_ub_p
-fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> fdiv_ub_p m
+fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> fdiv_ub_p m
 fdiv_ub_f = \m . conv (fdiv_ub_f'' m) by (fdiv_ub_p_red' m)
-                 at t . ((k:Nat) -> [ltT k m] -> fdiv_ub_p k) -> t
+                 at t . ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> t
 
 -- prove fdiv_ub by cov
 fdiv_ub' : (m:Nat) -> fdiv_ub_p m
 fdiv_ub' = cov [fdiv_ub_p] fdiv_ub_f
 
 -- expand fdiv_ub_p to get human-friendly (ha) version
-fdiv_ub : (m:Nat) -> (n:Nat) -> leP (multP (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub = \m . conv (fdiv_ub' m) by (fdiv_ub_p_red m) at t.t
 
 -- Using thunks to avoid specialization of plus_le above
@@ -657,52 +639,50 @@ fdiv_ub = \m . conv (fdiv_ub' m) by (fdiv_ub_p_red m) at t.t
 
 -- This version slightly different from Stephanie's suggestion: the
 -- returned equality is not between thunks.
-axiom plus_le_P_thunk : (m: Unit -> Nat) => (n: Unit -> Nat) => (k: Unit -> Nat)
-               => leP (plusP (k U) (m U)) (plusP (k U) (n U))
-                  = leP (m U) (n U)
+axiom plus_le_thunk : (m: Unit -> Nat @prog) -> (n: Unit -> Nat @prog) -> (k: Unit -> Nat @prog)
+               -> le (plus (k U) (m U)) (plus (k U) (n U))
+                  = le (m U) (n U)
 {- Some failed proofs:
 -- this fails because k is checked logically: there is no FOVal for functions
-plus_le_P_thunk = \m n k . plus_le   (k U) (m U) (n U)
+plus_le_thunk = \m n k . plus_le   (k U) (m U) (n U)
 -- this fails because (k U) is not a value (LP value restriction)
-plus_le_P_thunk = \m n k . plus_le_P (k U) (m U) (n U)
+plus_le_thunk = \m n k . plus_le (k U) (m U) (n U)
 -- Induction is also out of the question.
 -}
 
 {- The non-thunked statement:
 instantiate : (m:Nat) -> (n:Nat) -> (k:Nat) ->
-  leP (plusP k (multP (fdiv m n) n))
-      (plusP k m)
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
   =
-  leP (multP (fdiv m n) n)
+  le (mult (fdiv m n) n)
       m
 -}
 instantiate : (m:Nat) -> (n:Nat) -> (k:Nat)
-             -> leP (plusP ((\ _ . k : Unit -> Nat) U)
-                           ((\ _ . multP (fdiv m n) n : Unit -> Nat) U))
-                    (plusP ((\ _ . k : Unit -> Nat) U)
+             -> le (plus ((\ _ . k : Unit -> Nat) U)
+                           ((\ _ . mult (fdiv m n) n : Unit -> Nat) U))
+                    (plus ((\ _ . k : Unit -> Nat) U)
                            ((\ _ . m : Unit -> Nat) U))
-              = leP ((\ _ . multP (fdiv m n) n : Unit -> Nat) U)
+              = le ((\ _ . mult (fdiv m n) n : Unit -> Nat) U)
                     ((\ _ . m : Unit -> Nat) U)
-instantiate = \ m n k . plus_le_P_thunk (\ _ . multP (fdiv m n) n : Unit -> Nat)
+instantiate = \ m n k . plus_le_thunk (\ _ . mult (fdiv m n) n : Unit -> Nat)
                                           (\ _ . m : Unit -> Nat)
                                           (\ _ . k : Unit -> Nat)
 
 -- Using the generic thunked lemma to prove the special case
 -- plus_le_specialized
 use : (m:Nat) -> (n:Nat) -> (k:Nat) ->
-  leP (plusP k (multP (fdiv m n) n))
-      (plusP k m)
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
   =
-  leP (multP (fdiv m n) n)
+  le (mult (fdiv m n) n)
       m
 use = \ m n k . conv instantiate m n k
                 by (join : ((\ _ . k : Unit -> Nat) U) = k)
-                 , (join : ((\ _ . multP (fdiv m n) n : Unit -> Nat) U)
-                         =         multP (fdiv m n) n)
+                 , (join : ((\ _ . mult (fdiv m n) n : Unit -> Nat) U)
+                         =         mult (fdiv m n) n)
                  , (join : ((\ _ . m : Unit -> Nat) U) = m)
                 at k p m .
-                   leP (plusP k p)
-                       (plusP k m)
+                   le (plus k p) (plus k m)
                    =
-                   leP p
-                       m
+                   le p m
