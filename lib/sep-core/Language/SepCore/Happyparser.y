@@ -16,43 +16,41 @@ import Unbound.LocallyNameless.Subst(substR1)
 %name parser4Preddef Preddef
 %name parser4Prf Proof
 %name parser4Term Term
-%name parser4LK LogicalKind 
+%name parser4LK LogicalKind
 %tokentype { Token }
 %error { parseError }
 
 %token 
-       type       {TokenType}
-       data       {TokenData}
-       int        {TokenInt $$}
-       theorem    {TokenTheorem}
        ProofVar   {TokenProofVar $$}
        PredVar    {TokenPredVar $$}
        TermVar    {TokenTermVar $$}
+       int        {TokenInt $$}
+       type       {TokenType}
+       Type       {TokenType}
+       Formula    {TokenFm}
        formula    {TokenFm}
-       Pi         {TokenPi}
-       Eq         {TokenEq}
        Bottom     {TokenBot}
-       lambda     {TokenLM}
-       Lambda     {TokenLamb}
+       bottom     {TokenBot}
+       Pi         {TokenPi}
        Forall     {TokenForall}
-       Qforall    {TokenQF}
-       plambda    {TokenPlam}
+       '\\'        {TokenLamb}
        abort      {TokenAb}
+       Abort      {TokenAb}
        join       {TokenJoin}
+       Join       {TokenJoin}
        contr      {TokenContr}
+       Contr      {TokenContr}
        valax      {TokenValax}
+       Valax      {TokenValax}
        '!'        {TokenEx}
        '('        {TokenBL}
        ')'        {TokenBR}
-       '['        {TokenBll}
-       ']'        {TokenBrr}
        "::"       {TokenDC}
        '+'        {TokenPlus}
        '-'        {TokenMinus}
-       '='        {TokenDef}
+       '='        {TokenEq}
        ':'        {TokenCL}
        '.'        {TokenDot}
-
 
 %%
 
@@ -74,11 +72,11 @@ Preddef : PredVar '=' Predicate                        {Preddef (string2Name $1)
 
 Predicate : PredVar                                    {PredicateVar (string2Name $1)}
 
-| Lambda ProofVar ':' Predicate '.' Predicate          {PredicateLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
+| '\\' ProofVar ':' Predicate '.' Predicate          {PredicateLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
-| Lambda PredVar ':' LogicalKind '.' Predicate         {PredicateLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
+| '\\' PredVar ':' LogicalKind '.' Predicate         {PredicateLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
-| Lambda TermVar ':' Term '.' Predicate                {PredicateLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
+| '\\' TermVar ':' Term '.' Predicate                {PredicateLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
  
 | Forall PredVar ':' LogicalKind '.' Predicate         {Forall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
@@ -92,22 +90,27 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 
 | '(' Predicate Predicate ')'                          {PredicateApplication $2 (ArgPredicate $3)}
 
-| Eq Term Term                                         {Equal $2 $3}
+|  Term '=' Term                                         {Equal $1 $3}
 
 | '!' Term                                             {Terminate $2}
 
 | Bottom  int                                          {Bottom $2}
 
+| bottom  int                                          {Bottom $2}
 
-LogicalKind : formula int                           {Formula $2}
+| '(' Predicate ')'                                    {$2}
 
-            | Qforall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
+LogicalKind : Formula int                           {Formula $2}
 
-            | Qforall  Term '.' LogicalKind               {QuasiForall (ArgClassTerm $2) $4}
+            | formula int                           {Formula $2}
 
-            | Qforall  Predicate '.' LogicalKind         {QuasiForall (ArgClassPredicate $2) $4}
+            | Forall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
 
+            | Forall  Term '.' LogicalKind               {QuasiForall (ArgClassTerm $2) $4}
 
+            | Forall  Predicate '.' LogicalKind         {QuasiForall (ArgClassPredicate $2) $4}
+
+            | '(' LogicalKind ')'                       {$2}
        
 Stage : '+'  {Plus}
       | '-'  {Minus}
@@ -116,6 +119,8 @@ Stage : '+'  {Plus}
 Term : TermVar   {TermVar (string2Name $1)}
    
      | type int  {Type $2}
+
+     | Type int  {Type $2}
 
      | Pi PredVar ':' Stage LogicalKind '.' Term  {Pi (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
    
@@ -129,26 +134,30 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | '(' Stage Term Predicate ')'               {TermApplication $3 (ArgPredicate $4) $2}
 
-     | lambda TermVar ':' Stage Term '.' Term     {TermLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
+     | '\\' TermVar ':' Stage Term '.' Term        {TermLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
  
-     | lambda ProofVar ':' Stage Predicate '.' Term {TermLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
+     | '\\' ProofVar ':' Stage Predicate '.' Term  {TermLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
 
-     | lambda PredVar ':' Stage LogicalKind '.' Term {TermLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
+     | '\\' PredVar ':' Stage LogicalKind '.' Term {TermLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
  
      | abort Term      {Abort $2}
 
+     | Abort Term      {Abort $2}
 
+     | '(' Term ')'    {$2}
 
 
 Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
-| plambda ProofVar ':' Predicate '.' Proof          {ProofLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
+| '\\' ProofVar ':' Predicate '.' Proof          {ProofLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
-| plambda PredVar ':' LogicalKind '.' Proof         {ProofLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
+| '\\' PredVar ':' LogicalKind '.' Proof         {ProofLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
-| plambda TermVar ':' Term '.' Proof                {ProofLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
+| '\\' TermVar ':' Term '.' Proof                {ProofLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
 | join Term Term                                    {Join $2 $3}
+
+| Join Term Term                                    {Join $2 $3}
 
 | '(' Proof Term ')'                                {ProofApplication $2 (ArgTerm $3)}
 
@@ -158,32 +167,25 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | contr Proof                                       {Contra $2}
 
+| Contr Proof                                       {Contra $2}
+
 | valax Term                                        {Valax $2}
 
+| Valax Term                                        {Valax $2}
+
+| '(' Proof ')'                                     {$2}
 
 {
 data Token =
 
        TokenType
 
-       | TokenData
-
        | TokenInt Integer
-
-       | TokenOB
-
-       | TokenCB
 
        | TokenFm
 
        | TokenForall
  
-       | TokenQF
- 
-       | TokenPlam
-
-       | TokenTheorem
-
        | TokenProofVar String
 
        | TokenPredVar String
@@ -196,11 +198,7 @@ data Token =
 
        | TokenBot
 
-       | TokenLM
-
        | TokenLamb
-
-       | TokenAb
 
        | TokenJoin
 
@@ -214,22 +212,17 @@ data Token =
 
        | TokenBR
 
-       | TokenBll
-
-       | TokenBrr
-
        | TokenDC
 
        | TokenPlus
 
        | TokenMinus
 
-       | TokenDef
-
        | TokenCL
 
        | TokenDot
 
+       | TokenAb
   deriving (Show)
 
 parseError :: [Token] -> a
@@ -243,9 +236,8 @@ lexer (c:cs)
       | isDigit c = lexNum (c:cs)
 
 lexer ('!': cs) = TokenEx : lexer cs 
-lexer ('=': cs) = TokenDef : lexer cs 
-lexer ('[': cs) = TokenBll : lexer cs
-lexer (']': cs) = TokenBrr : lexer cs
+lexer ('\\': cs) = TokenLamb : lexer cs 
+lexer ('=': cs) = TokenEq : lexer cs 
 lexer ('.': cs) = TokenDot : lexer cs
 lexer ('+':cs) = TokenPlus : lexer cs
 lexer ('-':cs) = TokenMinus : lexer cs
@@ -253,7 +245,6 @@ lexer ('(':cs) = TokenBL : lexer cs
 lexer (')':cs) = TokenBR : lexer cs
 lexer (':': cs) = case cs of
 		  (':': css) -> TokenDC : lexer css
-		  ('=': css) -> TokenDef : lexer css
 		  ( _ : css) -> TokenCL : lexer cs
 		 
 lexer ('$': cs) = case span isAlpha cs of
@@ -270,21 +261,22 @@ lexNum cs = TokenInt (read num) : lexer rest
 lexVar cs =
     case span isAlpha cs of
       ("valax",rest) -> TokenValax : lexer rest
+      ("Valax",rest) -> TokenValax : lexer rest
       ("contr",rest)  -> TokenContr : lexer rest
+      ("Contr",rest)  -> TokenContr : lexer rest
       ("join",rest)  -> TokenJoin : lexer rest
+      ("Join",rest)  -> TokenJoin : lexer rest
       ("abort",rest)  -> TokenAb : lexer rest
-      ("Lambda",rest)  -> TokenLamb : lexer rest
-      ("lambda",rest)  -> TokenLM : lexer rest
-      ("plambda",rest)  -> TokenPlam : lexer rest
+      ("Abort",rest)  -> TokenAb : lexer rest
       ("Bottom",rest)  -> TokenBot : lexer rest
-      ("Eq",rest)  -> TokenEq : lexer rest
+      ("bottom",rest)  -> TokenBot : lexer rest
       ("Pi",rest)  -> TokenPi : lexer rest
       ("formula",rest)  -> TokenFm : lexer rest
+      ("Formula",rest)  -> TokenFm : lexer rest
       ("type",rest)  -> TokenType : lexer rest
-      ("data",rest)  -> TokenData : lexer rest
-      ("theorem",rest)  -> TokenTheorem : lexer rest
+      ("Type",rest)  -> TokenType : lexer rest
       ("Forall",rest) -> TokenForall : lexer rest
-      ("Qforall",rest) -> TokenQF : lexer rest
+
       (var,rest) -> TokenTermVar var : lexer rest
       
 -- For test purpose
@@ -330,13 +322,6 @@ readinput10 = do putStrLn "Please input a Predicate definition"
 
 
 
- {- %name parser4Logicdel Logicdecl
-%name parser4Proofdef Proofdef
-%name parser4Progdecl Progdecl
-%name parser4Progdef Progdef
-%name parser4Preddecl Preddecl
-%name parser4Preddef Preddef
-  -}
 
 
 
