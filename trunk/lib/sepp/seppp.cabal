@@ -58,8 +58,8 @@ Library
   -- Packages needed in order to build this package.
   Build-depends:
     base,
-    unbound,
-    parsec >= 3.0,mtl,pretty,RepLib >= 0.4.0, containers,
+    unbound >= 0.3.2,
+    parsec >= 3.0,mtl,pretty,RepLib >= 0.5.2, containers,
     cmdargs
 
   -- Modules not exported by this package.
@@ -74,7 +74,7 @@ Library
 
 Executable sep
   Main-is: SepPP.hs
-  Build-depends: base, cmdargs, pretty, mtl, unbound, RepLib, seppp, parsec >= 3.0
+  Build-depends: base, cmdargs, pretty, mtl, unbound >= 0.3.2, RepLib >= 0.5.2, seppp, parsec >= 3.0
   Hs-source-dirs: executables
   Extensions: DeriveDataTypeable
 
