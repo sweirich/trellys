@@ -5,7 +5,8 @@ UndecidableInstances, PackageImports #-}
 module Language.SepPP.Match
  (PatMatch(..),Match,
  emptyMatch, singletonMatch, extendMatch, extendMatches, applyMatch, lookupMatch,
- isInstantiated) where
+ isInstantiated,
+ showSub, subNames,swapNames) where
 
 
 import Language.SepPP.Syntax
@@ -126,6 +127,10 @@ instance (PatMatch t) => PatMatch (R t)
 newtype Match = Match (M.Map EName Expr) deriving Show
 
 
+instance Alpha Match
+instance Alpha (M.Map EName Expr)
+
+
 emptyMatch = Match M.empty
 singletonMatch n t = extendMatch n t emptyMatch
 -- extendMatch :: EName -> Expr -> Match -> TCMonad Match
@@ -152,9 +157,11 @@ isInstantiated vars ty
   where allvars = fv ty
         metavars = allvars `intersect` vars
 
+-- FIXME: Debugging, should remove.
+showSub (Match m) =  [(name2String n,v) | (n,v) <- M.toList m]
+subNames (Match m) = M.keys m
 
 $(derive_abstract [''M.Map])
 $(derive [''Match])
 
-instance Alpha Match
-instance Alpha (M.Map EName Expr)
+swapNames perm (Match m) = Match $ M.fromList [(swaps perm k,swaps perm val) | (k,val) <- M.toList m]

@@ -328,11 +328,12 @@ check mode (Forall _) _ = do
 check mode term@(App t0 stage t1) expected = do
  imp <- getOptImplicitArgs
  if imp
-  then implicit mode term expected -- checkImp is defined way at the bottom.
-  else do -- No implicit arguments
-   ty0 <- check mode t0 Nothing
-   case (mode, down ty0) of
-    (ProgMode, Pi piStage binding) -> do
+   then do
+       implicit mode term expected -- checkImp is defined way at the bottom.
+   else do -- No implicit arguments
+    ty0 <- check mode t0 Nothing
+    case (mode, down ty0) of
+     (ProgMode, Pi piStage binding) -> do
         ((x,Embed dom,inf),body) <- unbind binding
         cls <- getClassification dom
         argMode <- case cls of
@@ -359,19 +360,19 @@ check mode term@(App t0 stage t1) expected = do
         let sub = subst x t1 body
         sub `sameType` expected
         return sub
-    (ProgMode, ty0') -> do
+     (ProgMode, ty0') -> do
         typeError "Can't apply a expression that does not have an arrow type."
                   [(text "The Type", disp ty0')
                   ,(text "The Function", disp t0)
                   ,(text "The Application", disp term)]
 
-    (PredMode, Forall binding) -> do
+     (PredMode, Forall binding) -> do
         ensure (stage == Static) $ "Application of a predicate must be in the static stage."
         ((n,Embed ty,inf),body) <- unbind binding
         guardLK body
         typeAnalysis' t1 ty -- TODO: Check on this, should it be typeAnalysis?
         return $ subst n t1 body
-    (ProofMode, Forall binding) -> do
+     (ProofMode, Forall binding) -> do
         ((n,Embed ty,inf),body) <- unbind binding
         requireB ty
         requirePred body
@@ -379,7 +380,7 @@ check mode term@(App t0 stage t1) expected = do
         let snb = subst n t1 body
         snb `sameType` expected
         return snb
-    (ProofMode, Pi stage binding) -> do
+     (ProofMode, Pi stage binding) -> do
              -- FIXME: Do something with the stage?
              ((n,Embed ty,inf),body) <- unbind binding
              -- requireB ty
@@ -389,7 +390,7 @@ check mode term@(App t0 stage t1) expected = do
              ensure (constrApp term) $ term <++> "is not a construction."
              snb `sameType` expected
              return snb
-    (_, tyfun) -> typeError "App with non-function"
+     (_, tyfun) -> typeError "App with non-function"
                   [(text "computed function type", disp tyfun)]
     -- _ -> checkUnhandled mode term expected
   where constrApp (Con c) =  True
@@ -1502,16 +1503,19 @@ pairTelePrf (TCons teleBinding) (Forall binding) = do
 
 
 
+
 -- * Implicit arguments.
 
 
 implicit mode t expected = do
+
   (f,actuals) <- unroll t []
   -- let (stages,args) = unzip actuals
-  fTy <- check mode f Nothing
 
+  fTy <- check mode f Nothing
   -- Calculate an initial substitution.
   (iSub,indices) <- initialSub fTy actuals [] expected
+
   (ty,vars,sub) <- loop fTy (0,indices) [] actuals iSub
 
   -- emit $ "Final Sub" $$$ show vars
@@ -1522,6 +1526,7 @@ implicit mode t expected = do
         unroll (Pos _ t) acc = unroll t acc
         unroll (App f s x) acc = unroll f ((s,x):acc)
         unroll t acc = return (t,acc)
+
 
         -- process the arguments w.r.t. the type.
         -- arguments:
@@ -1536,18 +1541,18 @@ implicit mode t expected = do
           ((n,Embed dom,inf),body) <- unbind binding
           let Just old = lookup idx imap -- The variable name in the initial substitution
           -- There has to be a better way to do the substitution.
-          let sub' = swaps (single (AnyName old) (AnyName n)) sub
-
+          let sub' = swapNames (single (AnyName n) (AnyName old)) sub
           if inf
              -- The the argument is to be inferred, then we check to see if we already have
              -- an instantiation as an input.
-             then do
+            then do
                case lookupMatch n sub' of
                  Just ty' -> do
                    check mode ty' (Just dom)
                    loop (subst n ty' body) (idx + 1,imap) vars args sub
-                 Nothing -> loop body (idx+1,imap) ((n,dom,piStage):vars) args sub
-             else do
+                 Nothing -> do
+                   loop body (idx+1,imap) ((n,dom,piStage):vars) args sub
+            else do
                  -- Get the sort of the argument type, so we can check it in the correct mode.
                  cls <- getClassification dom
                  argMode <- case cls of
