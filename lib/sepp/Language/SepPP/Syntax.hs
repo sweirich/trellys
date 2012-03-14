@@ -39,6 +39,7 @@ data Decl = ProgDecl EName Expr Expr
           | DataDecl Expr (Bind Tele [(EName,Expr)])
           | AxiomDecl EName Expr
           | FlagDecl String Bool
+          | OperatorDecl String Int String
      deriving Show
 
 data Stage = Dynamic | Static deriving Eq
