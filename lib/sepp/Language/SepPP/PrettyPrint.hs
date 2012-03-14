@@ -341,6 +341,27 @@ instance Display Expr where
     return $ fsep [d0, colon, nest 2 d1]
 
 
+  display t@(Exists binding) =
+    lunbind binding $ \((n,Embed ty),body) -> do
+      dn <- display n
+      dty <- display ty
+      dbody <- display body
+      return $ fsep [text "exists", dn, colon, dty, text ".", dbody]
+
+  display t@(EIntro e1 e2) = do
+    d1 <- display e1
+    d2 <- display e2
+    return $ parens (d1 <> comma <+> d2)
+
+  display t@(EElim scrutinee binding) =
+    lunbind binding $ \((l,r),body) -> do
+      ds <- display scrutinee
+      dl <- display l
+      dr <- display r
+      dbody <- display body
+      return $ text "unpack" <+> ds <+> text "as" <+>
+                parens (dl <> comma <+> dr) <+> text "in" $$
+               nest 2 dbody
   display (Pos _ t) = display t
   display (t@(Sym x)) = do
     dx <- dParen (precedence t) x
@@ -354,6 +375,8 @@ instance Display Expr where
   display t@(MoreJoin xs) = do
     ds <- mapM display xs
     return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
+
+
 
   -- display e = error $ "display: " ++ show e
 
@@ -560,8 +583,3 @@ instance Display Tele where
       case stage of
         Static -> return $ brackets (dinf <+> dn <> colon <> dty) <> drest
         Dynamic -> return $ parens (dinf <+> dn <> colon <> dty) <> drest
-
-
-
-
-

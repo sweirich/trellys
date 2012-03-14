@@ -117,6 +117,11 @@ data Expr = Var EName                                 -- Expr, Proof
           | Rec (Bind (EName,Tele) Expr) -- term
 
 
+           -- Existential
+          | Exists (Bind (EName,Embed Expr) Expr) -- exists x:T s.t. P(x)
+          | EIntro Expr Expr
+          | EElim Expr (Bind (EName,EName) Expr)
+
 
           -- In a conversion context, the 'Escape' term splices in an equality
           -- proof (or an expression that generates an equality proof).
@@ -340,6 +345,12 @@ children (Trans x y) = [x,y]
 children (MoreJoin es) = es
 children (Ann x y) = [x,y]
 children (Pos _ e) = children e
+children (Exists binding) = [ty,body]
+  where ((n,Embed ty),body) = unsafeUnbind binding
+children (EIntro e1 e2) = [e1,e2]
+children (EElim expr binding) = [expr,body]
+  where (_,body) = unsafeUnbind binding
+
 children _ = []
 
 childrenTele Empty = []

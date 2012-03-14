@@ -1008,6 +1008,41 @@ check mode (Trans t1 t2) expected = do
 
 
 
+-- Existentials
+check PredMode (Exists binding) expected = do
+  ((n,Embed ty),body) <- unbind binding
+  check ProgMode ty (Just Type)
+  extendBinding n ty False $ check PredMode body (Just (Formula 0))
+  return (Formula 0)
+
+check ProofMode (EElim scrutinee binding) (Just pred) = do
+  stype <- check ProofMode scrutinee Nothing
+  case down stype of
+    (Exists ebinding) -> do
+        ((n,Embed ty),epred) <- unbind ebinding
+
+        -- Is this necessary?
+        check ProgMode ty (Just Type)
+        extendBinding n ty False $ check PredMode epred (Just (Formula 0))
+
+        ((n',p),body) <- unbind binding
+        extendBinding n' ty False $
+          extendBinding p (subst n (Var n') epred) False $
+            check ProofMode body (Just pred)
+
+
+    _ -> typeError "Scrutinee of exists elim must be an existential."
+         [(text "Inferred type", disp stype)]
+
+check ProofMode (EIntro p1 p2) (Just res@(Exists ebinding)) = do
+  ((n,Embed ty),epred) <- unbind ebinding
+  check ProgMode ty (Just Type)
+  extendBinding n ty False $ check PredMode epred (Just (Formula 0))
+
+  check ProgMode p1 (Just ty)
+  check ProofMode p2 (Just (subst n p1 epred))
+  return res
+
 
 check mode term expected = checkUnhandled mode term expected
 
@@ -1089,8 +1124,11 @@ isPred (Forall binding) = isB ty && isPred body
 isPred (Equal t0 t1) = isTerm t0 && isTerm t1
 isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
 isPred (Terminates t) = isTerm t
+isPred (Exists binding) = isA ty && isPred body
+  where ((n,Embed ty),body) = unsafeUnbind binding
 isPred (Ann p t) = isPred p && isLK t
 isPred (Pos _ t) = isPred t
+
 isPred _ = False
 
 
