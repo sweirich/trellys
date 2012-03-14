@@ -100,7 +100,7 @@ reduce steps tm@(EApp t1 t2) k = do
           tp <- lookupTermProof t
           disableValueRestriction <- getOptDisableValueRestriction
           ev <- erasedSynValue t
-          emit $ "esv" <++> show ev <++> t
+          -- emit $ "esv" <++> show ev <++> t
           case tp of
             Nothing -> return (ev || disableValueRestriction)
             Just _ -> do
@@ -175,8 +175,3 @@ patMatch t@(ECon c,args) (b:bs) = do
 -- getCons t = case splitApp t of
 --               (c@(Con _):cs) -> return (c,cs)
 --               _ -> Nothing
-
-
-
-
-
