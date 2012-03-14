@@ -48,8 +48,6 @@ sepModule = do
   return $ Module modName bs
 
 
-
-
 -- | Top-level binding
 -- sepBinding :: Parser Binding
 sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|>
@@ -122,8 +120,10 @@ sepProgramDecl = do
   reserved "Program"
   n <- varName
   colon
-  qvars <- many1 piBinding
-  reservedOp "->"
+  qvars <- option [] $ try $ do
+    qvars <- many1 piBinding
+    reservedOp "->"
+    return qvars
   ran <- expr
   reservedOp ":="
   body <- expr
@@ -433,6 +433,16 @@ transExpr = do
   Trans <$> innerExpr <*> innerExpr
 
 
+natExpr = do
+  i <- integer
+  return $ nums !! (fromInteger i)
+
+  where nums = iterate s z
+        s x = App (Con (string2Name "S")) Dynamic x
+        z = Con (string2Name "Z")
+
+
+
 convExpr = do
   reserved "conv"
   a <- expr
@@ -541,7 +551,10 @@ ordTrans = reserved "ordtrans" >> OrdTrans <$> innerExpr <*> innerExpr
 -- FIXME: There's overlap between 'piType' and 'parens expr', hence the
 -- backtracking. The 'piType' production should be moved to be a binop in expr.
 innerExpr = wrapPos $
-        (choice [sepType <?> "Type"
+        (choice [
+               (try natExpr <?> "Natural Number") -- Syntactic sugar for
+                                         -- repeated iterations of S
+              ,sepType <?> "Type"
               ,formula <?> "Form"
               ,abstraction
               ,quantification
@@ -565,12 +578,16 @@ innerExpr = wrapPos $
               ,letExpr
               ,escapeExpr
               ,strictExpr
+
                 -- Derived Forms
               ,symExpr
               ,transExpr
               ,reflExpr
               ,morejoinExpr
+
+
               ,varOrCon <?> "Identifier"
+
               ,parens expr <?> "Parenthesized Expression"
               ] <?> "innerExpr")
 
@@ -578,7 +595,7 @@ factor = do
   f <- innerExpr
   args <- many arg
   return $ foldl mkApp f args
-  where arg = ((,) Static <$> brackets innerExpr) <|>
+  where arg = ((,) Static <$> brackets expr) <|>
               ((,) Dynamic <$> innerExpr)
         mkApp f (s,a) = App f s a
 
@@ -624,5 +641,3 @@ sepFlag = do
   b <- ((reserved "true" >> return True) <|> (reserved "false" >> return False))
   return $ FlagDecl id b
   <?> "flag"
-
-
