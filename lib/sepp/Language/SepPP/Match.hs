@@ -161,7 +161,6 @@ isInstantiated vars ty
 showSub (Match m) =  [(name2String n,v) | (n,v) <- M.toList m]
 subNames (Match m) = M.keys m
 
-$(derive_abstract [''M.Map])
 $(derive [''Match])
 
 swapNames perm (Match m) = Match $ M.fromList [(swaps perm k,swaps perm val) | (k,val) <- M.toList m]
