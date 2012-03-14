@@ -227,12 +227,14 @@ synValue (Pos n t) = synValue t
 synValue (Ann t typ) = synValue t
 synValue (Rec _) = return True
 synValue (TCast _ _) = return True
-synValue (App f _ x) = lift2 (&&) (constrApp f) (synValue x)
+synValue (App f stage x) = lift2 (&&) (constrApp f) (argValue stage)
   where constrApp (Con c) = return True
         constrApp (App f Static x) = constrApp f
         constrApp (App f Dynamic x) = lift2 (&&) (constrApp f) (synValue x)
         constrApp (Pos x t) = constrApp t
         constrApp _ = return False
+        argVal Dynamic = synValue x
+        argValue _ = return True
 synValue x = return False
 
 

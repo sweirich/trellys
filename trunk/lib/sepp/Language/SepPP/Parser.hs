@@ -19,6 +19,7 @@ import "mtl" Control.Monad.Identity
 import Control.Exception(Exception)
 import Data.Char
 import Text.PrettyPrint(render)
+import qualified Data.IntMap as IM
 
 parse2 p s =
    case parse p "Input" s of
@@ -27,7 +28,19 @@ parse2 p s =
 
 -- | Parse a string to module.
 parseModule :: String -> String -> Either P.ParseError Module
-parseModule srcName cnts = runParser sepModule () srcName cnts
+parseModule srcName cnts = runParser sepModule initialParserState srcName cnts
+
+-- User state, so that we can update the operator parsing table.
+data ExprParserState =
+  ExprParserState {
+    exprParser :: Parsec String ExprParserState Expr,
+    exprOpTable :: IM.IntMap [Operator String ExprParserState Identity Expr]
+    }
+
+initialParserState = ExprParserState {
+  exprParser = buildExpressionParser initialTable factor,
+  exprOpTable = IM.fromAscList (zip [0..] initialTable)
+  }
 
 
 
@@ -53,7 +66,7 @@ sepModule = do
 sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|>
           sepTheoremDecl <|> sepProgramDecl <|>
           sepInductiveDecl <|> sepRecursiveDecl <|>
-          sepFlag
+          sepFlag <|> sepOperator
 
 sepProgDecl = do
   (n,ty) <- sig
@@ -118,7 +131,7 @@ sepTheoremDecl = do
 
 sepProgramDecl = do
   reserved "Program"
-  n <- varName
+  n <- varOrOpName
   colon
   qvars <- option [] $ try $ do
     qvars <- many1 piBinding
@@ -130,10 +143,11 @@ sepProgramDecl = do
   let ty = foldr (\(stage,(inf,n,ty)) rest -> Pi stage (bind (n,Embed ty,inf) rest)) ran qvars
       term = foldr (\(stage,(_,n,ty)) rest -> Lambda Program stage (bind (n,Embed ty) rest)) body qvars
   return $ ProgDecl n ty term
+  where varOrOpName = varName <|> parens (string2Name <$> operator)
 
 sepRecursiveDecl = do
   reserved "Recursive"
-  n <- varName
+  n <- varOrOpName
   colon
   tele <- telescope
   reservedOp "->"
@@ -143,6 +157,7 @@ sepRecursiveDecl = do
   let ty = fTele (\(n,stage,ty,inf) rest -> Pi stage (bind (n,ty,inf) rest)) ran tele
       term = Rec (bind (n,tele) body)
   return $ ProgDecl n ty term
+  where varOrOpName = varName <|> parens (string2Name <$> operator)
 
 sepInductiveDecl = do
   reserved "Inductive"
@@ -221,7 +236,8 @@ sepPPStyle = haskellStyle {
             "let","in",
             "sym","symm","trans","refl", "tcast",
             "set", -- for flags
-            "Theorem", "Program", "Inductive", "Recursive"
+            "Theorem", "Program", "Inductive", "Recursive",
+            "infix", "infixl", "infixr", "pre", "post"
            ],
            Token.reservedOpNames = ["\\", "=>", "|","?",".",":="]
            }
@@ -232,6 +248,7 @@ identifier = Token.identifier tokenizer
 whiteSpace = Token.whiteSpace tokenizer
 reserved = Token.reserved tokenizer
 reservedOp = Token.reservedOp tokenizer
+operator = Token.operator tokenizer
 colon = Token.colon tokenizer
 semi = Token.semi tokenizer
 integer = Token.integer tokenizer
@@ -243,6 +260,7 @@ dot = Token.dot tokenizer
 commaSep1 = Token.commaSep1 tokenizer
 semiSep1 = Token.semiSep1 tokenizer
 --sepBy = Token.sepBy tokenizer
+comma = Token.comma tokenizer
 
 
 alts p = do
@@ -599,19 +617,58 @@ factor = do
               ((,) Dynamic <$> innerExpr)
         mkApp f (s,a) = App f s a
 
-expr = wrapPos $ buildExpressionParser table factor
-  where table = [[binOp AssocNone "=" Equal]
-                ,[binOp AssocNone "<" IndLT]
-                ,[postOp "!" Terminates]
-                ,[binOp AssocLeft ":" Ann]
-                ,[binOp AssocRight "->"
-                          (\d r -> Pi Dynamic (bind (wildcard,Embed d,False) r))
-                 ,binOp AssocRight "=>"
-                          (\d r -> Pi Static (bind (wildcard,Embed d,False) r))]
-                ]
-        binOp assoc op f = Infix (reservedOp op >> return f) assoc
-        postOp op f = Postfix (reservedOp op >> return f)
-        preOp op f = Prefix (reservedOp op >> return f)
+
+expr = do
+  st <- getState
+  wrapPos $ exprParser st
+
+
+-- The initial expression parsing table.
+initialTable =
+  [[binOp AssocNone "=" Equal]
+  ,[binOp AssocNone "<" IndLT]
+  ,[postOp "!" Terminates]
+  ,[binOp AssocLeft ":" Ann]
+  ,[binOp AssocRight "->"
+    (\d r -> Pi Dynamic (bind (wildcard,Embed d,False) r))
+   ,binOp AssocRight "=>"
+    (\d r -> Pi Static (bind (wildcard,Embed d,False) r))]
+  ]
+
+binOp assoc op f = Infix (reservedOp op >> return f) assoc
+postOp op f = Postfix (reservedOp op >> return f)
+preOp op f = Prefix (reservedOp op >> return f)
+
+
+-- sepOperator
+sepOperator = do
+  r <- choice [reserved i >> return i
+               | i <- ["infix","infixr","infixl","pre","post"]
+               ]
+  level <- fromInteger <$> integer
+  op <- operator
+  -- update the table
+
+  st <- getState
+  let table' = IM.insertWith (++) level [toOp op r] $ exprOpTable st
+      expr' = buildExpressionParser (map snd (IM.toAscList table')) factor
+  putState $ ExprParserState expr' table'
+
+  return (OperatorDecl op level r)
+  where toOp op "infix" =
+          binOp AssocNone op (binApp op)
+        toOp op "infixr" =
+          binOp AssocRight op (binApp op)
+        toOp op "infixl" =
+          binOp AssocLeft op (binApp op)
+        toOp op "pre" =
+          preOp op (App (Var (string2Name op)) Dynamic)
+        toOp op "post" =
+          preOp op (App (Var (string2Name op)) Dynamic)
+        binApp op x y = App (App (Var (string2Name op)) Dynamic x) Dynamic y
+
+
+
 
 
 wildcard = string2Name "_"

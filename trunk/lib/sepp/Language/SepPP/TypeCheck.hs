@@ -50,10 +50,12 @@ data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
             | ProgResult EName Expr Expr Bool
             | AxiomResult EName Expr
             | FlagResult String Bool
+            | OperatorResult String
 
 -- | Typecheck a single definition
 checkDef :: Decl -> TCMonad DefRes
 checkDef (FlagDecl nm b) = return $ FlagResult nm b
+checkDef (OperatorDecl nm level fixity) = return $ OperatorResult nm
 
 checkDef (AxiomDecl nm theorem) = do
   lk <- predSynth' theorem
@@ -144,7 +146,8 @@ checkDefs (d:ds) = do
           extendBinding tnm (dynArrow (teleArrow tele Type)) True $
                         foldr (\(cnm,(arity,ty)) m ->
                                  extendBinding cnm (teleArrow tele ty) True m)
-                              comp cs
+                        comp cs
+        extendBinding' (OperatorResult n) comp = comp
         extendBinding' (FlagResult n val) comp = do
            setFlag n val
            comp
@@ -1221,19 +1224,23 @@ join lSteps rSteps t1 t2 = do
 -- Get the classification of a classifier (Type,Predicate,LogicalKind)
 data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
 getClassification (Pos _ t) = getClassification t
-getClassification t =
-  ta `catchError` (\te ->
-  pa `catchError` (\pe ->
-  la `catchError` (\le -> do env <- ask
-                             emit $ disp env
-                             emit te
-                             emit pe
-                             emit le
-                             typeError "Cannot classify an expression."
-                                        [(text "The expression", disp t)])))
+getClassification t = do
+   -- emit $ "Checking classification" <++> t
+   res <- (ta `catchError` (\te ->
+           pa `catchError` (\pe ->
+           la `catchError` (\le -> do
+             emit te
+             emit pe
+             emit le
+             typeError "Cannot classify an expression."
+                                   [(text "The expression", disp t)]))))
+   -- emit $ "Classification is" <++> (show res)
+   return res
 
   where ta = typeAnalysis' t Type >> return SortType
-        pa = do sort <- predSynth' t
+        pa = do -- emit $ "Checking if " <++> t <++> "is a pred."
+                sort <- predSynth' t
+                -- emit $ "Got a sort" <++> show sort
                 unless (isLK (down sort)) $ err "Not a predicate"
                 return SortPred
         la = do unless (isLK t) (err "Could not classify classifier")
