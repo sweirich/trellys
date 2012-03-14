@@ -53,8 +53,10 @@ reduce steps tm@(EApp t1 t2) k = do
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
           tp <- lookupTermProof t2
-          let t2' = maybe t2 ETCast tp
-          reduce steps t2' (\steps' v -> do
+          maybe (return ()) (\e -> emit $ "Found term proof for" <++> e) tp
+          case tp of
+            Nothing -> do
+              reduce steps t2 (\steps' v -> do
                               case v of
                                 EAbort -> return EAbort
                                 _ -> do
@@ -67,6 +69,9 @@ reduce steps tm@(EApp t1 t2) k = do
                                     let tm' = subst x v body
                                     logReduce (EApp t1' v) tm'
                                     reduce (steps - 1) tm' k)
+            Just pf -> do
+              let tm' = subst x (ETCast t2) body
+              reduce (steps - 1) tm' k
 
         k' steps t1'@(ERec binding) = do
           typeError "When evaluating, the term being applied is a 'Rec'. This should not happen."
@@ -100,12 +105,9 @@ reduce steps tm@(EApp t1 t2) k = do
           tp <- lookupTermProof t
           disableValueRestriction <- getOptDisableValueRestriction
           ev <- erasedSynValue t
-          -- emit $ "esv" <++> show ev <++> t
           case tp of
             Nothing -> return (ev || disableValueRestriction)
-            Just _ -> do
-              emit $ "Found a termination proof for non-value" <++> t
-              return True
+            Just _ -> return True
 
 -- FIXME: Need to be more careful with unTCast than I am currently.
 reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
