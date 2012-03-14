@@ -173,7 +173,6 @@ sepInductiveDecl = do
   body <- expr
   (ind,_,_,_) <- lastTele tele1
   let ty2 = fTele (\(n,stage,ty,inf) rest -> Forall (bind (n,ty,inf) rest)) ran tele2
-
       ty3 = Forall (bind (iv,Embed (Terminates (Var ind)),False) ty2)
       ty1 = fTele (\(n,stage,ty,inf) rest -> Forall (bind (n,ty,inf) rest)) ty3 tele1
       terms2 = fTele (\(n,_,ty,inf) rest -> Lambda Form Static (bind (n,ty) rest)) body tele2
@@ -372,10 +371,15 @@ caseExpr = do
   where alt = do cons <- identifier
                  unless (isUpper (head cons)) $
                    unexpected "Pattern requires an uppercase constructor name"
-                 vars <- many varName
+                 vars <- many pvar
                  reservedOp "->"
                  body <- expr
                  return (bind (cons,vars) body)
+        pvar = do var <- brackets varName
+                  return (var,Static)
+               <|>
+               do var <- varName
+                  return (var,Dynamic)
 
 
 termCase = do

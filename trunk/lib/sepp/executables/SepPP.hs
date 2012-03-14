@@ -6,7 +6,7 @@ import Language.SepPP.Parser
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TypeCheck
 import Language.SepPP.TCUtils(TypeError(ErrMsg))
-import Language.SepPP.Syntax(Expr(..),var,app,Stage(..))
+import Language.SepPP.Syntax(Expr(..),Stage(..))
 import Unbound.LocallyNameless(Embed(..),bind,string2Name)
 
 import Text.PrettyPrint(render)
@@ -54,7 +54,7 @@ testcase = "Tests/unittests/ParseTest.sepp"
 testcase2 = "Tests/unittests/IndVRDemo.sepp"
 --------------------------------------
 
-less1 = IndLT (var "x") (var "y")
-eq1 = Equal (var "x") (var "y")
+-- less1 = IndLT (var "x") (var "y")
+-- eq1 = Equal (var "x") (var "y")
 
 test p s =  print (disp (parse2 p s))

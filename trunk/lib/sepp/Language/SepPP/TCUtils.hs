@@ -259,9 +259,11 @@ erasedSynValue x = return False
 
 
 
--- Erasure
 -- | Erase an annotated term into an unannotated term, for evaluation.
---- erase :: (Applicative m, Fresh m ) => Expr -> m EExpr
+-- Erasure is complicated slightly because we need to know the stage
+-- (static or dynamic) of pattern variables, which is available in the
+-- *types* of the data constructors.
+erase :: (Applicative m, Fresh m) => Expr -> m EExpr
 erase (Pos _ t) = erase t
 erase Type = return EType
 erase (Var n) = return $ EVar (translate n)
@@ -282,27 +284,18 @@ erase (Rec binding) = do
   ((n,tele),body) <- unbind binding
   ns <- eraseTele tele
   ERec <$> (bind (translate n, ns)) <$> erase body
-  where eraseTele :: Monad m => Tele -> m [EEName]
-        eraseTele Empty = return []
-        eraseTele (TCons rebinding) = do
-          let ((n,stage,Embed ty,inf),rest) = unrebind rebinding
-          ns <- eraseTele rest
-          case stage of
-            Dynamic -> return (translate n:ns)
-            Static -> return ns
+    where eraseTele :: Monad m => Tele -> m [EEName]
+          eraseTele Empty = return []
+          eraseTele (TCons rebinding) = do
+            let ((n,stage,Embed ty,inf),rest) = unrebind rebinding
+            ns <- eraseTele rest
+            case stage of
+              Dynamic -> return (translate n:ns)
+              Static -> return ns
 
 erase (Case scrutinee _ binding) = do
-    (_,alts) <- unbind binding
-    ECase <$> erase scrutinee <*> mapM eraseAlt alts
-  where eraseAlt binding = do
-          ((c,vs),body) <- unbind binding
-          -- erasePatVars looks at _all_ data constructors, which isn't
-          -- particularly efficient. To restrict this to just constructors of
-          -- the type of the scrutinee would require erasure to be
-          -- type-directed, which is a can of worms that we don't need to open
-          -- for the time being.
-          vs' <- erasePatVars c vs
-          bind (c,map translate vs') <$> erase body
+  (_,alts) <- unbind binding
+  ECase <$> erase scrutinee <*> mapM eraseAlt alts
 
 erase (Let binding) = do
   ((x,_,Embed t),body) <- unbind binding
@@ -312,6 +305,7 @@ erase (Let binding) = do
       et <- erase t
       ebody <- erase body
       return $ ELet (bind (translate x,Embed et) ebody)
+
   where isProof (Pos _ e)  = isProof e
         isProof (Ann e _) = isProof e
         isProof (MoreJoin _) = True
@@ -326,23 +320,13 @@ erase (TCast t p) = ETCast <$> erase t
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show (downAll t)
 
-
--- Drop pattern variables that correspond to erased /constructor/
--- parameters. The lookup should be memoized.
-erasePatVars :: String -> [EName] -> TCMonad [EName]
-erasePatVars cname vars = do
-  tcs <- asks delta
-  let constructors = [(n,ty) | (tc,(_,cons)) <- tcs, (n,(arity,ty)) <- cons]
-  case lookup (string2Name cname) constructors of
-    Nothing -> typeError "Could not find constructor."
-                   [(text "The constructor",disp cname)]
-    Just ty -> piArgs ty vars
-
-  where piArgs (Pos _ t) vs = piArgs t vs
-        piArgs (Pi st binding) (v:vs) = do
-          (_,body) <- unbind binding
-          vs' <- piArgs body vs
-          case st of
-            Static -> return $ vs'
-            Dynamic -> return $ v:vs'
-        piArgs _ _ = return []
+eraseAlt binding = do
+  ((c,vs),body) <- unbind binding
+  -- erasePatVars looks at _all_ data constructors, which isn't
+  -- particularly efficient. To restrict this to just constructors of
+  -- the type of the scrutinee would require erasure to be
+  -- type-directed, which is a can of worms that we don't need to open
+  -- for the time being.
+  let vs' = [translate v | (v,Dynamic) <- vs]
+  -- vs' <- erasePatVars c vs
+  bind (c,vs') <$> erase body

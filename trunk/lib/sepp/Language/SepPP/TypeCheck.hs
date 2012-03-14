@@ -172,12 +172,11 @@ valJudgment (Lambda _ _ _ ) = return True
 valJudgment (Rec _ ) = return True
 -- valJudgement Nat = True
 valJudgment t@(App _ _ _ ) =
-  case splitApp t of
-    ((Con _):args) -> do
-       vals <- mapM valJudgment args
+  case unrollApp t of
+    (Con _,args) -> do
+       vals <- mapM valJudgment (map fst args)
        return $ and vals
     _ -> return False
-
 
 -- * Judgements on proof fragment
 
@@ -451,76 +450,82 @@ check ProgMode (Lambda Program stage binding) Nothing = do
   bodyTy <- extendBinding nm ty True $ check ProgMode body Nothing
   return $ Pi stage (bind (nm,Embed ty,False) bodyTy)
 
-
-
-
 -- Case
 check mode (Case s pf binding) expected = do
-  ensure (mode `elem` [ProofMode,ProgMode]) $
-     "Case expressions can only be checked in proof and program mode, not " <++> show mode
   (sEq,alts) <- unbind binding
   tyS <- typeSynth' s
 
-
   -- Checking termination proof
   case (mode,pf) of
-      (ProofMode,Just termProof) -> do
-                     sTermType <- proofSynth' termProof
-                     ensure (down sTermType `aeq` Terminates s) $
-                       termProof $$$
-                        "with the type" <++> sTermType <++> "is not a proof of" $$$
-                       (Terminates s)
-      (ProofMode, Nothing) -> do
-                     err "When case-splitting in a proof, a termination proof must be supplied."
-      _ -> return ()
-
-  -- Set up the parameter substitution
-
-  (args,cs) <- checkCaseCoverage tyS alts
-  tys <- mapM (altAnalysis args cs sEq) alts
+    (ProofMode,Just termProof) -> do
+      proofAnalysis' termProof (Terminates s)
+      return ()
+    (ProofMode, Nothing) ->
+        err "When case-splitting in a proof, a termination proof must be supplied."
+    (ProgMode, Just _) ->
+        typeError
+          "When checking a case expression in program mode, no termination proof should be supplied."
+          []
+    (ProgMode, Nothing) -> return ()
+    _ -> typeError "Case expressions can only be checked in proof or prog mode."
+         [(disp "The mode", disp $ show mode)]
 
 
-  case nubBy aeq tys of
-    [] -> maybe (err "Can't infer a type for a case expression with no branches.") return expected
-    [l] -> do
-      l `sameType` expected
-      return l
+  case unrollApp tyS of
+    (Con tc, args) -> do
+      -- Coverage check.
+      (_,cs) <- lookupTypeCons tc
+      let dataCons, altCons :: [EName]
+          dataCons = map fst cs
+          altCons = [string2Name $ fst $ fst $ unsafeUnbind alt | alt <- alts]
+      forM altCons (\c -> unless (c `elem` dataCons) $
+                          typeError "Invalid pattern -- constructor not in data type."
+                          [(disp "The constructor", disp c),
+                           (disp "The type", disp tc)]
+                         )
+      forM dataCons (\c -> unless (c `elem` altCons) $
+                          typeError "Invalid case -- constructor unhandled."
+                          [(disp "The constructor", disp c),
+                           (disp "The type", disp tc)]
+                         )
 
-    ls -> err "Types of case alternatives do not match"
+      -- Typecheck each alternative.
+      let chkAlt alt = do
+            ((cons,vars),body) <- unbind alt
+            (cty,_) <- lookupBinding (string2Name cons)
+            (cargs,_) <- unrollPi cty
+            -- first, substitute the actual type args
+            let subTArgs ((targ,_):targs) ((carg,cstage,cty,_):cargs) accum =
+                  subTArgs targs (subst carg targ cargs) (App accum cstage targ)
+                subTArgs [] cargs accum = subPVars vars cargs accum
 
+                subPVars [] [] accum =
+                  extendBinding sEq (Equal accum s) True $
+                    check mode body expected
+                subPVars ((v,pstage):vs) ((carg,cstage,cty,_):cs) accum
+                  | pstage /= cstage =
+                      typeError "Pattern variable stage does not match constructor argument stage."
+                        [(disp "The pattern variable", disp v),
+                         (disp "The pattern variable stage", disp pstage),
+                         (disp "The constructor argument stage", disp cstage)
+                        ]
+                  | otherwise =
+                      extendBinding v cty True $
+                        subPVars vs (subst carg (Var v) cs)
+                           (App accum cstage (Var v))
 
-  where altAnalysis args cs eqpf alt = do
-          ((cons,vars),body) <- unbind alt
-          ctype <-
-            maybe (typeError "When checking a case alternative, can't find constructor"  [(text "The Constructor", disp cons)])
-                  return (lookup (string2Name cons) cs)
+                subPVars _ _ accum =
+                   typeError "Pattern does not have the expected number of arguments."
+                      [(disp "The constructor", disp cons)]
 
-          stages <- getStages ctype
-          let pat = foldl (\t0 (t1,stage) -> (App t0 stage t1))
-                      (Con (string2Name cons)) ([(a,Static) | a <- args] ++ [(Var v, st) | v <- vars | st <- stages])
+            subTArgs args cargs (Con (string2Name cons))
+      -- Make sure all branches have the same type.
+      atys <- mapM chkAlt alts
 
-          substPat vars ctype $
-            extendBinding eqpf (Equal pat s) True  $ check mode body expected
-
-
-        substPat [] ty m = m
-        substPat (n:ns) ty m =
-          case down ty of
-            (Pi _ binding) -> do
-             ((n',Embed ty,inf),body) <- unbind binding
-             extendBinding n ty True $ substPat ns (subst n' (Var n) body) m
-            _ -> typeError
-                  ("When checking a pattern, expected constructor to have" <++>
-                   "a pi-type.")
-                  [(text "The Type", disp ty)]
-
-        getStages (Pos _ t) = getStages t
-        getStages (Pi st binding) = do
-          ((n',_,_),body) <- unbind binding
-          vs <- getStages body
-          return $ st:vs
-        getStages _ = return []
-
+      case nubBy aeq atys of
+        [] -> maybe (err "Can't infer a type for a case expression with no branches.") return expected
+        [l] -> return l
+        ls -> err "Types of case alternatives do not match"
 
 
 -- TerminationCase
@@ -748,14 +753,13 @@ check mode (ConvCtx p ctx) expected = do
 
 
 -- Ord
-
 check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
   -- Skeleton version of the 'ord' axiom.
   ty' <- proofSynth' w
   let errlist = [(text "the equality", disp ty') , (text "the expected ordering constraint", disp ty)]
   case down ty' of
     e@(Equal l' r') -> do
-        let (c,ls) = splitApp' l'
+        let (c,ls) = unrollApp l'
         unless (r `aeq` r') $
           typeError ("In an ord-proof, the right-hand side of the equality proved by the subproof of ord does "
                      ++ "not match the right-hand side of the expected ordering constraint.")
@@ -766,7 +770,7 @@ check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
           typeError ("In an ord-proof, the left-hand side of the equality proved by the subproof of ord "
                      ++ "is not an application of a constructor to arguments")
             errlist
-        unless (any (aeq l) ls) $
+        unless (any (aeq l) (map fst ls)) $
           typeError ("In an ord-proof, the left-hand side of the expected ordering constraint does "
                      ++ "not appear as an argument in the application on the left-hand side of the equality proof"
                      ++ "proved by the subproof of ord.")
@@ -1472,30 +1476,6 @@ copyEqualInEsc b x = escCopy f x
 
 
 
-checkCaseCoverage tyS alts = do
-    -- Checking constructor coverage
-    let (tc,args) = splitApp' tyS
-    (tele,cs) <- case down tc of  -- declared (constructor, arity)
-                   (Con tcName) -> lookupTypeCons tcName
-                   _ -> die $ "Can't find type constructor" <++> show tc
-
-    altCs <- forM alts (\a -> do { ((n,vars),_) <- unbind a;
-                                   return (string2Name n, length vars)})
-
-    let unhandled =  (nub $ map fst cs) \\ (nub $ map fst altCs)
-    ensure (null unhandled) $
-           "Unhandled constructors:" <++> (vcat $ map disp unhandled)
-
-    let teleSub =  subTele tele args
-    cs<- forM altCs (\(n,arity) ->
-                  case lookup n cs of
-                    Nothing -> die $ n <++> "is not a constructor of" <++> tc
-                    Just (arity',ty)
-                      | arity == arity' -> return (n,teleSub ty)
-                      | otherwise -> die $ "Pattern arity" <++> arity <++>
-                                     "does not match constructor" <++> n <++>
-                                                          "arity" <++> arity')
-    return $ (args,cs)
 
 
 
