@@ -303,10 +303,17 @@ erase (Case scrutinee _ binding) = do
           bind (c,map translate vs') <$> erase body
 
 erase (Let binding) = do
-    ((x,_,Embed t),body) <- unbind binding
-    et <- erase t
-    ebody <- erase body
-    return $ ELet (bind (translate x,Embed et) ebody)
+  ((x,_,Embed t),body) <- unbind binding
+  if isProof t
+    then erase body
+    else do
+      et <- erase t
+      ebody <- erase body
+      return $ ELet (bind (translate x,Embed et) ebody)
+  where isProof (Pos _ e)  = isProof e
+        isProof (Ann e _) = isProof e
+        isProof (MoreJoin _) = True
+        isProof _ = False
 
 erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t
@@ -337,5 +344,3 @@ erasePatVars cname vars = do
             Static -> return $ vs'
             Dynamic -> return $ v:vs'
         piArgs _ _ = return []
-
-
