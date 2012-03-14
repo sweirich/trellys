@@ -78,6 +78,8 @@ checkDef (ProgDecl nm ty prog) = do
 checkDef (DataDecl (Con nm) binding) = do
   (tele,cs) <- unbind binding
 
+  -- Turn the telescope (from the type arguments to the type
+  -- constructor) into a dependent product.
   let ty = teleArrow tele Type
   ran <- arrowRange ty
 
@@ -89,7 +91,8 @@ checkDef (DataDecl (Con nm) binding) = do
                 [(text "The Type Constructor", disp nm)
                 ,(text "The Type",disp ty)] $ typeAnalysis' ty Type
 
-  conTypes <- extendBinding nm ty True $
+  -- Change the erasure annotations of all type args to runtime using dynArrow.
+  conTypes <- extendBinding nm (dynArrow ty) True $
                extendTele tele $ (mapM chkConstructor cs)
   return (DataResult nm tele conTypes)
 
@@ -136,18 +139,20 @@ checkDefs (d:ds) = do
           extendBinding n ty False comp
         extendBinding' (ProgResult n ty def v) comp =
           extendDefinition  n ty def v comp
-        extendBinding' (DataResult n tele cs) comp =
-          extendTypeCons n tele cs $
-          extendBinding n (teleArrow tele Type) True $
-                        foldr (\(n,(arity,ty)) m ->
-                                 extendBinding n (teleArrow (staticTele tele) ty) True m)
+        extendBinding' (DataResult tnm tele cs) comp =
+          extendTypeCons tnm tele cs $
+          extendBinding tnm (dynArrow (teleArrow tele Type)) True $
+                        foldr (\(cnm,(arity,ty)) m ->
+                                 extendBinding cnm (teleArrow tele ty) True m)
                               comp cs
         extendBinding' (FlagResult n val) comp = do
            setFlag n val
            comp
-        staticTele Empty = Empty
-        staticTele (TCons binding) =
-            TCons (rebind (n,Static,ty,inf) (staticTele body))
+        -- make all of the erasure annotations for the type
+        -- constructor's type (kind) be runtime
+        dynamicTele Empty = Empty
+        dynamicTele (TCons binding) =
+            TCons (rebind (n,Dynamic,ty,inf) (dynamicTele body))
           where ((n,_,ty,inf),body) = unrebind binding
 
 
@@ -210,8 +215,11 @@ check mode (Ann t ty) (Just ty') = do
 
 -- Var
 check mode tm@(Var n) expected = do
+
+
   (ty,_) <- lookupBinding n
   ty `sameType` expected
+  return ty
 
   case mode of
     ProgMode -> return ()
@@ -537,7 +545,11 @@ check ProofMode (Join lSteps rSteps) (Just eq@(Equal t0 t1)) = do
   typeSynth' t1
   join lSteps rSteps t0 t1
   return eq
-
+check ProofMode tm@(Join _ _) (Just ty) = do
+  typeError "join can only be used to prove an equality."
+    [(text "The term", disp tm),
+     (text "The desired type", disp ty)
+     ]
 
 -- MoreJoin
 
@@ -1120,6 +1132,7 @@ isTerm (Pi _ binding) = isA ty && isTerm body
   where ((n,Embed ty,_),body) = unsafeUnbind binding
 isTerm (Lambda Program _ binding) = isA ty && isTerm body
   where ((n,Embed ty),body) = unsafeUnbind binding
+isTerm (ConvCtx t p) = isTerm t  -- Do we need to do anything with p?
 isTerm (Conv t ts binding) = isTerm t &&
                              and [is_q t | t <- ts] &&
                              isTerm body
@@ -1166,7 +1179,7 @@ require p cls (Var n) = do
 
 require p cls t =
   unless (p t) $
-         typeError "The expression is not of the propper syntactic class."
+         typeError "The expression is not of the proper syntactic class."
                    [(text "The expression", disp t)
                    ,(text "The class", text (show  cls))]
 
