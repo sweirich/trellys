@@ -237,7 +237,8 @@ sepPPStyle = haskellStyle {
             "sym","symm","trans","refl", "tcast",
             "set", -- for flags
             "Theorem", "Program", "Inductive", "Recursive",
-            "infix", "infixl", "infixr", "pre", "post"
+            "infix", "infixl", "infixr", "pre", "post",
+            "exists","as","pack","unpack"
            ],
            Token.reservedOpNames = ["\\", "=>", "|","?",".",":="]
            }
@@ -538,6 +539,30 @@ escapeExpr = do
 strictExpr = do
   reserved "aborts"
   Aborts <$> innerExpr
+
+existsExpr = do
+  reserved "exists"
+  (x,ty) <- parens $ (,) <$> varName <* colon <*> expr
+  dot
+  body <- expr
+  return (Exists (bind (x,Embed ty) body)) <?> "Exists expression"
+
+packExpr = do
+  reserved "pack"
+  e1 <- expr
+  comma
+  e2 <- expr
+  return $ EIntro e1 e2
+
+unpackExpr = do
+  reserved "unpack"
+  scrutinee <- expr
+  reserved "as"
+  bindings <- (parens $ (,) <$> varName <* comma <*> varName) <?>  "Exists elim binding"
+  reserved "in"
+  body <- expr
+  return $ EElim scrutinee (bind bindings body)
+
 -- Expr Productions
 
 variable = do
@@ -596,6 +621,10 @@ innerExpr = wrapPos $
               ,letExpr
               ,escapeExpr
               ,strictExpr
+               -- Existentials
+              ,existsExpr
+              ,packExpr
+              ,unpackExpr
 
                 -- Derived Forms
               ,symExpr
