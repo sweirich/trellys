@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell, DeriveDataTypeable, ScopedTypeVariables,
   FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
-  UndecidableInstances  #-}
+  UndecidableInstances, TypeFamilies  #-}
 module Language.SepPP.Syntax (
   Decl(..),Module(..),Expr(..),
   Stage(..),Kind(..),Alt,
@@ -8,8 +8,11 @@ module Language.SepPP.Syntax (
   EExpr(..), EEName,
   down,downAll,
   Tele(..),teleArrow,subTele,teleFromList,fTele,
-  splitApp, splitApp', isStrictContext, var, app,dynArrow,
-  okCtx) where
+  isStrictContext, -- var, app
+  dynArrow,
+  okCtx,
+  SynFun(..)
+  ) where
 
 import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
 import Unbound.LocallyNameless.Alpha(aeqR1)
@@ -26,7 +29,6 @@ type EName = Name Expr
 
 -- Telescopes. Hmmmm.
 data Tele = Empty | TCons (Rebind (EName, Stage, Embed Expr, Bool) Tele) deriving (Show)
-
 
 
 -- | A module is just a list of definitions.
@@ -143,7 +145,7 @@ data Expr = Var EName                                 -- Expr, Proof
 
 ---------------------------------------------------------
 
-type Alt = Bind (String, [EName]) Expr
+type Alt = Bind (String, [(EName,Stage)]) Expr
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 
@@ -174,18 +176,6 @@ instance Subst Expr Tele
 
 
 
-splitApp (App t0 _ t1) = splitApp' t0 [t1]
-  where splitApp' (App s0 _ s1) acc = splitApp' s0 (s1:acc)
-        splitApp' (Pos _ t) acc = splitApp' t acc
-        splitApp' s acc = s:acc
-splitApp (Pos _ t) = splitApp t
-splitApp t = []
-
-
-splitApp' t = case splitApp t of
-                [] -> (t,[])
-                (x:xs) -> (x,xs)
-
 isStrictContext (Pos _ t) = isStrictContext t
 isStrictContext (Escape e) = Just (e,id)
 isStrictContext (App e1 stage e2) =
@@ -194,17 +184,12 @@ isStrictContext (App e1 stage e2) =
    Nothing ->  case isStrictContext e2 of
                  Just (e,k2) -> Just (e,\v -> App e1 stage (k2 v))
                  Nothing -> Nothing
-
-
 isStrictContext (Case e term bs) = case isStrictContext e of
                                Just (e',k) -> Just (e',\v -> Case (k v) term bs)
-
-
 isStrictContext _ = Nothing
 
-var s = Var (string2Name s)
-app f x = App f Dynamic x
-
+-- var s = Var (string2Name s)
+-- app f x = App f Dynamic x
 
 
 down (Pos _ t) = down t
@@ -234,21 +219,6 @@ data EExpr = EVar EEName
   deriving (Show)
 
 
--- cValOfApp :: EExpr -> Bool
--- cValOfApp (EApp f x) = cValOfApp f && erasedValue x
--- cValOfApp (ECon _)   = True
--- cValOfApp _         = False
-
--- erasedValue :: EExpr -> Bool
--- erasedValue (ECase _ _) = False
--- erasedValue e@(EApp _ _) = cValOfApp e
--- erasedValue (ELet _) = False
--- erasedValue (EVar _) = False
--- erasedValue _ = True
-
-
-
-
 $(derive [''EExpr])
 
 instance Alpha EExpr where
@@ -268,13 +238,27 @@ teleArrow (TCons binding) end = Pi stage (bind (n,ty,inferred) arrRest)
  where ((n,stage,ty,inferred),rest) = unrebind binding
        arrRest = teleArrow rest end
 
+
+teleForall Empty end = end
+teleForall (TCons binding) end = Forall (bind (n,ty,inferred) arrRest)
+ where ((n,stage,ty,inferred),rest) = unrebind binding
+       arrRest = teleForall rest end
+
+
+
+
+
+
+
+-- Convert an arrow to be all dynamic.
 dynArrow :: Expr -> Expr
 dynArrow (Pi _ binding) = Pi Dynamic (bind (n,ty,False) rest)
   where ((n,ty,_),body) = unsafeUnbind binding
         rest = dynArrow body
 dynArrow t  = t
 
-
+-- Given a telescope, a list of expressions to substitute for the
+-- telescope, and a subject, perform substitution
 subTele :: Tele -> [Expr] -> Expr -> Expr
 subTele Empty [] x = x
 subTele (TCons binding) (ty:tys) x = subst n ty $ subTele rest tys x
@@ -292,11 +276,8 @@ fTele f i (TCons rebinding) = let (pat,rest) = unrebind rebinding
 fTele f i Empty = i
 
 
-
 -- Check to see if an escaped explicit equality appears outside an erased
 -- position. Returns True if the context is okay, false otherwise.
-
-
 okCtx (Pos _ t) = okCtx t
 okCtx (Escape t) = case down t of
                      (Equal _ _) -> False
@@ -356,3 +337,115 @@ children _ = []
 childrenTele Empty = []
 childrenTele (TCons rebinding) = e:(childrenTele rest)
   where ((_,_,Embed e,_),rest) = unrebind rebinding
+
+
+
+
+
+
+
+
+
+
+
+
+
+unrollForall :: Fresh m => Expr -> m ([(EName,Stage,Expr,Bool)], Expr)
+unrollForall (Pos _ t) = unrollForall t
+unrollForall (Forall binding) = do
+  ((nm,Embed ty,inferred),body) <- unbind binding
+  (rest,range) <- unrollForall body
+  return ((nm,Static,ty,inferred):rest,range)
+unrollForall t = return ([],t)
+
+rollForall :: [(EName,Stage,Expr,Bool)] -> Expr -> Expr
+rollForall args ran = foldr quant ran args
+  where quant (arg,_,ty,inf) body = Forall (bind (arg,Embed ty,inf) body)
+
+
+
+
+
+class SynFun e where
+  type LamArg e
+  type PiArg e
+  type AppArg e
+
+  unrollLam :: Fresh m => e -> m ([LamArg e], e)
+  rollLam :: [LamArg e] -> e -> e
+
+  unrollPi :: Fresh m => e -> m ([PiArg e], e)
+  rollPi :: [PiArg e] -> e -> e
+
+  unrollApp :: e -> (e,[AppArg e])
+  rollApp :: e -> [AppArg e] -> e
+
+
+instance SynFun Expr where
+  type LamArg Expr = (EName,Kind,Stage,Expr)
+  type PiArg Expr = (EName,Stage,Expr,Bool)
+  type AppArg Expr = (Expr,Stage)
+
+  unrollLam (Pos _ t) = unrollLam t
+  unrollLam (Lambda kind stage binding) = do
+    ((nm,Embed ty),body) <- unbind binding
+    (rest,range) <- unrollLam body
+    return ((nm,kind,stage,ty):rest,range)
+  unrollLam t = return ([],t)
+
+  rollLam args ran = foldr lam ran args
+    where lam (arg,kind,stage,ty) body = Lambda kind stage (bind (arg,Embed ty) body)
+
+  unrollPi (Pos _ t) = unrollPi t
+  unrollPi (Pi stage binding) = do
+    ((nm,Embed ty,inferred),body) <- unbind binding
+    (rest,range) <- unrollPi body
+    return ((nm,stage,ty,inferred):rest,range)
+  unrollPi t = return ([],t)
+
+  rollPi args ran = foldr pi ran args
+    where pi (arg,stage,ty,inf) body = Pi stage (bind (arg,Embed ty,inf) body)
+
+  unrollApp t = go t []
+    where go (Pos _ t) accum = go t accum
+          go (App t1 stage t2) accum = go t1 ((t2,stage):accum)
+          go t accum = (t,accum)
+
+
+  rollApp f args = foldl app f args
+    where app f (arg,stage) = App f stage arg
+
+
+instance SynFun EExpr where
+  type LamArg EExpr = EEName
+  type PiArg EExpr = (EEName,EExpr,Stage)
+  type AppArg EExpr = EExpr
+
+  unrollLam (ELambda binding) = do
+    (arg,t) <- unbind binding
+    (args,body) <- unrollLam t
+    return (arg:args,body)
+
+  unrollLam (ERec binding) = do
+    ((f,args),rest) <- unbind binding
+    (args',body) <- unrollLam rest
+    return (args ++ args', body)
+  unrollLam t = return ([],t)
+
+  rollLam [] t = t
+  rollLam (n:ns) t = ELambda (bind n (rollLam ns t))
+
+
+  unrollPi (EPi stage binding) = do
+    ((arg,Embed ty),rest) <- unbind binding
+    (args,body) <- unrollPi rest
+    return ((arg,ty,stage):args,body)
+
+  rollPi [] t = t
+  rollPi ((n,ty,stage):args) t = EPi stage (bind (n,Embed ty) (rollPi args t))
+
+  unrollApp t = go t []
+    where go (EApp t1 t2) accum = go t1 (t2:accum)
+          go t accum = (t,accum)
+
+  rollApp t args = foldl EApp t args

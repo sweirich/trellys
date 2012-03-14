@@ -194,10 +194,12 @@ instance Display Expr where
 
     where dAlt alt = do
             lunbind alt $ \((con,pvars),body) -> do
-            dPvars <- mapM display pvars
+            dPvars <- mapM dPVar pvars
             dBody <- display body
             return $ cat [text con <+> hsep dPvars <+> text "-> ",
                           nest 2 dBody]
+          dPVar (v,Static) = return $ brackets $ disp v
+          dPVar (v,Dynamic) = return $ brackets $ disp v
 
 
   display (TerminationCase scrutinee binding) =
