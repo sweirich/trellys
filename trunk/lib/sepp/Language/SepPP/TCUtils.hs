@@ -43,6 +43,13 @@ data Env = Env { gamma :: [(EName,(Expr,Bool))]   -- (var, (type,isValue))
                , termProofs :: [EExpr]}
 emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],termProofs=[],escapeContext = NoContext}
 
+combEnv a b = Env { gamma = gamma a ++ gamma b
+                  , sigma = sigma a ++ sigma b
+                  , delta = delta a ++ delta b
+                  , escapeContext = escapeContext a
+                  , rewrites = rewrites a ++ rewrites b
+                  , termProofs = termProofs a ++ termProofs b
+                  }
 
 instance Disp Env where
   disp env = hang (text "Context") 2 (vcat

@@ -40,125 +40,87 @@ typecheck mod = do
 
 -- | Typecheck an entire module
 typecheckModule (Module n decls) = do
-  checkDefs decls
-  -- liftIO  $ putStrLn "Typecheck passed"
-  return ()
+    checkDefs decls
+    return ()
+  where checkDefs [] = return ()
+        checkDefs (d:ds) = do
+          env <- checkDef d
+          local (combEnv env) $ checkDefs ds
 
-
-data DefRes = DataResult EName Tele [(EName,(Int,Expr))]
-            | ProofResult EName Expr Expr Bool
-            | ProgResult EName Expr Expr Bool
-            | AxiomResult EName Expr
-            | FlagResult String Bool
-            | OperatorResult String
 
 -- | Typecheck a single definition
-checkDef :: Decl -> TCMonad DefRes
-checkDef (FlagDecl nm b) = return $ FlagResult nm b
-checkDef (OperatorDecl nm level fixity) = return $ OperatorResult nm
+checkDef :: Decl -> TCMonad Env
+checkDef (FlagDecl nm b) = do
+  setFlag nm b
+  return emptyEnv
+
+checkDef (OperatorDecl nm level fixity) =
+  return emptyEnv
 
 checkDef (AxiomDecl nm theorem) = do
+  emit $ "Checking axiom" <++> nm
   lk <- predSynth' theorem
   isLK <- lkJudgment lk
   ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
-  return $ AxiomResult nm theorem
+  return $ extendEnv nm theorem False emptyEnv
+
 
 checkDef (ProofDecl nm theorem proof) = do
+  emit $ "Checking proof" <++> nm
   lk <- predSynth' theorem
   isLK <- lkJudgment lk
   ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
-
   proofAnalysis' proof theorem
-  return $ ProofResult nm theorem proof False
+
+  return $ extendEnv nm theorem False emptyEnv
 
 checkDef (ProgDecl nm ty prog) = do
+  emit $ "Checking program" <++> nm
   typeAnalysis' ty Type
   typeAnalysis' prog ty
   isVal <- synValue prog
-  return $ ProgResult nm ty prog isVal
+  return $ extendDef nm ty prog False emptyEnv
 
 checkDef (DataDecl (Con nm) binding) = do
+  emit $ "Checking data type" <++> nm
   (tele,cs) <- unbind binding
 
   -- Turn the telescope (from the type arguments to the type
   -- constructor) into a dependent product.
   let ty = teleArrow tele Type
-  ran <- arrowRange ty
-
-  withErrorInfo "When checking the range of a type constructor"
-                  [(text "The Type Constructor", disp nm)] $ ran `expectType` Type
 
   -- Make sure that the type constructor is a well-formed type.
   withErrorInfo "When checking that a type constructor is kindable."
                 [(text "The Type Constructor", disp nm)
-                ,(text "The Type",disp ty)] $ typeAnalysis' ty Type
+                ,(text "The Type",disp ty)] $
+      typeAnalysis' ty Type
 
   -- Change the erasure annotations of all type args to runtime using dynArrow.
   conTypes <- extendBinding nm (dynArrow ty) True $
-               extendTele tele $ (mapM chkConstructor cs)
-  return (DataResult nm tele conTypes)
+              extendTele tele $ (mapM chkConstructor cs)
 
+  let env = extendEnv nm (dynArrow ty) True $
+              foldr (\(cnm,(arity,ty)) env ->
+                      extendEnv cnm (teleArrow tele ty) True env)
+              (extendTypes nm tele conTypes emptyEnv)
+              conTypes
+  return env
 
-  where arrowRange (Pi _ binding) = do
-          ((n,_,_),body) <- unbind binding
-          arrowRange body
-        arrowRange (Pos _ t) = arrowRange t
-        arrowRange ty = return ty
-
-
-        appHead (App t0 _ _) = appHead t0
-        appHead (Pos _ t) = appHead t
-        appHead t = t
-
-        arity (Pi _ binding) = 1 + arity body
-          where (_,body) = unsafeUnbind binding
-        arity (Pos _ t) = arity t
-        arity t = 0
-
-
+  where chkConstructor :: (EName,Expr) -> TCMonad (EName,(Int,Expr))
         chkConstructor (c,ty) = do
-
           typeAnalysis' ty Type
-          ran <- arrowRange ty
-          case appHead ran of
-             Con tc -> do
-               ensure (tc == nm) $
-                        "In constructor " <++> c <++>
-                        "result type does not match declared data type."
-               return (c,(arity ty,ty))
-             h -> do
+          (args,ran) <- unrollPi ty
+          case unrollApp ran of
+             (Con tc, _) -> do
+               unless (tc == nm) $
+                 typeError "Constructor range type doesn't match data type."
+                   [(disp "The type", disp nm),
+                    (disp "The data constructor", disp tc),
+                    (disp "The actual range type", disp ran)
+                    ]
+               return (c,(length args,ty))
+             (h,_) -> do
                die $ "Constructor head is" <++> h
-
-
-checkDefs [] = return ()
-checkDefs (d:ds) = do
-  d <- checkDef d
-  extendBinding' d (checkDefs ds)
-
-  where extendBinding' (ProofResult n ty def v) comp =
-          extendBinding n ty v comp
-        extendBinding' (AxiomResult n ty) comp =
-          extendBinding n ty False comp
-        extendBinding' (ProgResult n ty def v) comp =
-          extendDefinition  n ty def v comp
-        extendBinding' (DataResult tnm tele cs) comp =
-          extendTypeCons tnm tele cs $
-          extendBinding tnm (dynArrow (teleArrow tele Type)) True $
-                        foldr (\(cnm,(arity,ty)) m ->
-                                 extendBinding cnm (teleArrow tele ty) True m)
-                        comp cs
-        extendBinding' (OperatorResult n) comp = comp
-        extendBinding' (FlagResult n val) comp = do
-           setFlag n val
-           comp
-        -- make all of the erasure annotations for the type
-        -- constructor's type (kind) be runtime
-        dynamicTele Empty = Empty
-        dynamicTele (TCons binding) =
-            TCons (rebind (n,Dynamic,ty,inf) (dynamicTele body))
-          where ((n,_,ty,inf),body) = unrebind binding
-
-
 
 
 
