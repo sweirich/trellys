@@ -146,10 +146,9 @@ valJudgment t@(App _ _ _ ) =
 lkJudgment (Formula _ ) = return True
 lkJudgment (Forall binding) = do
   ((n,Embed ty,inf),body) <- unbind binding
-  ensure (isA ty) $
-    "Expecting the classifier for a logical kind argument to be syntax class"
-    <++> "'A'."
+  requireA ty
   extendBinding n ty False (lkJudgment body)
+
 lkJudgment (Pos _ t) = lkJudgment t
 lkJudgment t = do
   typeError "Could not classify term as a logical kind"
@@ -161,73 +160,72 @@ guardLK t = do
 
 
 
-data CheckMode = LKMode | PredMode | ProofMode | ProgMode deriving (Show,Eq)
-
+data CheckMode = LKMode | PredMode | ProofMode | ProgMode | NoMode deriving (Show,Eq)
 
 check :: CheckMode -> Expr -> Maybe Expr -> TCMonad Expr
 check mode (Pos p t) expect  = check mode t expect `catchError` addErrorPos p t
 check mode t (Just (Pos _ expect)) = check mode t (Just expect)
 
-check mode (Ann t ty) Nothing = check mode t (Just ty)
-check mode (Ann t ty) (Just ty') = do
+-- check mode (Ann t ty) Nothing = check mode t (Just ty)
+check mode (Ann t ty) expected = do
   ret <- check mode t (Just ty)
-  unless (down ty `aeq` down ty') $
-    typeError "The expected type does match the type given in an ascription."
-      [(text "The expected type", disp ty'), (text "The ascribed type", disp ty)]
+  sameType ty expected
   return ret
+
+
+check NoMode t Nothing = do
+  mode <- synClass t
+  check (toMode mode) t Nothing
+
+check NoMode t (Just expected) = do
+  mode <- synClass t
+  check (toMode mode) t (Just expected)
+
 
 
 -- Var
 check mode tm@(Var n) expected = do
-
-
   (ty,_) <- lookupBinding n
   ty `sameType` expected
   return ty
 
-  case mode of
-    ProgMode -> return ()
-    ProofMode -> do
-      withErrorInfo "When checking that a variable is of the syntactic class 'A'."
-                    [(text "The expression", disp tm)] $ requireA ty
-      pty <- predSynth' ty
-      requireQ pty
-    PredMode -> typeError "Can't check variables in pred mode."
-                  [(text "The expression",disp tm),
-                   (text "The expected type", disp expected)]
-
-  return ty
+  -- case mode of
+  --   ProgMode -> return ()
+  --   ProofMode -> do
+  --     withErrorInfo "When checking that a variable is of the syntactic class 'A'."
+  --                   [(text "The expression", disp tm)] $ requireA ty
+  --     pty <- predSynth' ty
+  --     requireQ pty
+  --   PredMode -> typeError "Can't check variables in pred mode."
+  --                 [(text "The expression",disp tm),
+  --                  (text "The expected type", disp expected)]
+  -- return ty
 
 
 -- Con
-check mode tm@(Con t) expected = do
+check ProgMode tm@(Con t) expected = do
   (ty,_) <- lookupBinding t
   ty `sameType` expected
-
-  case mode of
-    PredMode -> typeError "Can't check constructors in pred mode."
-                  [(text "The expression",disp tm),
-                   (text "The expected type", disp expected)]
-    _ -> return ()
   return ty
 
 
 -- Formula
 
 -- Type
-
 check ProgMode Type Nothing = return Type
 check ProgMode Type (Just Type) = return Type -- Expr_Type
-check _ Type _ = err "Can't check Type in non-programmatic mode."
+check mode Type _ =
+  typeError "Can't check Type in non-programmatic mode."
+    [(disp "The mode", disp $ show mode)]
 
 -- Pi
 
 check ProgMode tm@(Pi stage binding) expected = do -- Expr_Pi
   ((n,Embed ty,inf),body) <- unbind binding
-  cls <- getClassification ty
+  cls <- synClass ty
   case cls of
-    SortType -> return ()
-    SortPred -> do
+    ProgClass -> return ()
+    PredClass -> do
       unless (stage == Static) $
              typeError ("When checking a programmatic Pi-type, proof arguments" <++>
                        "must be marked erased.")
@@ -237,11 +235,6 @@ check ProgMode tm@(Pi stage binding) expected = do -- Expr_Pi
                     "must be classified as proofs or programs")
            [(text "The type", disp ty)
            ,(text "The argument", disp n)]
-
-
-
-
-
   extendBinding n ty False $ check ProgMode body expected
 
 check mode tm@(Pi _ _) ty = do
@@ -253,7 +246,7 @@ check mode tm@(Pi _ _) ty = do
 -- Forall
 check PredMode (Forall binding) Nothing = do
   ((n,Embed t,inf),body) <- unbind binding
-  -- We need to do a syntactic case-split on ty. Going to use backtracking for now.
+
   case down t of
     Formula i -> do  -- Pred_Forall3 rule
            form <- extendBinding n t False (predSynth' body)
@@ -265,20 +258,18 @@ check PredMode (Forall binding) Nothing = do
            guardFormula form
 
     dom -> do
-      cls <- getClassification dom
+      cls <- synClass dom
       case cls of
-        SortPred -> do  -- Pred_Forall1
+        PredClass -> do  -- Pred_Forall1
           lk <- predSynth' dom
           case lk of
             Formula i -> do
                     extendBinding n dom False (predSynth' body)
             _ -> do
                 err "predSynth pred case, not a formula."
-        SortType -> do
+        ProgClass -> do
                  ty <- typeSynth' t
                  ty `expectType` Type
-
-
                  form <- extendBinding n t False (predSynth' body)
                  guardFormula form
   where guardFormula t@(Formula i) = return t
@@ -288,7 +279,27 @@ check mode (Forall _) _ = do
   err "Can't check Forall tpe in non-predicate mode."
 
 -- App
+check mode term@(App t0 stage t1) expected = do
+  ty0 <- check mode t0 Nothing
+  case down ty0 of
+    Pi piStage binding -> do
+      ((x,Embed dom,inf),body) <- unbind binding
+      check NoMode t1 (Just dom)
+      unless (piStage == stage) $ do
+        typeError "The stage for the arrow does not match the stage for the application"
+          [(text "Arrow stage:",disp piStage),
+           (text "Application stage", disp stage)]
 
+      let ran = subst x t1 body
+      ran `sameType` expected
+      return ran
+    Forall binding -> do
+      ((x,Embed dom,inf),body) <- unbind binding
+      let ran = subst x t1 body
+      ran `sameType` expected
+      return ran
+
+{-
 check mode term@(App t0 stage t1) expected = do
  imp <- getOptImplicitArgs
  if imp
@@ -351,16 +362,21 @@ check mode term@(App t0 stage t1) expected = do
              -- requirePred body
              bty <- bAnalysis t1 ty
              let snb = subst n t1 body
-             ensure (constrApp term) $ term <++> "is not a construction."
+             case unrollApp term of
+               (Con _,_) -> return ()
+               _ ->
+                 typeError
+                   "When checking a term for as a Pi type in a proof, the term should be a construction."
+                   [(disp "The term", disp term),
+                    (disp "The type", disp ty0)
+                    ]
              snb `sameType` expected
              return snb
      (_, tyfun) -> typeError "App with non-function"
                   [(text "computed function type", disp tyfun)]
     -- _ -> checkUnhandled mode term expected
-  where constrApp (Con c) =  True
-        constrApp (App f _ x) = (constrApp f)
-        constrApp (Pos x t) = constrApp t
-        constrApp _ = False
+
+-}
 
 
 -- Lambda
@@ -370,7 +386,7 @@ check mode term@(App t0 stage t1) expected = do
 check PredMode (Lambda Form Static binding) Nothing = do -- Pred_Lam rule
   ((n,Embed ty),body) <- unbind binding
   -- First Premise
-  ensure (isW ty) $ ty <++> "is not in the 'W' syntactic class."
+  requireW ty
   -- Second Premise
   form <- extendBinding n ty False (predSynth' body)
   lk <- lkJudgment form
@@ -379,16 +395,14 @@ check PredMode (Lambda Form Static binding) Nothing = do -- Pred_Lam rule
 
 check ProofMode (Lambda Form _ pfBinding)
               (Just out@(Forall predBinding)) = do -- Prf_Forall.
-
   Just ((proofName,Embed pfTy),pfBody,(predName,Embed predTy,predInf),predBody) <-
-    unbind2  pfBinding predBinding
+    unbind2 pfBinding predBinding
 
-  cls <- getClassification pfTy
-  -- emit $ disp pfTy <++> text (show cls)
-  pfKind <- check (classToMode cls) pfTy Nothing
+  pfKind <- check NoMode pfTy Nothing
+  -- cls <- getClassification pfTy
+  -- -- emit $ disp pfTy <++> text (show cls)
+  -- pfKind <- check (classToMode cls) pfTy Nothing
   requireQ pfKind
-
-  -- Whether the var should be marked value or not is sort of up in the air...
   extendBinding proofName pfTy False (proofAnalysis' pfBody predBody)
   return out
 
@@ -498,7 +512,7 @@ check mode t@(TerminationCase s binding) expected = do
                      ,(text "The mode", disp $ show mode)]
   sty <- typeSynth' s
   (w,(abort,terminates)) <- unbind binding
-  ty1 <- extendBinding w (Equal (Abort sty) s) True  (check mode abort expected)
+  ty1 <- extendBinding w (Equal (Abort sty) s) True (check mode abort expected)
   ty2 <- extendBinding w (Terminates s) True (check mode terminates expected)
   unless (ty1 `aeq` ty2) $
     typeError "Termination case branch types do not match"
@@ -523,7 +537,6 @@ check ProofMode tm@(Join _ _) (Just ty) = do
      ]
 
 -- MoreJoin
-
 check mode t@(MoreJoin ps) (Just eq@(Equal t0 t1)) = do
   unless (mode `elem` [ProofMode,ProgMode]) $
      typeError "Morejoin is only valid in proof and programming mode."
@@ -558,22 +571,14 @@ check mode t@(MoreJoin ps) (Just eq@(Equal t0 t1)) = do
 
 
 -- Equal
-check mode term@(Equal t0 t1) expected = do
+check PredMode term@(Equal t0 t1) expected = do
   ty0 <- typeSynth' t0
   ty1 <- typeSynth' t1
   typeAnalysis' ty0 Type
   typeAnalysis' ty1 Type
-  case (mode,expected) of
-    (PredMode, Nothing) -> do
-       return (Formula 0)
-    (ProofMode, Nothing) -> do
-       return Type -- FIXME: What rule does this correspond to?
-    (ProgMode, Nothing) -> do
-       return Type -- FIXME: What rule does this correspond to?
-    _ -> checkUnhandled mode term expected
+  return (Formula 0)
 
 -- Val
-
 check ProofMode (t@(Val x)) expected = do
      let f t = do ty <- typeSynth' t
                   case down ty of
@@ -595,17 +600,15 @@ check mode (TCast t p) expected = do
   return ty
 
 -- Terminates
-
 check mode (Terminates t) expected = do -- Pred_Terminates rule
   ensure (mode `elem` [PredMode,ProgMode]) $
            "Can't check type of Terminates term in " <++> show mode <++> "mode."
-  typeSynth' t
+  ty <- typeSynth' t
   (Formula 0) `sameType` expected
   return (Formula 0)
 
 
 -- Contra
-
 check mode tm@(Contra p) (Just ty) = do
  unless (mode `elem` [ProofMode, ProgMode]) $
    typeError "Can only check contradictions in proof or program mode."
@@ -637,7 +640,6 @@ check mode tm@(Contra p) (Just ty) = do
         findCon _ = Nothing
 
 -- ContraAbort
-
 check ProofMode t@(ContraAbort taborts tterminates) (Just ty) = do
   aborts <- proofSynth' taborts
   terminates <- proofSynth' tterminates
@@ -649,8 +651,6 @@ check ProofMode t@(ContraAbort taborts tterminates) (Just ty) = do
                 s' <++> "'"
        return ty
 
-
-
     _ -> typeError "Contraabort requires a proof of divergence and a proof of termination."
                  [(text "The term", disp t)
                  ,(text "The 'abort' term", disp taborts)
@@ -658,11 +658,9 @@ check ProofMode t@(ContraAbort taborts tterminates) (Just ty) = do
                  ,(text "The 'terminates' term", disp tterminates)
                  ,(text "The inferred type of the terminates term", disp terminates)
                  ]
-
   where isAbort (Pos _ t) = isAbort t
         isAbort (Abort _) = True
         isAbort _ = False
-
 
 check ProgMode (Abort t) expected = do
   typeAnalysis' t Type
@@ -742,7 +740,6 @@ check ProofMode (Ord w) (Just ty@(IndLT l r)) = do
            errlist
 
 -- IndLT
-
 check PredMode (IndLT t0 t1) expected = do
   ty0 <- typeSynth' t0
   ty1 <- typeSynth' t1
@@ -751,7 +748,6 @@ check PredMode (IndLT t0 t1) expected = do
 
 
 -- OrdTrans
-
 check ProofMode t@(OrdTrans p1 p2) (Just ty@(IndLT y x)) = do
   ty1 <- proofSynth' p1
   ty2 <- proofSynth' p2
@@ -773,9 +769,31 @@ check ProofMode (Ind prfBinding) (Just res@(Forall predBinding)) = do -- Prf_Ind
   (a1,Forall predBinding') <- clean $ unbind predBinding
 
   ((f,tele,u),prfBody) <- unbind prfBinding
+
+
+  let pairTelePrf tele (Pos _ t) = pairTelePrf tele t
+      pairTelePrf Empty body = return ([],body)
+      pairTelePrf (TCons teleBinding) (Forall binding) = do
+        ((piName,Embed piTy,piInf),piBody) <- unbind binding
+        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
+        check NoMode piTy Nothing
+        check NoMode teleTy Nothing
+        -- piMode <- getClassification piTy
+        -- check (classToMode piMode) piTy Nothing
+        -- teleMode <- getClassification teleTy
+        -- check (classToMode teleMode) teleTy Nothing
+
+        unless (teleTy `aeq` piTy) $
+               typeError ("The type ascribed to a Rec-bound variable does not" <++>
+                         "the type ascribed to the associated Pi bound variable")
+               [(text "The Rec argument type", disp teleTy)
+               ,(text "The Pi argument type", disp piTy)]
+        (args,body') <- extendBinding teleName teleTy False $
+                         pairTelePrf rest (subst piName (Var teleName) piBody)
+        return ((teleName,teleTy,teleInf):args,body')
+
+
   (args,rest) <- pairTelePrf tele res
-
-
   case (reverse args, down rest) of
     ((iarg,iargTy,iInf):rargs,Forall predBody) -> do
       -- FIXME: Check to make sure targ == Terminates iarg
@@ -809,10 +827,12 @@ check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Ter
       pairTele (TCons teleBinding) (Pi stage binding) = do
         ((piName,Embed piTy,piInf),piBody) <- unbind binding
         let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
-        piMode <- getClassification piTy
-        check (classToMode piMode) piTy Nothing
-        teleMode <- getClassification teleTy
-        check (classToMode teleMode) teleTy Nothing
+        check NoMode piTy Nothing
+        check NoMode teleTy Nothing
+        -- piMode <- getClassification piTy
+        -- check (classToMode piMode) piTy Nothing
+        -- teleMode <- getClassification teleTy
+        -- check (classToMode teleMode) teleTy Nothing
 
 
         unless (teleTy `aeq` piTy) $
@@ -829,22 +849,12 @@ check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Ter
   -- FIXME: Surely some check on the stage is needed.
   ((f,tele),recBody) <- unbind progBinding
   (args,range) <- pairTele tele res
-  -- emit $ "Rec type" <++> res
-  -- unless(down ty `aeq` down piTy) $ typeError
-  --   ("Type ascribed to a lambda-bound variable does not match the type" <++>
-  --    "ascribed to the associated pi-bound variable")
-  --   [(text "Lambda-variable type", disp ty)
-  --   ,(text "Pi-variable type", disp piTy)]
-
-
   extendBinding f res True $
     foldr (\(arg,ty) m -> extendBinding arg ty True m)
             (typeAnalysis' recBody range) args
   return res
 
 -- Escape
-
-
 check ProgMode (Escape t) expected = do
   escctx <- asks escapeContext
   case escctx of
@@ -872,7 +882,6 @@ check ProgMode (Escape t) expected = do
 
 
 -- Let
-
 check mode (Let binding) expected = do
     unless (mode `elem` [ProofMode,ProgMode]) $
            die $ "Let expressions cannot be checked in" <++> show mode <++> "mode."
@@ -881,7 +890,43 @@ check mode (Let binding) expected = do
     -- what is the value annotation for this?
     extendBinding n ty' True $
      extendBinding pf (Equal (Var n) t) True $
-      check mode body expected
+     check mode body expected
+
+-- Existentials
+check PredMode (Exists binding) expected = do
+  ((n,Embed ty),body) <- unbind binding
+  check ProgMode ty (Just Type)
+  extendBinding n ty False $ check PredMode body (Just (Formula 0))
+  return (Formula 0)
+
+check ProofMode (EElim scrutinee binding) (Just pred) = do
+  stype <- check ProofMode scrutinee Nothing
+  case down stype of
+    (Exists ebinding) -> do
+        ((n,Embed ty),epred) <- unbind ebinding
+
+        -- Is this necessary?
+        check ProgMode ty (Just Type)
+        extendBinding n ty False $ check PredMode epred (Just (Formula 0))
+
+        ((n',p),body) <- unbind binding
+        extendBinding n' ty False $
+          extendBinding p (subst n (Var n') epred) False $
+            check ProofMode body (Just pred)
+
+
+    _ -> typeError "Scrutinee of exists elim must be an existential."
+         [(text "Inferred type", disp stype)]
+
+check ProofMode (EIntro p1 p2) (Just res@(Exists ebinding)) = do
+  ((n,Embed ty),epred) <- unbind ebinding
+  check ProgMode ty (Just Type)
+  extendBinding n ty False $ check PredMode epred (Just (Formula 0))
+  check ProgMode p1 (Just ty)
+  check ProofMode p2 (Just (subst n p1 epred))
+  return res
+
+
 
 
 -- Aborts
@@ -969,47 +1014,6 @@ check mode (Trans t1 t2) expected = do
 
   return (Equal a c)
 
-    -- _ -> die $ "The type expected for a refl-proof is not an equation." $$$
-    --              "1. the type: "<++> ty
-
-
-
--- Existentials
-check PredMode (Exists binding) expected = do
-  ((n,Embed ty),body) <- unbind binding
-  check ProgMode ty (Just Type)
-  extendBinding n ty False $ check PredMode body (Just (Formula 0))
-  return (Formula 0)
-
-check ProofMode (EElim scrutinee binding) (Just pred) = do
-  stype <- check ProofMode scrutinee Nothing
-  case down stype of
-    (Exists ebinding) -> do
-        ((n,Embed ty),epred) <- unbind ebinding
-
-        -- Is this necessary?
-        check ProgMode ty (Just Type)
-        extendBinding n ty False $ check PredMode epred (Just (Formula 0))
-
-        ((n',p),body) <- unbind binding
-        extendBinding n' ty False $
-          extendBinding p (subst n (Var n') epred) False $
-            check ProofMode body (Just pred)
-
-
-    _ -> typeError "Scrutinee of exists elim must be an existential."
-         [(text "Inferred type", disp stype)]
-
-check ProofMode (EIntro p1 p2) (Just res@(Exists ebinding)) = do
-  ((n,Embed ty),epred) <- unbind ebinding
-  check ProgMode ty (Just Type)
-  extendBinding n ty False $ check PredMode epred (Just (Formula 0))
-
-  check ProgMode p1 (Just ty)
-  check ProofMode p2 (Just (subst n p1 epred))
-  return res
-
-
 check mode term expected = checkUnhandled mode term expected
 
 checkUnhandled mode term expected = do
@@ -1017,6 +1021,7 @@ checkUnhandled mode term expected = do
           [(text "mode", text $ show mode)
           ,(text "term", disp term)
           ,(text "expected",disp expected)]
+
 
 
 checkEqual mode term = do
@@ -1036,164 +1041,110 @@ typeSynth' t = check ProgMode t Nothing
 typeAnalysis' t ty = check ProgMode t (Just ty)
 
 
+data SynClass = LKClass | PredClass | ProofClass | ProgClass deriving (Show,Eq)
+
+toMode :: SynClass -> CheckMode
+toMode LKClass = LKMode
+toMode PredClass = PredMode
+toMode ProofClass = ProofMode
+toMode ProgClass = ProgMode
+
+
+synClass (Con _) = return ProgClass
+synClass Type = return ProgClass
+synClass (Pi _ _) = return ProgClass
+synClass (TCast _ _) = return ProgClass
+synClass (Abort _) = return ProgClass
+synClass (Rec _) = return ProgClass
+
+synClass (Conv subject _ _) = synClass subject
+synClass (ConvCtx subject _) = synClass subject
+
+synClass (App f _ _) = synClass f
+synClass (Lambda Form _ _) = return ProofClass
+synClass (Lambda Program _ _) = return ProgClass
+synClass (Case _ (Just tp) _) = return ProofClass
+synClass (Case _ Nothing _) = return ProgClass
+
+synClass (TerminationCase _ _) = return ProofClass
+synClass (Join _ _) = return ProofClass
+synClass (Val _) = return ProofClass
+synClass (Contra _) = return ProofClass
+synClass (ContraAbort _ _) = return ProofClass
+synClass (Ord _) = return ProofClass
+synClass (OrdTrans _ _) = return ProofClass
+synClass (Ind _) = return ProofClass
+synClass (EIntro _ _) = return ProofClass
+synClass (EElim _ _) = return ProofClass
+synClass (Aborts _) = return ProofClass
+synClass (Sym _) = return ProofClass
+synClass Refl = return ProofClass
+synClass (Trans _ _) = return ProofClass
+synClass (MoreJoin _) = return ProofClass
+synClass WildCard = fail "Can't take the syntactic class of a wildcard!"
+synClass (Ann e _) = synClass e
+synClass (Pos _ e) = synClass e
+
+-- This should *never* be invoked, since escapes can only appear in
+-- conversion contexts, and we don't ever look at the context when
+-- doing syntactic classification.
+synClass (Escape _) = return ProofClass
+
+synClass (Equal _ _) = return PredClass
+synClass (Terminates _) = return PredClass
+synClass (IndLT _ _) = return PredClass
+synClass (Exists _) = return PredClass
+
+synClass (Formula _) = return PredClass -- could be lkclass?
+synClass (Forall _) = return PredClass -- could be lkclass?
+
+synClass (Show e) = synClass e
+synClass (Var v) = do
+  (ty,_) <- lookupBinding v
+  cls <- synClass ty
+  return $ downOne cls
+  where downOne LKClass = PredClass
+        downOne PredClass = ProofClass
+        downOne ProofClass = error $ "Can't classify with a proof"
+        downOne ProgClass = ProgClass
+
+
+requireA t = do
+  cls <- synClass t
+  unless (cls `elem` [ProgClass,PredClass]) $
+    typeError "Term is not is the A syntactic class of programs or predicates."
+    [(disp "The term", disp t),
+     (disp "Acutal syntactic class", disp $ show cls)
+    ]
+
+requireB t = do
+  cls <- synClass t
+  unless (cls `elem` [ProgClass,PredClass,LKClass]) $
+    typeError "Term is not is the B syntactic class of programs, predicates, or logical kinds."
+    [(disp "The term", disp t),
+     (disp "Acutal syntactic class", disp $ show cls)
+    ]
+
+requireQ Type = return ()
+requireQ (Formula _) = return ()
+requireQ (Pos _ t) = requireQ t
+requireQ t = do
+  cls <- synClass t
+  unless (cls == LKClass) $
+     typeError "Term is not is the Q syntactic class"
+      [(disp "The term", disp t),
+       (disp "Acutal syntactic class", disp $ show cls)
+      ]
+
+
+requireW (Formula _) = return ()
+requireW (Pos _ t) = requireW t
+requireW t =
+  typeError "Term is not is the W syntactic class"
+      [(disp "The term", disp t)]
 
 
 
--- FIXME: This needs to try to synthesize (analyze) a type for everything in the b
--- syntactic class, not just terms.
-bSynth t = do
-  cls <- getClassification t
-  case cls of
-   SortType -> typeSynth' t
-   SortPred -> proofSynth' t
-
-bAnalysis t ty = do
-  cls <- getClassification ty
-  case cls of
-   SortType -> typeAnalysis' t ty
-   SortPred -> proofAnalysis' t ty
-
-
-
--- Syntactic class predicates (TODO)
-isA t = isTerm t || isPred t
-isB t = isTerm t || isPred t || isLK t
-
--- isB t = do
---   c <- getClassification t
---   return $ c `elem` [SortType
-
-isW Type = True
-isW (Formula _) = True
-isW (Pos _ t) = isW t
-
-isW _ = False
-
-isQ Type = True
-isQ (Formula _) = True
-isQ (Pos _ t) = isQ t
-isQ t = isLK t
-
-isLK (Pos _ t) = isLK t
-isLK (Formula _) = True
-isLK (Forall binding) = isA ty && isLK body
-  where ((n,Embed ty,_),body) = unsafeUnbind binding
-isLK _ = False
-
-
-isPred (Var x) = True
-isPred (Lambda Form Static binding) = isA ty && isPred body
-  where ((n,Embed ty),body) = unsafeUnbind binding
-isPred (App t0 Static t1) = isPred t0 && is_a t1
-isPred (Forall binding) = isB ty && isPred body
-  where ((n,Embed ty,_),body) = unsafeUnbind binding
-isPred (Equal t0 t1) = isTerm t0 && isTerm t1
-isPred (IndLT t0 t1) = isTerm t0 && isTerm t1
-isPred (Terminates t) = isTerm t
-isPred (Exists binding) = isA ty && isPred body
-  where ((n,Embed ty),body) = unsafeUnbind binding
-isPred (Ann p t) = isPred p && isLK t
-isPred (Pos _ t) = isPred t
-
-isPred _ = False
-
-
-isProof (Var x) = True
-isProof (Lambda Form  Static binding) = isB ty && isProof body
-  where ((n,Embed ty),body) = unsafeUnbind binding
--- NOTE: This used to require that the annotation be 'static', but that didn't
--- work out, because we don't annotate stages on proof applications.
-isProof (App t0 _ t1) = isProof t0 && is_b t1
-isProof (Join _ _) = True
-isProof (Conv p ps binding) = isProof p &&
-                              and [is_q t | t <- ps] &&
-                              is_a body
-  where (_,body) = unsafeUnbind binding
-isProof (Val t) = isTerm t
-isProof (Ord t0) = isTerm t0
-isProof (Case scrutinee (Just termWitness) binding) =
-  isTerm scrutinee && ok
- where chkAlt a = let ((c,as),alt) = unsafeUnbind a in isProof alt
-       ok = case unsafeUnbind binding of
-              (cpf,alts) -> and (map chkAlt alts)
-              _ -> False
-
-isProof (TerminationCase scrutinee binding) =
-    isTerm scrutinee && isProof p0 && isProof p1
-  where (pf,(p0,p1)) = unsafeUnbind binding
-
--- FIXME: Checking the telescope is not quite right.
-isProof (Ind binding) = isTermTele tele &&  isProof body
-  where ((f,tele,opf),body) = unsafeUnbind binding
-isProof (Contra p) = isProof p
-isProof (ContraAbort p0 p1) = isProof p0 && isProof p1
-isProof (Ann p pred) = isProof p && isPred pred
-isProof (Pos _ t) = isProof t
-isProof t = False
-
-
-
-isTerm (Var _) = True
-isTerm (Con _) = True
-isTerm Type = True
-isTerm (Pi _ binding) = isA ty && isTerm body
-  where ((n,Embed ty,_),body) = unsafeUnbind binding
-isTerm (Lambda Program _ binding) = isA ty && isTerm body
-  where ((n,Embed ty),body) = unsafeUnbind binding
-isTerm (ConvCtx t p) = isTerm t  -- Do we need to do anything with p?
-isTerm (Conv t ts binding) = isTerm t &&
-                             and [is_q t | t <- ts] &&
-                             isTerm body
-  where (_,body) = unsafeUnbind binding
-isTerm (App t0 _ t1) = isTerm t0 && is_a t1
-isTerm (Abort t) = isTerm t
-isTerm (Rec binding) = isTermTele tele &&  isTerm body
-  where ((f,tele),body) = unsafeUnbind binding
-
-isTerm (Ann t0 t1) = isTerm t0 && isTerm t1
-isTerm (Pos _ t) = isTerm t
-isTerm (Escape t) = isTerm t
-isTerm (Case t tbang binding) =  isTerm t && maybe True isTerm tbang
-   where (n,alts) = unsafeUnbind binding
-         altsOk = and [isTerm body | alt <- alts, ((_,_),body) <- [unsafeUnbind alt]]
-isTerm (TCast t p) = isTerm t && isProof p
-
-isTerm t = False
-
-isTermTele Empty = True
-isTermTele (TCons rebinding) = isTerm ty && isTermTele rest
-  where ((_,_,Embed ty,_),rest) = unrebind rebinding
-
-
-is_a t = isTerm t || isProof t || isLK t
-is_b t = isTerm t || isProof t || isPred t
-
-is_q (Equal t0 t1) = isTerm t0 && isTerm t1
-is_q t = isProof t
-
-
--- Lifting predicates to the TC monad, where False == failure
-requireA = require isA "A"
-requireQ = require isQ "Q"
-requireB = require isB "B"
-requirePred = require isPred "P"
-require_a = require is_a "a"
-
-
-require p cls (Pos _ t) = require p cls t
-require p cls (Var n) = do
-  (v,_) <- lookupBinding n
-  require p cls v
-
-require p cls t =
-  unless (p t) $
-         typeError "The expression is not of the proper syntactic class."
-                   [(text "The expression", disp t)
-                   ,(text "The class", text (show  cls))]
-
-
-
--- Placeholder for op. semantics
 join lSteps rSteps t1 t2 = do
   -- emit $ "Joining" $$$ t1 $$$ "and" $$$ t2
   -- s1 <- substDefs t1
@@ -1223,7 +1174,7 @@ join lSteps rSteps t1 t2 = do
   -- unless (t1 `aeq` t2) $ err "Terms not joinable"
 
 
-
+{-
 
 -- Get the classification of a classifier (Type,Predicate,LogicalKind)
 data Sort = SortType | SortPred | SortLK deriving (Eq,Show)
@@ -1254,6 +1205,7 @@ getClassification t = do
 classToMode SortType = ProgMode
 classToMode SortPred = PredMode
 classToMode SortLK = error "classToMode: No case for SortLK"
+-}
 
 -----------------------------------------------
 -- Generic function for copying a term and
@@ -1442,60 +1394,12 @@ copyEqualInEsc b x = escCopy f x
 
 
 
-
-
-
-
-pairTele tele (Pos _ t) = pairTele tele t
-pairTele Empty body = return ([],body)
-pairTele (TCons teleBinding) (Pi stage binding) = do
-        ((piName,Embed piTy,piInf),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
-        piMode <- getClassification piTy
-        check (classToMode piMode) piTy Nothing
-        teleMode <- getClassification teleTy
-        check (classToMode teleMode) teleTy Nothing
-        unless (teleTy `aeq` piTy) $
-               typeError ("The type ascribed to a Rec-bound variable does not" <++>
-                         "the type ascribed to the associated Pi bound variable")
-               [(text "The Rec argument type", disp teleTy)
-               ,(text "The Pi argument type", disp piTy)]
-        (args,body') <- extendBinding teleName teleTy False $
-                         pairTele rest (subst piName (Var teleName) piBody)
-        return ((teleName,teleTy):args,body')
-pairTele tele ps = typeError (show tele ++ "\n" ++ show ps) []
-
--- Given a telescope representing a series of bindings, and a (nested) Forall
--- formula, pair up the bindings in the telesope with the bindings in the formula.
-pairTelePrf tele (Pos _ t) = pairTelePrf tele t
-pairTelePrf Empty body = return ([],body)
-pairTelePrf (TCons teleBinding) (Forall binding) = do
-        ((piName,Embed piTy,piInf),piBody) <- unbind binding
-        let ((teleName,teleStage,Embed teleTy,teleInf),rest) = unrebind teleBinding
-        piMode <- getClassification piTy
-        check (classToMode piMode) piTy Nothing
-        teleMode <- getClassification teleTy
-        check (classToMode teleMode) teleTy Nothing
-
-        unless (teleTy `aeq` piTy) $
-               typeError ("The type ascribed to a Rec-bound variable does not" <++>
-                         "the type ascribed to the associated Pi bound variable")
-               [(text "The Rec argument type", disp teleTy)
-               ,(text "The Pi argument type", disp piTy)]
-        (args,body') <- extendBinding teleName teleTy False $
-                         pairTelePrf rest (subst piName (Var teleName) piBody)
-        return ((teleName,teleTy,teleInf):args,body')
-
-
-
-
-
-
 -- * Implicit arguments.
 
 
 implicit mode t expected = do
-
+  fail "Implicit arguments not supported"
+{-
   (f,actuals) <- unroll t []
   -- let (stages,args) = unzip actuals
 
@@ -1641,3 +1545,4 @@ initialSub ty args _ (Just expected) =
               ([(text "The input type", disp ty)
               ,(text "The expected type", disp expected)] ++
               [(text "Argument", disp a) | (_,a) <- args])
+-}
