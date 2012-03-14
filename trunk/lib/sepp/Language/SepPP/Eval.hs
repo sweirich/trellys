@@ -53,7 +53,6 @@ reduce steps tm@(EApp t1 t2) k = do
         k' steps t1'@(ELambda binding) = do
           (x,body) <- unbind binding
           tp <- lookupTermProof t2
-          maybe (return ()) (\e -> emit $ "Found term proof for" <++> e) tp
           case tp of
             Nothing -> do
               reduce steps t2 (\steps' v -> do
