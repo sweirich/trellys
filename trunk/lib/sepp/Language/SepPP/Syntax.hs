@@ -8,7 +8,7 @@ module Language.SepPP.Syntax (
   EExpr(..), EEName,
   down,downAll,
   Tele(..),teleArrow,subTele,teleFromList,fTele,
-  splitApp, splitApp', isStrictContext, var, app,
+  splitApp, splitApp', isStrictContext, var, app,dynArrow,
   okCtx) where
 
 import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
@@ -262,8 +262,11 @@ teleArrow (TCons binding) end = Pi stage (bind (n,ty,inferred) arrRest)
  where ((n,stage,ty,inferred),rest) = unrebind binding
        arrRest = teleArrow rest end
 
-
--- StaticTele
+dynArrow :: Expr -> Expr
+dynArrow (Pi _ binding) = Pi Dynamic (bind (n,ty,False) rest)
+  where ((n,ty,_),body) = unsafeUnbind binding
+        rest = dynArrow body
+dynArrow t  = t
 
 
 subTele :: Tele -> [Expr] -> Expr -> Expr
