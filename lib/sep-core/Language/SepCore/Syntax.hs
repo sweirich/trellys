@@ -7,30 +7,37 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..)
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..),
+     Dataconstr(..)
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
 
-data Logicdecl = Logicdecl (Name Proof) Predicate 
+data Logicdecl = Logicdecl (Name String) Predicate 
              deriving (Show)
 
-data Proofdef = Proofdef (Name Proof) Proof 
+data Proofdef = Proofdef (Name String) Proof 
              deriving (Show)
 
-data Progdecl = Progdecl (Name Term) Term
+data Progdecl = Progdecl (Name String) Term
              deriving(Show)
 
-data Progdef = Progdef (Name Term) Term
+data Progdef = Progdef (Name String) Term
              deriving(Show)
 
-data Preddecl = Preddecl (Name Predicate) LogicalKind
+data Preddecl = Preddecl (Name String) LogicalKind
              deriving(Show)
 
-data Preddef = Preddef (Name Predicate) Predicate
+data Preddef = Preddef (Name String) Predicate
              deriving(Show)
 
+data Datatypedecl = Datatypedecl (Name Term) Term
+             deriving(Show)
+
+data Dataconstr = Dataconstr (Name Term) Term
+             deriving(Show)
+      
 data Stage = Plus | Minus deriving(Show)
 
 data SuperKind = Logical Integer deriving (Show)
@@ -123,7 +130,6 @@ data Equality = Equality Predicate
 data Term =  TermVar (Name Term)
 
            | Type Integer
-
            | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
 
            | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
