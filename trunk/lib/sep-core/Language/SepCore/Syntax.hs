@@ -130,6 +130,7 @@ data Equality = Equality Predicate
 data Term =  TermVar (Name Term)
 
            | Type Integer
+
            | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
 
            | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
