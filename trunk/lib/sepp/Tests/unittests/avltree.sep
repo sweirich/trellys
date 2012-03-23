@@ -1,0 +1,97 @@
+module AVL where
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+data Bool : Type where
+ True : Bool
+| False : Bool
+
+data Tree : Type where
+ Leaf : (a:Nat) -> Tree
+| Node : (a:Nat) -> (trl : Tree)-> (trr : Tree) -> Tree
+
+type max : (a:Nat) -> (b:Nat) -> Nat
+prog rec max (a:Nat) = \(b:Nat) -> case a {a_eq} of
+                                   Z -> b
+                                  | S x -> case b {b_eq} of 
+                                            Z -> a
+                                           | S y -> max x y
+
+--type and : (a: Bool) -> (b:Bool) -> Bool
+--prog and = \(a:Bool)(b:Bool)-> case a {a_eq} of
+--                                False -> False
+--                               | True -> case b {b_eq} of
+--                                       False -> False
+--                                        | True -> True
+
+--type or : (a: Bool) -> (b:Bool) -> Bool
+--prog or (a:Bool) = \(b:Bool)-> case a of
+--                              True -> True
+--                               | False -> case b of
+--                                         False -> False
+--                                        | True -> True
+
+type depth : (a:Tree) -> Nat
+prog rec depth (a: Tree) = case a {a_eq} of 
+                              Leaf n -> Z
+                            | Node n trl trr -> S (max (depth trl) (depth trr))
+
+-- > 
+type largerThan : (a : Nat) -> (b : Nat) -> Bool
+prog rec largerThan (a : Nat) = \(b:Nat) -> case a {a_eq}of
+                                                Z -> False
+                                               | S x -> case b {b_eq} of
+                                                        Z -> True
+                                                       | S y -> largerThan x y
+
+
+type modMinus : (a :Nat) -> (b:Nat) -> Nat
+prog rec modMinus (a:Nat) = \(b:Nat) -> case a {a_eq}of
+                                        Z -> b
+                                       | S x -> case  b {b_eq}of
+                                                 Z -> a
+                                                | S y -> modMinus x y 
+
+
+type isAvl : (x:Tree) -> Bool 
+prog rec isAvl (x: Tree) = case x {x_eq}of 
+                            Leaf n -> True
+                           | Node n tr1 tr2 -> case largerThan (modMinus (depth tr1) (depth tr2)) (S (S Z)) {a_eq} of
+                                                    True -> False
+                                                   | False -> True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                
+
