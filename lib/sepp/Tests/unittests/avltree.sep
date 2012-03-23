@@ -58,40 +58,12 @@ prog rec modMinus (a:Nat) = \(b:Nat) -> case a {a_eq}of
 type isAvl : (x:Tree) -> Bool 
 prog rec isAvl (x: Tree) = case x {x_eq}of 
                             Leaf n -> True
-                           | Node n tr1 tr2 -> case largerThan (modMinus (depth tr1) (depth tr2)) (S (S Z)) {a_eq} of
+                           | Node n tr1 tr2 -> case (largerThan (modMinus (depth tr1) (depth tr2)) (S (S Z))) {a_eq} of
                                                     True -> False
-                                                   | False -> True
+                                                   | False -> (and (isAvl tr1) (isAvl tr2))
 
 
+data Proofholder :(tr : Tree)(p : isAvl tr = True)-> Type where
+        Holder :  (tr : Tree)(p : isAvl tr = True)-> ProofHolder tr p
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                
-
+type insert : (a : Nat) -> (tr : Tree) -> (p : (isAvl tr) = True) -> (Proofholder tr' q)
