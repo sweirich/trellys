@@ -9,7 +9,8 @@ data Bool : Type where
 | False : Bool
 
 data Tree : Type where
- Leaf : (a:Nat) -> Tree
+  Empty : Tree
+| Leaf : (a:Nat) -> Tree
 | Node : (a:Nat) -> (trl : Tree)-> (trr : Tree) -> Tree
 
 type max : (a:Nat) -> (b:Nat) -> Nat
@@ -19,12 +20,12 @@ prog rec max (a:Nat) = \(b:Nat) -> case a {a_eq} of
                                             Z -> a
                                            | S y -> max x y
 
---type and : (a: Bool) -> (b:Bool) -> Bool
---prog and = \(a:Bool)(b:Bool)-> case a {a_eq} of
---                                False -> False
---                               | True -> case b {b_eq} of
---                                       False -> False
---                                        | True -> True
+type and : (a: Bool) -> (b:Bool) -> Bool
+prog and = \(a:Bool)(b:Bool)-> case a {a_eq} of
+                                False -> False
+                              | True -> case b {b_eq} of
+                                       False -> False
+                                      | True -> True
 
 --type or : (a: Bool) -> (b:Bool) -> Bool
 --prog or (a:Bool) = \(b:Bool)-> case a of
@@ -34,13 +35,15 @@ prog rec max (a:Nat) = \(b:Nat) -> case a {a_eq} of
 --                                        | True -> True
 
 type depth : (a:Tree) -> Nat
-prog rec depth (a: Tree) = case a {a_eq} of 
-                              Leaf n -> Z
+prog rec depth (a: Tree) = case a {a_eq} of
+                            Empty -> Z
+                            | Leaf n -> S Z
                             | Node n trl trr -> S (max (depth trl) (depth trr))
 
--- > 
+-- >=
+
 type largerThan : (a : Nat) -> (b : Nat) -> Bool
-prog rec largerThan (a : Nat) = \(b:Nat) -> case a {a_eq}of
+prog rec largerThan (a : Nat) = \(b:Nat) -> case a {a_eq} of
                                                 Z -> False
                                                | S x -> case b {b_eq} of
                                                         Z -> True
@@ -48,7 +51,7 @@ prog rec largerThan (a : Nat) = \(b:Nat) -> case a {a_eq}of
 
 
 type modMinus : (a :Nat) -> (b:Nat) -> Nat
-prog rec modMinus (a:Nat) = \(b:Nat) -> case a {a_eq}of
+prog rec modMinus (a:Nat) = \(b:Nat) -> case a {a_eq} of
                                         Z -> b
                                        | S x -> case  b {b_eq}of
                                                  Z -> a
@@ -56,14 +59,49 @@ prog rec modMinus (a:Nat) = \(b:Nat) -> case a {a_eq}of
 
 
 type isAvl : (x:Tree) -> Bool 
-prog rec isAvl (x: Tree) = case x {x_eq}of 
-                            Leaf n -> True
-                           | Node n tr1 tr2 -> case (largerThan (modMinus (depth tr1) (depth tr2)) (S (S Z))) {a_eq} of
+prog rec isAvl (x: Tree) = case x {x_eq} of 
+                            Empty -> True  
+                          | Leaf n -> True
+                          | Node n tr1 tr2 -> case (largerThan (modMinus (depth tr1) (depth tr2)) (S (S Z))) {a_eq} of
                                                     True -> False
-                                                   | False -> (and (isAvl tr1) (isAvl tr2))
+                                                  | False -> (and (isAvl tr1) (isAvl tr2))
 
 
-data Proofholder :(tr : Tree)(p : isAvl tr = True)-> Type where
-        Holder :  (tr : Tree)(p : isAvl tr = True)-> ProofHolder tr p
+type insert : (a:Nat) -> (tr : Tree) -> Tree
+prog rec insert (a : Nat) = \(tr : Tree) -> case tr {tr_eq} of 
+                                                 Empty -> Leaf a
+                                               | Leaf n -> case (largerThan a n) {eq} of
+                                                            True -> Node n Empty (Leaf a) 
+                                                          | False -> Node n (Leaf a) Empty                                             
+                                               | Node n trl trr -> case (largerThan a n) {eeq} of
+                                                                         True -> Node n trl (insert a trr)
+                                                                       | False -> Node n (insert a trl) trr
 
-type insert : (a : Nat) -> (tr : Tree) -> (p : (isAvl tr) = True) -> (Proofholder tr' q)
+
+data Proofholder : (tr : Tree)[p : (isAvl tr) = True] -> Type where
+     Proofholder :  (tr : Tree)-> [p :(isAvl tr) = True] -> Proofholder tr [p]
+
+type rebalancing : (tr : Tree) -> (Proofholder tr' [q])
+prog rebalancing = \(tr : Tree)-> case (isAvl tr) {eq} of
+                                        True -> Proofholder tr [join 100 0] 
+                                      | False ->  case tr {tr_eq} of 
+                                                  Empty -> Proofholder Empty [join 100 0 ]
+                                                | Leaf n -> Proofholder (Leaf n) [join 100 0 ]
+                                                | Node n trl trr -> case largerThan (depth trl) (depth trr) {larg_eq} of
+                                                                          True -> leftRotation (Node n trl trr)
+                                                                        | False -> rightRotation (Node n trl trr)
+
+type leftRotation : (tr: Tree) -> (Proofholder tr' [q])
+prog rec leftRotation (tr : Tree) = case tr {tr_eq} of
+                                          Empty -> Proofholder Empty [join 100 0 ]
+                                        | Leaf n -> Proofholder (Leaf n) [join 100 0 ]
+                                        | Node n trl trr -> case trl {trl_eq} of                                 
+                                                                 Empty -> Proofholder Empty [join 100 0 ]
+                                                               | Leaf n -> Proofholder (Leaf n) [join 100 0 ]
+                                                               | Node n' trl_l trl_r -> case largerThan (depth trl_l) (depth trl_r) {eq} of
+                                                                                             True -> Proofholder (Node n' (trl_l) (Node n trl_r trr)) [join 100 0]
+                                                                                           | False -> case trl_r {w} of
+                                                                                                            Empty -> Proofholder Empty [join 100 0 ]
+                                                                                                          | Leaf n -> Proofholder (Leaf n) [join 100 0 ]
+                                                                                                          | Node n'' trl_r_l trl_r_r -> leftRotation (Node n (Node n'' (Node n' trl_l trl_r_l) trl_r_r) trr)
+                                                                                                     
