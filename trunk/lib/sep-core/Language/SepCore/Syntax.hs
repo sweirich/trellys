@@ -8,35 +8,34 @@ module Language.SepCore.Syntax(
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
      Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..),
-     Dataconstr(..)
+    
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
 
-data Logicdecl = Logicdecl (Name String) Predicate 
+data Logicdecl = Logicdecl Proof Predicate 
              deriving (Show)
 
-data Proofdef = Proofdef (Name String) Proof 
+data Proofdef = Proofdef Proof Proof 
              deriving (Show)
 
-data Progdecl = Progdecl (Name String) Term
+data Progdecl = Progdecl Term Term
              deriving(Show)
 
-data Progdef = Progdef (Name String) Term
+data Progdef = Progdef Term Term
              deriving(Show)
 
-data Preddecl = Preddecl (Name String) LogicalKind
+data Preddecl = Preddecl Predicate LogicalKind
              deriving(Show)
 
-data Preddef = Preddef (Name String) Predicate
+data Preddef = Preddef Predicate Predicate
              deriving(Show)
 
-data Datatypedecl = Datatypedecl (Name Term) Term
+data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
              deriving(Show)
 
-data Dataconstr = Dataconstr (Name Term) Term
-             deriving(Show)
+
       
 data Stage = Plus | Minus deriving(Show)
 
