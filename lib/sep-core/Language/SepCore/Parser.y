@@ -1,7 +1,8 @@
 {- The sepcore Parser -}
 {
-module Language.SepCore.Happyparser where 
+module Language.SepCore.Parser where 
 import Language.SepCore.Syntax
+import Language.SepCore.Lexer
 import Data.Char
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
@@ -19,12 +20,15 @@ import Unbound.LocallyNameless.Subst(substR1)
 %name parser4LK LogicalKind
 
 %name parser4Datatypedecl Datatypedecl
-%name parser4Dataconstr Dataconstr
+
 %tokentype { Token }
 %error { parseError }
 
 %token 
-       Id         {TokenId $$}
+       data       {TokenData}
+       Data       {TokenData}
+       where      {TokenWhere}
+       Where      {TokenWhere}
        ProofVar   {TokenProofVar $$}
        PredVar    {TokenPredVar $$}
        TermVar    {TokenTermVar $$}
@@ -61,36 +65,43 @@ import Unbound.LocallyNameless.Subst(substR1)
        ":="       {TokenDef}
        ':'        {TokenCL}
        '.'        {TokenDot}
+       '|'        {TokenBar}
 
 %%
 
 {-Top level definitions and declarations -}
 
-Logicdecl : Id "::" Predicate                    {Logicdecl (string2Name $1) $3}
+Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
 
-Proofdef : Id ":=" Proof                          {Proofdef (string2Name $1) $3} 
+Proofdef : ProofVar ":=" Proof                       {Proofdef (ProofVar (string2Name $1)) $3} 
 
-Progdecl : Id "::" Term                           {Progdecl (string2Name $1) $3}
+Progdecl : TermVar "::" Term                         {Progdecl (TermVar (string2Name $1)) $3}
 
-Progdef : Id ":=" Term                             {Progdef (string2Name $1) $3}
+Progdef : TermVar ":=" Term                          {Progdef (TermVar (string2Name $1)) $3}
 
-Preddecl : Id "::" LogicalKind                    {Preddecl (string2Name $1) $3}
+Preddecl : PredVar "::" LogicalKind                  {Preddecl (PredicateVar (string2Name $1)) $3}
 
-Preddef : Id ":=" Predicate                        {Preddef (string2Name $1) $3}
+Preddef : PredVar ":=" Predicate                        {Preddef (PredicateVar (string2Name $1)) $3}
 
-Datatypedecl : Id ':' Term                         {Datatypedecl (string2Name $1) $3}
+Datatypedecl : data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
+             | data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
+             | Data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
+             | Data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
 
-Dataconstr : Id ':' Term                           {Dataconstr (string2Name $1) $3}
+
+Dataconstrs : TermVar "::" Term                           {[((TermVar (string2Name $1)), $3)]}
+            | Dataconstrs '|' TermVar "::" Term           {((TermVar (string2Name $3)), $5):$1}
+
 
 {-Low level definitions-}
 
 Predicate : PredVar                                    {PredicateVar (string2Name $1)}
 
-| '\\' ProofVar ':' Predicate '.' Predicate          {PredicateLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
+| '\\' ProofVar ':' Predicate '.' Predicate            {PredicateLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
-| '\\' PredVar ':' LogicalKind '.' Predicate         {PredicateLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
+| '\\' PredVar ':' LogicalKind '.' Predicate           {PredicateLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
-| '\\' TermVar ':' Term '.' Predicate                {PredicateLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
+| '\\' TermVar ':' Term '.' Predicate                  {PredicateLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
  
 | Forall PredVar ':' LogicalKind '.' Predicate         {Forall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
@@ -210,126 +221,6 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 | '(' Proof ')'                                     {$2}
 
 {
-data Token =
-
-       TokenType
-
-       | TokenDef        
-
-       | TokenId String
-
-       | TokenInt Integer
-
-       | TokenFm
-
-       | TokenForall
- 
-       | TokenProofVar String
-
-       | TokenPredVar String
-
-       | TokenTermVar String
-
-       | TokenPi
-
-       | TokenEq
-
-       | TokenBot
-
-       | TokenLamb
-
-       | TokenJoin
-
-       | TokenContr
-
-       | TokenValax
-
-       | TokenEx
-
-       | TokenBL
-
-       | TokenBR
-
-       | TokenDC
-
-       | TokenPlus
-
-       | TokenMinus
-
-       | TokenCL
-
-       | TokenDot
-
-       | TokenAb
- 
-       | TokenCBL
-
-       | TokenCBR
-  deriving (Show)
-
-parseError :: [Token] -> a
-parseError _ = error "Parse error blah blah"
-
-lexer :: String -> [Token]
-lexer [] = []
-lexer (c:cs)
-      | isSpace c = lexer cs
-      | isAlpha c = lexVar (c:cs)
-      | isDigit c = lexNum (c:cs)
-
-lexer ('!': cs) = TokenEx : lexer cs 
-lexer ('\\': cs) = TokenLamb : lexer cs 
-lexer ('=': cs) = TokenEq : lexer cs 
-lexer ('.': cs) = TokenDot : lexer cs
-lexer ('+':cs) = TokenPlus : lexer cs
-lexer ('-':cs) = TokenMinus : lexer cs
-lexer ('(':cs) = TokenBL : lexer cs
-lexer (')':cs) = TokenBR : lexer cs
-lexer ('{':cs) = TokenCBL : lexer cs
-lexer ('}':cs) = TokenCBR : lexer cs
-
-
-lexer (':': cs) = case cs of
-		  (':': css) -> TokenDC : lexer css
-		  ('=': css) -> TokenDef : lexer cs
-                  ( _ : css) -> TokenCL : lexer cs
-		 
-lexer ('$': cs) = case span isAlpha cs of
-		  (proofvar, rest) -> TokenProofVar proofvar : lexer rest 
-
-lexer ('#': cs) = case span isAlpha cs of
-		  (predvar, rest) -> TokenPredVar predvar : lexer rest 
-
-lexer ('@': cs) = case span isAlpha cs of
-		  (termvar, rest) -> TokenTermVar termvar : lexer rest 
-
-
-
-lexNum cs = TokenInt (read num) : lexer rest
-      where (num,rest) = span isDigit cs
-
-lexVar cs =
-    case span isAlpha cs of
-      ("valax",rest) -> TokenValax : lexer rest
-      ("Valax",rest) -> TokenValax : lexer rest
-      ("contr",rest)  -> TokenContr : lexer rest
-      ("Contr",rest)  -> TokenContr : lexer rest
-      ("join",rest)  -> TokenJoin : lexer rest
-      ("Join",rest)  -> TokenJoin : lexer rest
-      ("abort",rest)  -> TokenAb : lexer rest
-      ("Abort",rest)  -> TokenAb : lexer rest
-      ("Bottom",rest)  -> TokenBot : lexer rest
-      ("bottom",rest)  -> TokenBot : lexer rest
-      ("Pi",rest)  -> TokenPi : lexer rest
-      ("pi",rest)  -> TokenPi : lexer rest
-      ("formula",rest)  -> TokenFm : lexer rest
-      ("Formula",rest)  -> TokenFm : lexer rest
-      ("type",rest)  -> TokenType : lexer rest
-      ("Type",rest)  -> TokenType : lexer rest
-      ("Forall",rest) -> TokenForall : lexer rest
-      ("forall",rest) -> TokenForall : lexer rest
-
-      (var,rest) -> TokenId var : lexer rest
       
 -- For test purpose
 readinput1 = do putStrLn "Please input a predicate"
