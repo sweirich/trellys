@@ -224,7 +224,7 @@ instance Display Expr where
 
   display (w@(Val t)) = do
     d <- termParen (precedence w) t
-    return $ text "value" <+> d
+    return $ text "valax" <+> d
 
   display (w@(Terminates t)) = do
                      dt <- termParen (precedence w) t
