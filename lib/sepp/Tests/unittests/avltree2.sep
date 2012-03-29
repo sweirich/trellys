@@ -1,18 +1,47 @@
-module AVL where
+module Avltree where
 
 data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
+
+data Bool : Type where
+ True : Bool
+| False : Bool
+
 
 data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
   Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
 | Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
 | More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
 
+-- data Avl : (h:Nat) -> Type where
+--   Leaf : [ u : h = Z ] -> Avl h
+-- | Node : [hL:Nat] -> [hR:Nat] -> [u:Balance hL hR h] -> [ut:u!] -> 
+--          (d:Nat) -> 
+--          (l : Avl hL) -> 
+--          (r : Avl hR) ->
+--          Avl (S h)
+
+
+-- Somehow I found the following code is easier to understand. 
+
+data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
+  Less : [u:hR = (S hL)] -> Balance hL hR hR
+| Same : [u:hR = hL] -> Balance hL hR hR
+| More : [u:hL = (S hR)] -> Balance hL hR hL
+
+-- Here I assume the type checker will infer hL and hR has the type Nat, right?
+
 data Avl : (h:Nat) -> Type where
-  Leaf : [ u : h = Z ] -> Avl h
-| Node : [hL:Nat] -> [hR:Nat] -> [u:Balance hL hR h] -> [ut:u!] -> 
-         (d:Nat) -> 
-         (l : Avl hL) -> 
-         (r : Avl hR) ->
-         Avl h
+  Leaf : Avl Z
+| Node : (b:Balance hL hR h)-> (trl : Avl hL)-> (trr: Avl hR) -> (n:Nat) -> Avl (S h)
+
+
+
+data Or : (a : Type) (b : Type) -> Type where
+  Left : (x : a) -> Or a b
+| Right : (x : b) -> Or a b
+
+-- Program insert : (x : Nat)(n: Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
+--  case tr {tr_eq} of
+--       Leaf -> Right (Node [][][][] x Leaf Leaf)
