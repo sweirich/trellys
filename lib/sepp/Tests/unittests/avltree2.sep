@@ -1,0 +1,18 @@
+module AVL where
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
+  Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
+| Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
+| More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
+
+data Avl : (h:Nat) -> Type where
+  Leaf : [ u : h = Z ] -> Avl h
+| Node : [hL:Nat] -> [hR:Nat] -> [u:Balance hL hR h] -> [ut:u!] -> 
+         (d:Nat) -> 
+         (l : Avl hL) -> 
+         (r : Avl hR) ->
+         Avl h

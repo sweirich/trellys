@@ -33,18 +33,6 @@ data Nat : Type where
   Z : Nat
 | S : Nat -> Nat
 
-type plus : (x:Nat) -> (y:Nat) -> Nat
-prog rec plus (x:Nat) = \(y:Nat) ->
-    case x {x_eq} of
-      Z -> y
-    | S x' -> S (plus x' y)
-
-type times : Nat -> Nat -> Nat
-prog rec times (x:Nat) = \(y:Nat) ->
-              case x {x_eq} of
-                Z -> Z
-              | S x' -> plus y (times x' y)
-
 data Bool : Type where
   True : Bool
 | False : Bool
@@ -90,7 +78,7 @@ Inductive ks_even : forall (n:Nat){nterm}(b:Bool)(bterm:b!). ((interp (lhs b n))
       Z -> morejoin { sym b_eq , bterm , sym n_eq , nterm }
     | S n' -> 
       morejoin { sym b_eq , bterm , sym n_eq , nterm , (ks_even n' (ord n_eq) False (value False)), (ks_tot n nterm),
-                 (double_tot n' (value n')) }
+                 (double_tot n nterm) }
       )
   | False -> join 0 0
     
