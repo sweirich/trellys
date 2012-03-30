@@ -6,6 +6,12 @@ data Bool : Type where
     True : Bool
   | False : Bool
 
+Program not : (b:Bool) -> Bool :=
+  case b {b_eq} of
+    True -> False
+   |False -> True
+
+
 data Maybe : [a:Type] -> Type where
     Just : (x:a) -> Maybe a
   | Nothing : Maybe a
@@ -67,7 +73,10 @@ Inductive isValue_term : forall (t:Term){t_term}.isValue t ! :=
                            u2 [u2_eq] = morejoin {sym t_eq, sym l_eq, t_term, valax r} : isValue r = isValue t
                        in conv u1 at ~u2 !
                  |App l' r' -> case l' {l'_eq} valax l' of
-                                  S -> let u1 [u1_eq] = and_term (isValue r') (isValue r) (valax r') (valax r);
+                                  S -> let ih_r = isValue_term r (ord t_eq : r < t);
+                                           ih_r' = isValue_term r'
+                                                     (ordtrans (ord l_eq : r' < l) (ord t_eq : l < t));
+                                           u1 [u1_eq] = and_term (isValue r') (isValue r) ih_r' ih_r;
                                            u2 [u2_eq] =
                                             morejoin {sym t_eq,sym l_eq,sym l'_eq, t_term, valax l,valax l'} :
                                               ((isValue r' && isValue r) = isValue t)
@@ -76,7 +85,7 @@ Inductive isValue_term : forall (t:Term){t_term}.isValue t ! :=
                                               False = isValue t
                                         in conv valax False at ~u1 !
                                  | App a b ->
-                                     let u1 [u1_eq] = morejoin {sym t_eq,sym l_eq,sym l'_eq,t_term,valax l,valax l'} :
+                                     let u1 = morejoin {sym t_eq,sym l_eq,sym l'_eq,t_term,valax l,valax l'} :
                                               False = isValue t
                                      in conv valax False at ~u1 !
 
@@ -398,22 +407,66 @@ Inductive decompose_terminates : forall(t:Term){t_term}. decompose t ! :=
 
 axiom plug_decompose_inv : forall (t:Term)(t':Term)(c:Ctx)(p:decompose t = Dec c t').plug c t' = t
 
+Theorem and_right : forall (t1:Bool)(t2:Bool)(p:(t1 && t2) = True).(t2 = True) :=
+   termcase t1 {t1_term} of
+     abort -> let u1 = morejoin {sym t1_term} : (abort Bool) = ((abort Bool) && t2);
+                  u2 = conv u1 at (abort Bool) = (~t1_term && t2)
+              in contraabort u2 (conv valax True at ~(sym p) !)
+    | ! -> termcase t2 {t2_term} of
+             abort ->
+               let u1 = morejoin {t1_term, sym t2_term} : (abort Bool) = (t1 && (abort Bool));
+                   u2 = conv u1 at (abort Bool) = (t1 && ~t2_term)
+               in contraabort u2 (conv valax True at ~(sym p) !)
+           | ! -> case t1 {t1_eq} t1_term of
+                   True -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : t2 = (t1 && t2)
+                           in trans u3 p
+                 | False -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : False = (t1 && t2)
+                            in contra (trans u3 p)
 
-axiom redex_val_left : forall(t1:Term)(t2:Term)(t3:Term)
-                    (p:t1=(App (App K t2) t3))(q:isRedex t1 = True).isValue t2 = True
-axiom redex_val_right : forall(t1:Term)(t2:Term)(t3:Term)
-                    (p:t1=(App (App K t2) t3))(q:isRedex t1 = True).isValue t3 = True
+                            
+Theorem and_left : forall (t1:Bool)(t2:Bool)(p:(t1 && t2) = True).(t1 = True) :=
+   termcase t1 {t1_term} of
+     abort -> let u1 = morejoin {sym t1_term} : (abort Bool) = ((abort Bool) && t2);
+                  u2 = conv u1 at (abort Bool) = (~t1_term && t2)
+              in contraabort u2 (conv valax True at ~(sym p) !)
+    | ! -> termcase t2 {t2_term} of
+             abort ->
+               let u1 = morejoin {t1_term, sym t2_term} : (abort Bool) = (t1 && (abort Bool));
+                   u2 = conv u1 at (abort Bool) = (t1 && ~t2_term)
+               in contraabort u2 (conv valax True at ~(sym p) !)
+           | ! -> case t1 {t1_eq} t1_term of
+                   True -> sym t1_eq
+                 | False -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : False = (t1 && t2)
+                            in contra (trans u3 p)
 
-axiom redex_s_1 : forall(t:Term)(t1:Term)(t2:Term)(t3:Term)
-                    (p:t=(App (App (App K t1) t2) t3))(q:isRedex t = True).isValue t1 = True
 
-axiom redex_s_2 : forall(t:Term)(t1:Term)(t2:Term)(t3:Term)
-                    (p:t=(App (App (App K t1) t2) t3))(q:isRedex t = True).isValue t2 = True
+Theorem redex_val_left : forall(t1:Term)(t2:Term)(t3:Term)
+                    (p:t1=(App (App K t2) t3))(q:isRedex t1 = True).isValue t2 = True :=
+    termcase t1 {t1_term} of
+      abort -> let u1 = morejoin {sym t1_term} : (abort Term) = (isRedex (abort Term));
+                   u2 = conv u1 at (abort Term) = (isRedex ~t1_term);
+                   u3 = conv valax True at ~(sym q) !
+               in  contraabort u2 u3
+    | ! -> let u1 = morejoin {p, t1_term} : isRedex t1 = (isValue t3 && isValue t2);
+               u2 = trans (sym q) u1 -- True = isValue t3 && isValue t2 
+           in and_right (isValue t3) (isValue t2) (sym u2)
 
-axiom redex_s_2 : forall(t:Term)(t1:Term)(t2:Term)(t3:Term)
-                    (p:t=(App (App (App K t1) t2) t3))(q:isRedex t = True).isValue t3 = True
-                    
-                    
+
+Theorem redex_val_right : forall(t1:Term)(t2:Term)(t3:Term)
+                    (p:t1=(App (App K t2) t3))(q:isRedex t1 = True).isValue t3 = True :=
+    termcase t1 {t1_term} of
+      abort -> let u1 = morejoin {sym t1_term} : (abort Term) = (isRedex (abort Term));
+                   u2 = conv u1 at (abort Term) = (isRedex ~t1_term);
+                   u3 = conv valax True at ~(sym q) !
+               in  contraabort u2 u3
+    | ! -> let u1 = morejoin {p, t1_term} : isRedex t1 = (isValue t3 && isValue t2);
+               u2 = trans (sym q) u1
+           in and_left (isValue t3) (isValue t2) (sym u2)
+           
+
 axiom plug_preserves_s_free : forall(t:Term)(t':Term)(t'':Term)(c:Ctx)
                                 (p:s_free t = True)(q:decompose t = Dec c t')(q:t'' < t).(s_free t'' = True)
 
@@ -596,6 +649,13 @@ Program flip : (p:Parity) -> Parity :=
       E -> O
     | O -> E
 
+Theorem flip_term : forall (p:Parity)(p_term:p!).flip p ! :=
+  case p {p_eq} p_term of
+    E -> let u1 = morejoin {sym p_eq, p_term} : O = flip p
+         in conv valax O at ~u1!
+   |O -> let u1 = morejoin {sym p_eq, p_term} : E = flip p
+         in conv valax E at ~u1!
+
 Recursive evenOdd : (p:Parity)(n:Nat) -> Bool :=
   case p {p_eq} of
     E -> (case n {n_eq} of
@@ -605,14 +665,161 @@ Recursive evenOdd : (p:Parity)(n:Nat) -> Bool :=
             Z -> False
            |S n' -> evenOdd (flip p) n')
 
+Recursive evenOdd : (p:Parity)(n:Nat) -> Bool :=
+     case n {n_eq} of
+            Z -> (case p {p_eq} of
+                    E ->  True
+                  | O -> False)
+           |S n' -> evenOdd (flip p) n'
+
+           
+Inductive evenOdd_term : forall (p:Parity)(p_term:p!)(n:Nat){n_term}.evenOdd p n ! :=
+  case p {p_eq} p_term of
+    E -> (case n {n_eq} n_term of
+            Z -> let u1 = morejoin {sym p_eq, p_term, sym n_eq, n_term} : True = evenOdd p n
+                 in conv valax True at ~u1!
+           |S n' -> let flip_p_term = flip_term p p_term;
+                        u2 = morejoin {sym p_eq,sym n_eq, p_term,n_term} : evenOdd p n = evenOdd (flip p) n';
+                        ih = evenOdd_term (flip p) (flip_p_term) n' (ord n_eq)
+                    in conv ih at ~(sym u2) !)
+
+
+   |O -> (case n {n_eq} n_term of
+            Z -> let u1 = morejoin {sym p_eq, p_term, sym n_eq, n_term} : False = evenOdd p n
+                 in conv valax False at ~u1!
+           |S n' -> let flip_p_term = flip_term p p_term;
+                        u2 = morejoin {sym p_eq,sym n_eq, p_term,n_term} : evenOdd p n = evenOdd (flip p) n';
+                        ih = evenOdd_term (flip p) (flip_p_term) n' (ord n_eq)
+                    in conv ih at ~(sym u2) !)
+                    
+
+-- Inductive even_odd_opposite : forall (n:Nat){n_term}(p:Parity)(q:evenOdd p n = True).evenOdd (flip p) n = False :=
+--   termcase p {p_term} of
+--     abort -> let u1 = join 0 10 : (abort Bool) = (evenOdd (abort Parity) n);
+--                  u2 = conv u1 at  (abort Bool) = (evenOdd ~p_term n);
+--                  u3 = conv valax True at ~(sym q) !
+--              in contraabort u2 u3
+--    | ! -> case n {n_eq} n_term of
+--             Z -> (case p {p_eq} p_term of
+--                     E -> morejoin {p_term,n_term,sym p_eq, sym n_eq} --  : evenOdd (flip p) n = False
+--                   | O -> let u1 = morejoin {p_term,n_term,sym p_eq, sym n_eq} : False = evenOdd p n
+--                          in contra (trans u1 q))
+--           | S n' -> let u1 = morejoin {sym n_eq,p_term,n_term} : evenOdd p n = evenOdd (flip p) n';
+--                         u2 = trans (sym u1) q; -- evenOdd (flip p) n' = True
+--                         ih = even_odd_opposite n' (ord n_eq) (flip p) u2 : evenOdd (flip (flip p)) n' = False;
+--                         evenOddn = morejoin {p_term,n_term,sym n_eq,(flip_term p p_term)} : evenOdd (flip p) n = evenOdd (flip (flip p)) n'
+--                     in trans evenOddn ih
+
+
+Inductive even_odd_opposite : forall (n:Nat){n_term}(p:Parity)(b:Bool)(b_term:b!)(q:evenOdd p n = b).evenOdd (flip p) n = (not b) :=
+  termcase p {p_term} of
+    abort -> let u1 = join 0 10 : (abort Bool) = (evenOdd (abort Parity) n);
+                 u2 = conv u1 at  (abort Bool) = (evenOdd ~p_term n);
+                 u3 = conv b_term at ~(sym q) !
+             in contraabort u2 u3
+   | ! -> case n {n_eq} n_term of
+            Z -> (case p {p_eq} p_term of
+                    E -> (case b {b_eq} b_term of
+                           True -> morejoin {p_term,n_term,sym p_eq, sym n_eq, sym b_eq, b_term} --  : evenOdd (flip p) n = False
+                          |False ->
+                            let u1 = morejoin {p_term,n_term,sym p_eq, sym n_eq, sym b_eq, b_term}
+                                       : True = evenOdd p n
+                            in contra (conv (trans u1 q) at True = ~(sym b_eq)))
+                  | O -> (case b {b_eq} b_term of
+                           True ->
+                            let u1 = morejoin {p_term,n_term,sym p_eq, sym n_eq, sym b_eq, b_term}
+                                     : False = evenOdd p n
+                            in contra (conv (trans u1 q) at False = ~(sym b_eq))
+                          | False -> morejoin {p_term,n_term,sym p_eq, sym n_eq, sym b_eq, b_term})
+                         )
+          | S n' -> let u1 = morejoin {sym n_eq,p_term,n_term} : evenOdd p n = evenOdd (flip p) n';
+                        u2 = trans (sym u1) q; -- evenOdd (flip p) n' = True
+                        ih = even_odd_opposite n' (ord n_eq) (flip p) b b_term u2 : evenOdd (flip (flip p)) n' = (not b);
+                        evenOddn = morejoin {p_term,n_term,sym n_eq,(flip_term p p_term)} : evenOdd (flip p) n = evenOdd (flip (flip p)) n'
+                    in trans evenOddn ih
+
+                    
 Program even : (n:Nat) -> Bool := evenOdd E n
 Program odd : (n:Nat) -> Bool := evenOdd O n
 
+Theorem even_term : forall (n:Nat)(n_term:n!).even n ! :=
+  let u1 = evenOdd_term E (valax E) n n_term;
+      u2 = morejoin {n_term} : evenOdd E n = even n
+  in conv u1 at ~u2!
+
+Theorem odd_term : forall (n:Nat)(n_term:n!).odd n ! :=
+  let u1 = evenOdd_term O (valax O) n n_term;
+      u2 = morejoin {n_term} : evenOdd O n = odd n
+  in conv u1 at ~u2!
+  
+  
+Theorem pred_even_odd : forall(n:Nat)(n':Nat)(p:n = S n')(q:even n = True).odd n' = True :=
+  termcase n {n_term} of
+     abort -> let even_abort = morejoin {sym n_term} : (abort Nat) = (even (abort Nat));
+                  even_abort_n = conv even_abort at (abort Nat) = (even ~n_term);
+                  even_term = conv valax True at ~(sym q) !
+              in contraabort even_abort_n even_term
+   | ! -> termcase n' {n'_term} of
+            abort -> let u1 = join 100 100 : (abort Nat) = (S (abort Nat));
+                         u2 = conv u1 at (abort Nat) = (S ~n'_term);
+                         u3 = trans u2 (sym p)
+                     in contraabort u3 n_term
+          | ! -> let u1 = morejoin {p, n_term, n'_term} :  odd n' = even n
+                 in trans u1 q
+
+-- axiom pred_odd_even : forall(n:Nat)(n':Nat)(p:n = S n')(q:even n = False).even n' = True
+Theorem pred_odd_even : forall(n:Nat)(n':Nat)(p:n = S n')(q:odd n = True).even n' = True :=
+  termcase n {n_term} of
+     abort -> let odd_abort = morejoin {sym n_term} : (abort Nat) = (odd (abort Nat));
+                  odd_abort_n = conv odd_abort at (abort Nat) = (odd ~n_term);
+                  odd_term = conv valax True at ~(sym q) !
+              in contraabort odd_abort_n odd_term
+   | ! -> termcase n' {n'_term} of
+            abort -> let u1 = join 100 100 : (abort Nat) = (S (abort Nat));
+                         u2 = conv u1 at (abort Nat) = (S ~n'_term);
+                         u3 = trans u2 (sym p)
+                     in contraabort u3 n_term
+          | ! -> let u1 = morejoin {p, n_term, n'_term} :  even n' = odd n
+                 in trans u1 q
+
+Theorem even_implies_not_odd : forall (n:Nat)(n_term:n!)(b:Bool)(b_term:b!)(p:even n = b). odd n = (not b) :=
+          let u1 = morejoin {n_term} : evenOdd E n = even n;
+              u2 = morejoin {n_term} : odd n = evenOdd (flip E) n;
+              u3 = even_odd_opposite n n_term E b b_term (trans u1 p)
+          in trans u2 u3
+   
+Theorem even_true_odd_false : forall (n:Nat)(p:even n = True). odd n = False :=
+  termcase n {n_term} of
+     abort -> let even_abort = morejoin {sym n_term} : (abort Nat) = (even (abort Nat));
+                  even_abort_n = conv even_abort at (abort Nat) = (even ~n_term);
+                  even_term = conv valax True at ~(sym p) !
+              in contraabort even_abort_n even_term
+   | ! -> let u1 = even_implies_not_odd n n_term True (valax True) p
+          in conv u1 at odd n = ~(join 100 100  : not True = False)
+
+Theorem even_false_odd_true : forall (n:Nat)(p:even n = False). odd n = True :=
+  termcase n {n_term} of
+     abort -> let even_abort = morejoin {sym n_term} : (abort Nat) = (even (abort Nat));
+                  even_abort_n = conv even_abort at (abort Nat) = (even ~n_term);
+                  even_term = conv valax False at ~(sym p) !
+              in contraabort even_abort_n even_term
+   | ! -> let u1 = even_implies_not_odd n n_term False (valax False) p
+          in conv u1 at odd n = ~(join 100 100  : not False = True)
 
 
-
-
--- Theorem oddS_even : forall (n:Nat)(n':Nat)(p:n = S n')(q:odd n = True).even n' = True
+          
+-- Not even used
+Theorem odd_implies_not_even : forall (n:Nat)(p:odd n = True). even n = False :=
+  termcase n {n_term} of
+     abort -> let odd_abort = morejoin {sym n_term} : (abort Nat) = (odd (abort Nat));
+                  odd_abort_n = conv odd_abort at (abort Nat) = (odd ~n_term);
+                  odd_term = conv valax True at ~(sym p) !
+              in contraabort odd_abort_n odd_term
+   | ! -> let u1 = morejoin {n_term} : evenOdd O n = odd n;
+              u2 = morejoin {n_term} : even n = evenOdd (flip O) n;
+              u3 = even_odd_opposite n n_term O True (valax True) (trans u1 p);
+              u4 = trans u2 u3
+          in conv u4 at even n = ~(join 100 100  : not True = False)
 
 
 Recursive ks : (n:Nat) -> Term :=
@@ -621,31 +828,10 @@ Recursive ks : (n:Nat) -> Term :=
     |S n' -> App (ks n') K
 
 
-
-data Exists : [a:Type] -> Type where
-  Ex : [x:a] -> [witness:x!] -> Exists a
-
--- Program f : Exists Nat := Ex [Nat] [Z] [valax Z]
-
--- Theorem foo : forall (n:Nat).(reduction (ks 0) = K) := join 10 10
-
 data ThmPair : [n:Nat] -> Type where
   ThmPf : [p1:(forall (p:even n = True).(reduction (ks n) = K))] ->
           [p2:(forall (p:odd n = True).(reduction (ks n) = App K K))] ->
             ThmPair n
-
-axiom prop : forall(n:Nat)(t:ThmPair n).(exists (x:ThmPair n).x!)
--- Prop == exists t:T.t!
-
-axiom even_implies_not_odd : forall (n:Nat)(p:even n = True).False = odd n
-axiom pred_even_odd : forall(n:Nat)(n':Nat)(p:n = S n')(q:even n = True).odd n' = True
-axiom pred_odd_even : forall(n:Nat)(n':Nat)(p:n = S n')(q:even n = False).even n' = True
-
-axiom pred_even_not_even : forall(n:Nat)(n':Nat)(p:n = S n')(q:even n = True).even n' = False
-axiom pred_odd_not_odd : forall(n:Nat)(n':Nat)(p:n = S n')(q:odd n = True).odd n' = False
-
-axiom even_term : forall (n:Nat)(n_term:n!).even n !
-
 
 axiom red_cong : forall (t:Term)(t':Term)(tn:Term)(p:reduction t = t').
     reduction (App t tn) = reduction (App t' tn)
@@ -654,8 +840,11 @@ Inductive ks_thm : forall(n:Nat){n_term}.exists (x:ThmPair n).x! :=
    case n {n_eq} n_term of
      Z -> let even_n [u1_eq] = morejoin {sym n_eq,n_term} : even n = True;
               ks_z [ks_z_eq] = morejoin {sym n_eq,n_term} : reduction (ks n) = K
-          in prop n (ThmPf [n] [\(p':even n = True) => ks_z]
-                      [\(p':odd n = True) => contra (trans (even_implies_not_odd n even_n) p')])
+          in (pack (ThmPf [n] [\ (p':even n = True) => ks_z]
+                         [\ (p':odd n = True) => contra (trans (sym (even_true_odd_false n even_n)) p')]),
+                  (valax
+                    (ThmPf [n] [\ (p':even n = True) => ks_z]
+                           [\ (p':odd n = True) => contra (trans (sym (even_true_odd_false n even_n)) p')])))
     |S n' -> let u1 [u1_eq] = ks_thm n' (ord n_eq)
              in unpack u1 as (pf, pf_term) in
                   case pf {pf_eq} pf_term of
@@ -675,17 +864,18 @@ Inductive ks_thm : forall(n:Nat){n_term}.exists (x:ThmPair n).x! :=
                                      (ThmPf [n]
                                       [\(p:even n = True) => u6]
                                       [\(q:odd n = True) =>
-                                         let v1 [v1_eq] = even_implies_not_odd n (sym even_n)
+                                         let v1 [v1_eq] = sym (even_true_odd_false n (sym even_n))
                                          in contra (trans v1 q)
                                       ]),
                                       (valax (ThmPf [n]
                                             [\(p:even n = True) => u6]
                                             [\(q:odd n = True) =>
-                                              let v1 [v1_eq] = even_implies_not_odd n (sym even_n)
+                                              let v1 [v1_eq] = sym (even_true_odd_false n (sym even_n))
                                               in contra (trans v1 q)
                                             ]))
 
-                        |False -> let u1 [u1_eq] = p1 (pred_odd_even n n' (sym n_eq) (sym even_n));
+                        |False -> let odd_true = even_false_odd_true n (sym even_n);
+                                      u1 [u1_eq] = p1 (pred_odd_even n n' (sym n_eq) odd_true);
                                           -- reduction (ks n') = K
                                       u2 [u2_eq] = morejoin {n_term, valax n', sym n_eq} :
                                                     ks n = App (ks n') K;
