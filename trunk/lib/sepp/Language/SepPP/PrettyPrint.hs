@@ -325,9 +325,11 @@ instance Display Expr where
     (ds,body) <- linearizeLet t
     let f (x,y,Embed z) =
          do dx <- display x
-            dy <- display y
+            dy <- case y of
+                    Just var -> brackets <$> display var
+                    Nothing -> return empty
             dz <- display z
-            return(sep [dx <+> brackets dy <+> text "=",nest 3 dz])
+            return (sep [dx <+> dy <+> text "=",nest 3 dz])
     docs <- mapM f ds
     db <- display body
     return $ sep
