@@ -298,6 +298,10 @@ check mode term@(App t0 stage t1) expected = do
       let ran = subst x t1 body
       ran `sameType` expected
       return ran
+    _ -> typeError "When checking an application, the term being applied is not a pi or forall type."
+         [(disp "The term", disp t0),
+          (disp "The type", disp ty0)
+         ]
 
 {-
 check mode term@(App t0 stage t1) expected = do

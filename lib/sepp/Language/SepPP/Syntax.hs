@@ -11,7 +11,8 @@ module Language.SepPP.Syntax (
   isStrictContext, -- var, app
   dynArrow,
   okCtx,
-  SynFun(..)
+  SynFun(..),
+  noTCast
   ) where
 
 import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
@@ -245,6 +246,9 @@ teleForall (TCons binding) end = Forall (bind (n,ty,inferred) arrRest)
        arrRest = teleForall rest end
 
 
+noTCast t = everywhere (mkT f') t
+  where f' (ETCast t) = t
+        f' t = t
 
 
 
