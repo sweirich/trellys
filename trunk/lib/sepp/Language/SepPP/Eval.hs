@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax(EExpr(..))
+import Language.SepPP.Syntax(EExpr(..),noTCast)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 import Language.SepPP.Options
@@ -38,12 +38,13 @@ reduce steps v@(EVar n) k = do
      d <- lookupDef (translate n)
      case d of
        Just def -> do
-              t' <- erase def
-              logReduce v t'
-              reduce (steps - 1) t' k
+         -- emit $ "Found a definition for" <++> v
+         t' <- erase def
+         logReduce v t'
+         reduce (steps - 1) t' k
        Nothing -> do
-               when debugReductions $ emit ("Can't reduce variable" <++> v)
-               k steps v
+         -- emit ("Can't reduce variable" <++> v)
+         k steps v
 reduce steps t@(ECon _) k = k steps t
 
 reduce steps tm@(EApp t1 t2) k = do
@@ -108,8 +109,17 @@ reduce steps tm@(EApp t1 t2) k = do
             Nothing -> return (ev || disableValueRestriction)
             Just _ -> return True
 
--- FIXME: Need to be more careful with unTCast than I am currently.
-reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
+
+reduce steps tm@(ECase scrutinee alts) k = do
+  -- emit $ "Reducing" <++> tm
+  rw <- lookupRewrite scrutinee'
+  case rw of
+    Just rhs -> do
+      -- emit $ "Got rewrite" <++> scrutinee' <++> "to" <++> rhs
+      reduce steps (ECase rhs alts) k
+    Nothing -> do
+      -- emit $ "Can't find rewrite for" <++> (show scrutinee')
+      reduce steps scrutinee k'
   where k' 0 t = k 0 (ECase t alts)
         k' steps v = case findCon (unTCast v) [] of
                        (ECon c:args) -> do
@@ -136,6 +146,7 @@ reduce steps (ECase scrutinee alts) k = reduce steps scrutinee k'
              else substPat c args alts
         unTCast (ETCast t) = unTCast t
         unTCast t = t
+        scrutinee' = noTCast scrutinee
 
 
 reduce steps (ELet binding) k = do

@@ -121,13 +121,24 @@ substDefsErased e = do
 
 
 withRewrites :: [(EExpr,EExpr)] -> TCMonad a -> TCMonad a
-withRewrites rs m = local (\ctx -> ctx{rewrites=rs}) m
+withRewrites rs m = do
+  rs' <- mapM f rs
+  local (\ctx -> ctx{rewrites=(rs ++ rs')}) m
+  where f (l,r) = do l' <- substDefsErased l
+                     return (l',r)
+
+showRewrites :: TCMonad ()
+showRewrites = do
+  rs <- asks rewrites
+  forM_ rs  (\(l,r) -> emit $ show l <++> "-->" <++> show r)
+
 
 lookupRewrite :: EExpr -> TCMonad (Maybe EExpr)
 lookupRewrite e = do
+  e' <- noTCast <$> substDefsErased e
   rs <- asks rewrites
   -- FIXME: Is alpha-equality is too weak? Do we need actual equality?
-  case find (\(l,r) -> aeq e l) rs of
+  case find (\(l,r) -> aeq e' l) rs of
     Just (_,r) -> return (Just r)
     Nothing -> return Nothing
 
