@@ -517,7 +517,7 @@ indExpr = do
 
 letdecls =
   semiSep1 (do x <- string2Name <$> identifier
-               y <- brackets (string2Name <$> identifier) <?> "name for let-binding equality"
+               y <- option Nothing (Just <$> brackets (string2Name <$> identifier) <?> "name for let-binding equality")
                reservedOp "="
                z <- expr
                return(x,y,z))

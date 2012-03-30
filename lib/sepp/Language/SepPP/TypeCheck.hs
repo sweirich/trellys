@@ -891,9 +891,10 @@ check mode (Let binding) expected = do
            die $ "Let expressions cannot be checked in" <++> show mode <++> "mode."
     ((n,pf,Embed t),body) <- unbind binding
     ty' <- check mode t Nothing
+
     -- what is the value annotation for this?
     extendBinding n ty' True $
-     extendBinding pf (Equal (Var n) t) True $
+     maybe id (\pf -> extendBinding pf (Equal (Var n) t) True) pf $
      check mode body expected
 
 -- Existentials

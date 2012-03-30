@@ -130,7 +130,7 @@ data Expr = Var EName                                 -- Expr, Proof
           -- proof (or an expression that generates an equality proof).
           | Escape Expr
 
-          | Let (Bind (EName,EName,Embed Expr) Expr)
+          | Let (Bind (EName,Maybe EName,Embed Expr) Expr)
 
           | Aborts Expr
           | Sym Expr -- Should be a derived form
