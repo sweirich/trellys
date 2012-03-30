@@ -8,11 +8,35 @@ data Bool : Type where
  True : Bool
 | False : Bool
 
+Program pred : (a:Nat) -> Nat := 
+ case a {a_eq} of
+     Z -> Z
+   | S n -> n
 
-data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
-  Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
-| Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
-| More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
+Recursive eq : (a:Nat)(b:Nat) -> Bool :=
+ case a {a_eq} of
+      Z -> (case b {b_eq} of
+                Z -> True
+              | S q -> False)
+    | S p -> (case b {b_eq} of
+                Z -> False
+              | S q -> eq p q)
+
+infixr 5 >=
+
+Recursive (>=) : (a:Nat)(b:Nat) -> Bool :=
+  case a {a_eq}  of
+    Z -> (case b {b_eq} of
+              Z -> True
+             | S b' -> False)
+   |S a' -> case b {b_eq} of
+              Z -> True
+             |S b' -> a' >= b'
+
+-- data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
+--   Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
+-- | Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
+-- | More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
 
 -- data Avl : (h:Nat) -> Type where
 --   Leaf : [ u : h = Z ] -> Avl h
@@ -36,12 +60,20 @@ data Avl : (h:Nat) -> Type where
   Leaf : Avl Z
 | Node : (b:Balance hL hR h)-> (trl : Avl hL)-> (trr: Avl hR) -> (n:Nat) -> Avl (S h)
 
-
-
 data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
 
--- Program insert : (x : Nat)(n: Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
---  case tr {tr_eq} of
---       Leaf -> Right (Node [][][][] x Leaf Leaf)
+type rac : (n:Nat)-> Or Nat Nat
+prog rac = \(n:Nat)-> Left n
+
+-- type insert : (x : Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n)))
+-- prog insert = \(x : Nat)(tr : Avl n)-> Left (tr)
+
+ -- case tr {tr_eq} of
+ --      Leaf -> Right (Node (Same [join 2 2]) Leaf Leaf x)
+ --    | Node bal trl trr y -> case (eq x y) {eeq} of
+ --                                 True -> Left (Node bal trl trr y)
+ --                               | False -> case (x >= y) {eeeq} of
+ --                                               True -> case  bal of 
+ --                                                        Less [] -> 
