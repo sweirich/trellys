@@ -295,6 +295,7 @@ check mode term@(App t0 stage t1) expected = do
       return ran
     Forall binding -> do
       ((x,Embed dom,inf),body) <- unbind binding
+      check NoMode t1 (Just dom)
       let ran = subst x t1 body
       ran `sameType` expected
       return ran
@@ -648,12 +649,14 @@ check ProofMode t@(ContraAbort taborts tterminates) (Just ty) = do
   aborts <- proofSynth' taborts
   terminates <- proofSynth' tterminates
   case (down aborts,down terminates) of
-    (Equal abrt s, Terminates s')
-      | isAbort abrt -> do
-       ensure (down s `aeq` down s') $
-                "Can't use contrabort'" <++> s <++> "' doesn't match '" <++>
-                s' <++> "'"
-       return ty
+    (Equal s1 s2, Terminates s')
+      | isAbort s1 -> do
+         unless (down s2 `aeq` down s') $
+           typeError "Can't use contraabort, because terms don't match."
+             [(text "The term equated with abort.", disp s2),
+              (text "The term proved terminating.", disp s')
+             ]
+         return ty
 
     _ -> typeError "Contraabort requires a proof of divergence and a proof of termination."
                  [(text "The term", disp t)
@@ -957,8 +960,11 @@ check mode (Sym t) expected = do
          "Can't check sym in mode" <++> show mode
   ty <- check ProofMode t Nothing
   case down ty of
-     (Equal t1 t0)-> return (Equal t0 t1)
-     _  ->
+    (Equal t1 t0)-> do
+      let ty' = (Equal t0 t1)
+      ty' `sameType`  expected
+      return ty'
+    _  ->
        err "Sym's argument must have the type of an equality proof."
 
 
@@ -1010,6 +1016,10 @@ check mode (Trans t1 t2) expected = do
                 "When checking a trans, the RHS of second equality" $$$
                 c $$$ "does not match the RHS of the expected type" $$$
                 ty1
+
+    Just res ->
+      typeError "When checking a trans equality, the expected type is not an equality"
+        [(disp "The expected type", disp res )]
     Nothing -> return ()
 
   ensure (b `aeq` b') $
