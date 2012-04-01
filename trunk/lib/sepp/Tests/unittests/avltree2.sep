@@ -8,10 +8,12 @@ data Bool : Type where
  True : Bool
 | False : Bool
 
+{-
 Program pred : (a:Nat) -> Nat := 
  case a {a_eq} of
      Z -> Z
    | S n -> n
+-}
 
 Recursive eq : (a:Nat)(b:Nat) -> Bool :=
  case a {a_eq} of
@@ -21,6 +23,7 @@ Recursive eq : (a:Nat)(b:Nat) -> Bool :=
     | S p -> (case b {b_eq} of
                 Z -> False
               | S q -> eq p q)
+
 
 infixr 5 >=
 
@@ -33,47 +36,53 @@ Recursive (>=) : (a:Nat)(b:Nat) -> Bool :=
               Z -> True
              |S b' -> a' >= b'
 
--- data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
---   Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
--- | Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
--- | More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
-
--- data Avl : (h:Nat) -> Type where
---   Leaf : [ u : h = Z ] -> Avl h
--- | Node : [hL:Nat] -> [hR:Nat] -> [u:Balance hL hR h] -> [ut:u!] -> 
---          (d:Nat) -> 
---          (l : Avl hL) -> 
---          (r : Avl hR) ->
---          Avl (S h)
-
-
--- Somehow I found the following code is easier to understand. 
-
 data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
-  Less : [u:hR = (S hL)] -> Balance hL hR hR
-| Same : [u:hR = hL] -> Balance hL hR hR
-| More : [u:hL = (S hR)] -> Balance hL hR hL
+   Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
+ | Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
+ | More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
 
--- Here I assume the type checker will infer hL and hR has the type Nat, right?
 
 data Avl : (h:Nat) -> Type where
-  Leaf : Avl Z
-| Node : (b:Balance hL hR h)-> (trl : Avl hL)-> (trr: Avl hR) -> (n:Nat) -> Avl (S h)
+  Leaf :[u:h = Z] -> Avl h
+| Node : (hL:Nat)-> (hR:Nat)->(hMax:Nat)->(b:Balance hL hR hMax)
+         -> [p : h = (S hMax)]-> (trl : Avl hL)
+         -> (trr: Avl hR) -> (d:Nat) 
+         -> Avl h
 
 data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
 
-type rac : (n:Nat)-> Or Nat Nat
-prog rac = \(n:Nat)-> Left n
 
--- type insert : (x : Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n)))
--- prog insert = \(x : Nat)(tr : Avl n)-> Left (tr)
 
- -- case tr {tr_eq} of
- --      Leaf -> Right (Node (Same [join 2 2]) Leaf Leaf x)
- --    | Node bal trl trr y -> case (eq x y) {eeq} of
- --                                 True -> Left (Node bal trl trr y)
- --                               | False -> case (x >= y) {eeeq} of
- --                                               True -> case  bal of 
- --                                                        Less [] -> 
+Program rotateleft : 
+
+
+
+Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
+  case tr {tr_eq} of
+       Leaf [p]->
+       conv Right (Avl Z) (Avl (S Z)) (Node (S Z) Z Z Z (Same Z Z Z [join 10 10] [join 10 10]) [join 10 10] (Leaf Z [join 10 10]) (Leaf Z [join 10 10]) x) by sym p at x.(Or (Avl x)(Avl (S x)))
+     | Node hL hR hMax bal [p] trl trr y ->
+              case (eq x y) {eeq} of
+                    True -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl trr y)
+                  | False -> case (x >= y) {eeeq} of
+                                   True -> (case (insert x hR trr) {ins_eq} of
+                                                  Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
+                                                | Right b -> case bal {bal_eq} of
+                                                                  Same [u] [v] -> 
+Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less hL (S hR) (S hR) [morejoin{u}][join 10 10]) [morejoin {p, v}] trl b y) 
+                                                                | More [u] [v] ->
+Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same [morejoin{u}][join 10 10]) [morejoin {p,u,v}] trl b y) 
+                                                                |  Less [u] [v]  -> rotateleft trl y b )
+                                                                    
+                                                             |  False -> (case (insert x hR trr) {ins_eq} of
+                                                                             Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
+                                                                           | Right b -> case bal {bal_eq} of
+                                                                                                 Less hL hR hMax [u] [v]
+                                                                                                    -> rotateleft trl y b
+                                                                                               |  Same hL hR hMax [u] [v] -> 
+Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less [morejoin{u}][join 10 10]) [morejoin {p, v}] trl b y) 
+                                                                                               |  More hL hR hMax [u] [v] ->
+Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same [morejoin{u}][join 10 10]) [morejoin {p,u,v}] trl b y) )
+
