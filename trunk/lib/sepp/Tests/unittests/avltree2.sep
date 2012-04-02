@@ -54,10 +54,36 @@ data Or : (a : Type) (b : Type) -> Type where
 | Right : (x : b) -> Or a b
 
 
+--Left (Avl (S (S Z))) (Avl (S (S (S Z)))) (Node (S (S Z)) (S Z) (S Z) (S Z) (Same [join 1 1][join 1 1]) [join 1 1] (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Lea--f Z [join 1 1]) a) (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Leaf Z [join 1 1]) y) b)
 
 -- Program rotateLeft  
 
--- Program rotateRight
+Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
+ case tr1 {tr1_eq} of
+    Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+  | Node tr1_hL tr1_hR tr1_hMax tr1_bal [p] tr1_l tr1_r a -> case tr1_bal {tr1_bal_eq} of 
+                                                                   Less [u] [v] -> case tr1_r {tr1_r} of
+                                                                                        Leaf [p] ->  abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+                                                                                      | Node tr1_r_hL tr1_r_hR tr1__r_hMax tr1_r_bal [p'] tr1_r_l tr1_r_r b -> 
+                                                                                        (case tr1_r_bal {tr1_r_bal} of
+                                                                                                Same [r] [s] -> 
+Left (Avl (S (S )))(Avl (S (S (S tr1_r_hMax)))) (Node (S (S tr1_r_hMax)) )
+
+
+
+
+
+
+                                                                                         ) 
+
+
+
+
+
+
+
+
+
 
 Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
   case tr {tr_eq} of
@@ -74,7 +100,7 @@ Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
 Right (Avl n)(Avl (S n)) (Node (S n) (S hL) hR (S hL) (More (S hL) hR (S hL) [conv (join 1 1: S hL = S hL) by (sym u) at x.(S hL = S x)][join 10 10]) [ conv (conv (conv (join 1 1: S n = S n) by p at x.(S n = S x)) by v at x.(S n = S (S x))) by u at x.(S n = S (S x))] b trr y) 
                                                                           |  Less [u] [v] ->
 Left (Avl n)(Avl (S n)) (Node  n (S hL) hR hR (Same (S hL) hR hR [u][join 10 10]) [conv p by v at x.(n = S x)]  b trr y) 
-                                                                          |  More [u] [v] -> rotateLeft trl y b)
+                                                                          |  More [u] [v] -> rotateRight y hR b trr)
                                  |  True -> (case (insert x hR trr) {ins_eq} of
                                                   Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
                                                 | Right b -> case bal {bal_eq} of
@@ -83,6 +109,6 @@ Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less hL (S hR) (S hR) [co
                                                                 | More [u] [v] ->
 Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same hL (S hR) (S hR) [sym u][join 10 10]) [conv (conv p by v at x. (n = S x)) by u at x.(n = S x)] trl b y)
  
-                                                                |  Less [u] [v]  -> rotateRight trl y b )
+                                                                |  Less [u] [v]  -> rotateLeft trl y b )
                                                                     
 
