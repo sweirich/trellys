@@ -55,9 +55,9 @@ data Or : (a : Type) (b : Type) -> Type where
 
 
 
-Program rotateleft : 
+-- Program rotateLeft  
 
-
+-- Program rotateRight
 
 Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
   case tr {tr_eq} of
@@ -67,22 +67,22 @@ Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
               case (eq x y) {eeq} of
                     True -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl trr y)
                   | False -> case (x >= y) {eeeq} of
-                                   True -> (case (insert x hR trr) {ins_eq} of
+                                  False -> (case (insert x hL trl) {ins_eq} of
+                                                       Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] a trr y)
+                                                     | Right b -> case bal {bal_eq} of
+                                                                             Same [u] [v] -> 
+Right (Avl n)(Avl (S n)) (Node (S n) (S hL) hR (S hL) (More (S hL) hR (S hL) [conv (join 1 1: S hL = S hL) by (sym u) at x.(S hL = S x)][join 10 10]) [ conv (conv (conv (join 1 1: S n = S n) by p at x.(S n = S x)) by v at x.(S n = S (S x))) by u at x.(S n = S (S x))] b trr y) 
+                                                                          |  Less [u] [v] ->
+Left (Avl n)(Avl (S n)) (Node  n (S hL) hR hR (Same (S hL) hR hR [u][join 10 10]) [conv p by v at x.(n = S x)]  b trr y) 
+                                                                          |  More [u] [v] -> rotateLeft trl y b)
+                                 |  True -> (case (insert x hR trr) {ins_eq} of
                                                   Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
                                                 | Right b -> case bal {bal_eq} of
                                                                   Same [u] [v] -> 
-Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less hL (S hR) (S hR) [morejoin{u}][join 10 10]) [morejoin {p, v}] trl b y) 
+Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less hL (S hR) (S hR) [conv (join 1 1: S hR = S hR) by u at x.(S hR = S x)][join 10 10]) [conv (conv (join 1 1: S n = S n) by p at x.(S n = S x)) by v at x.(S n = S (S x)) ] trl b y) 
                                                                 | More [u] [v] ->
-Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same [morejoin{u}][join 10 10]) [morejoin {p,u,v}] trl b y) 
-                                                                |  Less [u] [v]  -> rotateleft trl y b )
+Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same hL (S hR) (S hR) [sym u][join 10 10]) [conv (conv p by v at x. (n = S x)) by u at x.(n = S x)] trl b y)
+ 
+                                                                |  Less [u] [v]  -> rotateRight trl y b )
                                                                     
-                                                             |  False -> (case (insert x hR trr) {ins_eq} of
-                                                                             Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
-                                                                           | Right b -> case bal {bal_eq} of
-                                                                                                 Less hL hR hMax [u] [v]
-                                                                                                    -> rotateleft trl y b
-                                                                                               |  Same hL hR hMax [u] [v] -> 
-Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less [morejoin{u}][join 10 10]) [morejoin {p, v}] trl b y) 
-                                                                                               |  More hL hR hMax [u] [v] ->
-Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same [morejoin{u}][join 10 10]) [morejoin {p,u,v}] trl b y) )
 
