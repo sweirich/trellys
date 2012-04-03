@@ -862,7 +862,7 @@ check ProgMode r@(Rec progBinding) (Just res@(Pi piStage piBinding)) = do -- Ter
   return res
 
 -- Escape
-check ProgMode (Escape t) expected = do
+check mode (Escape t) expected = do
   escctx <- asks escapeContext
   case escctx of
     NoContext -> throwError $ strMsg "Can't have an escape outside of a context."
@@ -893,7 +893,8 @@ check mode (Let binding) expected = do
     unless (mode `elem` [ProofMode,ProgMode]) $
            die $ "Let expressions cannot be checked in" <++> show mode <++> "mode."
     ((n,pf,Embed t),body) <- unbind binding
-    ty' <- check mode t Nothing
+
+    ty' <- check NoMode t Nothing
 
     -- what is the value annotation for this?
     extendBinding n ty' True $
@@ -940,6 +941,7 @@ check ProofMode (EIntro p1 p2) (Just res@(Exists ebinding)) = do
 -- Aborts
 
 check ProofMode (Aborts c) expected = withEscapeContext StrictContext $ do
+  emit $ "Checking context" <++>  c
   cty <- typeSynth' c
   case isStrictContext c of
     Nothing -> throwError $ strMsg "Not a strict context"
