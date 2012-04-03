@@ -8,12 +8,12 @@ data Bool : Type where
  True : Bool
 | False : Bool
 
-{-
+
 Program pred : (a:Nat) -> Nat := 
  case a {a_eq} of
      Z -> Z
    | S n -> n
--}
+
 
 Recursive eq : (a:Nat)(b:Nat) -> Bool :=
  case a {a_eq} of
@@ -54,27 +54,35 @@ data Or : (a : Type) (b : Type) -> Type where
 | Right : (x : b) -> Or a b
 
 
---Left (Avl (S (S Z))) (Avl (S (S (S Z)))) (Node (S (S Z)) (S Z) (S Z) (S Z) (Same [join 1 1][join 1 1]) [join 1 1] (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Lea--f Z [join 1 1]) a) (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Leaf Z [join 1 1]) y) b)
 
--- Program rotateLeft  
+
+-- Program rotateLeft  conv (join 1 1: pred tr1_hR = pred tr1_hR) by p'' at x.(pred tr1_hR = pred x)
 
 Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
  case tr1 {tr1_eq} of
     Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
   | Node tr1_hL tr1_hR tr1_hMax tr1_bal [p] tr1_l tr1_r a -> case tr1_bal {tr1_bal_eq} of 
-                                                                   Less [u] [v] -> case tr1_r {tr1_r} of
-                                                                                        Leaf [p] ->  abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
-                                                                                      | Node tr1_r_hL tr1_r_hR tr1__r_hMax tr1_r_bal [p'] tr1_r_l tr1_r_r b -> 
+                                                                   Less [u] [v] -> (case tr1_r {tr1_r} of
+                                                                                        Leaf [p'] ->  abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+                                                                                      | Node tr1_r_hL tr1_r_hR tr1__r_hMax tr1_r_bal [p''] tr1_r_l tr1_r_r b -> 
                                                                                         (case tr1_r_bal {tr1_r_bal} of
                                                                                                 Same [r] [s] -> 
-Left (Avl (S (S )))(Avl (S (S (S tr1_r_hMax)))) (Node (S (S tr1_r_hMax)) )
+Left (Avl (S (S n))) (Avl (S (S (S n))))
+(Node (S (S n)) (S tr1_hL) (S tr1_hL) (S tr1_hL) (Same (S tr1_hL) (S tr1_hL) (S tr1_hL) [join 1 1] [join 1 1]) 
+[conv (conv p by v at x.(S (S n) = S x)) by u at x.(S (S n) = S x)] 
+(Node (S tr1_hL) tr1_hL tr1_hL tr1_hL (Same tr1_hL tr1_hL tr1_hL [join 1 1][join 1 1]) [join 1 1] tr1_l 
+(conv tr1_r_l by (conv (conv (join 100 100 : tr1_r_hL = pred (S tr1_r_hL)) by (conv (sym (conv (conv (conv (join 1 1: pred tr1_hR = pred tr1_hR) by p'' at x.(pred tr1_hR = pred x)) by s at x.(pred tr1_hR = pred (S x))) by r at x.(pred tr1_hR = pred (S x)))) by u at x.(pred (S tr1_r_hL) = pred x)) at x.(tr1_r_hL = x)) by (join 100 100: pred (S tr1_hL) = tr1_hL) at x.(tr1_r_hL = x) ) at x.(Avl x)) a)
+(Node (S tr1_hL) tr1_hL tr1_hL tr1_hL (Same (S tr1_hL) tr1_hL tr1_hL tr1_hL [join 1 1] [join 1 1]) [join 1 1] tr1_r_r tr2 y) 
+b)
+                                                                                              | Less [r] [s] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+                                                                                              | More [r] [s] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+
+                                                                                         ))
+                                                                 | Same [u] [v] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n))))) 
+                                                                 | More [u] [v] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n))))) 
 
 
 
-
-
-
-                                                                                         ) 
 
 
 
