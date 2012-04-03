@@ -1,0 +1,273 @@
+module Avltree where
+
+data Nat : Type where
+  Z : Nat
+| S : Nat -> Nat
+
+
+Program pred : (n:Nat) -> Nat :=
+  case n {n_eq} of
+    Z -> Z
+  | S x -> x
+  
+-- The successor function is injective.
+Theorem succ_inj_term : forall (m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(pf:S m = S n) . m = n :=
+   let u1 [u1_eq] = join 100 100 : m = pred (S (tcast m by m_term));
+       u2 [u2_eq] = join 100 100 : pred (S (tcast n by n_term)) = n;
+       u3 [u3_eq] = conv u1 at m = pred ~pf
+    in trans u3 u2
+
+-- Wrapper for injectivity of successor, hiding the termination proof arguments.
+Theorem succ_inj : forall (m:Nat)(n:Nat)(pf:S m = S n) . m = n :=
+  termcase m {m_term} of
+    abort -> termcase n {n_term} of
+                abort -> trans (sym m_term) n_term
+              | ! -> let u1 [u1_eq] = conv aborts (S ~m_term ) at ((abort Nat) = ~pf);
+                         u2 [u2_eq] = value (S ~n_term)
+                     in contraabort u1 u2
+   | ! -> termcase n {n_term} of
+                abort -> let u1 [u1_eq] = conv aborts (S ~n_term) at ((abort Nat) = ~(sym pf));
+                             u2 [u2_eq] = value (S ~m_term)
+                         in contraabort u1 u2
+              | ! -> succ_inj_term m m_term n n_term pf
+
+
+data Bool : Type where
+ True : Bool
+| False : Bool
+
+{-
+Program pred : (a:Nat) -> Nat := 
+ case a {a_eq} of
+     Z -> Z
+   | S n -> n
+-}
+
+Recursive eq : (a:Nat)(b:Nat) -> Bool :=
+ case a {a_eq} of
+      Z -> (case b {b_eq} of
+                Z -> True
+              | S q -> False)
+    | S p -> (case b {b_eq} of
+                Z -> False
+              | S q -> eq p q)
+
+
+infixr 5 >=
+
+Recursive (>=) : (a:Nat)(b:Nat) -> Bool :=
+  case a {a_eq}  of
+    Z -> (case b {b_eq} of
+              Z -> True
+             | S b' -> False)
+   |S a' -> case b {b_eq} of
+              Z -> True
+             |S b' -> a' >= b'
+
+data Balance : (hL:Nat) (hR:Nat) (hMax:Nat) -> Type where
+   Less : [u:hR = (S hL)] -> [v:hMax = hR] -> Balance hL hR hMax
+ | Same : [u:hR = hL] -> [v:hMax = hR] -> Balance hL hR hMax
+ | More : [u:hL = (S hR)] -> [v:hMax = hL] -> Balance hL hR hMax
+
+
+data Avl : (h:Nat) -> Type where
+  Leaf :[u:h = Z] -> Avl h
+| Node : (hL:Nat)-> (hR:Nat)->(hMax:Nat)->(b:Balance hL hR hMax)
+         -> [p : h = (S hMax)]-> (trl : Avl hL)
+         -> (trr: Avl hR) -> (d:Nat) 
+         -> Avl h
+
+data Or : (a : Type) (b : Type) -> Type where
+  Left : (x : a) -> Or a b
+| Right : (x : b) -> Or a b
+
+
+--Left (Avl (S (S Z))) (Avl (S (S (S Z)))) (Node (S (S Z)) (S Z) (S Z) (S Z) (Same [join 1 1][join 1 1]) [join 1 1] (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Lea--f Z [join 1 1]) a) (Node (S Z) Z Z Z (Same [join 1 1][join 1 1]) [join 1 1] (Leaf Z [join 1 1])(Leaf Z [join 1 1]) y) b)
+
+-- Program rotateLeft  
+Program rotateRight :  (n : Nat) (tr1: Avl (S (S n))) (y: Nat) (c: Avl n) ->
+                          (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
+ case tr1 {tr1_eq} of
+    Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+  | Node a_height b_height tr1_max tr1_bal [p] a b x ->
+       case tr1_bal {tr1_bal_eq} of
+          Same [u] [v] ->
+               let l1 = trans (sym u) (sym v) : a_height = tr1_max;
+                   l2 = (conv p at S (S n) = S ~(sym l1)) : (S (S n) = S a_height);
+                   l3 = succ_inj (S n) a_height l2 : (S n) = a_height;
+                   a' = conv a at (Avl ~(sym l3));
+                   l4 = conv p at S (S n) = S ~v;
+                   l5 = succ_inj (S n) b_height l4 : (S n) = b_height;
+                   b' = conv b at (Avl ~(sym l5))
+               in 
+                     Right (Avl (S (S n))) (Avl (S (S (S n))))
+                           (Node (S (S (S n))) (S n) (S (S n)) (S (S n)) -- n+3  n+1 n+2 n+2
+                                 (Less (S n) (S (S n)) (S (S n)) [join 10 10] [join 10 10])
+                                 [join 10 10]
+                                 a' -- l3 -- conv a at (Avl ~(sym l3))
+                                 (Node (S (S n)) (S n) n (S n) 
+                                       (More (S n) n (S n) [join 10 10] [join 10 10])
+                                       [join 0 0]
+                                       b' c y)
+                                 x)
+        | More [u] [v] -> 
+              let l1 = succ_inj (S n) tr1_max p : (S n) = tr1_max;
+                  l2 = trans l1 v; -- (S n) = a_height
+                  l3  = trans l2 u; -- (S n) = S b_height
+                  l4 = succ_inj n b_height l3 : n = b_height
+              in Left (Avl (S (S n))) (Avl (S (S (S n))))
+                      (Node (S (S n)) (S n) (S n) (S n)
+                            (Same (S n) (S n) (S n) [join 10 10] [join 10 10])
+                            [join 10 10]
+                            (conv a at (Avl ~(sym l2)))
+                            (Node (S n) n n n
+                               (Same n n n [join 10 10] [join 10 10])
+                               [join 10 10]
+                               (conv b at Avl ~(sym l4))
+                               c y
+                               )
+                             x)
+          
+        | Less [u] [v] ->
+             case b {b_eq} of
+                 Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
+               | Node b'_height d_height b_max b_bal [q] b' d z ->
+                   case b_bal {b_bal_eq} of
+                      Same [s] [t] ->
+                        -- Need: a_height = b'_height = d_height = n
+                        -- s: d_height = b'_height
+                        -- t: b_max = d_height
+                        -- u : b_height = S a_height
+                        -- v : tr1_max = b_height
+                        -- p : S (S n) = S tr1_max
+                        -- q : b_height = S b_max
+                        let l1 = succ_inj (S n) tr1_max p  : S n = tr1_max;
+                            l2 = trans v u : tr1_max = S a_height;
+                            l3 = trans l1 l2 : S n = S a_height;
+                            l4 = succ_inj n a_height l3 : n = a_height;
+                            a_casted = conv a at Avl ~(sym l4);
+                            l5 = trans t s : b_max = b'_height;
+                            l6 = trans l1 v : S n = b_height;
+                            l7 = trans l6 q : S n = S b_max;
+                            l8 = succ_inj n b_max l7 : n = b_max;
+                            l9 = trans l8 t : n = d_height;
+                            l10 = trans l9 s : n = b'_height;
+                            b'_casted = conv b' at Avl ~(sym l10);
+                            d_casted = conv d at Avl ~(sym l9)
+                        in
+                      
+                        Left (Avl (S (S n))) (Avl (S (S (S n))))
+                                (Node (S (S n)) (S n) (S n) (S n)
+                                  (Same (S n) (S n) (S n) [join 10 10] [join 10 10])
+                                    [join 10 10]
+                                    (Node (S n) n n n
+                                      (Same n n n [join 10 10] [join 10 10])
+                                      [join 10 10]
+                                      a_casted b'_casted x)
+                                    (Node (S n) n n n
+                                      (Same n n n [join 10 10] [join 10 10])
+                                      [join 10 10]
+                                      d_casted c z)
+                                    y)
+                    | Less [s] [t] ->
+                        -- Need: a_height = d_height = c_height = S n, b'_height = n
+                        -- Have:
+                        -- s: d_height = S b'_height
+                        -- t: b_max = d_height
+                        -- p: S (S n) = S tr1_max
+                        -- q: b_height = S b_max
+                        -- u: b_height = S a_height
+                        -- tr_max = b_height
+                        let l1 = succ_inj (S n) tr1_max p  : S n = tr1_max;
+                            l2 = trans v u : tr1_max = S a_height;
+                            l3 = trans l1 l2 : S n = S a_height;
+                            l4 = succ_inj n a_height l3 : n = a_height;
+                            -- a_casted = conv a at Avl ~(sym l4);
+                            l5 = trans t s : b_max = S b'_height;
+                            l6 = trans l1 v : S n = b_height;
+                            l7 = trans l6 q : S n = S b_max;
+                            l8 = succ_inj n b_max l7 : n = b_max;
+                            l9 = trans l8 t : n = d_height;
+                            l10 = trans l8 l5 : n = S b'_height;
+                            a_casted = conv a at Avl ~(sym l4);
+                            -- b'_casted = abort (Avl n); -- conv b' at Avl ~(sym l10);
+                            d_casted = conv d at Avl ~(sym l9)
+                            
+                        in
+                        Left (Avl (S (S n))) (Avl (S (S (S n))))
+                                (Node (S (S n)) (S n) (S n) (S n)
+                                  (Same (S n) (S n) (S n) [join 10 10] [join 10 10])
+                                    [join 10 10]
+                                    (Node (S n) n b'_height n
+                                      (More n b'_height n [l10] [join 10 10])
+                                      [join 10 10]
+                                      a_casted b' x)
+                                    (Node (S n) n n n
+                                      (Same n n n [join 10 10] [join 10 10])
+                                      [join 10 10]
+                                      d_casted c z)
+                                    y)
+
+                    | More [s] [t] ->
+                        -- Want: a_height = b'_height = c_height = n, d_height = pred n
+                        -- Have: s : b'_height = S d_height
+                        --       t : b'_height = b_max
+                        let l1 = succ_inj (S n) tr1_max p  : S n = tr1_max;
+                            l2 = trans v u : tr1_max = S a_height;
+                            l3 = trans l1 l2 : S n = S a_height;
+                            l4 = succ_inj n a_height l3 : n = a_height;
+                            -- a_casted = conv a at Avl ~(sym l4);
+                            l5 = trans t s : b_max = S d_height;
+                            l6 = trans l1 v : S n = b_height;
+                            l7 = trans l6 q : S n = S b_max;
+                            l8 = succ_inj n b_max l7 : n = b_max;
+                            l9 = trans l8 t : n = b'_height;
+                            -- l10 = trans l8 l5 : n = S b'_height;
+                            a_casted = conv a at Avl ~(sym l4);
+                            b'_casted = conv b' at Avl ~(sym l9);
+                            l10 = trans l8 l5 : n = S d_height
+                        in
+                        Left (Avl (S (S n))) (Avl (S (S (S n))))
+                                (Node (S (S n)) (S n) (S n) (S n)
+                                  (Same (S n) (S n) (S n) [join 10 10] [join 10 10])
+                                    [join 10 10]
+                                    (Node (S n) n n n
+                                      (Same n n n [join 10 10] [join 10 10])
+                                      [join 10 10]
+                                      a_casted b'_casted x)
+                                    (Node (S n) d_height n n
+                                      (Less d_height n n [l10] [join 10 10])
+                                      [join 10 10]
+                                      d c z)
+                                    y)
+
+
+{-
+Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
+  case tr {tr_eq} of
+       Leaf [p]->
+       conv Right (Avl Z) (Avl (S Z)) (Node (S Z) Z Z Z (Same Z Z Z [join 10 10] [join 10 10]) [join 10 10] (Leaf Z [join 10 10]) (Leaf Z [join 10 10]) x) by sym p at x.(Or (Avl x)(Avl (S x)))
+     | Node hL hR hMax bal [p] trl trr y ->
+              case (eq x y) {eeq} of
+                    True -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl trr y)
+                  | False -> case (x >= y) {eeeq} of
+                                  False -> (case (insert x hL trl) {ins_eq} of
+                                                       Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] a trr y)
+                                                     | Right b -> case bal {bal_eq} of
+                                                                             Same [u] [v] -> 
+Right (Avl n)(Avl (S n)) (Node (S n) (S hL) hR (S hL) (More (S hL) hR (S hL) [conv (join 1 1: S hL = S hL) by (sym u) at x.(S hL = S x)][join 10 10]) [ conv (conv (conv (join 1 1: S n = S n) by p at x.(S n = S x)) by v at x.(S n = S (S x))) by u at x.(S n = S (S x))] b trr y) 
+                                                                          |  Less [u] [v] ->
+Left (Avl n)(Avl (S n)) (Node  n (S hL) hR hR (Same (S hL) hR hR [u][join 10 10]) [conv p by v at x.(n = S x)]  b trr y) 
+                                                                          |  More [u] [v] -> rotateRight y hR b trr)
+                                 |  True -> (case (insert x hR trr) {ins_eq} of
+                                                  Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
+                                                | Right b -> case bal {bal_eq} of
+                                                                  Same [u] [v] -> 
+Right (Avl n)(Avl (S n)) (Node (S n) hL (S hR) (S hR) (Less hL (S hR) (S hR) [conv (join 1 1: S hR = S hR) by u at x.(S hR = S x)][join 10 10]) [conv (conv (join 1 1: S n = S n) by p at x.(S n = S x)) by v at x.(S n = S (S x)) ] trl b y) 
+                                                                | More [u] [v] ->
+Left (Avl n)(Avl (S n)) (Node  n hL (S hR) (S hR) (Same hL (S hR) (S hR) [sym u][join 10 10]) [conv (conv p by v at x. (n = S x)) by u at x.(n = S x)] trl b y)
+ 
+                                                                |  Less [u] [v]  -> rotateLeft trl y b )
+                                                                    
+
+-}
