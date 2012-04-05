@@ -49,7 +49,22 @@ data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
 
--- Program rotateLeft  conv (join 1 1: pred tr1_hR = pred tr1_hR) by p'' at x.(pred tr1_hR = pred x)
+Program flip : (hL:Nat)(hR:Nat)(hMax:Nat) (bal : Balance hL hR hMax) -> Balance hR hL hMax :=
+ case bal {bal_eq} of
+   Less [u][v] -> More hR hL hMax [u][v]
+ |  More [u][v] -> Less hR hL hMax [u][v] 
+ |  Same [u][v] -> Same hR hL hMax [sym u][trans v u]
+
+Recursive mirror : (n:Nat)(tr : Avl n) -> (Avl n) := 
+ case tr {tr_eq} of 
+  Leaf [p] -> Leaf n [p]
+| Node hL hR hMax bal [p] trl trr d -> 
+    Node n hR hL hMax (flip hL hR hMax bal) [p] (mirror hR trr) (mirror hL trl) d
+
+
+
+
+
 
 Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
  case tr1 {tr1_eq} of
@@ -182,6 +197,13 @@ Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or
                Left (Avl (S (S n))) (Avl (S (S (S n))))
               (Node (S (S n)) tr1_hL tr1_hL tr1_hL  (Same tr1_hL tr1_hL tr1_hL  [join 1 1][join 1 1])
               [p1] tr1_l (Node tr1_hL tr1_hR n n (Same tr1_hR n n [p6] [join 1 1]) [p7] tr1_r tr2 y) a)
+
+Program rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
+     case rotateRight y n  (mirror (S (S n)) tr2) (mirror n tr1) {eq} of
+           Left tr' -> Left (Avl (S (S n))) (Avl (S (S (S n)))) (mirror (S (S n)) tr')
+          | Right tr' -> Right (Avl (S (S n))) (Avl (S (S (S n)))) (mirror (S (S (S n))) tr')
+
+Program tl : (d:Nat) -> Nat := Leaf Z (join 1 1)
 
 
 {-
