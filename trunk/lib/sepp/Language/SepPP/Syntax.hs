@@ -133,10 +133,13 @@ data Expr = Var EName                                 -- Expr, Proof
           | Let (Bind (EName,Maybe EName,Embed Expr) Expr)
 
           | Aborts Expr
+
           | Sym Expr -- Should be a derived form
           | Refl -- Should be a derived form
           | Trans Expr Expr -- Should be a derived form
           | MoreJoin [Expr] -- Should be a derived form
+          | Equiv Integer -- Should be a derived form
+
           | WildCard -- For marking arguments that should be inferred.
 
           | Ann Expr Expr  -- Predicate, Proof, Expr (sort of meta)

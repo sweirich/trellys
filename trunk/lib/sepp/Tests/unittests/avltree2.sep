@@ -13,6 +13,9 @@ Program pred : (a:Nat) -> Nat :=
      Z -> Z
    | S n -> n
 
+
+Theorem foo : forall (l:Nat)(m:Nat)(n:Nat)(p:l=m)(q:n=m).l=n := equiv 2
+
 Recursive eq : (a:Nat)(b:Nat) -> Bool :=
  case a {a_eq} of
       Z -> (case b {b_eq} of
@@ -319,23 +322,7 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                      Tuplize y (Right trl') -> Tuplize y (Right )                                       
 
 
-
-
-
-Theorem flip_inv : forall (n:Nat).
-  (flip 0 1 1 (Less 0 1 1 [join 10 10] [join 10 10])) = (More 1 0 1 [join 10 10] [join 10 10]) :=
-     join 10 10
-
-Recursive tree : (h : Nat) -> Avl h :=
-  case h {h_eq} of
-     Z -> Leaf h [sym h_eq] 
-   | S h' -> Node h h' h' h' (Same h' h' h' [join 10 10] [join 10 10]) [sym h_eq] (tree h') (tree h') h
-
-
-Program foo : (d:Nat) -> Avl 3 := tree 3
-Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
-        join 10 10
-
+-}
 
 
 Theorem flip_inv : forall (n:Nat).
@@ -353,17 +340,4 @@ Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
         join 10 10
 
 
-
-Theorem flip_inv : forall (n:Nat).
-  (flip 0 1 1 (Less 0 1 1 [join 10 10] [join 10 10])) = (More 1 0 1 [join 10 10] [join 10 10]) :=
-     join 10 10
-
-Recursive tree : (h : Nat) -> Avl h :=
-  case h {h_eq} of
-     Z -> Leaf h [sym h_eq] 
-   | S h' -> Node h h' h' h' (Same h' h' h' [join 10 10] [join 10 10]) [sym h_eq] (tree h') (tree h') h
-
-
-Program foo : (d:Nat) -> Avl 3 := tree 3
-Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
-        join 10 10
+        
