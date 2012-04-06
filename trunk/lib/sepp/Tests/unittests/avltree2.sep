@@ -262,9 +262,37 @@ Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
                                                                         p3 = sym p2
                                                                     in
                                                                     conv (rotateLeft y hL trl b) by p3 at x.(Or (Avl x)(Avl (S x))) )
-                                                                    
-
 -}
 
+data Tuple : (a : Type) (b : Type) -> Type where
+     Tuplize : (x : a) -> (y : b) -> Tuple a b    
+
+Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n))) :=
+  case tr {tr_eq} of 
+    Leaf [p] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
+  | Node hL hR hMax bal [p] trl trr x -> case trl {trl_eq} of
+                                          Leaf [q] ->( case bal {bal_eq} of
+                                                      Less [u] [v] ->  
+                                                        let p1 = conv p by v at x.(S n = S x); -- S n = S hR
+                                                            p2 = join 100 100:  n = pred (S n);
+                                                            p3 = conv p2 by p1 at x.(n = pred x); 
+                                                            p4 = join 100 100 : pred (S hR) = hR;
+                                                            p5 = sym (trans p3 p4)
+                                                        in
+                                                           Tuplize x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                                                     | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
+                                                     | Same [u] [v] ->
+                                                        let p1 = conv p by v at x.(S n = S x); -- S n = S hR
+                                                            p2 = join 100 100:  n = pred (S n);
+                                                            p3 = conv p2 by p1 at x.(n = pred x); 
+                                                            p4 = join 100 100 : pred (S hR) = hR;
+                                                            p5 = sym (trans p3 p4)
+                                                        in
+                                                           Tuplize x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                                                           
+                                                      )
+                                    | Node trl_hL trl_hR trl_hMax trl_bal [q'] trl_l trl_r y ->
+                                                case delMin hL trl {eeq} of
+                                                     Tuplize y (Right trl') -> Tuplize y (Right )                                       
 
 
