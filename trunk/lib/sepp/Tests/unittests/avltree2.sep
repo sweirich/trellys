@@ -45,11 +45,33 @@ data Avl : (h:Nat) -> Type where
          -> (trr: Avl hR) -> (d:Nat) 
          -> Avl h
 
+
+
+
 data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
 
--- Number of lines for rotateRight: 130 
+Program flip : (hL:Nat)(hR:Nat)(hMax:Nat) (bal : Balance hL hR hMax) -> Balance hR hL hMax :=
+ case bal {bal_eq} of
+   Less [u][v] -> More hR hL hMax [u][v]
+ |  More [u][v] -> Less hR hL hMax [u][v] 
+ |  Same [u][v] -> Same hR hL hMax [sym u][trans v u]
+
+
+
+
+Recursive mirror : (n:Nat)(tr : Avl n) -> (Avl n) := 
+ case tr {tr_eq} of 
+  Leaf [p] -> Leaf n [p]
+| Node hL hR hMax bal [p] trl trr d -> 
+    Node n hR hL hMax (flip hL hR hMax bal) [p] (mirror hR trr) (mirror hL trl) d
+
+
+
+
+
+
 Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
  case tr1 {tr1_eq} of
     Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))))
@@ -62,7 +84,7 @@ Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or
                                | Node tr1_r_hL tr1_r_hR tr1_r_hMax tr1_r_bal [p''] tr1_r_l tr1_r_r b -> 
                                        (case tr1_r_bal {tr1_r_bal} of
                                              Same [r] [s] -> 
-                                             let p1 = join 100 100 : tr1_r_hL = pred (S tr1_r_hL);
+                                             let p1 = join 500 500 : tr1_r_hL = pred (S tr1_r_hL);
                                                  p2 = sym (trans s r) : tr1_r_hL = tr1_r_hMax; 
                                                  p3 = conv p1 by p2 at x.(tr1_r_hL = pred (S x)); -- tr1_r_hL = pred (S tr1_r_hMax)
                                                  p4 = conv p3 by (sym p'') at x.(tr1_r_hL = pred x); -- tr1_r_hL = pred tr1_hR
@@ -172,7 +194,7 @@ Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or
           | More [u] [v] -> 
               let p1 = conv p by v at x.(S (S n)= S x); -- S S n = S tr1_hL 
                   p2 = conv p1 by u at x. (S (S n) = S x); -- (S (S n)) = S (S tr1_hR)
-                  p3 = join 100 100 : n = pred (pred (S (S n))) ;
+                  p3 = join 1001 100 : n = pred (pred (S (S n))) ;
                   p4 = conv p3 by p2 at x.(n = pred (pred x)); -- n = pred pred S S tr1_hR
                   p5 = join 100 100: pred (pred (S (S tr1_hR))) = tr1_hR;
                   p6 = trans p4 p5; -- n = tr1_hR
@@ -206,6 +228,7 @@ Program rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or 
 
 -- Theorem involution : forall (n : Nat) (tr: Avl n). mirror n (mirror n tr) = tr :=
 --         join 10 10
+
 
 {-
 Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
@@ -296,3 +319,19 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                      Tuplize y (Right trl') -> Tuplize y (Right )                                       
 
 
+
+
+
+Theorem flip_inv : forall (n:Nat).
+  (flip 0 1 1 (Less 0 1 1 [join 10 10] [join 10 10])) = (More 1 0 1 [join 10 10] [join 10 10]) :=
+     join 10 10
+
+Recursive tree : (h : Nat) -> Avl h :=
+  case h {h_eq} of
+     Z -> Leaf h [sym h_eq] 
+   | S h' -> Node h h' h' h' (Same h' h' h' [join 10 10] [join 10 10]) [sym h_eq] (tree h') (tree h') h
+
+
+Program foo : (d:Nat) -> Avl 3 := tree 3
+Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
+        join 10 10
