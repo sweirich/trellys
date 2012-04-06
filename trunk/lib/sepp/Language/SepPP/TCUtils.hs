@@ -327,6 +327,11 @@ erase (Let binding) = do
   where isProof (Pos _ e)  = isProof e
         isProof (Ann e _) = isProof e
         isProof (MoreJoin _) = True
+        isProof (Join _ _) = True
+        isProof (Sym _) = True
+        isProof (Trans _ _) = True
+        isProof (ConvCtx s _) = isProof s
+        -- FIXME: This should check the syntactic class of the  definiens, not this hacky definition.
         isProof _ = False
 
 erase (ConvCtx v _) = erase v
