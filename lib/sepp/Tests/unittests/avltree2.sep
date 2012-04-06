@@ -351,3 +351,19 @@ Recursive tree : (h : Nat) -> Avl h :=
 Program foo : (d:Nat) -> Avl 3 := tree 3
 Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
         join 10 10
+
+
+
+Theorem flip_inv : forall (n:Nat).
+  (flip 0 1 1 (Less 0 1 1 [join 10 10] [join 10 10])) = (More 1 0 1 [join 10 10] [join 10 10]) :=
+     join 10 10
+
+Recursive tree : (h : Nat) -> Avl h :=
+  case h {h_eq} of
+     Z -> Leaf h [sym h_eq] 
+   | S h' -> Node h h' h' h' (Same h' h' h' [join 10 10] [join 10 10]) [sym h_eq] (tree h') (tree h') h
+
+
+Program foo : (d:Nat) -> Avl 3 := tree 3
+Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
+        join 10 10
