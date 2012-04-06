@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, UndecidableInstances, GADTs, TypeOperators, TypeFamilies, RankNTypes, PackageImports #-}
 module Language.SepPP.Eval where
 
-import Language.SepPP.Syntax(EExpr(..),noTCast)
+import Language.SepPP.Syntax(EExpr(..),noTCast,unrollApp)
 import Language.SepPP.PrettyPrint
 import Language.SepPP.TCUtils
 import Language.SepPP.Options
@@ -48,7 +48,6 @@ reduce steps v@(EVar n) k = do
 reduce steps t@(ECon _) k = k steps t
 
 reduce steps tm@(EApp t1 t2) k = do
-   -- emit $ "Reducing term" $$$ disp tm
    reduce steps t1 k'
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
@@ -111,7 +110,6 @@ reduce steps tm@(EApp t1 t2) k = do
 
 
 reduce steps tm@(ECase scrutinee alts) k = do
-  -- emit $ "Reducing" <++> tm
   rw <- lookupRewrite scrutinee'
   case rw of
     Just rhs -> do
@@ -121,28 +119,29 @@ reduce steps tm@(ECase scrutinee alts) k = do
       -- emit $ "Can't find rewrite for" <++> (show scrutinee')
       reduce steps scrutinee k'
   where k' 0 t = k 0 (ECase t alts)
-        k' steps v = case findCon (unTCast v) [] of
-                       (ECon c:args) -> do
-                         branch <- substPat c args alts
-                         logReduce (ECase v alts) branch
-                         reduce (steps - 1) branch k
-                       _ -> do
-                         rw <- lookupRewrite (unTCast scrutinee)
-                         case rw of
-                           Just rhs -> do
-                                   reduce steps rhs k'
-                           Nothing -> do
-                             k steps (ECase v alts)
-
-        findCon :: EExpr -> [EExpr] -> [EExpr]
-        findCon c@(ECon _) args = (c:args)
-        findCon (EApp t a) args = findCon t (a:args)
-        findCon _ _ = []
-        substPat c args [] = err $ "Can't find constructor"
+        k' steps v =
+          case unrollApp (unTCast v) of
+            (ECon c,args) -> do
+              branch <- substPat c args alts
+              logReduce (ECase v alts) branch
+              reduce (steps - 1) branch k
+            _ -> do
+              rw <- lookupRewrite (unTCast scrutinee)
+              case rw of
+                Just rhs -> do
+                  reduce steps rhs k'
+                Nothing -> do
+                  k steps (ECase v alts)
+        substPat c args [] = err $ "Can't find pattern for constructor"  ++ show c
         substPat c args (alt:alts) = do
           ((c',vs),body) <- unbind alt
           if string2Name c' == c
-             then return $ substs (zip vs args) body
+            then do
+              -- We don't have pattern variables for type parameters
+              -- (as opposed to data constructor parameters), so we
+              -- have to drop any runtime type parameters.
+              let args' = drop (length args - length vs) args
+              return $ substs (zip vs args') body
              else substPat c args alts
         unTCast (ETCast t) = unTCast t
         unTCast t = t
