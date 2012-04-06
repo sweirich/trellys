@@ -92,13 +92,17 @@ Program rotateRight :  (n : Nat) (tr1: Avl (S (S n))) (y: Nat) (c: Avl n) ->
   | Node a_height b_height tr1_max tr1_bal [p] a b x ->
        case tr1_bal {tr1_bal_eq} of
           Same [u] [v] ->
-               let l1 = trans (sym u) (sym v) : a_height = tr1_max;
-                   l2 = (conv p at S (S n) = S ~(sym l1)) : (S (S n) = S a_height);
-                   l3 = succ_inj (S n) a_height l2 : (S n) = a_height;
-                   a' = conv a at (Avl ~(sym l3));
-                   l4 = conv p at S (S n) = S ~v;
-                   l5 = succ_inj (S n) b_height l4 : (S n) = b_height;
-                   b' = conv b at (Avl ~(sym l5))
+               let m1 = succ_inj (S n) tr1_max p;
+                   -- l1 = trans (sym u) (sym v) : a_height = tr1_max;
+                   -- l2 = (conv p at S (S n) = S ~(sym l1)) : (S (S n) = S a_height);
+                   -- l3 = succ_inj (S n) a_height l2 : (S n) = a_height;
+                   m2 = equiv 3 : a_height = (S n);
+                   -- a' = conv a at (Avl ~(sym l3));
+                   a' = conv a at (Avl ~m2);
+                   m3 = equiv 2 : b_height = (S n);
+                   -- l4 = conv p at S (S n) = S ~v;
+                   -- l5 = succ_inj (S n) b_height l4 : (S n) = b_height;
+                   b' = conv b at (Avl ~m3)
                in 
                      Right (Avl (S (S n))) (Avl (S (S (S n))))
                            (Node (S (S (S n))) (S n) (S (S n)) (S (S n)) -- n+3  n+1 n+2 n+2
@@ -110,20 +114,34 @@ Program rotateRight :  (n : Nat) (tr1: Avl (S (S n))) (y: Nat) (c: Avl n) ->
                                        [join 0 0]
                                        b' c y)
                                  x)
+                     Right (Avl (S (S n))) (Avl (S (S (S n))))
+                           (Node (S (S (S n))) (S n) (S (S n)) (S (S n)) -- n+3  n+1 n+2 n+2
+                                 (Less (S n) (S (S n)) (S (S n)) [join 10 10] [join 10 10])
+                                 [join 10 10]
+                                 (autoconv a)
+                                 (Node (S (S n)) (S n) n (S n) 
+                                       (More (S n) n (S n) [join 10 10] [join 10 10])
+                                       [join 0 0]
+                                       b' c y)
+                                 x)
+
+                                 
         | More [u] [v] -> 
               let l1 = succ_inj (S n) tr1_max p : (S n) = tr1_max;
-                  l2 = trans l1 v; -- (S n) = a_height
-                  l3  = trans l2 u; -- (S n) = S b_height
-                  l4 = succ_inj n b_height l3 : n = b_height
+                  m1 = equiv 3 : a_height = S n;
+                  m2 = equiv 3 : S b_height = S n;
+                  -- l2 = trans l1 v; -- (S n) = a_height
+                  -- l3  = trans l2 u; -- (S n) = S b_height
+                  l4 = succ_inj b_height n m2 : b_height = n
               in Left (Avl (S (S n))) (Avl (S (S (S n))))
                       (Node (S (S n)) (S n) (S n) (S n)
                             (Same (S n) (S n) (S n) [join 10 10] [join 10 10])
                             [join 10 10]
-                            (conv a at (Avl ~(sym l2)))
+                            (conv a at (Avl ~m1))
                             (Node (S n) n n n
                                (Same n n n [join 10 10] [join 10 10])
                                [join 10 10]
-                               (conv b at Avl ~(sym l4))
+                               (conv b at Avl ~l4)
                                c y
                                )
                              x)

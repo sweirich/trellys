@@ -28,7 +28,7 @@ import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
 import Text.Parsec.Pos
-import Data.List(nubBy, nub, (\\),intersect,sortBy,groupBy)
+import Data.List(nubBy, nub,find, (\\),intersect,sortBy,groupBy)
 import qualified Data.Map as M
 
 
@@ -1003,6 +1003,7 @@ check mode Refl (Just ty) =
 
 
 
+
 check mode (Trans t1 t2) expected = do
   ty1@(Equal a b) <- checkEqual mode t1
   ty2@(Equal b' c) <- checkEqual mode t2
@@ -1030,6 +1031,30 @@ check mode (Trans t1 t2) expected = do
              b'
 
   return (Equal a c)
+
+check mode (Equiv depth) (Just expect@(Equal lhs rhs)) = do
+  ctx <- asks gamma
+  let eqprfs = [(Var n,downAll t) | (n,(t,_)) <- ctx]
+      start = concat [[(n,ty),(Sym n, Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- eqprfs]
+      pfs = iterate step start !! (fromIntegral depth)
+  case find (\(_,ty) -> ty `aeq` expect) pfs of
+    Just (n,_) -> do
+      emit $ "Found  proof of" <++> expect <++> "as" <++> n
+      check mode n (Just expect)
+    Nothing -> typeError "Equiv"
+               ([(disp "LHS", disp lhs)
+               ,(disp "RHS", disp rhs)
+               ] ++
+               [(disp n, disp ty) | (n,ty) <- pfs])
+  where isEq (Pos _ t) = isEq t
+        isEq (Equal _ _) = True
+        isEq _ = False
+        trans (t1,Equal l1 r1) (t2,Equal l2 r2)
+          | l1 `aeq` r2 = []
+          | r1 `aeq` l2  = [(Trans t1 t2, (Equal l1 r2))] -- , (Sym (Trans t1 t2), (Equal r2 l1))]
+          | otherwise = []
+        step cs = cs ++ concat [trans p1 p2 | p1 <- cs, p2 <- cs]
+
 
 check mode term expected = checkUnhandled mode term expected
 
@@ -1095,6 +1120,7 @@ synClass (EIntro _ _) = return ProofClass
 synClass (EElim _ _) = return ProofClass
 synClass (Aborts _) = return ProofClass
 synClass (Sym _) = return ProofClass
+synClass (Equiv _) = return ProofClass
 synClass Refl = return ProofClass
 synClass (Trans _ _) = return ProofClass
 synClass (MoreJoin _) = return ProofClass

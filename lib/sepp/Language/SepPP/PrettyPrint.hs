@@ -370,6 +370,10 @@ instance Display Expr where
   display (t@(Sym x)) = do
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
+
+  display (t@(Equiv x)) = do
+    return $ text "equiv" <+> integer x
+
   display (t@Refl) = return $ text "refl"
   display t@(Trans t1 t2) = do
     d1 <- dParen (precedence t) t1

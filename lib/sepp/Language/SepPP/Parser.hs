@@ -456,6 +456,12 @@ transExpr = do
   Trans <$> innerExpr <*> innerExpr
 
 
+equivExpr = do
+  reserved "equiv"
+  Equiv <$> integer
+
+
+
 natExpr = do
   i <- integer
   return $ nums !! (fromInteger i)
@@ -635,6 +641,7 @@ innerExpr = wrapPos $
               ,transExpr
               ,reflExpr
               ,morejoinExpr
+              ,equivExpr
 
 
               ,varOrCon <?> "Identifier"
