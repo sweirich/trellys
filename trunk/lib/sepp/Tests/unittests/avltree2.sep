@@ -13,7 +13,8 @@ Program pred : (a:Nat) -> Nat :=
      Z -> Z
    | S n -> n
 
-
+-- demonstration of how to use the 'equiv' tactic
+ 
 Theorem foo : forall (l:Nat)(m:Nat)(n:Nat)(p:l=m)(q:n=m).l=n := equiv 2
 
 Recursive eq : (a:Nat)(b:Nat) -> Bool :=
@@ -48,9 +49,6 @@ data Avl : (h:Nat) -> Type where
          -> (trr: Avl hR) -> (d:Nat) 
          -> Avl h
 
-
-
-
 data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
@@ -61,19 +59,11 @@ Program flip : (hL:Nat)(hR:Nat)(hMax:Nat) (bal : Balance hL hR hMax) -> Balance 
  |  More [u][v] -> Less hR hL hMax [u][v] 
  |  Same [u][v] -> Same hR hL hMax [sym u][trans v u]
 
-
-
-
 Recursive mirror : (n:Nat)(tr : Avl n) -> (Avl n) := 
  case tr {tr_eq} of 
   Leaf [p] -> Leaf n [p]
 | Node hL hR hMax bal [p] trl trr d -> 
     Node n hR hL hMax (flip hL hR hMax bal) [p] (mirror hR trr) (mirror hL trl) d
-
-
-
-
-
 
 Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
  case tr1 {tr1_eq} of
@@ -227,13 +217,11 @@ Program rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or 
           | Right tr' -> Right (Avl (S (S n))) (Avl (S (S (S n)))) (mirror (S (S (S n))) tr')
 
 -- want to confirm some properties about the mirror program. BTW: the behavior we want 
--- for the mirror is actually called involution from wiki.
+-- for the mirror is actually called involution from wiki. Need to work on later.
 
 -- Theorem involution : forall (n : Nat) (tr: Avl n). mirror n (mirror n tr) = tr :=
---         join 10 10
+--           join 1000 1000
 
-
-{-
 Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
   case tr {tr_eq} of
        Leaf [p]->
@@ -264,9 +252,10 @@ Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
                                                                     |  More [u] [v] -> 
                                                                           let p1 = conv p by v at x.(n = S x); -- n = S hL
                                                                               p2 = conv p1 by u at x.(n = S x);  -- n = S S hR
-                                                                              p3 = sym p2
+                                                                              p3 = sym p2; -- S S hR = n 
+                                                                              p4 = trans (sym p1) p2 -- S hL = S S hR
                                                                           in
-                                                                           conv (rotateRight y hR b trr) by p3 at x.(Or (Avl x)(Avl (S x))) )
+                                                                           conv (rotateRight y hR (conv b by p4 at x.(Avl x)) trr) by p3 at x.(Or (Avl x)(Avl (S x))) )
                                 |  True -> (case (insert x hR trr) {ins_eq} of
                                                   Left a -> Left (Avl n)(Avl (S n)) (Node n hL hR hMax bal [p] trl a y)
                                                 | Right b -> case bal {bal_eq} of
@@ -283,12 +272,13 @@ Recursive insert : (x : Nat)(n:Nat)(tr : Avl n) -> (Or (Avl n)(Avl (S n))) :=
                                                                      [conv (conv p by v at x. (n = S x)) by u at x.(n = S x)] 
                                                                       trl b y)
                                                                 |  Less [u] [v]  -> 
+                                                                    --  p : n = S hMax, u: hR = S hL , v : hMax = hR
                                                                     let p1 = conv p by v at x.(n = S x); -- n = S hR
-                                                                        p2 = conv p1 by u at x.(n = S x) -- n = S S hL
-                                                                        p3 = sym p2
+                                                                        p2 = conv p1 by u at x.(n = S x); -- n = S S hL
+                                                                        p3 = sym p2;
+                                                                        p4 = trans (sym p1) p2 
                                                                     in
-                                                                    conv (rotateLeft y hL trl b) by p3 at x.(Or (Avl x)(Avl (S x))) )
--}
+                                                                    conv (rotateLeft y hL trl (conv b by p4 at x.(Avl x))) by p3 at x.(Or (Avl x)(Avl (S x))) )
 
 data Tuple : (a : Type) (b : Type) -> Type where
      Tuplize : (x : a) -> (y : b) -> Tuple a b    
@@ -305,7 +295,7 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                             p4 = join 100 100 : pred (S hR) = hR;
                                                             p5 = sym (trans p3 p4)
                                                         in
-                                                           Tuplize x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
                                                      | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
                                                      | Same [u] [v] ->
                                                         let p1 = conv p by v at x.(S n = S x); -- S n = S hR
@@ -314,16 +304,47 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                             p4 = join 100 100 : pred (S hR) = hR;
                                                             p5 = sym (trans p3 p4)
                                                         in
-                                                           Tuplize x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
                                                            
                                                       )
-                                    | Node trl_hL trl_hR trl_hMax trl_bal [q'] trl_l trl_r y ->
-                                                case delMin hL trl {eeq} of
-                                                     Tuplize y (Right trl') -> Tuplize y (Right )                                       
+                                      | Node trl_hL trl_hR trl_hMax trl_bal [q'] trl_l trl_r y ->
+                                             --q' : hL = S trl_hMax
+                                              let p1 = join 1 1 : S (pred hL) = S (pred hL);
+                                                  p2 = conv p1 by q' at x.(S (pred hL) = S (pred x)); -- S (pred hL) = S (pred (S trl_hMzx))
+                                                  p3 = join 100 100 : pred (S trl_hMax) = trl_hMax;
+                                                  p4 = conv p2 by p3 at x.(S (pred hL) = S x); -- S (pred hL) = S trl_hMax
+                                                  p5 = trans q' (sym p4) -- hL = S (pred hL)
+                                              in
+                                              case delMin (pred hL) (conv trl by p5 at x.(Avl x)) {eeq} of
+                                                     Tuplize z trl' -> case trl' {trl'_eq} of
+                                                                           Right trl'' ->  
+                                                                            Tuplize Nat (Or (Avl n) (Avl (S n)))
+                                                                            z (Right (Avl n) (Avl (S n))
+                                                                           (Node (S n) hL hR hMax bal [p] (conv trl'' by sym p5 at x.(Avl x)) trr x))         
+                                                                       |   Left trl'' -> case bal {bal_eq} of
+                                                                                          Same [u][v] -> 
+                                                                                          -- p: S n = S hMax , u : hR = hL, v : hMax = hR, 
+                                                                                          let p6 = join 100 100 : n = pred (S n);
+                                                                                              p7 = conv p6 by p at x.(n = pred x);-- n = pred S hMax
+                                                                                              p8 = join 100 100 : pred (S hMax) = hMax;
+                                                                                              p9 = trans p7 p8; -- n = hMax
+                                                                                              p10 = trans p9 (trans v u); -- n = hL
+                                                                                              p11 = conv p5 by sym p10 at x.(x = S (pred x)); -- n = S (pred n)
+                                                                                              p12 = trans u (sym p10) -- hR = n
+                                                                                           in 
+                                                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) 
+                                                                                           z (Right (Avl n) (Avl (S n)) 
+                                                                                          (Node (S n) (pred n) n n (Less (pred n) n n [p11] [join 1 1]) 
+                                                                                           [join 1 1] (conv trl'' by sym p10 at x.(Avl (pred x))) (conv trr by p12 at x.(Avl x)) x))
+                                                                                         | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n)))) -- to be continue
+                                                                                         | Less [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n)))) -- to be continue
+                                                                            
 
 
--}
 
+
+
+{-
 
 Theorem flip_inv : forall (n:Nat).
   (flip 0 1 1 (Less 0 1 1 [join 10 10] [join 10 10])) = (More 1 0 1 [join 10 10] [join 10 10]) :=
@@ -339,5 +360,7 @@ Program foo : (d:Nat) -> Avl 3 := tree 3
 Theorem mirror_test : forall (d:Nat).(mirror 1 (tree 1)) = (tree 1) :=
         join 10 10
 
+-}
 
-        
+
+
