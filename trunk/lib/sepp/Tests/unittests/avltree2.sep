@@ -286,29 +286,29 @@ data Tuple : (a : Type) (b : Type) -> Type where
 Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n))) :=
   case tr {tr_eq} of 
     Leaf [p] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
-  | Node hL hR hMax bal [p] trl trr x -> case trl {trl_eq} of
-                                          Leaf [q] ->( case bal {bal_eq} of
-                                                      Less [u] [v] ->  
-                                                        let p1 = conv p by v at x.(S n = S x); -- S n = S hR
-                                                            p2 = join 100 100:  n = pred (S n);
-                                                            p3 = conv p2 by p1 at x.(n = pred x); 
-                                                            p4 = join 100 100 : pred (S hR) = hR;
-                                                            p5 = sym (trans p3 p4)
-                                                        in
-                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
-                                                     | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
-                                                     | Same [u] [v] ->
-                                                        let p1 = conv p by v at x.(S n = S x); -- S n = S hR
-                                                            p2 = join 100 100:  n = pred (S n);
-                                                            p3 = conv p2 by p1 at x.(n = pred x); 
-                                                            p4 = join 100 100 : pred (S hR) = hR;
-                                                            p5 = sym (trans p3 p4)
-                                                        in
-                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
-                                                           
-                                                      )
-                                      | Node trl_hL trl_hR trl_hMax trl_bal [q'] trl_l trl_r y ->
-                                             --q' : hL = S trl_hMax
+  | Node hL hR hMax bal [p] trl trr x -> 
+        case trl {trl_eq} of
+             Leaf [q] ->( case bal {bal_eq} of
+                          Less [u] [v] ->  
+                          let p1 = conv p by v at x.(S n = S x); -- S n = S hR
+                              p2 = join 100 100:  n = pred (S n);
+                              p3 = conv p2 by p1 at x.(n = pred x); 
+                              p4 = join 100 100 : pred (S hR) = hR;
+                              p5 = sym (trans p3 p4)
+                          in
+                              Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                        | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n))))
+                        | Same [u] [v] ->
+                          let p1 = conv p by v at x.(S n = S x); -- S n = S hR
+                              p2 = join 100 100:  n = pred (S n);
+                              p3 = conv p2 by p1 at x.(n = pred x); 
+                              p4 = join 100 100 : pred (S hR) = hR;
+                              p5 = sym (trans p3 p4)
+                          in
+                              Tuplize Nat (Or (Avl n) (Avl (S n))) x (Left(Avl n) (Avl (S n)) conv trr by p5 at x.(Avl x) ) 
+                                                      )                                       
+       | Node trl_hL trl_hR trl_hMax trl_bal [q'] trl_l trl_r y ->
+             --q' : hL = S trl_hMax
                                               let p1 = join 1 1 : S (pred hL) = S (pred hL);
                                                   p2 = conv p1 by q' at x.(S (pred hL) = S (pred x)); -- S (pred hL) = S (pred (S trl_hMzx))
                                                   p3 = join 100 100 : pred (S trl_hMax) = trl_hMax;
@@ -336,8 +336,37 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                                                            z (Right (Avl n) (Avl (S n)) 
                                                                                           (Node (S n) (pred n) n n (Less (pred n) n n [p11] [join 1 1]) 
                                                                                            [join 1 1] (conv trl'' by sym p10 at x.(Avl (pred x))) (conv trr by p12 at x.(Avl x)) x))
-                                                                                         | More [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n)))) -- to be continue
-                                                                                         | Less [u] [v] -> abort (Tuple Nat (Or (Avl n) (Avl (S n)))) -- to be continue
+                                                                                         | More [u] [v] -> 
+                                                                                           -- p: S n = S hMax , u : hL = S hR, v : hMax = hL, 
+                                                                                           let p6 = join 100 100 : n = pred (S n);
+                                                                                              p7 = conv p6 by p at x.(n = pred x);-- n = pred S hMax
+                                                                                              p8 = join 100 100 : pred (S hMax) = hMax;
+                                                                                              p9 = trans p7 p8; -- n = hMax
+                                                                                              p10 = trans p9 v; -- n = hL
+                                                                                              p11 = trans p10 u;
+                                                                                              p12 = join 1 1: pred hL = pred hL;
+                                                                                              p13 = conv p12 by u at x.(pred hL = pred x); -- pred hL = pred S hR
+                                                                                              p14 = join 100 100 : pred (S hR) = hR;
+                                                                                              p15 = trans p13 p14
+                                                                                           in          
+                                                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) 
+                                                                                           z (Left (Avl n) (Avl (S n)) (Node n hR hR hR (Same hR hR hR [join 1 1][join 1 1])
+                                                                                           [p11] (conv trl'' by p15 at x.(Avl x)) trr x))
+                                                                                         | Less [u] [v] -> 
+                                                                                           -- p: S n = S hMax , u : hR = S hL, v : hMax = hR, 
+                                                                                          let
+                                                                                           p6 = join 1 1 : S hL = S hL;
+                                                                                           p7 = conv p6 by p5 at x.(S hL = S x); -- S hL = S S pred hL
+                                                                                           p8 = trans u p7; -- hR = S S pred hL
+                                                                                           p9 = join 100 100 : n = pred (S n);
+                                                                                           p10 = conv p9 by p at x.(n = pred x);-- n = pred S hMax
+                                                                                           p11 = join 100 100 : pred (S hMax) = hMax;
+                                                                                           p12 = trans p10 p11; -- n = hMax
+                                                                                           p13 = trans (sym p8) (sym v); -- S S pred hL = hMax
+                                                                                           p14 = trans p13 (sym p12)
+                                                                                          in
+                                                                                           Tuplize Nat (Or (Avl n) (Avl (S n))) 
+                                                                                           z (conv (rotateLeft x (pred hL) trl'' (conv trr by p8 at x.(Avl x))) by p14 at x.(Or (Avl x)(Avl (S x))))
                                                                             
 
 
