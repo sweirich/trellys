@@ -368,6 +368,13 @@ Recursive delMin : (n : Nat)(tr: Avl(S n)) -> Tuple Nat (Or (Avl n) (Avl (S n)))
                                                                                            Tuplize Nat (Or (Avl n) (Avl (S n))) 
                                                                                            z (conv (rotateLeft x (pred hL) trl'' (conv trr by p8 at x.(Avl x))) by p14 at x.(Or (Avl x)(Avl (S x))))
                                                                             
+Recursive del : (y:Nat)(n:Nat)(tr: Avl n) -> (Or (Avl n)(Avl (S n))) :=
+ case tr {tr_eq} of
+  Leaf [p] -> Left (Avl n)(Avl (S n)) (Leaf n [p])
+| Node hL hR hMax bal [p] trl trr x -> 
+   case eq y x {eeq} of
+      True -> case trr {trr_eq} of 
+                  Leaf [q] -> 
 
 
 
