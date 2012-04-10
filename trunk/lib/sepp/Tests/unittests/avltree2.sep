@@ -461,35 +461,116 @@ Recursive del : (y:Nat)(n:Nat)(tr: Avl n) -> (Or (Avl n)(Avl (pred n))) :=
                          -- rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
                          -- del : (y:Nat)(n:Nat)(tr: Avl n) -> (Or (Avl n)(Avl (pred n))),p: n = S hMax, 
 
-  | False -> (case x >= y {whocare} of
-                True -> (case del y hL trl {whatever} of 
+  | False -> (case x >= y {eeeeq} of
+                True -> (case del y hL trl {eeeeeeq} of 
                              Left trl' -> Left (Avl n)(Avl (pred n)) (Node n hL hR hMax bal [p] trl' trr x)
-                           | Right trl' -> case bal {blah} of 
-                                             Same [u][v] -> 
-                                             -- p : n = S hMax, u : hR = hL , v: hMax = hR
-                                             let 
-                                             Left (Avl n)(Avl (pred n)) (Node n (pred hL) hR hR (Less (pred hL) hR hR [] []) [] trl' trr x)
-                                           |  
+                           | Right trl' ->  case  hL {xy} of
+                                                 Z -> abort (Or (Avl n)(Avl (pred n)))
+                                               | S l ->
+                                                       let p1 = join 1 1 : S (pred hL) = S (pred hL);
+                                                           p2 = conv p1 by sym xy at x.(S (pred hL) = S (pred x)); -- S pred hL = S pred S l
+                                                           p3 = join 100 100 : pred (S l) = l;
+                                                           p4 = conv p2 by p3 at x.(S (pred hL) = S x); -- S pred hL = S l
+                                                           p5 = sym (trans p4 xy) -- hL = S pred hL
+                                                         in
+                                                       case bal {eeeeeeeeq} of 
+                                                            Same [u][v] -> 
+                                             -- p : n = S hMax, u : hR = hL , v: hMax = hR, trl': avl (pred hL)
+                                                               let p6 = trans u p5;
+                                                                   p7 = conv p by v at x.(n = S x)
+                                                               in
+                                                               Left (Avl n)(Avl (pred n)) (Node n (pred hL) hR hR (Less (pred hL) hR hR [p6] [join 1 1]) [p7] trl' trr x)
+                                                           | More [u][v] -> 
+                                             -- p : n = S hMax, u : hL = S hR , v: hMax = hL, trl': Avl (pred hL)
 
-
-
-
-
-
-
-
-
+                                                               let p6 = join 100 100 : hR = pred (S hR);
+                                                                   p7 = conv p6 by sym u at x.(hR = pred x); -- hR = pred hL
+                                                                   p8 = join 1 1 : pred n = pred n;
+                                                                   p9 = conv p8 by p at x.(pred n = pred x);
+                                                                   p10 = join 100 100 : pred (S hMax) = hMax;
+                                                                   p11 = trans p9 p10; -- pred n = hMax
+                                                                   p12 = trans v u; -- hMax = S hR
+                                                                   p13 = trans p11 p12
+                                                               in
+                                                               Right (Avl n)(Avl (pred n)) (Node (pred n) (pred hL) hR hR (Same (pred hL) hR hR [p7] [join 1 1]) [p13] trl' trr x)
+                                                           | Less [u][v] -> 
+                                             -- p : n = S hMax, u : hR = S hL , v: hMax = hR, trl': Avl (pred hL)
+                                             -- rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                  let p6 = join 1 1: (S (S (pred hL))) = (S (S (pred hL)));
+                                                                      p7 = conv p6 by sym p5 at x.(S (S (pred hL)) = S x );
+                                                                      p8 = trans p7 (sym u); -- S S pred hL = hR
+                                                                      p9 = join 1 1: pred n = pred n;
+                                                                      p10 = conv p9 by p at x.(pred n = pred x); 
+                                                                      p11 = join 100 100 : pred (S hMax) = hMax;
+                                                                      p12 = trans p10 p11; -- pred n = hMax
+                                                                      p13 = trans p12 v; -- pred n = hR
+                                                                      p14 = trans p8 (sym p13); -- S S pred hL = pred n
+                                                                      p15 = join 1 1 : S (S (S (pred hL))) = S (S (S (pred hL)));                                                               
+                                                                      p16 = conv p15 by p8 at x.(S (S (S (pred hL))) = S x); -- S S S pred hL = S hR
+                                                                      p17 = conv p16 by sym v at x.(S (S (S (pred hL))) = S x); -- S S S pred hL = S hMax
+                                                                      p18 = trans p17 (sym p)
+                                                                  in  
+                                                                  case rotateLeft x (pred hL)  trl' (conv trr by sym p8 at x.(Avl x)) {xxq} of
+                                                                            Left tr' -> Right (Avl n)(Avl (pred n)) (conv tr' by p14 at x.(Avl x))
+                                                                          | Right tr' -> Left (Avl n)(Avl (pred n)) (conv tr' by p18 at x.(Avl x))
                         )
 
+             | False -> (case del y hR trr {eeeeeeq} of 
+                             Left trr' -> Left (Avl n)(Avl (pred n)) (Node n hL hR hMax bal [p] trl trr' x)
+                           | Right trr' ->  case  hR {xy} of
+                                                 Z -> abort (Or (Avl n)(Avl (pred n)))
+                                               | S l ->
+                                                       let p1 = join 1 1 : S (pred hR) = S (pred hR);
+                                                           p2 = conv p1 by sym xy at x.(S (pred hR) = S (pred x)); -- S pred hR = S pred S l
+                                                           p3 = join 100 100 : pred (S l) = l;
+                                                           p4 = conv p2 by p3 at x.(S (pred hR) = S x); -- S pred hR = S l
+                                                           p5 = sym (trans p4 xy) -- hR = S pred hR
+                                                         in
+                                                       case bal {eeeeeeeeq} of 
+                                                            Same [u][v] -> 
+                                             -- p : n = S hMax, u : hR = hL , v: hMax = hR, trr': avl (pred hR)
+                                                               let p6 = trans (sym u) p5;
+                                                                   p7 = conv p by v at x.(n = S x);
+                                                                   p8 = conv p7 by u at x.(n = S x)
+                                                               in
+                                                               Left (Avl n)(Avl (pred n)) (Node n hL (pred hR) hL (More hL (pred hR) hL [p6] [join 1 1]) [p8] trl trr' x)
+                                                           | Less [u][v] -> 
+                                             -- p : n = S hMax, u : hR = S hL , v: hMax = hR, trr': Avl (pred hR)
 
+                                                               let p6 = join 100 100 : hL = pred (S hL);
+                                                                   p7 = conv p6 by sym u at x.(hL = pred x); -- hL = pred hR
+                                                                   p8 = join 1 1 : pred n = pred n;
+                                                                   p9 = conv p8 by p at x.(pred n = pred x); -- pred n = pred S hMax
+                                                                   p10 = join 100 100 : pred (S hMax) = hMax;
+                                                                   p11 = trans p9 p10; -- pred n = hMax
+                                                                   p12 = trans v u; -- hMax = S hL
+                                                                   p13 = trans p11 p12; -- pred n = S hL
+                                                                   p14 = conv p13 by p7 at x.(pred n = S x)
+                                                               in
+                                                               Right (Avl n)(Avl (pred n)) (Node (pred n) hL (pred hR) (pred hR) (Same hL (pred hR) (pred hR)  [sym p7] [join 1 1]) [p14] trl trr' x)
+                                                           | More [u][v] -> 
+                                             -- p : n = S hMax, u : hL = S hR , v: hMax = hL, trr': Avl (pred hR)
+                                             -- rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                   let p6 = join 1 1: (S (S (pred hR))) = (S (S (pred hR)));
+                                                                       p7 = conv p6 by sym p5 at x.(S (S (pred hR)) = S x ); -- S S pred hR = S hR
+                                                                       p8 = trans p7 (sym u); -- S S pred hR = hL
+                                                                       p9 = join 1 1: pred n = pred n;
+                                                                       p10 = conv p9 by p at x.(pred n = pred x); -- pred n = pred S hMax
+                                                                       p11 = join 100 100 : pred (S hMax) = hMax;
+                                                                       p12 = trans p10 p11; -- pred n = hMax
+                                                                       p13 = trans p12 v; -- pred n = hL
+                                                                       p14 = trans p8 (sym p13); -- S S pred hR = pred n
+                                                                       p15 = join 1 1 : S (S (S (pred hR))) = S (S (S (pred hR)));                                                               
+                                                                       p16 = conv p15 by p8 at x.(S (S (S (pred hR))) = S x); -- S S S pred hR = S hL
+                                                                       p17 = conv p16 by sym v at x.(S (S (S (pred hR))) = S x); -- S S S pred hR = S hMax
+                                                                       p18 = trans p17 (sym p)
+                                                                   in  
+                                                                  case rotateRight x (pred hR)  (conv trl by sym p8 at x.(Avl x))  trr'  {xxq} of
+                                                                            Left tr' -> Right (Avl n)(Avl (pred n))  (conv tr' by p14 at x.(Avl x))
+                                                                          | Right tr' -> Left (Avl n)(Avl (pred n))  (conv tr' by p18 at x.(Avl x)) 
+                        )
 
-
-
-
-
-             | False -> abort (Or (Avl n)(Avl (pred n)))  )
-
-
+  )
 
 
 {-
