@@ -17,7 +17,7 @@ import Text.Parsec hiding (State)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
-import Control.Applicative ( (<$>) )
+import Control.Applicative ( (<$>), (<*>))
 import Control.Monad.Error hiding (join)
 
 import Data.Char
@@ -288,15 +288,13 @@ importDef :: LParser ModuleImport
 importDef = do reserved "import" >>  (ModuleImport <$> importName)
   where importName = string2Name <$> identifier
 
-
-
 telescope :: LParser Telescope
 telescope = many teleBinding
   where
     annot :: Epsilon -> LParser (TName,Term,Epsilon)
     annot ep = do
-      (x,ty) <-    try (liftM2 (,) variableOrWild (colon >> expr))
-                <|>    (liftM2 (,) (fresh (string2Name "_")) expr)
+      (x,ty) <-    try ((,) <$> variableOrWild            <*> (colon >> expr))
+                <|>    ((,) <$> (fresh (string2Name "_")) <*> expr)
       return (x,ty,ep)
     teleBinding :: LParser (TName,Term,Epsilon)
     teleBinding =
@@ -322,7 +320,7 @@ dataDef = do
   params <- telescope
   colon
   reserved "Type"
-  level <- liftM fromInteger natural
+  level <- fromInteger <$> natural
   reserved "where"
   cs <- layout con (return ())
   return $ Data name params th level cs
@@ -390,18 +388,18 @@ termCase = do
 ordax :: LParser Term
 ordax = 
   do reserved "ord"
-     liftM OrdAx factor
+     OrdAx <$> factor
 
 ordtrans :: LParser Term
 ordtrans =
   do reserved "ordtrans"
-     liftM2 OrdTrans factor factor
+     OrdTrans <$> factor <*> factor
       
 join :: LParser Term
 join =
   do reserved "join"
-     s1 <- optionMaybe $ liftM fromInteger natural
-     s2 <- optionMaybe $ liftM fromInteger natural
+     s1 <- optionMaybe (fromInteger <$> natural)
+     s2 <- optionMaybe (fromInteger <$> natural)
      case (s1,s2) of
        (Nothing,Nothing) -> return $ Join 100 100
        (Just n,Nothing)  -> return $ Join n n
@@ -451,8 +449,8 @@ funapp :: LParser Term
 funapp = do 
   f <- factor
   foldl' app f <$> many bfactor
-  where bfactor = ((,) Erased  <$> brackets expr) <|>
-                  ((,) Runtime <$> factor)
+  where bfactor = ((Erased,)  <$> brackets expr) <|>
+                  ((Runtime,) <$> factor)
         app e1 (ep,e2)  =  App ep e1 e2
 
 factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
@@ -476,8 +474,8 @@ factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                 ]
 
 impBind,expBind :: LParser (Epsilon,TName)
-impBind = brackets $ liftM ((,) Erased) variableOrWild
-expBind = liftM ((,) Runtime) variableOrWild
+impBind = brackets ((Erased,)  <$> variableOrWild)
+expBind =           (Runtime,) <$> variableOrWild
 
 impOrExpBind :: LParser (Epsilon,TName)
 impOrExpBind = impBind <|> expBind
@@ -486,7 +484,7 @@ impOrExpBind = impBind <|> expBind
 typen :: LParser Term
 typen =
   do reserved "Type"
-     n <- liftM fromInteger natural
+     n <- fromInteger <$> natural
      return $ Type n
 
 
@@ -536,8 +534,8 @@ letExpr =
 -- These have the syntax [x:a]->b or [a]->b .
 impProd :: LParser Term
 impProd =
-  do (x,tyA) <- brackets (try (liftM2 (,) variableOrWild (colon >> expr))
-                          <|> (liftM2 (,) (fresh (string2Name "_")) expr))
+  do (x,tyA) <- brackets (try ((,) <$> variableOrWild <*> (colon >> expr))
+                          <|> ((,) <$> (fresh (string2Name "_")) <*> expr))
      reservedOp "->"
      tyB <- compound
      return $ Arrow Erased  (bind (x,embed tyA) tyB)
@@ -563,7 +561,7 @@ expProdOrAnnotOrParens =
       choice [do e1 <- try (term >>= (\e1 -> colon >> return e1))
                  e2 <- expr
                  return $ Left (e1,e2)
-             ,liftM Right expr]
+             , Right <$> expr]
   in
     do bd <- beforeBinder
        case bd of

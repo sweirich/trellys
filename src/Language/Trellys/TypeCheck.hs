@@ -19,6 +19,7 @@ import Language.Trellys.GenericBind
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
 
@@ -70,7 +71,7 @@ ta th (Pos p t) ty = do
          \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
 ta th tm (Pos _ ty) = ta th tm ty
 
-ta th (Paren a) ty = liftM Paren $ ta th a ty
+ta th (Paren a) ty = Paren <$> ta th a ty
 ta th tm (Paren ty) = ta th tm ty
 
 -- rule T_join
@@ -557,7 +558,7 @@ ts tsTh tsTm =
                return ((True,pf),pf) --fixme, the first pf should really be elaborated,
                                      -- but we probably need the context from the template to do that...
 
-         (eas,atys) <- liftM unzip $ zipWithM chkTy as xs
+         (eas,atys) <- unzip <$> zipWithM chkTy as xs
 
          picky <- getFlag PickyEq
          let errMsg aty =
@@ -565,7 +566,7 @@ ts tsTh tsTm =
                       DS "but here has type", DD aty]
 
 
-         (tyA1s,tyA2s, ks) <- liftM unzip3 $ mapM (\ aty ->
+         (tyA1s,tyA2s, ks) <- unzip3 <$> mapM (\ aty ->
               case isTyEq aty of
                 Just (tyA1, tyA2) -> do
                  (_,k1) <- ts Program tyA1
@@ -672,13 +673,9 @@ tcModule defs m' = do checkedEntries <- extendCtxMods importedModules $
           case x of
             AddHint  hint  -> extendHints hint m
                            -- Add decls to the Decls to be returned
-            AddCtx decls -> liftM (decls++) (extendCtxs decls m)
+            AddCtx decls -> (decls++) <$> (extendCtxs decls m)
         -- Get all of the defs from imported modules (this is the env to check current module in)
         importedModules = filter (\aMod -> (ModuleImport (moduleName aMod)) `elem` moduleImports m') defs
-        -- importedModules =
-        --   [mod |
-        --    mod <- defs,
-        --           (ModuleImport (moduleName mod)) `elem` moduleImports m']
 
 -- | The Env-delta returned when type-checking a top-level Decl.
 data HintOrCtx = AddHint Decl
