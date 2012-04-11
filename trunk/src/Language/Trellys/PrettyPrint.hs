@@ -14,7 +14,7 @@ import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos
 import Data.Set (Set)
 import qualified Data.Set as S
-
+import Control.Applicative ((<$>), (<*>))
 
 -- | The 'Disp' class governs types which can be turned into 'Doc's
 class Disp d where
@@ -329,7 +329,7 @@ instance Display Term where
       return $ fsep [text "conv" <+> da,
                     text "by" <+> sep (punctuate comma dbs),
                     text "at" <+> hsep dxs  <+> text "." <+> dc]
-      where displayErased (True,pf) = liftM brackets $ display pf
+      where displayErased (True,pf) = brackets <$> display pf
             displayErased (False, pf) = display pf
 
   display (Smaller a b) = do
@@ -428,6 +428,11 @@ instance Display ETerm where
                      ECase _ _ -> parens
                      _         -> id
        return (wrapf df <+> wrapx dx)
+  display (EOrdAx) = return $ text "ord"
+  display (ESmaller e0 e1) = do
+       de0 <- display e0
+       de1 <- display e1
+       return (de0 <+> text "<" <+> de1)
   display (ETyEq e0 e1) = do
        de0 <- display e0
        de1 <- display e1

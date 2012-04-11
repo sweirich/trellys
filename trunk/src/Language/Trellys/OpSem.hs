@@ -15,6 +15,7 @@ import Language.Trellys.GenericBind
 
 import Text.PrettyPrint.HughesPJ (nest)
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
 
@@ -22,7 +23,8 @@ import Control.Monad.State hiding (join)
 erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
 erase (Con c args)          = 
-  do args' <- mapM (\(t,ep) -> liftM (,ep) (erase t)) (filter ((==Runtime) . snd) args)
+  do args' <- mapM (\(t,ep) -> (,ep) <$> (erase t)) 
+                   (filter ((==Runtime) . snd) args)
      return $ ECon (translate c) args'
 erase (Type l)              = return $ EType l
 erase (Arrow ep bnd) =
@@ -36,12 +38,12 @@ erase (Lam ep bnd)   =
      if ep == Runtime
        then return $ ELam (bind (translate x) body')
        else return body'
-erase (App Runtime a b) = liftM2 EApp (erase a) (erase b)
+erase (App Runtime a b) = EApp <$> (erase a) <*> (erase b)
 erase (App Erased  a _) = erase a
-erase (Smaller a b)     = liftM2 ESmaller (erase a) (erase b)
+erase (Smaller a b)     = ESmaller <$> (erase a) <*> (erase b)
 erase (OrdAx _)         = return EOrdAx
-erase (OrdTrans _ _)    = return EOrdTrans
-erase (TyEq a b)        = liftM2 ETyEq (erase a) (erase b)
+erase (OrdTrans _ _)    = return EOrdAx
+erase (TyEq a b)        = ETyEq <$> (erase a) <*> (erase b)
 erase (Join _ _)        = return EJoin
 erase Abort             = return EAbort
 erase (Ind ep bnd)   =
@@ -59,7 +61,7 @@ erase (Rec ep bnd)      =
 erase (Case a bnd)      =
   do a' <- erase a
      (_,mtchs) <- unbind bnd
-     liftM (ECase a') (mapM eraseMatch mtchs)
+     (ECase a') <$> (mapM eraseMatch mtchs)
 erase (Let _ ep bnd)       =
   do ((x,_,a),body) <- unbind bnd
      body' <- erase body
@@ -194,7 +196,6 @@ cbvStep (ECase b mtchs) =
            _ -> return Nothing
 cbvStep (ESmaller _ _) = return Nothing
 cbvStep EOrdAx = return Nothing
-cbvStep EOrdTrans = return Nothing
 cbvStep (ETerminationCase _ _) = err [DS "Tried to excute a termination-case"]
 cbvStep (ELet m bnd)   =
   do stpm <- cbvStep m
@@ -256,7 +257,6 @@ isEValue (ELam _)         = True
 isEValue (EApp _ _)       = False
 isEValue (ESmaller _ _)   = True
 isEValue EOrdAx           = True
-isEValue EOrdTrans        = True
 isEValue (ETyEq _ _)      = True
 isEValue EJoin            = True
 isEValue EAbort           = False

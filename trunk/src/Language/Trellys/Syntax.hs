@@ -276,7 +276,6 @@ data ETerm = EVar EName
            | EApp ETerm ETerm
            | ESmaller ETerm ETerm
            | EOrdAx
-           | EOrdTrans
            | ETyEq ETerm ETerm
            | EJoin
            | EAbort
