@@ -53,6 +53,7 @@ data Or : (a : Type) (b : Type) -> Type where
   Left : (x : a) -> Or a b
 | Right : (x : b) -> Or a b
 
+{-
 Program flip : (hL:Nat)(hR:Nat)(hMax:Nat) (bal : Balance hL hR hMax) -> Balance hR hL hMax :=
  case bal {bal_eq} of
    Less [u][v] -> More hR hL hMax [u][v]
@@ -64,6 +65,9 @@ Recursive mirror : (n:Nat)(tr : Avl n) -> (Avl n) :=
   Leaf [p] -> Leaf n [p]
 | Node hL hR hMax bal [p] trl trr d -> 
     Node n hR hL hMax (flip hL hR hMax bal) [p] (mirror hR trr) (mirror hL trl) d
+-}
+
+
 
 Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
  case tr1 {tr1_eq} of
@@ -205,16 +209,115 @@ Program flip : (hL:Nat)(hR:Nat)(hMax:Nat) (bal : Balance hL hR hMax) -> Balance 
  |  More [u][v] -> Less hR hL hMax [u][v] 
  |  Same [u][v] -> Same hR hL hMax [sym u][trans v u]
 
-Recursive mirror : (n:Nat)(tr : Avl n) -> (Avl n) := 
- case tr {tr_eq} of 
-  Leaf [p] -> Leaf n [p]
-| Node hL hR hMax bal [p] trl trr d -> 
-    Node n hR hL hMax (flip hL hR hMax bal) [p] (mirror hR trr) (mirror hL trl) d
+-- rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
 
+Program rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
+   case tr2 {tr2_eq} of
+        Leaf [p] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+      | Node tr2_hL tr2_hR tr2_hMax tr2_bal [p] tr2_l tr2_r x -> 
+          case tr2_bal {bal_eq} of
+               Less [u][v] ->  -- u : tr2_hR = S tr2_hL , v: tr2_hMax = tr2_hR, p : S S n = S tr2_hMax
+                     ( case rotateRight y n (Node (S (S n)) tr2_hR tr2_hL tr2_hMax (More tr2_hR tr2_hL tr2_hMax [u][v]) [p] tr2_r tr2_l x) tr1 {eeq} of
+                            Left tr' -> (case tr' {tr'_eq} of 
+                                             Leaf [q] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                           | Node hL' hR' hMax' bal' [q] tr'l tr'r d -> case tr'r {exq} of 
+                                                                                         Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                                      | Node tr'r_hL tr'r_hR tr'r_hMax tr'r_bal [q'] tr'r_l tr'r_r c -> 
+                                                                                         Left (Avl (S (S n))) (Avl (S (S (S n)))) 
+                                                                                        (Node (S (S n)) hR' hL' hMax' (flip hL' hR' hMax' bal') [q] 
+                                                                                             (Node hR' tr'r_hR tr'r_hL tr'r_hMax (flip tr'r_hL tr'r_hR tr'r_hMax tr'r_bal) 
+                                                                                                    [q'] tr'r_r tr'r_l c) 
+                                                                                              tr'l d )                   )
+                          | Right tr' -> (case tr' {tr'_eq} of 
+                                             Leaf [q] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                           | Node hL' hR' hMax' bal' [q] tr'l tr'r d -> case tr'r {exq} of 
+                                                                                         Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                                      | Node tr'r_hL tr'r_hR tr'r_hMax tr'r_bal [q'] tr'r_l tr'r_r c -> 
+                                                                                         Right (Avl (S (S n))) (Avl (S (S (S n)))) 
+                                                                                        (Node (S (S (S n))) hR' hL' hMax' (flip hL' hR' hMax' bal') [q] 
+                                                                                             (Node hR' tr'r_hR tr'r_hL tr'r_hMax (flip tr'r_hL tr'r_hR tr'r_hMax tr'r_bal) 
+                                                                                                    [q'] tr'r_r tr'r_l c) 
+                                                                                              tr'l d )                   )
+   )
+          -- u : tr2_hR =tr2_hL, v: tr2_hMax = tr2_hR
+          -- Notice : Because there is no support for wildcard pattern, this case is essentially a duplication of the Less [u][v] case.
+             | Same [u][v] -> ( case rotateRight y n (Node (S (S n)) tr2_hR tr2_hL tr2_hMax (Same tr2_hR tr2_hL tr2_hMax [sym u][trans v u]) [p] tr2_r tr2_l x) tr1 {eeq} of
+                            Left tr' -> (case tr' {tr'_eq} of 
+                                             Leaf [q] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                           | Node hL' hR' hMax' bal' [q] tr'l tr'r d -> case tr'r {exq} of 
+                                                                                         Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                                      | Node tr'r_hL tr'r_hR tr'r_hMax tr'r_bal [q'] tr'r_l tr'r_r c -> 
+                                                                                         Left (Avl (S (S n))) (Avl (S (S (S n)))) 
+                                                                                        (Node (S (S n)) hR' hL' hMax' (flip hL' hR' hMax' bal') [q] 
+                                                                                             (Node hR' tr'r_hR tr'r_hL tr'r_hMax (flip tr'r_hL tr'r_hR tr'r_hMax tr'r_bal) 
+                                                                                                    [q'] tr'r_r tr'r_l c) 
+                                                                                              tr'l d )                   )
+                          | Right tr' -> (case tr' {tr'_eq} of 
+                                             Leaf [q] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                           | Node hL' hR' hMax' bal' [q] tr'l tr'r d -> case tr'r {exq} of 
+                                                                                         Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                                      | Node tr'r_hL tr'r_hR tr'r_hMax tr'r_bal [q'] tr'r_l tr'r_r c -> 
+                                                                                         Right (Avl (S (S n))) (Avl (S (S (S n)))) 
+                                                                                        (Node (S (S (S n))) hR' hL' hMax' (flip hL' hR' hMax' bal') [q] 
+                                                                                             (Node hR' tr'r_hR tr'r_hL tr'r_hMax (flip tr'r_hL tr'r_hR tr'r_hMax tr'r_bal) 
+                                                                                                    [q'] tr'r_r tr'r_l c) 
+                                                                                              tr'l d )                   )
+   )
+
+
+ 
+             | More [u][v] -> case tr2_l {tr2_l_eq} of 
+                                   Leaf [q] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                 | Node tr2_l_hL tr2_l_hR tr2_l_hMax tr2_l_bal [q] tr2_l_l tr2_l_r z ->
+                                    case rotateRight y n (Node  (S (S n)) tr2_hR tr2_hL tr2_hMax (Less tr2_hR tr2_hL tr2_hMax [u][v]) [p] 
+                                                           tr2_r (Node tr2_hL tr2_l_hR tr2_l_hL tr2_l_hMax (flip tr2_l_hL tr2_l_hR tr2_l_hMax tr2_l_bal) [q] tr2_l_r tr2_l_l z)
+                                                         x) tr1 {eeeq} of
+                                               Left tr ->( case tr {tr_eq} of 
+                                                          Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                         | Node tr_hL tr_hR tr_hMax tr_bal [q'] trl trr c ->
+                                                                 case trl {trleq} of 
+                                                                      Leaf [q''] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                    | Node trl_hL trl_hR trl_hMax trl_bal [q''] trll trlr d ->
+                                                                       case trr {trreq} of                                            
+                                                                           Leaf [q'''] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                         | Node trr_hL trr_hR trr_hMax trr_bal [q'''] trrl trrr e -> 
+                                                                            Left (Avl (S (S n))) (Avl (S (S (S n))))
+                                                                            (Node (S (S n)) tr_hR tr_hL tr_hMax (flip tr_hL tr_hR tr_hMax tr_bal)[q']
+                                                                              (Node tr_hR trr_hR trr_hL trr_hMax (flip trr_hL trr_hR trr_hMax trr_bal) [q'''] trrr trrl e)
+                                                                              (Node tr_hL trl_hR trl_hL trl_hMax (flip trl_hL trl_hR trl_hMax trl_bal) [q''] trlr trll d) c)
+                                                           )
+
+                                             | Right tr -> ( case tr {tr_eq} of 
+                                                          Leaf [q'] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                         | Node tr_hL tr_hR tr_hMax tr_bal [q'] trl trr c ->
+                                                                 case trl {trleq} of 
+                                                                      Leaf [q''] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                    | Node trl_hL trl_hR trl_hMax trl_bal [q''] trll trlr d ->
+                                                                       case trr {trreq} of                                            
+                                                                           Leaf [q'''] -> abort (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
+                                                                         | Node trr_hL trr_hR trr_hMax trr_bal [q'''] trrl trrr e -> 
+                                                                            Right (Avl (S (S n))) (Avl (S (S (S n))))
+                                                                            (Node (S (S (S n))) tr_hR tr_hL tr_hMax (flip tr_hL tr_hR tr_hMax tr_bal)[q']
+                                                                              (Node tr_hR trr_hR trr_hL trr_hMax (flip trr_hL trr_hR trr_hMax trr_bal) [q'''] trrr trrl e)
+                                                                              (Node tr_hL trl_hR trl_hL trl_hMax (flip trl_hL trl_hR trl_hMax trl_bal) [q''] trlr trll d) c)
+                                                           )
+
+
+
+
+
+                    
+
+
+
+{-
 Program rotateLeft : (y: Nat) (n : Nat) (tr1: Avl n)(tr2: Avl (S (S n))) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) ) := 
      case rotateRight y n  (mirror (S (S n)) tr2) (mirror n tr1) {eq} of
            Left tr' -> Left (Avl (S (S n))) (Avl (S (S (S n)))) (mirror (S (S n)) tr')
           | Right tr' -> Right (Avl (S (S n))) (Avl (S (S (S n)))) (mirror (S (S (S n))) tr')
+-}
+
+
 
 -- want to confirm some properties about the mirror program. BTW: the behavior we want 
 -- for the mirror is actually called involution from wiki. Need to work on later.
@@ -551,7 +654,7 @@ Recursive del : (y:Nat)(n:Nat)(tr: Avl n) -> (Or (Avl n)(Avl (pred n))) :=
                                                            | More [u][v] -> 
                                              -- p : n = S hMax, u : hL = S hR , v: hMax = hL, trr': Avl (pred hR)
                                              -- rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or (Avl (S (S n))) (Avl (S (S (S n)))) )
-                                                                   let p6 = join 1 1: (S (S (pred hR))) = (S (S (pred hR)));
+                                                                   let p6 = join 1 1: (S (S (pred hR))) = (S (S (pred hR))); -- p5: hR = S pred hR
                                                                        p7 = conv p6 by sym p5 at x.(S (S (pred hR)) = S x ); -- S S pred hR = S hR
                                                                        p8 = trans p7 (sym u); -- S S pred hR = hL
                                                                        p9 = join 1 1: pred n = pred n;
