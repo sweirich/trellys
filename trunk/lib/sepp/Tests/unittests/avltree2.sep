@@ -13,6 +13,26 @@ Program pred : (a:Nat) -> Nat :=
      Z -> Z
    | S n -> n
 
+Theorem succ_inj_term : forall (m:Nat)(m_term:m!)(n:Nat)(n_term:n!)(pf:S m = S n) . m = n :=
+   let u1 [u1_eq] = join 100 100 : m = pred (S (tcast m by m_term));
+       u2 [u2_eq] = join 100 100 : pred (S (tcast n by n_term)) = n;
+       u3 [u3_eq] = conv u1 at m = pred ~pf
+    in trans u3 u2
+
+-- Wrapper for injectivity of successor, hiding the termination proof arguments.
+Theorem succ_inj : forall (m:Nat)(n:Nat)(pf:S m = S n) . m = n :=
+  termcase m {m_term} of
+    abort -> termcase n {n_term} of
+                abort -> trans (sym m_term) n_term
+              | ! -> let u1 [u1_eq] = conv aborts (S ~m_term ) at ((abort Nat) = ~pf);
+                         u2 [u2_eq] = value (S ~n_term)
+                     in contraabort u1 u2
+   | ! -> termcase n {n_term} of
+                abort -> let u1 [u1_eq] = conv aborts (S ~n_term) at ((abort Nat) = ~(sym pf));
+                             u2 [u2_eq] = value (S ~m_term)
+                         in contraabort u1 u2
+              | ! -> succ_inj_term m m_term n n_term pf
+
 -- demonstration of how to use the 'equiv' tactic
  
 Theorem foo : forall (l:Nat)(m:Nat)(n:Nat)(p:l=m)(q:n=m).l=n := equiv 2
@@ -174,17 +194,23 @@ Program rotateRight : (y: Nat) (n : Nat) (tr1: Avl (S (S n)))(tr2: Avl n) -> (Or
                   p2 = conv p1 by p at x.(S (S (S n)) = S x); -- S (S (S n)) = S (S tr1_hMax)
                   p3 = conv p2 by v at x.(S (S (S n)) = S (S x)); 
                   p4 = conv p3 by u at x.(S (S (S n)) = S (S x)); -- S S S n = S S tr1_hL
+
+                  p1'' = succ_inj (S n) tr1_hMax p;
+                  p2'' = trans p1'' (trans v u); -- (S n) = tr1_hL
+                  p3'' = conv join 1 1 by p2'' at x.(S (S (S n))) = (S (S x));
+
                   p5 = join 100 100: S n = pred (S (S n));
                   p6 = conv p5 by p at x.(S n = pred x); -- S n = pred (S tr1_hMax)
                   p7 = conv p6 by v at x.(S n = pred (S x)); -- S n = pred S tr1_hR
                   p8 = join 100 100: pred (S tr1_hR) = tr1_hR;
                   p9 = sym (trans p7 p8); -- tr1_hR = S n
+
                   p10 = join 1 1: S tr1_hL = S tr1_hL;
                   p11 = conv p10 by sym u at x.(S tr1_hL = S x)
               in 
                Right (Avl (S (S n))) (Avl (S (S (S n))))
               (Node (S (S (S n))) tr1_hL (S tr1_hL) (S tr1_hL) (Less tr1_hL (S tr1_hL) (S tr1_hL) [join 1 1][join 1 1])
-              [p4] tr1_l (Node (S tr1_hL) tr1_hR n tr1_hR (More tr1_hR n tr1_hR [p9][join 1 1]) [p11] tr1_r tr2 y) a)
+              [p3''] tr1_l (Node (S tr1_hL) tr1_hR n tr1_hR (More tr1_hR n tr1_hR [p9][join 1 1]) [p11] tr1_r tr2 y) a)
 
 -- Here p: S (S n) = S tr1_hMax, u : tr1_hL = S tr1_hR, v : tr1_hMax = tr1_hL
 
