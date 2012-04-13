@@ -83,15 +83,14 @@ Preddecl : PredVar "::" LogicalKind                  {Preddecl (PredicateVar (st
 
 Preddef : PredVar ":=" Predicate                        {Preddef (PredicateVar (string2Name $1)) $3}
 
-Datatypedecl : data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
-             | data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
-             | Data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
-             | Data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $3}
+Datatypedecl : data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | Data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | Data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
 
 
 Dataconstrs : TermVar "::" Term                           {[((TermVar (string2Name $1)), $3)]}
-            | Dataconstrs '|' TermVar "::" Term           {((TermVar (string2Name $3)), $5):$1}
-
+            | TermVar "::" Term '|' Dataconstrs          {((TermVar (string2Name $1)), $3):$5}
 
 {-Low level definitions-}
 
@@ -133,9 +132,9 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 
 | '(' Predicate ')'                                    {$2}
 
-LogicalKind : Formula int                           {Formula $2}
+LogicalKind : Formula int                              {Formula $2}
 
-            | formula int                           {Formula $2}
+            | formula int                              {Formula $2}
 
             | Forall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
 
