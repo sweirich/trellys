@@ -17,10 +17,6 @@ tokens :-
        Data       {\s -> TokenData}
        where      {\s -> TokenWhere}
        Where      {\s -> TokenWhere}
-       ProofVar   {TokenProofVar $$}
-       PredVar    {TokenPredVar $$}
-       TermVar    {TokenTermVar $$}
-       int        {TokenInt $$}
        type       {\s -> TokenType}
        Type       {\s -> TokenType}
        Formula    {\s -> TokenFm}
@@ -33,7 +29,7 @@ tokens :-
        eq         {\s -> TokenEq}
        Forall     {\s -> TokenForall}
        forall     {\s -> TokenForall}
-       '\\'       {\s -> TokenLamb}
+       "\"        {\s -> TokenLamb}
        abort      {\s -> TokenAb}
        Abort      {\s -> TokenAb}
        join       {\s -> TokenJoin}
@@ -42,23 +38,23 @@ tokens :-
        Contr      {\s -> TokenContr}
        valax      {\s -> TokenValax}
        Valax      {\s -> TokenValax}
-       '!'        {\s -> TokenEx}
-       '('        {\s -> TokenBL}
-       ')'        {\s -> TokenBR}
-       '{'        {\s -> TokenCBL}
-       '}'        {\s -> TokenCBR}
+       "!"        {\s -> TokenEx}
+       "("        {\s -> TokenBL}
+       ")"        {\s -> TokenBR}
+       "{"        {\s -> TokenCBL}
+       "}"        {\s -> TokenCBR}
        "::"       {\s -> TokenDC}
-       '+'        {\s -> TokenPlus}
-       '-'        {\s -> TokenMinus}
+       "+"        {\s -> TokenPlus}
+       "-"        {\s -> TokenMinus}
        ":="       {\s -> TokenDef}
-       ':'        {\s -> TokenCL}
-       '.'        {\s -> TokenDot}
-       '|'        {\s -> TokenBar}
-  
-      $digit+				{ \s -> Int (read s) }
-      [\=\+\-\*\/\(\)]			{ \s -> Sym (head s) }
-      $alpha [$alpha $digit \_ \']*		{ \s -> Var s }
-
+       ":"        {\s -> TokenCL}
+       "."        {\s -> TokenDot}
+       "|"        {\s -> TokenBar}
+      $digit+				{ \s -> TokenInt (read s) }
+      "$" $alpha [$alpha $digit \_ \']* {\s -> TokenProofVar s}
+      $alpha [$alpha $digit \_ \']*     { \s -> TokenTermVar s }
+      "@" $alpha [$alpha $digit \_ \']* {\s -> TokenPredVar s}
+ 
 {
 -- Each action has type :: String -> Token
 
