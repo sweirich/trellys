@@ -8,6 +8,7 @@ import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
 }
 
+{-
 %name parser Predicate
 %name parser4Logicdecl Logicdecl
 %name parser4Proofdef Proofdef
@@ -18,9 +19,10 @@ import Unbound.LocallyNameless.Subst(substR1)
 %name parser4Prf Proof
 %name parser4Term Term
 %name parser4LK LogicalKind
-
 %name parser4Datatypedecl Datatypedecl
+-}
 
+%name parser
 %tokentype { Token }
 %error { parseError }
 
@@ -70,6 +72,15 @@ import Unbound.LocallyNameless.Subst(substR1)
 %%
 
 {-Top level definitions and declarations -}
+
+Declaration : Logicdecl {DeclLogic $1}
+            | Proofdef {DeclProof $1}
+            | Progdecl {DeclProgdecl $1}
+            | Progdef {DeclProgdef $1}
+            | Preddecl {DeclPreddecl $1}
+            | Preddef {DeclPreddef $1}
+            | Datatypedecl  {DeclData $1}
+ 
 
 Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
 
@@ -220,52 +231,11 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 | '(' Proof ')'                                     {$2}
 
 {
-      
--- For test purpose
-readinput1 = do putStrLn "Please input a predicate"
+parseError::[Token] -> a
+parseError _ = error "Parse Error!!!"       
+
+parsertest = do putStrLn "Please input an expression:"
                 inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser( lexer inpStr))
-
-readinput2 = do putStrLn "Please input a proof"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Prf( lexer inpStr))
-
-readinput3 = do putStrLn "Please input a term"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Term( lexer inpStr))
-
-readinput4 = do putStrLn "Please input a LogicalKind"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4LK( lexer inpStr))
-
-readinput5 = do putStrLn "Please input a Proof declaration"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Logicdecl( lexer inpStr))
-
-readinput6 = do putStrLn "Please input a Proof definition"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Proofdef( lexer inpStr))
-
-readinput7 = do putStrLn "Please input a Program declaration"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Progdecl( lexer inpStr))
-
-readinput8 = do putStrLn "Please input a Program definition"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Progdef( lexer inpStr))
-
-readinput9 = do putStrLn "Please input a Predicate declaration"
-                inpStr <- getLine 
-                putStrLn $ "Here is the result: " ++ show(parser4Preddecl( lexer inpStr))
-
-readinput10 = do putStrLn "Please input a Predicate definition"
-                 inpStr <- getLine 
-                 putStrLn $ "Here is the result: " ++ show(parser4Preddef( lexer inpStr))
-
-
-
-
-
-
+		putStrLn $ "Here is the result: " ++ (show (parser (alexScanTokens inpStr)))
 }
 

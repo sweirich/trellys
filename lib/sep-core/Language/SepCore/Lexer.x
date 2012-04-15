@@ -1,10 +1,9 @@
 {
-module Language.SepCore.Lexer 
- (Token(..)) where
+module Language.SepCore.Lexer where
 
 }
 
-%wrapper "basic"
+%wrapper "posn"
 
 $digit = 0-9			-- digits
 $alpha = [a-zA-Z]		-- alphabetic characters
