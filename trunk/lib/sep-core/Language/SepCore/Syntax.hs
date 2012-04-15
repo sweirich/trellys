@@ -7,12 +7,21 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..),
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),
     
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
+
+data Declaration = DeclLogic Logicdecl
+                 | DeclProof Proofdef
+                 | DeclProgdecl Progdecl           
+                 | DeclProgdef Progdef
+                 | DeclPreddef Preddef
+                 | DeclPreddecl Preddecl
+                 | DeclData Datatypedecl
+                   deriving(Show)
 
 data Logicdecl = Logicdecl Proof Predicate 
              deriving (Show)
