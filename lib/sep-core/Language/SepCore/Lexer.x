@@ -12,116 +12,182 @@ tokens :-
 
        $white+				;
        "--".*				;
-       data       {\s -> TokenData}
-       Data       {\s -> TokenData}
-       where      {\s -> TokenWhere}
-       Where      {\s -> TokenWhere}
-       type       {\s -> TokenType}
-       Type       {\s -> TokenType}
-       Formula    {\s -> TokenFm}
-       formula    {\s -> TokenFm}
-       Bottom     {\s -> TokenBot}
-       bottom     {\s -> TokenBot}
-       Pi         {\s -> TokenPi}
-       pi         {\s -> TokenPi}
-       Eq         {\s -> TokenEq}
-       eq         {\s -> TokenEq}
-       Forall     {\s -> TokenForall}
-       forall     {\s -> TokenForall}
-       "\"        {\s -> TokenLamb}
-       abort      {\s -> TokenAb}
-       Abort      {\s -> TokenAb}
-       join       {\s -> TokenJoin}
-       Join       {\s -> TokenJoin}
-       contr      {\s -> TokenContr}
-       Contr      {\s -> TokenContr}
-       valax      {\s -> TokenValax}
-       Valax      {\s -> TokenValax}
-       "!"        {\s -> TokenEx}
-       "("        {\s -> TokenBL}
-       ")"        {\s -> TokenBR}
-       "{"        {\s -> TokenCBL}
-       "}"        {\s -> TokenCBR}
-       "::"       {\s -> TokenDC}
-       "+"        {\s -> TokenPlus}
-       "-"        {\s -> TokenMinus}
-       ":="       {\s -> TokenDef}
-       ":"        {\s -> TokenCL}
-       "."        {\s -> TokenDot}
-       "|"        {\s -> TokenBar}
-      $digit+				{ \s -> TokenInt (read s) }
-      "$" $alpha [$alpha $digit \_ \']* {\s -> TokenProofVar s}
-      $alpha [$alpha $digit \_ \']*     { \s -> TokenTermVar s }
-      "@" $alpha [$alpha $digit \_ \']* {\s -> TokenPredVar s}
+       data       {\p s  -> TokenData p}
+       Data       {\p s -> TokenData p}
+       where      {\p s -> TokenWhere p}
+       Where      {\p s -> TokenWhere p}
+       type       {\p s -> TokenType p}
+       Type       {\p s -> TokenType p}
+       Formula    {\p s -> TokenFm p}
+       formula    {\p s -> TokenFm p}
+       Bottom     {\p s -> TokenBot p}
+       bottom     {\p s -> TokenBot p}
+       Pi         {\p s -> TokenPi p}
+       pi         {\p s -> TokenPi p}
+       Eq         {\p s -> TokenEq p}
+       eq         {\p s -> TokenEq p}
+       Forall     {\p s -> TokenForall p}
+       forall     {\p s -> TokenForall p}
+       "\"        {\p s -> TokenLamb p}
+       abort      {\p s -> TokenAb p}
+       Abort      {\p s -> TokenAb p}
+       join       {\p s -> TokenJoin p}
+       Join       {\p s -> TokenJoin p}
+       contr      {\p s -> TokenContr p}
+       Contr      {\p s -> TokenContr p}
+       valax      {\p s -> TokenValax p}
+       Valax      {\p s -> TokenValax p}
+       "!"        {\p s -> TokenEx p}
+       "("        {\p s -> TokenBL p}
+       ")"        {\p s -> TokenBR p}
+       "{"        {\p s -> TokenCBL p}
+       "}"        {\p s -> TokenCBR p}
+       "::"       {\p s -> TokenDC p}
+       "+"        {\p s -> TokenPlus p}
+       "-"        {\p s -> TokenMinus p}
+       ":="       {\p s -> TokenDef p}
+       ":"        {\p s -> TokenCL p}
+       "."        {\p s -> TokenDot p}
+       "|"        {\p s -> TokenBar p}
+      $digit+				{ \p s -> TokenInt p (read s) }
+      "$" $alpha [$alpha $digit \_ \']* {\p s -> TokenProofVar p s}
+      $alpha [$alpha $digit \_ \']*     { \p s -> TokenTermVar p s }
+      "@" $alpha [$alpha $digit \_ \']* {\p s -> TokenPredVar p s}
  
 {
--- Each action has type :: String -> Token
+
 
 -- The token type:
 
 data Token =
 
-       TokenType
+       TokenType AlexPosn
 
-       | TokenDef        
+       | TokenDef AlexPosn        
 
-       | TokenId String
+       | TokenInt AlexPosn Integer
 
-       | TokenInt Integer
+       | TokenFm AlexPosn
 
-       | TokenFm
-
-       | TokenForall
+       | TokenForall AlexPosn
  
-       | TokenProofVar String
+       | TokenProofVar AlexPosn String
 
-       | TokenPredVar String
+       | TokenPredVar AlexPosn String
 
-       | TokenTermVar String
+       | TokenTermVar AlexPosn String
 
-       | TokenPi
+       | TokenPi AlexPosn
 
-       | TokenEq
+       | TokenEq AlexPosn
 
-       | TokenBot
+       | TokenBot AlexPosn
 
-       | TokenLamb
+       | TokenLamb AlexPosn
 
-       | TokenJoin
+       | TokenJoin AlexPosn
 
-       | TokenContr
+       | TokenContr AlexPosn
 
-       | TokenValax
+       | TokenValax AlexPosn
 
-       | TokenEx
+       | TokenEx AlexPosn
 
-       | TokenBL
+       | TokenBL AlexPosn
 
-       | TokenBR
+       | TokenBR AlexPosn
 
-       | TokenDC
+       | TokenDC AlexPosn
 
-       | TokenPlus
+       | TokenPlus AlexPosn
 
-       | TokenMinus
+       | TokenMinus AlexPosn
 
-       | TokenCL
+       | TokenCL AlexPosn
 
-       | TokenDot
+       | TokenDot AlexPosn
 
-       | TokenAb
+       | TokenAb AlexPosn
  
-       | TokenCBL
+       | TokenCBL AlexPosn
 
-       | TokenCBR
+       | TokenCBR AlexPosn
 
-       | TokenData
+       | TokenData AlexPosn
 
-       | TokenWhere
+       | TokenWhere AlexPosn
 
-       | TokenBar
+       | TokenBar AlexPosn
 
   deriving (Show, Eq)
+
+tokenPosn (TokenType p) = p
+
+tokenPosn (TokenDef p) = p       
+
+tokenPosn (TokenInt p i) = p
+
+tokenPosn (TokenFm p) = p
+
+tokenPosn (TokenForall p ) = p
+ 
+tokenPosn (TokenProofVar p s) = p
+
+tokenPosn (TokenPredVar p s) = p
+
+tokenPosn (TokenTermVar p s) = p
+
+tokenPosn (TokenPi p) = p
+
+tokenPosn (TokenEq p) = p
+
+tokenPosn (TokenBot p) = p
+
+tokenPosn (TokenLamb p) = p 
+
+tokenPosn (TokenJoin p) = p 
+
+tokenPosn (TokenContr p) = p
+
+tokenPosn (TokenValax p) = p
+
+tokenPosn (TokenEx p) = p
+
+tokenPosn (TokenBL p) = p
+
+tokenPosn (TokenBR p) = p
+
+tokenPosn (TokenDC p) = p
+
+tokenPosn (TokenPlus p) = p
+
+tokenPosn (TokenMinus p) = p
+
+tokenPosn (TokenCL p) = p
+
+tokenPosn (TokenDot p) = p
+
+tokenPosn (TokenAb p) = p
+ 
+tokenPosn (TokenCBL p) = p
+
+tokenPosn (TokenCBR p) = p
+
+tokenPosn (TokenData p) = p
+
+tokenPosn (TokenWhere p) = p
+
+tokenPosn (TokenBar p) = p
+
+
+
+
+getLineNum :: AlexPosn -> Int
+getLineNum (AlexPn offset lineNum colNum) = lineNum 
+
+getColumnNum :: AlexPosn -> Int
+getColumnNum (AlexPn offset lineNum colNum) = colNum
+
 
 testlexer = do
   s <- getLine
