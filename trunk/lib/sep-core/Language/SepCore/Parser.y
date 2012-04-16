@@ -27,47 +27,47 @@ import Unbound.LocallyNameless.Subst(substR1)
 %error { parseError }
 
 %token 
-       data       {TokenData}
-       Data       {TokenData}
-       where      {TokenWhere}
-       Where      {TokenWhere}
-       ProofVar   {TokenProofVar $$}
-       PredVar    {TokenPredVar $$}
-       TermVar    {TokenTermVar $$}
-       int        {TokenInt $$}
-       type       {TokenType}
-       Type       {TokenType}
-       Formula    {TokenFm}
-       formula    {TokenFm}
-       Bottom     {TokenBot}
-       bottom     {TokenBot}
-       Pi         {TokenPi}
-       pi         {TokenPi}
-       Eq         {TokenEq}
-       eq         {TokenEq}
-       Forall     {TokenForall}
-       forall     {TokenForall}
-       '\\'       {TokenLamb}
-       abort      {TokenAb}
-       Abort      {TokenAb}
-       join       {TokenJoin}
-       Join       {TokenJoin}
-       contr      {TokenContr}
-       Contr      {TokenContr}
-       valax      {TokenValax}
-       Valax      {TokenValax}
-       '!'        {TokenEx}
-       '('        {TokenBL}
-       ')'        {TokenBR}
-       '{'        {TokenCBL}
-       '}'        {TokenCBR}
-       "::"       {TokenDC}
-       '+'        {TokenPlus}
-       '-'        {TokenMinus}
-       ":="       {TokenDef}
-       ':'        {TokenCL}
-       '.'        {TokenDot}
-       '|'        {TokenBar}
+       data       {TokenData _ }
+       Data       {TokenData _}
+       where      {TokenWhere _ }
+       Where      {TokenWhere _ }
+       ProofVar   {TokenProofVar _ $$}
+       PredVar    {TokenPredVar _ $$}
+       TermVar    {TokenTermVar _ $$}
+       int        {TokenInt _ $$}
+       type       {TokenType _ }
+       Type       {TokenType _}
+       Formula    {TokenFm _ }
+       formula    {TokenFm _ }
+       Bottom     {TokenBot _}
+       bottom     {TokenBot _}
+       Pi         {TokenPi _}
+       pi         {TokenPi _}
+       Eq         {TokenEq _}
+       eq         {TokenEq _}
+       Forall     {TokenForall _}
+       forall     {TokenForall _}
+       '\\'       {TokenLamb _}
+       abort      {TokenAb _}
+       Abort      {TokenAb _}
+       join       {TokenJoin _}
+       Join       {TokenJoin _}
+       contr      {TokenContr _}
+       Contr      {TokenContr _}
+       valax      {TokenValax _ }
+       Valax      {TokenValax _}
+       '!'        {TokenEx _}
+       '('        {TokenBL _}
+       ')'        {TokenBR _}
+       '{'        {TokenCBL _}
+       '}'        {TokenCBR _}
+       "::"       {TokenDC _}
+       '+'        {TokenPlus _ }
+       '-'        {TokenMinus _}
+       ":="       {TokenDef _}
+       ':'        {TokenCL _}
+       '.'        {TokenDot _}
+       '|'        {TokenBar _}
 
 %%
 
@@ -80,7 +80,10 @@ Declaration : Logicdecl {DeclLogic $1}
             | Preddecl {DeclPreddecl $1}
             | Preddef {DeclPreddef $1}
             | Datatypedecl  {DeclData $1}
+
  
+
+
 
 Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
 
@@ -231,8 +234,15 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 | '(' Proof ')'                                     {$2}
 
 {
-parseError::[Token] -> a
-parseError _ = error "Parse Error!!!"       
+
+parseError :: [Token] -> a
+parseError tokenList = let pos = tokenPosn(head(tokenList)) 
+  in 
+  error ("parse error at line " ++ show(getLineNum(pos)) ++ " and column " ++ show(getColumnNum(pos)))
+
+
+
+
 
 parsertest = do putStrLn "Please input an expression:"
                 inpStr <- getLine 
