@@ -1,58 +1,41 @@
+
 {
 module Language.SepCore.Lexer where
 
 }
 
-%wrapper "posn"
+%wrapper "monad"
 
-$digit = 0-9			-- digits
-$alpha = [a-zA-Z]		-- alphabetic characters
+$digit = 0-9		
+$alpha = [a-zA-Z]	
 
+@num = $digit+
+@proofVar = "$" $alpha [$alpha $digit \_ \']*
+@termVar = $alpha [$alpha $digit \_ \']*
+@predVar = "@" $alpha [$alpha $digit \_ \']*
+@comments =  "--".* 
+
+@reservedWords = data | Data | where | Where | type | Type | Formula | formula
+                | Bottom | bottom | pi | Pi | Eq | eq | Forall | forall | abort | Abort
+                | join | Join | contr | Contr | valax | Valax
+
+@reservedSymbols = \\ | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
+                  | "." | "|"
 tokens :-
+-- Notice: the order of the following productions actually matters. Becase there is
+-- a potential overlapping between termvar and reservedwords. So we need to scan reservedwords 
+-- first, and then scan other variables.
 
        $white+				;
-       "--".*				;
-       data       {\p s  -> TokenData p}
-       Data       {\p s -> TokenData p}
-       where      {\p s -> TokenWhere p}
-       Where      {\p s -> TokenWhere p}
-       type       {\p s -> TokenType p}
-       Type       {\p s -> TokenType p}
-       Formula    {\p s -> TokenFm p}
-       formula    {\p s -> TokenFm p}
-       Bottom     {\p s -> TokenBot p}
-       bottom     {\p s -> TokenBot p}
-       Pi         {\p s -> TokenPi p}
-       pi         {\p s -> TokenPi p}
-       Eq         {\p s -> TokenEq p}
-       eq         {\p s -> TokenEq p}
-       Forall     {\p s -> TokenForall p}
-       forall     {\p s -> TokenForall p}
-       "\"        {\p s -> TokenLamb p}
-       abort      {\p s -> TokenAb p}
-       Abort      {\p s -> TokenAb p}
-       join       {\p s -> TokenJoin p}
-       Join       {\p s -> TokenJoin p}
-       contr      {\p s -> TokenContr p}
-       Contr      {\p s -> TokenContr p}
-       valax      {\p s -> TokenValax p}
-       Valax      {\p s -> TokenValax p}
-       "!"        {\p s -> TokenEx p}
-       "("        {\p s -> TokenBL p}
-       ")"        {\p s -> TokenBR p}
-       "{"        {\p s -> TokenCBL p}
-       "}"        {\p s -> TokenCBR p}
-       "::"       {\p s -> TokenDC p}
-       "+"        {\p s -> TokenPlus p}
-       "-"        {\p s -> TokenMinus p}
-       ":="       {\p s -> TokenDef p}
-       ":"        {\p s -> TokenCL p}
-       "."        {\p s -> TokenDot p}
-       "|"        {\p s -> TokenBar p}
-      $digit+				{ \p s -> TokenInt p (read s) }
-      "$" $alpha [$alpha $digit \_ \']* {\p s -> TokenProofVar p s}
-      $alpha [$alpha $digit \_ \']*     { \p s -> TokenTermVar p s }
-      "@" $alpha [$alpha $digit \_ \']* {\p s -> TokenPredVar p s}
+       @comments                        ;
+       @num                             {lexNum}
+       @reservedWords                   {lexReservedW}
+       @proofVar                        {lexProofVar}
+       @termVar                         {lexTermVar}
+       @predVar                         {lexPredVar}
+       @reservedSymbols                 {lexReservedS}
+                    
+
  
 {
 
@@ -61,125 +44,128 @@ tokens :-
 
 data Token =
 
-       TokenType AlexPosn
+       TokenType 
 
-       | TokenDef AlexPosn        
+       | TokenDef
 
-       | TokenInt AlexPosn Integer
+       | TokenInt Integer
 
-       | TokenFm AlexPosn
+       | TokenFm 
 
-       | TokenForall AlexPosn
+       | TokenForall
  
-       | TokenProofVar AlexPosn String
+       | TokenProofVar String
 
-       | TokenPredVar AlexPosn String
+       | TokenPredVar String
 
-       | TokenTermVar AlexPosn String
+       | TokenTermVar String
 
-       | TokenPi AlexPosn
+       | TokenPi
 
-       | TokenEq AlexPosn
+       | TokenEq
 
-       | TokenBot AlexPosn
+       | TokenBot
 
-       | TokenLamb AlexPosn
+       | TokenLamb
 
-       | TokenJoin AlexPosn
+       | TokenJoin
 
-       | TokenContr AlexPosn
+       | TokenContr
 
-       | TokenValax AlexPosn
+       | TokenValax
 
-       | TokenEx AlexPosn
+       | TokenEx 
 
-       | TokenBL AlexPosn
+       | TokenBL 
 
-       | TokenBR AlexPosn
+       | TokenBR 
 
-       | TokenDC AlexPosn
+       | TokenDC 
 
-       | TokenPlus AlexPosn
+       | TokenPlus
 
-       | TokenMinus AlexPosn
+       | TokenMinus
 
-       | TokenCL AlexPosn
+       | TokenCL 
 
-       | TokenDot AlexPosn
+       | TokenDot
 
-       | TokenAb AlexPosn
+       | TokenAb 
  
-       | TokenCBL AlexPosn
+       | TokenCBL
 
-       | TokenCBR AlexPosn
+       | TokenCBR
 
-       | TokenData AlexPosn
+       | TokenData
 
-       | TokenWhere AlexPosn
+       | TokenWhere
 
-       | TokenBar AlexPosn
+       | TokenBar
 
+       | TokenEOF
   deriving (Show, Eq)
 
-tokenPosn (TokenType p) = p
+data Lexeme = L AlexPosn Token String
 
-tokenPosn (TokenDef p) = p       
+mkL :: Token -> AlexInput -> Int -> Alex Lexeme
+mkL t (p,_,str) len = return (L p t (take len str))
 
-tokenPosn (TokenInt p i) = p
+lexNum :: AlexInput -> Int -> Alex Lexeme
+lexNum a@(_,_,input) len = mkL (TokenInt (read (take len input))) a len
 
-tokenPosn (TokenFm p) = p
+lexProofVar :: AlexInput -> Int -> Alex Lexeme
+lexProofVar a@(_,_,input) len = mkL (TokenProofVar (take len input)) a len
 
-tokenPosn (TokenForall p ) = p
- 
-tokenPosn (TokenProofVar p s) = p
+lexTermVar :: AlexInput -> Int -> Alex Lexeme
+lexTermVar a@(_,_,input) len = mkL (TokenTermVar (take len input)) a len
 
-tokenPosn (TokenPredVar p s) = p
+lexPredVar :: AlexInput -> Int -> Alex Lexeme
+lexPredVar a@(_,_,input) len = mkL (TokenPredVar (take len input)) a len
 
-tokenPosn (TokenTermVar p s) = p
+lexReservedW :: AlexInput -> Int -> Alex Lexeme
+lexReservedW a@(_,_,input) len = case take len input of
+                                    "data" -> mkL TokenData a len 
+                                    "Data" -> mkL TokenData a len
+                                    "where" -> mkL TokenWhere a len
+                                    "Where" -> mkL TokenWhere a len
+                                    "Type" -> mkL TokenType a len
+                                    "type" -> mkL TokenType a len
+                                    "formula" -> mkL TokenFm a len
+                                    "Formula" -> mkL TokenFm a len
+                                    "Bottom" -> mkL TokenBot a len
+                                    "bottom" -> mkL TokenBot a len
+                                    "pi" -> mkL TokenPi a len
+                                    "Pi" -> mkL TokenPi a len
+                                    "Eq" -> mkL TokenEq a len
+                                    "eq" -> mkL TokenEq a len
+                                    "forall" -> mkL TokenForall a len
+                                    "Forall" -> mkL TokenForall a len
+                                    "abort" -> mkL TokenAb a len
+                                    "Abort" -> mkL TokenAb a len
+                                    "Join" -> mkL TokenJoin a len
+                                    "join" -> mkL TokenJoin a len
+                                    "Contr" -> mkL TokenContr a len
+                                    "contr" -> mkL TokenContr a len
+                                    "valax" -> mkL TokenValax a len
+                                    "Valax" -> mkL TokenValax a len
+-- @reservedSymbols = "\\" | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
+--                  | "." | "|"
 
-tokenPosn (TokenPi p) = p
-
-tokenPosn (TokenEq p) = p
-
-tokenPosn (TokenBot p) = p
-
-tokenPosn (TokenLamb p) = p 
-
-tokenPosn (TokenJoin p) = p 
-
-tokenPosn (TokenContr p) = p
-
-tokenPosn (TokenValax p) = p
-
-tokenPosn (TokenEx p) = p
-
-tokenPosn (TokenBL p) = p
-
-tokenPosn (TokenBR p) = p
-
-tokenPosn (TokenDC p) = p
-
-tokenPosn (TokenPlus p) = p
-
-tokenPosn (TokenMinus p) = p
-
-tokenPosn (TokenCL p) = p
-
-tokenPosn (TokenDot p) = p
-
-tokenPosn (TokenAb p) = p
- 
-tokenPosn (TokenCBL p) = p
-
-tokenPosn (TokenCBR p) = p
-
-tokenPosn (TokenData p) = p
-
-tokenPosn (TokenWhere p) = p
-
-tokenPosn (TokenBar p) = p
-
-
+lexReservedS :: AlexInput -> Int -> Alex Lexeme
+lexReservedS a@(_,_,input) len = case take len input of
+                                    "\\" -> mkL TokenLamb a len 
+                                    "!" -> mkL TokenEx a len
+                                    "(" -> mkL TokenBL a len
+                                    ")" -> mkL TokenBR a len
+                                    "{" -> mkL TokenCBL a len
+                                    "}" -> mkL TokenCBR a len
+                                    "::" -> mkL TokenDC a len
+                                    ":" -> mkL TokenCL a len
+                                    "-" -> mkL TokenMinus a len
+                                    "+" -> mkL TokenPlus a len
+                                    ":=" -> mkL TokenDef a len
+                                    "." -> mkL TokenDot a len
+                                    "|" -> mkL TokenBar a len
 
 
 getLineNum :: AlexPosn -> Int
@@ -188,8 +174,40 @@ getLineNum (AlexPn offset lineNum colNum) = lineNum
 getColumnNum :: AlexPosn -> Int
 getColumnNum (AlexPn offset lineNum colNum) = colNum
 
+alexMonadScan2 = do
+  inp <- alexGetInput
+  sc <- alexGetStartCode
+  case alexScan inp sc of
+    AlexEOF -> alexEOF
+    AlexError inp'@(p,_,s) -> alexError $ "Lexical error at line: "++ show (getLineNum p) ++ ", column: " ++ show (getColumnNum p) ++ "."
+    AlexSkip  inp' len -> do
+        alexSetInput inp'
+        alexMonadScan2
+    AlexToken inp' len action -> do
+        alexSetInput inp'
+        action inp len
 
-testlexer = do
+alexEOF = return (L undefined TokenEOF "")
+
+{-
+-- some unusable test code.
+
+scanner str = runAlex str $ do
+  let loop t = do tok@(L _ cl _) <- alexMonadScan2; 
+		  if cl == TokenEOF
+			then return t
+			else do loop $! (t ++ [cl])
+  loop []
+
+test = do
   s <- getLine
-  print (alexScanTokens s)
+  print (scanner s)
+
+-}
+
+
 }
+
+
+
+
