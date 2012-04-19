@@ -8,66 +8,53 @@ import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
 }
 
-{-
-%name parser Predicate
-%name parser4Logicdecl Logicdecl
-%name parser4Proofdef Proofdef
-%name parser4Progdecl Progdecl
-%name parser4Progdef Progdef
-%name parser4Preddecl Preddecl
-%name parser4Preddef Preddef
-%name parser4Prf Proof
-%name parser4Term Term
-%name parser4LK LogicalKind
-%name parser4Datatypedecl Datatypedecl
--}
-
 %name parser
 %tokentype { Token }
+%monad{Alex}
+%lexer{lexer}{TokenEOF}
 %error { parseError }
-
 %token 
-       data       {TokenData _ }
-       Data       {TokenData _}
-       where      {TokenWhere _ }
-       Where      {TokenWhere _ }
-       ProofVar   {TokenProofVar _ $$}
-       PredVar    {TokenPredVar _ $$}
-       TermVar    {TokenTermVar _ $$}
-       int        {TokenInt _ $$}
-       type       {TokenType _ }
-       Type       {TokenType _}
-       Formula    {TokenFm _ }
-       formula    {TokenFm _ }
-       Bottom     {TokenBot _}
-       bottom     {TokenBot _}
-       Pi         {TokenPi _}
-       pi         {TokenPi _}
-       Eq         {TokenEq _}
-       eq         {TokenEq _}
-       Forall     {TokenForall _}
-       forall     {TokenForall _}
-       '\\'       {TokenLamb _}
-       abort      {TokenAb _}
-       Abort      {TokenAb _}
-       join       {TokenJoin _}
-       Join       {TokenJoin _}
-       contr      {TokenContr _}
-       Contr      {TokenContr _}
-       valax      {TokenValax _ }
-       Valax      {TokenValax _}
-       '!'        {TokenEx _}
-       '('        {TokenBL _}
-       ')'        {TokenBR _}
-       '{'        {TokenCBL _}
-       '}'        {TokenCBR _}
-       "::"       {TokenDC _}
-       '+'        {TokenPlus _ }
-       '-'        {TokenMinus _}
-       ":="       {TokenDef _}
-       ':'        {TokenCL _}
-       '.'        {TokenDot _}
-       '|'        {TokenBar _}
+       data       {TokenData }
+       Data       {TokenData }
+       where      {TokenWhere }
+       Where      {TokenWhere }
+       ProofVar   {TokenProofVar $$}
+       PredVar    {TokenPredVar $$}
+       TermVar    {TokenTermVar $$}
+       int        {TokenInt $$}
+       type       {TokenType }
+       Type       {TokenType }
+       Formula    {TokenFm  }
+       formula    {TokenFm }
+       Bottom     {TokenBot}
+       bottom     {TokenBot}
+       Pi         {TokenPi }
+       pi         {TokenPi }
+       Eq         {TokenEq }
+       eq         {TokenEq }
+       Forall     {TokenForall }
+       forall     {TokenForall}
+       '\\'       {TokenLamb }
+       abort      {TokenAb }
+       Abort      {TokenAb }
+       join       {TokenJoin}
+       Join       {TokenJoin}
+       contr      {TokenContr}
+       Contr      {TokenContr}
+       valax      {TokenValax }
+       Valax      {TokenValax}
+       '!'        {TokenEx}
+       '('        {TokenBL}
+       ')'        {TokenBR}
+       '{'        {TokenCBL}
+       '}'        {TokenCBR}
+       "::"       {TokenDC}
+       '+'        {TokenPlus }
+       '-'        {TokenMinus}
+       ":="       {TokenDef}
+       ':'        {TokenCL}
+       '.'        {TokenDot}
+       '|'        {TokenBar}
 
 %%
 
@@ -82,8 +69,6 @@ Declaration : Logicdecl {DeclLogic $1}
             | Datatypedecl  {DeclData $1}
 
  
-
-
 
 Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
 
@@ -235,17 +220,31 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 {
 
-parseError :: [Token] -> a
-parseError tokenList = let pos = tokenPosn(head(tokenList)) 
-  in 
-  error ("parse error at line " ++ show(getLineNum(pos)) ++ " and column " ++ show(getColumnNum(pos)))
+getPosition = Alex (\s -> Right $ (s,alex_pos s))
+parseError :: Token -> Alex a
+parseError xs = do
+                pos@(AlexPn _ line col) <- getPosition
+                alexError $  show line ++ ":" ++ show col ++": Parse error: unexpected " ++ (show xs)
+
+--alexMonadScan :: Alex Lexeme
+--unLexeme :: Lexeme -> Token
+--alexMonadScan :: Alex Lexeme
+--alexMonadScan1:: (Lexeme -> Alex a) -> Alex a
 
 
+lexer :: (Token -> Alex a) -> Alex a
+lexer k = do
+           l@(L _ tok _) <- alexMonadScan2
+           k tok
 
+--test code
+test = do putStrLn "Please input an expression:";
+         	s <- getLine;
+                case runAlex s parser of
+                      Left e -> error e
+         	      Right a ->putStrLn (show a)
 
-
-parsertest = do putStrLn "Please input an expression:"
-                inpStr <- getLine 
-		putStrLn $ "Here is the result: " ++ (show (parser (alexScanTokens inpStr)))
+                
+        
 }
 
