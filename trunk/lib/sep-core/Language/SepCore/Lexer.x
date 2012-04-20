@@ -17,10 +17,11 @@ $alpha = [a-zA-Z]
 
 @reservedWords = data | Data | where | Where | type | Type | Formula | formula
                 | Bottom | bottom | pi | Pi | Eq | eq | Forall | forall | abort | Abort
-                | join | Join | contr | Contr | valax | Valax
+                | join | Join | contr | Contr | valax | Valax | Case | case | of | Of | Let
+                | let | in | In
 
 @reservedSymbols = \\ | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
-                  | "." | "|"
+                  | "." | "|" | "->" | "="
 tokens :-
 -- Notice: the order of the following productions actually matters. Becase there is
 -- a potential overlapping between termvar and reservedwords. So we need to scan reservedwords 
@@ -108,6 +109,14 @@ data Token =
 
        | TokenCase
 
+       | TokenArrow
+
+       | TokenLet
+
+       | TokenIn
+
+       | TokenEquiv
+
   deriving (Show, Eq)
 
 data Lexeme = L AlexPosn Token String
@@ -153,6 +162,15 @@ lexReservedW a@(_,_,input) len = case take len input of
                                     "contr" -> mkL TokenContr a len
                                     "valax" -> mkL TokenValax a len
                                     "Valax" -> mkL TokenValax a len
+                                    "case" -> mkL TokenCase a len
+                                    "Case" -> mkL TokenCase a len
+                                    "Of" -> mkL TokenOf a len
+                                    "of" -> mkL TokenOf a len
+                                    "Let" -> mkL TokenLet a len
+                                    "let" -> mkL TokenLet a len
+                                    "in" -> mkL TokenIn a len
+                                    "In" -> mkL TokenIn a len
+
 -- @reservedSymbols = "\\" | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
 --                  | "." | "|"
 
@@ -171,6 +189,8 @@ lexReservedS a@(_,_,input) len = case take len input of
                                     ":=" -> mkL TokenDef a len
                                     "." -> mkL TokenDot a len
                                     "|" -> mkL TokenBar a len
+                                    "->" -> mkL TokenArrow a len
+                                    "=" -> mkL TokenEquiv a len
 
 
 getLineNum :: AlexPosn -> Int

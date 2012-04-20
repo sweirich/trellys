@@ -47,7 +47,12 @@ import Unbound.LocallyNameless.Subst(substR1)
        Case       {TokenCase}
        of         {TokenOf}
        Of         {TokenOf}
+       let        {TokenLet}
+       Let        {TokenLet}
+       in         {TokenIn}
+       In         {TokenIn}
        '!'        {TokenEx}
+       '='        {TokenEquiv}
        '('        {TokenBL}
        ')'        {TokenBR}
        '{'        {TokenCBL}
@@ -56,6 +61,7 @@ import Unbound.LocallyNameless.Subst(substR1)
        '+'        {TokenPlus }
        '-'        {TokenMinus}
        ":="       {TokenDef}
+       "->"       {TokenArrow}
        ':'        {TokenCL}
        '.'        {TokenDot}
        '|'        {TokenBar}
@@ -190,12 +196,23 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | Abort Term      {Abort $2}
 
---     | case Term of Branches {}
+     | case Term of TermBranches {TermCase1 $2 $4}
+
+     | Case Term of TermBranches {TermCase1 $2 $4}
+
+     | case Term Of TermBranches {TermCase1 $2 $4}
+
+     | Case Term Of TermBranches {TermCase1 $2 $4}
+
+     | let ProofVar '=' Proof in Term  {TermLetProof (bind (string2Name $2) $6) $4}
 
      | '(' Term ')'    {$2}
 
--- Branches : Scheme "->" Term                    {}
---         | Branches '|' Scheme "->" Term       {}
+TermBranches : TermScheme "->" Term                    {[bind  $1 $3]}
+         | TermBranches '|' TermScheme "->" Term               {$1 ++ [bind $3 $5]}
+
+TermScheme : TermVar                               {[TermVar (string2Name $1)]}
+           | TermScheme TermVar                    {$1 ++ [TermVar( string2Name $2)] }
 
 Proof : ProofVar                                    {ProofVar (string2Name $1)}
 

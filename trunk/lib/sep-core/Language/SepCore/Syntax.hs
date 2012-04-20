@@ -12,7 +12,10 @@ module Language.SepCore.Syntax(
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
+
 import Unbound.LocallyNameless.Subst(substR1)
+
+type Module = [Declaration] 
 
 data Declaration = DeclLogic Logicdecl
                  | DeclProof Proofdef
@@ -129,6 +132,10 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
+type TermScheme = [Term]
+
+type TermBranches = [Bind TermScheme Term]
+
 data Equality = Equality Predicate
             
               | EqualityProof Proof
@@ -152,6 +159,8 @@ data Term =  TermVar (Name Term)
            | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
 
            | TermCase Term (Bind (Name Term)  [(Term, [ArgName],Term)])
+
+           | TermCase1 Term TermBranches
 
            | Tcast Term Proof
 
