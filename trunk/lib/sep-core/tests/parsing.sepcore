@@ -1,0 +1,8 @@
+data nat :: type 0 where
+Z :: nat
+| S :: pi x:+nat.nat
+
+x :: type 0
+x := y
+y := z
+
