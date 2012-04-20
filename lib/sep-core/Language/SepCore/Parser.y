@@ -43,6 +43,10 @@ import Unbound.LocallyNameless.Subst(substR1)
        Contr      {TokenContr}
        valax      {TokenValax }
        Valax      {TokenValax}
+       case       {TokenCase}
+       Case       {TokenCase}
+       of         {TokenOf}
+       Of         {TokenOf}
        '!'        {TokenEx}
        '('        {TokenBL}
        ')'        {TokenBR}
@@ -58,7 +62,8 @@ import Unbound.LocallyNameless.Subst(substR1)
 
 %%
 
-{-Top level definitions and declarations -}
+Module : Declaration              {[$1]} 
+       | Module Declaration       {$1 ++ [$2]}
 
 Declaration : Logicdecl {DeclLogic $1}
             | Proofdef {DeclProof $1}
@@ -67,8 +72,6 @@ Declaration : Logicdecl {DeclLogic $1}
             | Preddecl {DeclPreddecl $1}
             | Preddef {DeclPreddef $1}
             | Datatypedecl  {DeclData $1}
-
- 
 
 Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
 
@@ -89,7 +92,7 @@ Datatypedecl : data TermVar "::" Term where Dataconstrs                         
 
 
 Dataconstrs : TermVar "::" Term                           {[((TermVar (string2Name $1)), $3)]}
-            | TermVar "::" Term '|' Dataconstrs          {((TermVar (string2Name $1)), $3):$5}
+            |  Dataconstrs '|' TermVar "::" Term           {((TermVar (string2Name $3)), $5):$1}
 
 {-Low level definitions-}
 
@@ -187,8 +190,12 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | Abort Term      {Abort $2}
 
+--     | case Term of Branches {}
+
      | '(' Term ')'    {$2}
 
+-- Branches : Scheme "->" Term                    {}
+--         | Branches '|' Scheme "->" Term       {}
 
 Proof : ProofVar                                    {ProofVar (string2Name $1)}
 

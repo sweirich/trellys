@@ -103,6 +103,11 @@ data Token =
        | TokenBar
 
        | TokenEOF
+
+       | TokenOf
+
+       | TokenCase
+
   deriving (Show, Eq)
 
 data Lexeme = L AlexPosn Token String
