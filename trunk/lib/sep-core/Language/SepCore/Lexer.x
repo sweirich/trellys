@@ -18,7 +18,7 @@ $alpha = [a-zA-Z]
 @reservedWords = data | Data | where | Where | type | Type | Formula | formula
                 | Bottom | bottom | pi | Pi | Eq | eq | Forall | forall | abort | Abort
                 | join | Join | contr | Contr | valax | Valax | Case | case | of | Of | Let
-                | let | in | In
+                | let | in | In | rec | Rec
 
 @reservedSymbols = \\ | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
                   | "." | "|" | "->" | "="
@@ -117,6 +117,8 @@ data Token =
 
        | TokenEquiv
 
+       | TokenRec
+
   deriving (Show, Eq)
 
 data Lexeme = L AlexPosn Token String
@@ -170,6 +172,8 @@ lexReservedW a@(_,_,input) len = case take len input of
                                     "let" -> mkL TokenLet a len
                                     "in" -> mkL TokenIn a len
                                     "In" -> mkL TokenIn a len
+                                    "rec" -> mkL TokenRec a len
+                                    "Rec" -> mkL TokenRec a len
 
 -- @reservedSymbols = "\\" | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
 --                  | "." | "|"

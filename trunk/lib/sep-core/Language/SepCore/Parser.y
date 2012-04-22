@@ -51,6 +51,8 @@ import Unbound.LocallyNameless.Subst(substR1)
        Let        {TokenLet}
        in         {TokenIn}
        In         {TokenIn}
+       rec        {TokenRec}
+       Rec        {TokenRec}
        '!'        {TokenEx}
        '='        {TokenEquiv}
        '('        {TokenBL}
@@ -205,6 +207,24 @@ Term : TermVar   {TermVar (string2Name $1)}
      | Case Term Of TermBranches {TermCase1 $2 $4}
 
      | let ProofVar '=' Proof in Term  {TermLetProof (bind (string2Name $2) $6) $4}
+
+     | Let ProofVar '=' Proof in Term  {TermLetProof (bind (string2Name $2) $6) $4}
+
+     | let ProofVar '=' Proof In Term  {TermLetProof (bind (string2Name $2) $6) $4}
+
+     | Let ProofVar '=' Proof In Term  {TermLetProof (bind (string2Name $2) $6) $4}
+
+     | let TermVar '=' Term in Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
+
+     | Let TermVar '=' Term In Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
+
+     | Let TermVar '=' Term in Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
+
+     | let TermVar '=' Term In Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
+
+     | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
+
+     | Rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
      | '(' Term ')'    {$2}
 
