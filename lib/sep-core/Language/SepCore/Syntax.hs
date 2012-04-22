@@ -151,7 +151,9 @@ data Term =  TermVar (Name Term)
            | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
 
            | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
-
+           
+           | TermLetTerm1 (Bind (Name Term) Term) Term
+             
            | TermLetProof (Bind (Name Proof) Term) Proof
 
            | TermLetPredicate ((Bind (Name Predicate) Term)) Predicate
