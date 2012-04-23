@@ -2,7 +2,7 @@
 -- in lieu of the LangLib implementation.
 {-# LANGUAGE FlexibleContexts #-}
 module Language.Trellys.Error
-  (err, Err(..), D(..)) where
+  (Err(..), D(..)) where
 
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
@@ -15,18 +15,15 @@ import Text.ParserCombinators.Parsec.Pos(SourcePos)
 data Err = Err [(SourcePos,Term)] Doc
 instance Disp Err where
   disp (Err [] msg) = msg
-  disp (Err [(p,term)] msg)  =
+  disp (Err ((p,term):_) msg)  =
     disp p $$
     nest 2 msg $$
     nest 2 (text "In the expression" $$ nest 2 (disp term))
-  disp (Err ((_,term):ps) msg)  =
-    disp (Err ps msg) $$
-    (nest 2 (text "In the expression" $$ nest 2 (disp term)))
+--  disp (Err ((_,term):ps) msg)  =
+--    disp (Err ps msg) $$
+--    (nest 2 (text "In the expression" $$ nest 2 (disp term)))
 
 
 instance Error Err where
   strMsg msg = Err [] (text msg)
-
-err :: (Disp a,MonadError Err m) => a -> m b
-err d = throwError $ Err [] (disp d)
 

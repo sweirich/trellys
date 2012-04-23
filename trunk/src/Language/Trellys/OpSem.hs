@@ -10,6 +10,7 @@ import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeMonad
 import Language.Trellys.Error
+import Language.Trellys.Environment (err)
 
 import Language.Trellys.GenericBind
 
@@ -19,11 +20,13 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad hiding (join)
 import Control.Monad.State hiding (join)
 
+import Data.List (find)
+
 -- | erasure function
 erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
 erase (Con c args)          = 
-  do args' <- mapM (\(t,ep) -> (,ep) <$> (erase t)) 
+  do args' <- mapM (erase . fst)
                    (filter ((==Runtime) . snd) args)
      return $ ECon (translate c) args'
 erase (Type l)              = return $ EType l
@@ -92,7 +95,7 @@ eraseMatch (c,bnd) =
   do (xs,body) <- unbind bnd
      let xs' = map (translate . fst) $ filter (((==) Runtime) . snd) xs
      body' <- erase body
-     return (translate c, bind xs' body')
+     return $ EMatch (translate c) (bind xs' body')
 
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
@@ -137,12 +140,12 @@ cbvStep :: ETerm -> TcMonad (Maybe ETerm)
 cbvStep (EVar _)         = return Nothing
 cbvStep (ECon c args)    = stepArgs [] args
   where stepArgs _       []         = return Nothing
-        stepArgs prefix ((a,ep):as) = do
+        stepArgs prefix (a:as) = do
           stpa <- cbvStep a
           case stpa of
-            Nothing -> stepArgs ((a,ep):prefix) as
+            Nothing -> stepArgs (a:prefix) as
             Just EAbort -> return $ Just EAbort
-            Just a'     -> return $ Just (ECon c (reverse prefix ++ (a',ep) : as))
+            Just a'     -> return $ Just (ECon c (reverse prefix ++ a' : as))
 cbvStep (EType _)        = return Nothing
 cbvStep (EArrow _ _ _)   = return Nothing 
 cbvStep (ELam _)         = return Nothing
@@ -187,12 +190,12 @@ cbvStep (ECase b mtchs) =
        Nothing     ->
          case b of
            (ECon c tms) ->
-             case lookup c mtchs of
+             case find (\(EMatch c' _) -> c' == c) mtchs of
                Nothing  -> return Nothing
-               Just bnd ->
+               Just (EMatch c' bnd) ->
                  do (delta,mtchbody) <- unbind bnd
                     if (length delta /= length tms) then return Nothing
-                      else return $ Just $ substs (zip delta (map fst tms)) mtchbody
+                      else return $ Just $ substs (zip delta tms) mtchbody
            _ -> return Nothing
 cbvStep (ESmaller _ _) = return Nothing
 cbvStep EOrdAx = return Nothing
@@ -250,7 +253,7 @@ isValue (TerminationCase _ _)     = False
 
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
-isEValue (ECon _ args)    = all (isEValue . fst) args -- wrong, fixme...
+isEValue (ECon _ args)    = all isEValue args
 isEValue (EType _)        = True
 isEValue (EArrow _ _ _)   = True
 isEValue (ELam _)         = True

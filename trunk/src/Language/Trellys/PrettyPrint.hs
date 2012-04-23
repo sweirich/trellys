@@ -396,11 +396,11 @@ instance Display ETerm where
   display (EVar v) = display v
   display (ECon n args) = do
     dn <- display n
-    dargs <- mapM displayArg args
+    dargs <- mapM display args
     return $ dn <+> hsep dargs
       where displayArg (t, ep) = do dt <- display t
                                     return $ bindParens ep dt
-  display (EType level) = return $ text "Type" <+> int level
+  display (EType level) = return $ text "Type" <+> integer level
   display (EArrow ep a bnd) = do
      da <- display a
      lunbind bnd $ \ (n,b) -> do
@@ -474,7 +474,7 @@ instance Display ETerm where
       return $ dty <+> text "@" <+> disp th
 
 instance Display EMatch where
-  display (n,bnd) = do
+  display (EMatch n bnd) = do
     dn <- display n
     lunbind bnd $ \(vars,body) -> do
        db <- display body

@@ -67,8 +67,8 @@ kcTele th ((x,ty,_):tele') = do
 ta :: Theta -> Term -> Term -> TcMonad Term
 -- Position terms wrap up an error handler
 ta th (Pos p t) ty = do
-  ta th t ty `catchError`
-         \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
+  extendSourceLocation (p,t) $
+    ta th t ty
 ta th tm (Pos _ ty) = ta th tm ty
 
 ta th (Paren a) ty = Paren <$> ta th a ty
@@ -350,7 +350,7 @@ ta th (Let th' ep bnd) tyB =
     return (Let th' ep (bind (x,y,embed ea) eb))
 -- rule T_At
 ta _ (At ty th') (Type i) = do 
-   ea <- ta th' ty (Type i) 
+   ea <- ta th' ty (Type i)
    return (At ea th')
 -- rule T_AtP
 ta Program a (At tyA th) = ta th a tyA
@@ -415,8 +415,8 @@ ts tsTh tsTm =
   where
     ts' :: Theta -> Term -> TcMonad (Term,Term)
     ts' th (Pos p t) =
-      ts' th t `catchError`
-         \(Err ps msg) -> throwError $ Err ((p,t):ps) msg
+      extendSourceLocation (p,t) $       
+        ts' th t
 
     ts' th (Paren a) =
       do (ea,ty) <- ts' th a
@@ -822,7 +822,7 @@ allM p = liftM and . mapM p
 -- constructor's arguments.
 
 positivityCheck
-  :: (Fresh m, MonadError Err m) =>
+  :: (Fresh m, MonadError Err m, MonadReader Env m) =>
      Name Term -> ConstructorDef -> m ()
 positivityCheck tName (ConstructorDef cName tele)  = do
   mapM_ checkBinding tele
@@ -830,7 +830,8 @@ positivityCheck tName (ConstructorDef cName tele)  = do
   where checkBinding (_,teleTy,_) = occursPositive tName teleTy
         msg' = text "When checking the constructor" <+> disp cName
 
-occursPositive  :: (Fresh m, MonadError Err m) => Name Term -> Term -> m ()
+occursPositive  :: (Fresh m, MonadError Err m, MonadReader Env m) => 
+                   Name Term -> Term -> m ()
 occursPositive tName (Pos p ty) = do
   occursPositive tName ty `catchError`
          \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
