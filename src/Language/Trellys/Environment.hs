@@ -10,7 +10,9 @@ module Language.Trellys.Environment
    getCtx, extendCtx, extendCtxTele, extendCtxs,
    extendCtxMods,
    extendHints,
-   substDefs
+   extendSourceLocation, getSourceLocation,
+   substDefs,
+   err, warn
   ) where
 
 import Language.Trellys.Options
@@ -21,6 +23,7 @@ import Language.Trellys.Error
 import Language.Trellys.GenericBind
 
 import Text.PrettyPrint.HughesPJ
+import Text.ParserCombinators.Parsec.Pos(SourcePos)
 import Control.Monad.Reader
 import Control.Monad.Error
 
@@ -36,14 +39,16 @@ data Env = Env { ctx :: [Decl],
                -- ^ Type declarations (signatures): it's not safe to
                -- put these in the context until a corresponding term
                -- has been checked.
-                 flags :: [Flag]
+                 flags :: [Flag],
                -- ^ Command-line options that might influence typechecking
+                 sourceLocation ::  [(SourcePos,Term)]
+               -- ^ what part of the file we are in (for errors/warnings)
                } deriving Show
 
 
 -- | The initial environment.
 emptyEnv :: [Flag] -> Env
-emptyEnv fs = Env { ctx = [] , hints = [], flags = fs }
+emptyEnv fs = Env { ctx = [] , hints = [], flags = fs, sourceLocation = [] }
 
 instance Disp Env where
   disp e = vcat [disp decl | decl <- ctx e]
@@ -77,7 +82,7 @@ lookupDef v = do
 
 -- | Find a constructor in the context - left is type con, right is term con
 lookupCon :: (MonadReader Env m, MonadError Err m) 
-          => TName -> m (Either (Telescope,Theta,Int,Maybe [ConstructorDef]) 
+          => TName -> m (Either (Telescope,Theta,Integer,Maybe [ConstructorDef]) 
                                 (TName,Telescope,Theta,ConstructorDef))
 lookupCon v = do
   g <- asks ctx
@@ -124,6 +129,13 @@ extendCtxMods mods k = foldr extendCtxMod k mods
 getCtx :: MonadReader Env m => m [Decl]
 getCtx = asks ctx
 
+-- | Push a new source position on the location stack.
+extendSourceLocation :: (MonadReader Env m) => (SourcePos, Term) -> m a -> m a
+extendSourceLocation p = 
+  local (\ e@(Env {sourceLocation = locs}) -> e {sourceLocation = p:locs})
+
+getSourceLocation :: MonadReader Env m => m [(SourcePos,Term)]
+getSourceLocation = asks sourceLocation
 
 -- | Add a type hint
 extendHints :: (MonadReader Env m) => Decl -> m a -> m a
@@ -150,5 +162,20 @@ dumpEnv n = do
   hints <- asks hints
   liftIO $ putStrLn "-- BENV --"
   liftIO $ putStrLn $ render $
-         disp (Env {ctx = take n ctx, hints = take n hints, flags = []})
+         disp (Env {ctx = take n ctx, 
+                    hints = take n hints, 
+                    flags = [],
+                    sourceLocation = []})
   liftIO $ putStrLn "-- EENV --"
+
+-- Throw an error
+err :: (Disp a,MonadError Err m, MonadReader Env m) => a -> m b
+err d = do
+  loc <- getSourceLocation
+  throwError $ Err loc (disp d)
+
+-- Print a warning
+warn :: (Disp a, MonadReader Env m, MonadIO m) => a -> m ()
+warn e = do
+  loc <- getSourceLocation
+  liftIO $ putStrLn $ "warning: " ++ render (disp (Err loc (disp e)))

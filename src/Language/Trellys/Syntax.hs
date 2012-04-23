@@ -63,7 +63,7 @@ deriving instance Show Term
 -- abstractions and dependent products).
 data Term = Var TName    -- | variables
           | Con TName [(Term,Epsilon)]   -- | term and type constructors (fully applied)
-          | Type Int   -- | The 'Type' terminal
+          | Type Integer   -- | The 'Type' terminal
           -- | Functions: @\x.e@ and @\[x].e@
           -- No type annotations since we are bidirectional
           | Lam Epsilon (Bind TName Term)
@@ -152,8 +152,8 @@ newtype ModuleImport = ModuleImport MName
 data Decl = Sig  TName Theta Term
           | Axiom TName Theta Term
           | Def TName Term
-          | Data TName Telescope Theta Int [ConstructorDef]
-          | AbsData TName Telescope Theta Int
+          | Data TName Telescope Theta Integer [ConstructorDef]
+          | AbsData TName Telescope Theta Integer
   deriving (Show)
 
 
@@ -184,7 +184,6 @@ domTeleMinus :: Telescope -> [TName]
 domTeleMinus tele =
   [n | (n,_,ep) <- tele, ep == Erased]
 
--- FIXME horribly inefficient.
 swapTeleVars :: Telescope -> [TName] -> Telescope
 swapTeleVars [] [] = []
 swapTeleVars ((v,a,ep):tele) (v':vs) =
@@ -195,17 +194,6 @@ swapTeleVars _ _ =
 setTeleEps :: Epsilon -> Telescope -> Telescope
 setTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 
--- (changeStage args tele) changes the stage annotation of each term
--- in args to be the one given by the corresponding element of tele.
--- This assumes the lists are the same length.
-{-
-changeStage :: [(Term,Epsilon)] -> Telescope -> [(Term,Epsilon)]
-changeStage [] [] = []
-changeStage ((t,_):args) ((_,_,_,ep):tele) = (t,ep):(changeStage args tele)
-changeStage _ _ =
-  error "Internal error: lengths don't match in changeStage"
--}
-
 --------------
 -- Basic query and manipulation functions on annotated terms
 --------------
@@ -215,7 +203,7 @@ isVar (Paren t) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
-isType :: Term -> Maybe Int
+isType :: Term -> Maybe Integer
 isType (Pos _ t)  = isType t
 isType (Paren t)  = isType t
 isType (Type n)   = Just n
@@ -258,7 +246,6 @@ splitApp e = splitApp' e []
 multiApp :: Term -> [(Term,Epsilon)] -> Term
 multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 
-
 ------------------------
 ------------------------
 --- Unannotated Language
@@ -269,8 +256,9 @@ deriving instance Show ETerm
 
 -- ETerm for "erased" term
 data ETerm = EVar EName
-           | ECon EName [(ETerm,Epsilon)]
-           | EType Int
+           -- Fixme: split into ETCon and EDCon (because they are different for isEValue)
+           | ECon EName [ETerm]
+           | EType Integer
            | EArrow Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
            | EApp ETerm ETerm
@@ -288,7 +276,8 @@ data ETerm = EVar EName
            | ETerminationCase ETerm (Bind EName (ETerm, 
               (Bind EName ETerm)))
 
-type EMatch = (EName, Bind [EName] ETerm)
+deriving instance Show EMatch
+data EMatch = EMatch EName (Bind [EName] ETerm)
 
 isEVar :: ETerm -> Maybe EName
 isEVar (EVar n)   = Just n
@@ -306,7 +295,7 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Term, ''ETerm])
+$(derive [''Epsilon, ''Theta, ''Term, ''ETerm, ''EMatch])
 
 
 instance Alpha Term
@@ -321,11 +310,14 @@ instance Subst Term Term where
 instance Subst Term Epsilon
 instance Subst Term Theta
 
-
 instance Alpha ETerm
+instance Alpha EMatch
+
 instance Subst ETerm ETerm where
   isvar (EVar x) = Just (SubstName x)
   isvar _ = Nothing
 
+instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta
+
