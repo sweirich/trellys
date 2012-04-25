@@ -19,9 +19,6 @@ instance Disp Err where
     disp p $$
     nest 2 msg $$
     nest 2 (text "In the expression" $$ nest 2 (disp term))
---  disp (Err ((_,term):ps) msg)  =
---    disp (Err ps msg) $$
---    (nest 2 (text "In the expression" $$ nest 2 (disp term)))
 
 
 instance Error Err where
