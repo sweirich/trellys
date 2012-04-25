@@ -195,7 +195,7 @@ setTeleEps :: Epsilon -> Telescope -> Telescope
 setTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 
 --------------
--- Basic query and manipulation functions on annotated terms
+-- Basic query and manipulation functions on source terms
 --------------
 isVar :: Term -> Maybe TName
 isVar (Pos _ t) = isVar t
@@ -246,6 +246,112 @@ splitApp e = splitApp' e []
 multiApp :: Term -> [(Term,Epsilon)] -> Term
 multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 
+---------------------------------------
+---------------------------------------
+-- Annotated Core Language
+---------------------------------------
+---------------------------------------
+
+type AName = Name ATerm
+
+deriving instance Show ATerm
+
+-- | ATerm are annotated terms.
+--   Given an environment and a theta, we can synthesize an unannotated term and a type.
+
+data ATerm = 
+    AVar AName
+  | AFO ATerm
+  | ASquash ATerm
+  | ACumul ATerm Integer
+  | AType Integer
+  | AUnboxVar Theta ATerm    --the theta is the what we should check the inner term at.
+  | ATCon AName [ATerm]
+  | ADCon AName [ATerm] [(ATerm,Epsilon)]
+  -- ET_arrow and ET_arrowImpred
+  | AArrow   Epsilon (Bind (AName, Embed ATerm) ATerm)
+  -- ET_lamPlus and ET_lamMinus. The first ATerm is they (pi) type of the entire lambda.
+  | ALam ATerm Epsilon (Bind AName ATerm)
+  -- ET_appPlus and ET_appMinus:
+  | AApp Epsilon ATerm ATerm
+  | AAt ATerm Theta
+  | ABoxLL ATerm Theta
+  | ABoxLV ATerm
+  | ABoxP ATerm Theta
+  | AAbort ATerm
+  | ATyEq ATerm ATerm
+  | AJoin ATerm Int ATerm Int
+  | AConv ATerm [(Epsilon,ATerm)] (Bind [AName] ATerm)
+  -- First ATerm is proof, second is the type annotation.
+  | AContra ATerm ATerm
+  | ASmaller ATerm ATerm
+  -- First ATerm is proof, other two are the ones we are comparing.
+  | AOrdAx ATerm ATerm ATerm
+  | AOrdTrans ATerm ATerm 
+  -- ET_indPlus and ET_indMinus (the first ATerm is the (pi) type of the function):
+  | AInd ATerm Epsilon (Bind (AName, AName) ATerm)
+  -- ET_recPlus and ET_recMinus:
+  | ARec ATerm Epsilon (Bind (AName, AName) ATerm)
+  -- Why is let in the core language? To get more readable core terms.
+  | ALet Theta Epsilon (Bind (AName, AName, Embed ATerm) ATerm)
+   -- the final ATerm is the type of the entire match.
+  | ACase ATerm (Bind AName [AMatch]) ATerm
+  
+{-
+          -- | ATermination case
+          | ATerminationCase ATerm (Bind AName (ATerm, (Bind AName ATerm)))    -- Proof
+          -- | Derived form: assertion that t1 of type t2 terminates
+-}
+          
+-- | A 'Match' represents a case alternative. The first 'AName' is the
+-- constructor name, the rest of the 'AName's are pattern variables
+deriving instance Show AMatch
+data AMatch = AMatch AName (Bind [(AName, Epsilon)] ATerm)
+
+data ADecl = ASig     Theta ATerm
+           | AAxiom   Theta ATerm
+           | ADef     Theta ATerm ATerm --Type, Term
+           | AData    Telescope Theta Int [AConstructorDef]
+           | AAbsData Telescope Theta Int
+  deriving (Show)
+
+data AConstructorDef = AConstructorDef AName ATelescope
+  deriving (Show)
+
+-------------
+-- Annotated Telescopes
+-------------
+type ATelescope = [(AName,ATerm,Epsilon)]
+
+-- | teleApp applies some term to all the variables in a telescope
+aTeleApp :: ATerm -> ATelescope -> ATerm
+aTeleApp tm tms =
+  foldl (\a (nm,_,ep) -> AApp ep a (AVar nm)) tm tms
+
+aTelePi :: ATelescope -> ATerm -> ATerm
+aTelePi tele tyB =
+  foldr (\(n,tm,ep) ret -> AArrow ep (bind (n,embed tm) ret))
+        tyB tele
+
+aDomTele :: ATelescope -> [AName]
+aDomTele = map (\(v,_,_) -> v)
+
+aDomTeleMinus :: ATelescope -> [AName]
+aDomTeleMinus tele =
+  [n | (n,_,ep) <- tele, ep == Erased]
+
+aSwapTeleVars :: ATelescope -> [AName] -> ATelescope
+aSwapTeleVars [] [] = []
+aSwapTeleVars ((v,a,ep):tele) (v':vs) =
+  (v',a,ep):(subst v (AVar v') $ aSwapTeleVars tele vs)
+aSwapTeleVars _ _ =
+  error "Internal error: lengths don't match in swapTeleVars"
+
+aSetTeleEps :: Epsilon -> ATelescope -> ATelescope
+aSetTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
+
+
+
 ------------------------
 ------------------------
 --- Unannotated Language
@@ -295,7 +401,7 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Term, ''ETerm, ''EMatch])
+$(derive [''Epsilon, ''Theta, ''Term, ''ETerm, ''ATerm, ''AMatch, ''EMatch])
 
 
 instance Alpha Term
@@ -310,6 +416,17 @@ instance Subst Term Term where
 instance Subst Term Epsilon
 instance Subst Term Theta
 
+instance Alpha ATerm
+instance Alpha AMatch
+
+instance Subst ATerm ATerm where
+  isvar (AVar x) = Just (SubstName x)
+  isvar _ = Nothing
+instance Subst ATerm Epsilon
+instance Subst ATerm Theta
+instance Subst ATerm AMatch
+
+
 instance Alpha ETerm
 instance Alpha EMatch
 
@@ -320,4 +437,5 @@ instance Subst ETerm ETerm where
 instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta
+
 
