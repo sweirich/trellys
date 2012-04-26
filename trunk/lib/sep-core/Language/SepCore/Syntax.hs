@@ -202,7 +202,7 @@ data ArgName = ArgNameProof (Name Proof)
         
           | ArgNamePredicate (Name Predicate)   
 
-         deriving Show
+         deriving (Show, Eq, Ord)
 
 
 data Value = Value | NonValue deriving (Show)
