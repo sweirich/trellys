@@ -21,32 +21,55 @@ import Text.Parsec.Pos
 import Data.List(nubBy, nub,find, (\\),intersect,sortBy,groupBy)
 import qualified Data.Map as M
 
-type TcMonad = FreshMT (ReaderT Context IO)
+-- global env: Context, having IO side effects.
+
+newtype TCMonad a = TCMonad{ runTCMonad :: ReaderT Context (FreshMT IO) a}   
+ deriving (Monad, MonadReader Context, Fresh)
+
 
 type Context = M.Map ArgName (Term, Value)
- 
+
+lookupVar :: ArgName -> Context -> Either (Term, Value) String
 lookupVar name context = case (M.lookup name context) of
                           Just a -> Left a
-                          Nothing -> Right ("Couldn't find the variable from the current context")
+                          Nothing -> Right ("Variable "++show(name) ++"is undefined.")
 
-compType :: Term -> Reader Context Term
+getTerm :: ArgName -> Context -> Either Term String
+getTerm name context = case (lookupVar name context) of
+                       Left (t, _) -> Left t 
+                       Right s -> Right s
 
-compType (Type i)  = do return (Type i)
+getValue :: ArgName -> Context -> Either Value String
+getValue name context = case (lookupVar name context) of
+                       Left (_, v) -> Left v 
+                       Right s -> Right s
 
-compType (TermVar var) = do   
-    theType <- asks (lookupVar (ArgNameTerm var))
-    case theType of
-      Left a -> return (fst a)
-      Right s -> error s
---(bind (argname, Embed (ArgClassTerm t1)) t2)
-compType (Pi t stage) = do
-  case t of
-    bind (argname, Embed (ArgClassTerm t1)) t2 -> theTerm <-compType t1
-                                                              case theTerm of
-                                                                   Type i -> local (M.insert argname (t1, stage)) ask >> compType t2
-                                                                    error "The type of the argument is not well formed."
-    _ -> error "unkown"
 
+
+compType :: Term -> TCMonad (Either Term String)
+
+-- | Type Integer
+compType (Type i)  =  return (Left (Type i))
+
+-- | TermVar (Name Term)
+compType (TermVar var) = asks (getTerm (ArgNameTerm var))
+
+-- | Pi (Bind (ArgName, Embed ArgClassTerm Term) Term) Stage
+compType (Pi b stage) = do
+                   ((name, Embed (ArgClassTerm t1)), t2) <- unbind b
+                   theKind <- compType t1
+                   case theKind of
+                      Left (Type i) -> local (M.insert name (t1, Value)) ask >> compType t2
+                      Right s -> return (Right s)
+
+
+-- | TermApplication Term Arg Stage
+
+-- compType (TermApplication t a stage) = do
+--                      A <- compType a
+--                      b <- compType t
+--                     ((name, Embed (ArgClassTerm A), t')) <- unbind b
+--                     app b (a, A)
 
 
 
