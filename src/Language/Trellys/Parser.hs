@@ -325,9 +325,10 @@ dataDef = do
   cs <- layout con (return ())
   return $ Data name params th level cs
   where con = do
+            pos <- getPosition
             cname <- constructor
             args <- option [] (reserved "of" >> telescope)
-            return $ ConstructorDef cname args
+            return $ ConstructorDef pos cname args
           <?> "Constructor"
 
 sigDef = do
