@@ -158,7 +158,7 @@ data Decl = Sig  TName Theta Term
 
 
 -- | A Constructor has a name and a telescope of arguments
-data ConstructorDef = ConstructorDef TName Telescope
+data ConstructorDef = ConstructorDef SourcePos TName Telescope
   deriving (Show)
 
 -------------

@@ -216,7 +216,7 @@ instance Disp Decl where
     <+> text "Type" <+> text (show lev)
 
 instance Disp ConstructorDef where
-  disp (ConstructorDef c tele) = disp c <+> text "of" <+> disp tele
+  disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
 
 
 instance Disp ModuleImport where

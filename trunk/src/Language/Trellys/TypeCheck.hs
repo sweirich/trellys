@@ -67,7 +67,7 @@ kcTele th ((x,ty,_):tele') = do
 ta :: Theta -> Term -> Term -> TcMonad Term
 -- Position terms wrap up an error handler
 ta th (Pos p t) ty = do
-  extendSourceLocation (p,t) $
+  extendSourceLocation p t $
     ta th t ty
 ta th tm (Pos _ ty) = ta th tm ty
 
@@ -288,9 +288,9 @@ ta th (Case b bnd) tyA = do
   let
     checkBranch :: Match -> TcMonad Match
     checkBranch (c, cbnd) =
-      case find (\(ConstructorDef c' _) -> c'==c) cons of
+      case find (\(ConstructorDef  _ c' _) -> c'==c) cons of
         Nothing -> err [DD c, DS "is not a constructor of type", DD d]
-        Just (ConstructorDef _ dumbdeltai)  ->
+        Just (ConstructorDef _  _ dumbdeltai)  ->
           do (deltai',ai) <- unbind cbnd
              unless (length deltai' == length dumbdeltai) $
                 err [DS "wrong number of argument variables for constructor",
@@ -415,7 +415,7 @@ ts tsTh tsTm =
   where
     ts' :: Theta -> Term -> TcMonad (Term,Term)
     ts' th (Pos p t) =
-      extendSourceLocation (p,t) $       
+      extendSourceLocation p t $       
         ts' th t
 
     ts' th (Paren a) =
@@ -480,7 +480,7 @@ ts tsTh tsTm =
                        "parameters, but was given", DD (length args)]
                 eargs <- taTele th args delta
                 return (Con c eargs, (Type lev))
-           (Right (tname, delta, th', ConstructorDef _ deltai)) ->
+           (Right (tname, delta, th', ConstructorDef _ _ deltai)) ->
              do unless (th' <= th) $
                   err [DS "Data constructor", DD c,
                        DS "is programmatic, but it was checked logically."]
@@ -630,7 +630,7 @@ ts tsTh tsTm =
         return (Let th' ep (bind (x,y,embed ea) eb), tyB)
 
     -- T_at
-    ts' _ (At tyA th') = do 
+    ts' _ (At tyA th') = do
       (ea, s) <- ts th' tyA
       return (At ea th', s)
 
@@ -710,11 +710,10 @@ tcEntry (Def n term) = do
             -- Put the elaborated version of term into the context.
             return $ AddCtx [Sig n theta ty, Def n eterm]
     die term' =
-      throwError $ 
-         Err [(unPosFlaky term,term)] 
-             (disp [DS "Multiple definitions of", DD n,
-                    DS "Previous definition at", DD (unPosFlaky term'),
-                    DS " was", DD term'])
+      extendSourceLocation (unPosFlaky term) term $
+         err [DS "Multiple definitions of", DD n,
+              DS "Previous definition at", DD (unPosFlaky term'),
+              DS " was", DD term']
 
 -- rule Decl_data
 tcEntry dt@(Data t delta th lev cs) =
@@ -727,7 +726,7 @@ tcEntry dt@(Data t delta th lev cs) =
      ---  for each data constructor is wellfomed.
      ---  fixme: probably need to worry about universe levels also?
      extendCtx (AbsData t delta th lev) $
-        mapM_ (\(ConstructorDef _ tele) -> kcTele th (delta++tele)) cs
+        mapM_ (\d@(ConstructorDef pos _ tele) -> extendSourceLocation pos d $ kcTele th (delta++tele)) cs
      -- Premise 3: check that types are strictly positive.
      when (th == Logic) $
        mapM_ (positivityCheck t) cs
@@ -736,7 +735,7 @@ tcEntry dt@(Data t delta th lev cs) =
        err [DS "Datatype definition", DD t, DS"contains duplicated constructors" ]
      -- finally, add the datatype to the env and perform action m
      return $ AddCtx [dt]
-     where cnames = map (\(ConstructorDef c _) -> c) cs
+     where cnames = map (\(ConstructorDef _ c _) -> c) cs
 
 tcEntry dt@(AbsData _ delta th lev) =
   do kc th (telePi delta (Type lev))
@@ -764,12 +763,12 @@ duplicateTypeBindingCheck n ty = do
     (_,ty'):_ ->
       let (Pos p  _) = ty
           (Pos p' _) = ty'
-          msg = disp [DS "Duplicate type signature ", DD ty,
-                      DS "for name ", DD n,
-                      DS "Previous typing at", DD p',
-                      DS "was", DD ty']
+          msg = [DS "Duplicate type signature ", DD ty,
+                 DS "for name ", DD n,
+                 DS "Previous typing at", DD p',
+                 DS "was", DD ty']
        in
-         throwError $ Err [(p,ty)] msg
+         extendSourceLocation p ty $ err msg
 
 -----------------------
 ------ subtyping
@@ -805,8 +804,8 @@ isFirstOrder ty = isFirstOrder' S.empty ty
         (Left (_,_,_,Just cons)) ->
           -- Datatypes are FO if all components are. But in order to not get caught in an
           -- infinite loop, we should probably give the constructor d the "benefit of the
-          -- doubt" while doing so...
-          allM (\(ConstructorDef _ args) -> allM (\(_,ty,_) -> isFirstOrder' (S.insert d s) ty) args) cons 
+          -- doubt"  while doing so...
+          allM (\(ConstructorDef _ _ args) -> allM (\(_,ty,_) -> isFirstOrder' (S.insert d s) ty) args) cons 
         (Right _) -> 
           -- Data constructors are never first-order.
           return False
@@ -824,7 +823,7 @@ allM p = liftM and . mapM p
 positivityCheck
   :: (Fresh m, MonadError Err m, MonadReader Env m) =>
      Name Term -> ConstructorDef -> m ()
-positivityCheck tName (ConstructorDef cName tele)  = do
+positivityCheck tName (ConstructorDef _ cName tele)  = do
   mapM_ checkBinding tele
    `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
   where checkBinding (_,teleTy,_) = occursPositive tName teleTy
@@ -833,8 +832,8 @@ positivityCheck tName (ConstructorDef cName tele)  = do
 occursPositive  :: (Fresh m, MonadError Err m, MonadReader Env m) => 
                    Name Term -> Term -> m ()
 occursPositive tName (Pos p ty) = do
-  occursPositive tName ty `catchError`
-         \(Err ps msg) -> throwError $ Err ((p,ty):ps) msg
+  extendSourceLocation p ty $
+    occursPositive tName ty 
 occursPositive tName (Paren ty) = occursPositive tName ty
 occursPositive tName (Arrow _ bnd) = do
  ((_,etyA), tyB) <- unbind bnd

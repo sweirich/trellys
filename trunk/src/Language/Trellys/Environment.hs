@@ -41,9 +41,10 @@ data Env = Env { ctx :: [Decl],
                -- has been checked.
                  flags :: [Flag],
                -- ^ Command-line options that might influence typechecking
-                 sourceLocation ::  [(SourcePos,Term)]
+                 sourceLocation ::  [SourceLocation]
                -- ^ what part of the file we are in (for errors/warnings)
-               } deriving Show
+               } 
+  --deriving Show
 
 
 -- | The initial environment.
@@ -92,7 +93,7 @@ lookupCon v = do
     scanGamma ((Data v' delta th lev cs):g) = 
       if v == v' 
         then return $ Left (delta,th,lev,Just cs) 
-        else case find (\(ConstructorDef v'' tele) -> v''==v ) cs of
+        else case find (\(ConstructorDef _ v'' tele) -> v''==v ) cs of
                Nothing -> scanGamma g
                Just c -> return $ Right (v', delta, th, c)
     scanGamma ((AbsData v' delta th lev):g) =
@@ -130,11 +131,11 @@ getCtx :: MonadReader Env m => m [Decl]
 getCtx = asks ctx
 
 -- | Push a new source position on the location stack.
-extendSourceLocation :: (MonadReader Env m) => (SourcePos, Term) -> m a -> m a
-extendSourceLocation p = 
-  local (\ e@(Env {sourceLocation = locs}) -> e {sourceLocation = p:locs})
+extendSourceLocation :: (MonadReader Env m, Disp t) => SourcePos -> t -> m a -> m a
+extendSourceLocation p t = 
+  local (\ e@(Env {sourceLocation = locs}) -> e {sourceLocation = (SourceLocation p t):locs})
 
-getSourceLocation :: MonadReader Env m => m [(SourcePos,Term)]
+getSourceLocation :: MonadReader Env m => m [SourceLocation]
 getSourceLocation = asks sourceLocation
 
 -- | Add a type hint
