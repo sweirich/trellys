@@ -32,7 +32,7 @@ type Context = M.Map ArgName (Term, Value)
 lookupVar :: ArgName -> Context -> Either (Term, Value) String
 lookupVar name context = case (M.lookup name context) of
                           Just a -> Left a
-                          Nothing -> Right ("Variable "++show(name) ++"is undefined.")
+                          Nothing -> Right ("Can't find variable "++show(name) ++" from the context.")
 
 getTerm :: ArgName -> Context -> Either Term String
 getTerm name context = case (lookupVar name context) of
@@ -43,8 +43,6 @@ getValue :: ArgName -> Context -> Either Value String
 getValue name context = case (lookupVar name context) of
                        Left (_, v) -> Left v 
                        Right s -> Right s
-
-
 
 compType :: Term -> TCMonad (Either Term String)
 
@@ -59,9 +57,11 @@ compType (Pi b stage) = do
                    ((name, Embed (ArgClassTerm t1)), t2) <- unbind b
                    theKind <- compType t1
                    case theKind of
-                      Left (Type i) -> local (M.insert name (t1, Value)) ask >> compType t2
+                      Left (Type i) -> do local (M.insert name (t1, Value)) ask
+                                          l <- ask
+                                          return (Right (show t2))
+                                        --  compType t2
                       Right s -> return (Right s)
-
 
 -- | TermApplication Term Arg Stage
 
@@ -74,6 +74,12 @@ compType (Pi b stage) = do
 
 
 
+-- test code 
+sample = M.fromList [((ArgNameTerm (string2Name "nat")),(Type 0, Value))]
+
+test :: IO()
+test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 6))) (TermVar (string2Name "x"))) Plus ))) sample)
+          print c
 
 -- checkData :: Datatypedecl -> IO ()
 -- checkData Datatypedecl t1 t2 branches =         checkTerm
