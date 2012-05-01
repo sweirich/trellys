@@ -57,10 +57,8 @@ compType (Pi b stage) = do
                    ((name, Embed (ArgClassTerm t1)), t2) <- unbind b
                    theKind <- compType t1
                    case theKind of
-                      Left (Type i) -> do local (M.insert name (t1, Value)) ask
-                                          l <- ask
-                                          return (Right (show t2))
-                                        --  compType t2
+                      Left (Type i) -> local (M.insert name (t1, Value)) (compType t2)
+                                        -- FTP(For Test Purpose): return (Right (show t2))
                       Right s -> return (Right s)
 
 -- | TermApplication Term Arg Stage
@@ -78,7 +76,7 @@ compType (Pi b stage) = do
 sample = M.fromList [((ArgNameTerm (string2Name "nat")),(Type 0, Value))]
 
 test :: IO()
-test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 6))) (TermVar (string2Name "x"))) Plus ))) sample)
+test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 56))) (TermVar (string2Name "x"))) Plus ))) sample)
           print c
 
 -- checkData :: Datatypedecl -> IO ()
