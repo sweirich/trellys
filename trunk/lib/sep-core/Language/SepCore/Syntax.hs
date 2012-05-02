@@ -55,7 +55,7 @@ data SuperKind = Logical Integer deriving (Show)
 
 data LogicalKind = Formula Integer
 
-         | QuasiForall ArgClass LogicalKind
+         | QuasiForall (Bind (ArgName, Embed ArgClass) LogicalKind)
 
   deriving(Show)
 

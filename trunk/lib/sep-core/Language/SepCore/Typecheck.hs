@@ -27,15 +27,15 @@ newtype TCMonad a = TCMonad{ runTCMonad :: ReaderT Context (FreshMT IO) a}
  deriving (Monad, MonadReader Context, Fresh)
 
 
-type Context = M.Map ArgName (Term, Value)
+type Context = M.Map ArgName (ArgClass, Value)
 
-lookupVar :: ArgName -> Context -> Either (Term, Value) String
+lookupVar :: ArgName -> Context -> Either (ArgClass, Value) String
 lookupVar name context = case (M.lookup name context) of
                           Just a -> Left a
                           Nothing -> Right ("Can't find variable "++show(name) ++" from the context.")
 
-getTerm :: ArgName -> Context -> Either Term String
-getTerm name context = case (lookupVar name context) of
+getClass :: ArgName -> Context -> Either ArgClass String
+getClass name context = case (lookupVar name context) of
                        Left (t, _) -> Left t 
                        Right s -> Right s
 
@@ -44,24 +44,81 @@ getValue name context = case (lookupVar name context) of
                        Left (_, v) -> Left v 
                        Right s -> Right s
 
+-- \Gamma |- LK : Logical i
+
+compSK :: LogicalKind -> TCMonad (Either SuperKind String)
+
+-- | LK_Formula
+compSK (Formula i) = return (Left (Logical i+1))
+
+-- | LK_Predicate
+compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
+                            case a of
+                              ArgClassTerm t -> 
+                                do theType <-compType t
+                                   case theType of 
+                                     Left (Type i) -> do
+                                                  c <- local (M.insert name (ArgClassTerm t, NonValue)) (compSK lk)
+                                                  case c of
+                                                    Left (Logical j) -> return (Left (Logical (max i+1 j)))
+                                                    Left _ -> return (Right "undefined")
+                                                    Right s -> return (Right s)
+                                     Left _ -> return (Right "undefined")
+                                     Right s -> return (Right s)
+                              ArgClassPredicate p -> 
+                                do theKind <- compLK p
+                                   case theKind of 
+                                     Left (Formula i) -> do
+                                                  c <- local (M.insert name (ArgClassPredicate p, NonValue)) (compSK lk)
+                                                  case c of
+                                                    Left (Logical j) -> return (Left (Logical (max i+1 j)))
+                                                    Left _ -> return (Right "undefined")
+                                                    Right s -> return (Right s)
+                                     Left _ -> return (Right "undefined")
+                                     Right s -> return (Right s)
+                              _ -> return (Right "undefined")
+
+
+compLK :: Predicate -> TCMonad (Either LogicalKind String)
+
+-- compPred :: Proof -> TCMonad (Either Predicate String)
+
+
+
+
 compType :: Term -> TCMonad (Either Term String)
 
--- | Type Integer
+-- | TERM_TYPE
 compType (Type i)  =  return (Left (Type i))
 
--- | TermVar (Name Term)
-compType (TermVar var) = asks (getTerm (ArgNameTerm var))
+-- | TERM_VAR
+compType (TermVar var) = do a <- asks (getClass (ArgNameTerm var))
+                            case a of
+                              Left (ArgClassTerm theType) -> 
+                                do b <- (compType theType)
+                                   case b of
+                                     Left (Type i) -> return (Left theType)
+                                     Left _ -> return (Right "undefined")
+                                     Right s -> 
+                                         return (Right $ "the type of the variable " ++show(var) ++ " is ill-typed.")
+                              Left _ -> return (Right "undefined")
+                              Right s -> return (Right s)
 
--- | Pi (Bind (ArgName, Embed ArgClassTerm Term) Term) Stage
+-- | TERM_PI, TERM_PiPredicate, !! need to expand.
 compType (Pi b stage) = do
                    ((name, Embed (ArgClassTerm t1)), t2) <- unbind b
                    theKind <- compType t1
                    case theKind of
-                      Left (Type i) -> local (M.insert name (t1, Value)) (compType t2)
-                                        -- FTP(For Test Purpose): return (Right (show t2))
+                      Left (Type i) -> local (M.insert name (ArgClassTerm t1, NonValue)) (compType t2)
+                      Left _ -> return (Right "undefined")                  
+                      -- FTP(For Test Purpose): return (Right (show t2))
                       Right s -> return (Right s)
 
+
+
+
 -- | TermApplication Term Arg Stage
+
 
 -- compType (TermApplication t a stage) = do
 --                      A <- compType a
@@ -73,10 +130,10 @@ compType (Pi b stage) = do
 
 
 -- test code 
-sample = M.fromList [((ArgNameTerm (string2Name "nat")),(Type 0, Value))]
+sample = M.fromList [((ArgNameTerm (string2Name "nat")),(ArgClassTerm (Type 0), Value))]
 
 test :: IO()
-test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 56))) (TermVar (string2Name "x"))) Plus ))) sample)
+test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 56))) (TermVar (string2Name "nat"))) Plus ))) sample)
           print c
 
 -- checkData :: Datatypedecl -> IO ()

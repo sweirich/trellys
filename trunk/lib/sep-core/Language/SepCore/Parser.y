@@ -146,17 +146,17 @@ LogicalKind : Formula int                              {Formula $2}
 
             | formula int                              {Formula $2}
 
-            | Forall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
+            | Forall PredVar ':' LogicalKind '.' LogicalKind        {QuasiForall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
-            | Forall  Term '.' LogicalKind               {QuasiForall (ArgClassTerm $2) $4}
+            | Forall TermVar ':' Term '.' LogicalKind               {QuasiForall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
-            | Forall  Predicate '.' LogicalKind         {QuasiForall (ArgClassPredicate $2) $4}
+            | Forall ProofVar ':' Predicate '.' LogicalKind       {QuasiForall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)} 
 
-            | forall LogicalKind '.' LogicalKind        {QuasiForall (ArgClassLogicalKind $2) $4}
+            | forall PredVar ':' LogicalKind '.' LogicalKind        {QuasiForall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
-            | forall  Term '.' LogicalKind               {QuasiForall (ArgClassTerm $2) $4}
+            | forall TermVar ':' Term '.' LogicalKind               {QuasiForall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
-            | forall  Predicate '.' LogicalKind         {QuasiForall (ArgClassPredicate $2) $4}
+            | forall ProofVar ':' Predicate '.' LogicalKind       {QuasiForall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
             | '(' LogicalKind ')'                       {$2}
        
