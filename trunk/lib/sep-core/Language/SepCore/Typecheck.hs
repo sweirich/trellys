@@ -49,7 +49,7 @@ getValue name context = case (lookupVar name context) of
 compSK :: LogicalKind -> TCMonad (Either SuperKind String)
 
 -- | LK_Formula
-compSK (Formula i) = return (Left (Logical i+1))
+compSK (Formula i) = return (Left (Logical (i+1)))
 
 -- | LK_Predicate
 compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
@@ -60,8 +60,7 @@ compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
                                      Left (Type i) -> do
                                                   c <- local (M.insert name (ArgClassTerm t, NonValue)) (compSK lk)
                                                   case c of
-                                                    Left (Logical j) -> return (Left (Logical (max i+1 j)))
-                                                    Left _ -> return (Right "undefined")
+                                                    Left (Logical j) -> return (Left (Logical (max (i+1) j)))
                                                     Right s -> return (Right s)
                                      Left _ -> return (Right "undefined")
                                      Right s -> return (Right s)
@@ -71,8 +70,7 @@ compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
                                      Left (Formula i) -> do
                                                   c <- local (M.insert name (ArgClassPredicate p, NonValue)) (compSK lk)
                                                   case c of
-                                                    Left (Logical j) -> return (Left (Logical (max i+1 j)))
-                                                    Left _ -> return (Right "undefined")
+                                                    Left (Logical j) -> return (Left (Logical (max (i+1) j)))
                                                     Right s -> return (Right s)
                                      Left _ -> return (Right "undefined")
                                      Right s -> return (Right s)
@@ -81,8 +79,139 @@ compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
 
 compLK :: Predicate -> TCMonad (Either LogicalKind String)
 
--- compPred :: Proof -> TCMonad (Either Predicate String)
+-- | Predicate_Var
+compLK (PredicateVar p) = do a <- asks (getClass (ArgNamePredicate p))
+                             case a of
+                                   Left (ArgClassLogicalKind theKind) -> 
+                                        do b <- (compSK theKind)
+                                           case b of
+                                                Left ( Logical i) -> return (Left theKind)
+                                                Right s -> 
+                                                      return (Right $ "the logicalkind of the predicate variable " ++show(p) ++ " is ill-formed.")
+                                   Left _ -> return (Right "undefined")
+                                   Right s -> return (Right s)
 
+-- | Predicate_Bottom
+compLK (Bottom i) = return (Left (Formula i))
+
+-- | Predicate_Terminates
+compLK (Terminate t) = do theType <- compType t
+                          case theType of
+                               Left _ -> return (Left (Formula 0))
+                               Right s -> return (Right s)
+
+-- | Predicate_k_EQ
+compLK (Equal t1 t2) = do theType1 <- compType t1
+                          theType2 <- compType t2
+                          case theType1 of
+                               Left _ -> case theType2 of
+                                              Left _ -> return (Left (Formula 0))
+                                              Right s -> return (Right s)
+                               Right s -> return (Right s)
+
+
+-- | Predicate_forall 1,2,3,4
+compLK (Forall b) = do ((argname, Embed argclass),pred) <- unbind b
+                       case argclass of
+                            ArgClassPredicate p -> do lk <- compLK p
+                                                      case lk of
+                                                           Left lk' -> do sk <- compSK lk'
+                                                                          case sk of
+                                                                               Left (Logical i) -> do
+                                                                                    theKind <- local (M.insert argname (ArgClassPredicate p, NonValue)) (compLK pred)
+                                                                                    case theKind of
+                                                                                         Left (Formula j) -> return (Left (Formula (max i j)))
+                                                                                         Left _ -> return (Right "undefine")
+                                                                                         Right s -> return (Right s)
+                                                                               Right s -> return (Right s)
+                                                           Right s -> return (Right s)
+                            ArgClassTerm t -> do ty <- compType t
+                                                 case ty of
+                                                      Left (Type i) ->  do theKind <- local (M.insert argname (ArgClassTerm t, NonValue)) (compLK pred)
+                                                                           case theKind of 
+                                                                                Left(Formula j) -> if i==0 then return (Left (Formula (max j 1))) else return (Left (Formula (max j i)))
+                                                                                Left _ -> return (Right "undefine")
+                                                                                Right s -> return (Right s)
+                                                      Left _ -> return (Right "undefine")
+                                                      Right s -> return (Right s)
+                            ArgClassLogicalKind lk -> do sk <- compSK lk
+                                                         case sk of
+                                                             Left (Logical i) -> do theKind <- local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compLK pred)
+                                                                                    case theKind of
+                                                                                         Left (Formula j) -> return (Left (Formula (max i j)))
+                                                                                         Left _ -> return (Right "undefine")
+                                                                                         Right s -> return (Right s)
+                                                             Right s -> return (Right s)
+
+-- | Predicate_Lam
+compLK (PredicateLambda b) = do ((argname, Embed argclass),pred) <- unbind b
+                                case argclass of
+                                      ArgClassPredicate p -> do lk <- compLK p
+                                                                case lk of
+                                                                     Left lk' -> do theKind <- local (M.insert argname (ArgClassPredicate p, NonValue)) (compLK pred)
+                                                                                    case theKind of
+                                                                                         Left k -> return (Left(QuasiForall (bind (argname, Embed (ArgClassPredicate p)) k)))
+                                                                                         Right s -> return (Right s)
+                                                                     Right s -> return (Right s)
+                                      ArgClassTerm t -> do ty <- compType t
+                                                           case ty of
+                                                                 Left ty' ->  do theKind <- local (M.insert argname (ArgClassTerm t, NonValue)) (compLK pred)
+                                                                                 case theKind of 
+                                                                                       Left k -> return (Left(QuasiForall (bind (argname, Embed (ArgClassTerm t)) k)))
+                                                                                       Right s -> return (Right s)
+                                                                 Right s -> return (Right s)
+                                      ArgClassLogicalKind lk -> do sk <- compSK lk
+                                                                   case sk of
+                                                                        Left sk' -> do theKind <- local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compLK pred)
+                                                                                       case theKind of
+                                                                                              Left k -> return (Left(QuasiForall (bind (argname, Embed (ArgClassLogicalKind lk)) k)))
+                                                                                              Right s -> return (Right s)
+                                                                        Right s -> return (Right s)
+
+-- | Predicate_app, buggy
+compLK (PredicateApplication p a) = do b <- compLK p
+                                       case b of
+                                            Left (QuasiForall b') -> do ((argname, Embed argclass),lk) <- unbind b' 
+                                                                        case argname of
+                                                                             ArgNameTerm at ->
+                                                                        case a of
+                                                                             ArgTerm t -> do theType <- compType t
+                                                                                             case theType of
+                                                                                                  Left t' -> if argclass == (ArgClassTerm t') then return (Left (subst argname t lk))
+                                                                                                                                         else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(t') )
+                                                                                                  Right s -> return (Right s)
+                                                                             ArgPredicate pred -> do theKind <- compLK pred
+                                                                                                     case theKind of
+                                                                                                              Left k -> if argclass == (ArgClassLogicalKind k) then return (Left (subst argname pred lk))
+                                                                                                                                         else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(k) )
+                                                                                                              Right s -> return (Right s)
+                                                                             ArgProof pr -> do theP <- compPred pr
+                                                                                               case theP of
+                                                                                                     Left p' -> if argclass == (ArgClassPredicate p') then return (Left (subst argname pr lk))
+                                                                                                                                         else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(p') )
+                                                                                                     Right s -> return (Right s)
+
+                                            Left _ -> return (Right $ "The predicate "++show(p)++ " is ill-formed")
+                                            Right s -> return (Right s)
+                                         
+
+
+
+
+
+compPred :: Proof -> TCMonad (Either Predicate String)
+
+-- | Proof_Var
+compPred (ProofVar p) = do a <- asks (getClass (ArgNameProof p))
+                           case a of
+                                   Left (ArgClassPredicate thePred) -> 
+                                        do b <- (compLK thePred)
+                                           case b of
+                                                Left _ -> return (Left thePred)
+                                                Right s -> 
+                                                      return (Right $ "the predicate of the proof variable " ++show(p) ++ " is ill-formed.")
+                                   Left _ -> return (Right "undefined")
+                                   Right s -> return (Right s)
 
 
 
