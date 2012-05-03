@@ -3,6 +3,7 @@ NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
 PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables, TemplateHaskell #-}
 
 module Language.SepCore.Typecheck where
+import Prelude hiding (pred)
 import Language.SepCore.Syntax
 import Data.Maybe
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl)
@@ -168,36 +169,38 @@ compLK (PredicateLambda b) = do ((argname, Embed argclass),pred) <- unbind b
                                                                                               Right s -> return (Right s)
                                                                         Right s -> return (Right s)
 
--- | Predicate_app, buggy
+-- | Predicate_app
 compLK (PredicateApplication p a) = do b <- compLK p
                                        case b of
-                                            Left (QuasiForall b') -> do ((argname, Embed argclass),lk) <- unbind b' 
-                                                                        case argname of
-                                                                             ArgNameTerm at ->
-                                                                        case a of
+                                         Left (QuasiForall b') -> do ((argname, Embed argclass),lk) <- unbind b' 
+                                                                     case argname of
+                                                                       ArgNameTerm at ->
+                                                                           case a of
                                                                              ArgTerm t -> do theType <- compType t
                                                                                              case theType of
-                                                                                                  Left t' -> if argclass == (ArgClassTerm t') then return (Left (subst argname t lk))
-                                                                                                                                         else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(t') )
+                                                                                                  Left t' -> 
+                                                                                                      if aeq argclass (ArgClassTerm t') then return (Left (subst at t lk))
+                                                                                                      else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(ArgClassTerm t') )
                                                                                                   Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a term")
+                                                                       ArgNamePredicate pt ->
+                                                                           case a of
                                                                              ArgPredicate pred -> do theKind <- compLK pred
                                                                                                      case theKind of
-                                                                                                              Left k -> if argclass == (ArgClassLogicalKind k) then return (Left (subst argname pred lk))
-                                                                                                                                         else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(k) )
+                                                                                                              Left k -> if aeq argclass (ArgClassLogicalKind k) then return (Left (subst pt pred lk))
+                                                                                                                        else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(ArgClassLogicalKind k) )
                                                                                                               Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a predicate")
+                                                                       ArgNameProof prt->
+                                                                                  case a of
                                                                              ArgProof pr -> do theP <- compPred pr
                                                                                                case theP of
-                                                                                                     Left p' -> if argclass == (ArgClassPredicate p') then return (Left (subst argname pr lk))
-                                                                                                                                         else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(p') )
+                                                                                                     Left p' -> if aeq argclass (ArgClassPredicate p') then return (Left (subst prt pr lk))
+                                                                                                                else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
                                                                                                      Right s -> return (Right s)
-
-                                            Left _ -> return (Right $ "The predicate "++show(p)++ " is ill-formed")
-                                            Right s -> return (Right s)
+                                         Left _ -> return (Right $ "The predicate "++show(p)++ " is ill-formed")
+                                         Right s -> return (Right s)
                                          
-
-
-
-
 
 compPred :: Proof -> TCMonad (Either Predicate String)
 
@@ -212,6 +215,69 @@ compPred (ProofVar p) = do a <- asks (getClass (ArgNameProof p))
                                                       return (Right $ "the predicate of the proof variable " ++show(p) ++ " is ill-formed.")
                                    Left _ -> return (Right "undefined")
                                    Right s -> return (Right s)
+
+-- | Proof_ForallTerm, ForallPredicate, ForallLK
+compPred (ProofLambda b) = do ((argname, Embed argclass), p) <- unbind b
+                              case argclass of
+                                ArgClassTerm t -> do theType <- compType t
+                                                     case theType of
+                                                       Left (Type i) -> do thePred <- local (M.insert argname (ArgClassTerm (Type i), NonValue)) (compPred p)
+                                                                           case thePred of
+                                                                             Left pred -> return (Left(Forall (bind (argname, Embed (ArgClassTerm t)) pred)))
+                                                                             Right s -> return (Right s)
+                                                       Left _ -> return (Right $ "The type of the term " ++show(t)++" is ill-typed")
+                                                       Right s -> return (Right s)
+                                ArgClassPredicate pred -> do theKind <- compLK pred
+                                                             case theKind of
+                                                               Left k -> do sk <- compSK k
+                                                                            case sk of
+                                                                              Left (Logical i) -> do
+                                                                                      thePred <- local (M.insert argname (ArgClassPredicate pred, Value)) (compPred p)
+                                                                                      case thePred of
+                                                                                        Left pred' -> return (Left(Forall (bind (argname, Embed (ArgClassPredicate pred)) pred')))
+                                                                                        Right s -> return(Right s)
+                                                                              Right s -> return(Right s) 
+                                                               Right s -> return(Right s)
+                                ArgClassLogicalKind lk -> do sk <- compSK lk
+                                                             case sk of
+                                                               Left (Logical i) -> do 
+                                                                       thePred <- local (M.insert argname (ArgClassLogicalKind lk, Value)) (compPred p)
+                                                                       case thePred of
+                                                                         Left pred' -> return (Left(Forall (bind (argname, Embed (ArgClassLogicalKind lk)) pred')))
+                                                                         Right s -> return(Right s) 
+                                                               Right s -> return(Right s) 
+
+-- | Proof_app
+compPred (ProofApplication p a) = do b <- compPred p
+                                     case b of
+                                         Left (Forall b') -> do ((argname, Embed argclass),pr) <- unbind b' 
+                                                                case argname of
+                                                                       ArgNameTerm at ->
+                                                                           case a of
+                                                                             ArgTerm t -> do theType <- compType t
+                                                                                             case theType of
+                                                                                                  Left t' -> 
+                                                                                                      if aeq argclass (ArgClassTerm t') then return (Left (subst at t pr))
+                                                                                                      else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(ArgClassTerm t') )
+                                                                                                  Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a term")
+                                                                       ArgNamePredicate pt ->
+                                                                           case a of
+                                                                             ArgPredicate pred -> do theKind <- compLK pred
+                                                                                                     case theKind of
+                                                                                                              Left k -> if aeq argclass (ArgClassLogicalKind k) then return (Left (subst pt pred pr))
+                                                                                                                        else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(ArgClassLogicalKind k) )
+                                                                                                              Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a predicate")
+                                                                       ArgNameProof prt->
+                                                                                  case a of
+                                                                             ArgProof pro -> do theP <- compPred pro
+                                                                                                case theP of
+                                                                                                     Left p' -> if aeq argclass (ArgClassPredicate p') then return (Left (subst prt pro pr))
+                                                                                                                else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
+                                                                                                     Right s -> return (Right s)
+                                         Left _ -> return (Right $ "The predicate "++show(p)++ " is ill-formed")
+                                         Right s -> return (Right s)
 
 
 
