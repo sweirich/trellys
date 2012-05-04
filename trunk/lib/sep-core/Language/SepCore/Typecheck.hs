@@ -221,7 +221,7 @@ compPred (ProofLambda b) = do ((argname, Embed argclass), p) <- unbind b
                               case argclass of
                                 ArgClassTerm t -> do theType <- compType t
                                                      case theType of
-                                                       Left (Type i) -> do thePred <- local (M.insert argname (ArgClassTerm (Type i), NonValue)) (compPred p)
+                                                       Left (Type i) -> do thePred <- local (M.insert argname (ArgClassTerm t, NonValue)) (compPred p)
                                                                            case thePred of
                                                                              Left pred -> return (Left(Forall (bind (argname, Embed (ArgClassTerm t)) pred)))
                                                                              Right s -> return (Right s)
@@ -299,20 +299,92 @@ compType (TermVar var) = do a <- asks (getClass (ArgNameTerm var))
                               Left _ -> return (Right "undefined")
                               Right s -> return (Right s)
 
--- | TERM_PI, TERM_PiPredicate, !! need to expand.
-compType (Pi b stage) = do
-                   ((name, Embed (ArgClassTerm t1)), t2) <- unbind b
-                   theKind <- compType t1
-                   case theKind of
-                      Left (Type i) -> local (M.insert name (ArgClassTerm t1, NonValue)) (compType t2)
-                      Left _ -> return (Right "undefined")                  
-                      -- FTP(For Test Purpose): return (Right (show t2))
-                      Right s -> return (Right s)
+-- | TERM_PI, TERM_PiPredicate, TERM_PILK
+compType (Pi b stage) = do ((argname, Embed argclass), prog) <- unbind b
+                           case argclass of
+                                ArgClassTerm t -> do theType <- compType t
+                                                     case theType of
+                                                       Left (Type 0) -> local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
+                                                       Left _ -> return (Right $ "The type of the term " ++show(t)++" is ill-typed")
+                                                       Right s -> return (Right s)
+                                ArgClassPredicate pred -> do theKind <- compLK pred
+                                                             case theKind of
+                                                               Left k -> do sk <- compSK k
+                                                                            case sk of
+                                                                              Left (Logical i) -> local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog)
+                                                                              Right s -> return(Right s) 
+                                                               Right s -> return(Right s)
+                                ArgClassLogicalKind lk -> do sk <- compSK lk
+                                                             case sk of
+                                                               Left (Logical i) -> local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog)
+                                                               Right s -> return(Right s) 
+
+-- | Term_LamMinus, LamPlus, LamIMPI, notice here for LamMinus, I implement x \notin FV(t) but not x \notin FV(|t|). 
+compType (TermLambda b stage) = do ((argname, Embed argclass), prog) <- unbind b
+                                   case argclass of
+                                     ArgClassTerm t -> case stage of
+                                                    Plus -> do
+                                                      theType <- local (M.insert argname (ArgClassTerm t, Value)) (compType prog)
+                                                      case theType of
+                                                        Left t' -> return (Left(Pi (bind (argname, Embed (ArgClassTerm t)) t') Plus))
+                                                        Right s -> return (Right s)
+                                                    Minus -> case argname of
+                                                               ArgNameTerm tname -> if elem tname (fv prog) then return (Right "undefined")
+                                                                                else do theType <- local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
+                                                                                        case theType of
+                                                                                          Left t' -> return (Left(Pi (bind (argname, Embed (ArgClassTerm t)) t') Minus))
+                                                                                          Right s -> return (Right s)
+                                                               _ -> return (Right "undefined")
+                                     ArgClassPredicate pred -> do 
+                                              theType <- local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog)
+                                              case theType of
+                                                Left ty -> return (Left(Pi (bind (argname, Embed (ArgClassPredicate pred)) ty) Minus))
+                                                Right s -> return(Right s)
+                                     ArgClassLogicalKind lk -> do
+                                              theType <- local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog)
+                                              case theType of
+                                                Left ty -> return (Left(Pi (bind (argname, Embed (ArgClassLogicalKind lk)) ty) Minus))
+                                                Right s -> return(Right s) 
+                                                
+
+-- | Term_APP
+compType (TermApplication term arg stage) = do 
+                                    b <- compType term
+                                    case b of
+                                         Left (Pi b' stage') -> do ((argname, Embed argclass),prog) <- unbind b' 
+                                                                   case argname of
+                                                                       ArgNameTerm at ->
+                                                                           case arg of
+                                                                             ArgTerm t -> do theType <- compType t
+                                                                                             case theType of
+                                                                                                  Left t' -> 
+                                                                                                      if aeq argclass (ArgClassTerm t') then return (Left (subst at t prog))
+                                                                                                      else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(ArgClassTerm t') )
+                                                                                                  Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a term")
+                                                                       ArgNamePredicate pt ->
+                                                                           case arg of
+                                                                             ArgPredicate pred -> do theKind <- compLK pred
+                                                                                                     case theKind of
+                                                                                                              Left k -> if aeq argclass (ArgClassLogicalKind k) then return (Left (subst pt pred prog))
+                                                                                                                        else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(ArgClassLogicalKind k) )
+                                                                                                              Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a predicate")
+                                                                       ArgNameProof prt->
+                                                                                  case arg of
+                                                                             ArgProof pro -> do theP <- compPred pro
+                                                                                                case theP of
+                                                                                                     Left p' -> if aeq argclass (ArgClassPredicate p') then return (Left (subst prt pro prog))
+                                                                                                                else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
+                                                                                                     Right s -> return (Right s)
+                                         Left _ -> return (Right $ "The term "++show(term)++ " is ill-formed")
+                                         Right s -> return (Right s)
 
 
 
 
--- | TermApplication Term Arg Stage
+
+
 
 
 -- compType (TermApplication t a stage) = do
