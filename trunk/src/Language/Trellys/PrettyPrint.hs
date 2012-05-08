@@ -215,6 +215,12 @@ instance Disp Decl where
         disp th <+> text "data" <+> disp t <+> disp delta <+> colon
     <+> text "Type" <+> text (show lev)
 
+instance Disp Goal where
+  disp (Goal ctx statement) = 
+   foldr ($+$) empty (map disp ctx)
+   $+$ text "========================================="
+   $+$ disp statement
+
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
 
@@ -385,6 +391,8 @@ instance Display Term where
                         (braces (text "abort" <+> text "->" <+> dDiverge <> semi $$
                                  text "!" <+> dv <+> text "->" <+> dTerminate))
 
+  display TrustMe = return $ text "TRUSTME"
+  display InferMe = return $ text "_"
 
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem
@@ -472,6 +480,8 @@ instance Display ETerm where
   display (EAt ty th) = do 
       dty <- display ty
       return $ dty <+> text "@" <+> disp th
+
+  display ETrustMe = return $ text "TRUSTME"
 
 instance Display EMatch where
   display (EMatch n bnd) = do
