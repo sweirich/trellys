@@ -109,6 +109,10 @@ data Term = Var TName    -- | variables
           -- | Termination case
           | TerminationCase Term (Bind TName (Term, (Bind TName Term)))    -- Proof
           -- | Derived form: assertion that t1 of type t2 terminates
+          | TrustMe 
+          -- | The TRUSTME form.
+          | InferMe
+          -- | Concrete syntax is an underscore.
 
           
 -- | A 'Match' represents a case alternative. The first 'TName' is the
@@ -160,6 +164,10 @@ data Decl = Sig  TName Theta Term
 -- | A Constructor has a name and a telescope of arguments
 data ConstructorDef = ConstructorDef SourcePos TName Telescope
   deriving (Show)
+
+-- | Goals (in the Coq sense), just used for pretty-printing so far.
+data Goal = Goal [Decl] --available context
+                 Term   --type to be proven.
 
 -------------
 -- Telescopes
@@ -381,6 +389,7 @@ data ETerm = EVar EName
            | EAt ETerm Theta
            | ETerminationCase ETerm (Bind EName (ETerm, 
               (Bind EName ETerm)))
+           | ETrustMe 
 
 deriving instance Show EMatch
 data EMatch = EMatch EName (Bind [EName] ETerm)

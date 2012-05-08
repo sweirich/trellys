@@ -6,7 +6,7 @@ module Language.Trellys.Environment
    Env,
    getFlag,
    emptyEnv, dumpEnv,
-   lookupTy, lookupDef, lookupHint, lookupCon,
+   lookupTy, lookupDef, lookupHint, lookupCon, getTys,
    getCtx, extendCtx, extendCtxTele, extendCtxs,
    extendCtxMods,
    extendHints,
@@ -28,7 +28,7 @@ import Control.Monad.Reader
 import Control.Monad.Error
 
 import Data.List
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
@@ -59,6 +59,15 @@ getFlag :: (MonadReader Env m) => Flag -> m Bool
 getFlag f = do 
  flags <- asks flags
  return (f `elem` flags)
+
+-- return a list of all type bindings, and their names.
+getTys :: (MonadReader Env m) => m [(TName,Theta,Term)]
+getTys = do
+  ctx <- asks ctx
+  return $ catMaybes (map unwrap ctx)
+    where unwrap (Axiom v th ty) = Just (v,th,ty)
+          unwrap (Sig   v th ty) = Just (v,th,ty)
+          unwrap _ = Nothing
 
 -- | Find a name's user supplied type signature.
 lookupHint   :: (MonadReader Env m) => TName -> m (Maybe (Theta,Term))

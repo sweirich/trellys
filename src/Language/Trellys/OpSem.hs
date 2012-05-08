@@ -89,6 +89,8 @@ erase (TerminationCase a bnd)  = do
       eterm <- erase term
       return $ (ETerminationCase ea (bind (translate w)
          (eabort, (bind (translate v) eterm))))
+erase TrustMe = return ETrustMe
+erase InferMe = error "erase called on InferMe"
 
 eraseMatch :: Match -> TcMonad EMatch
 eraseMatch (c,bnd) =
@@ -248,7 +250,8 @@ isValue (Pos _ a)          = isValue a
 isValue (AppInf _ _)       = False
 isValue (At _ _)           = True
 isValue (TerminationCase _ _)     = False
-
+isValue TrustMe            = True
+isValue InferMe            = False --Hm, dunno.
 
 
 isEValue :: ETerm -> Bool
@@ -270,7 +273,7 @@ isEValue (ELet _ _)       = False
 isEValue EContra          = False
 isEValue (EAt _ _)        = False
 isEValue (ETerminationCase _ _) = False
-
+isEValue ETrustMe          = True
 
 -- | Evaluation environments - a mapping between named values and
 -- | their definitions.
@@ -279,70 +282,3 @@ type EEnv = [(TName,Term)]
 -- | Convert a module into an evaluation environment (list of top level declarations)
 makeModuleEnv :: Module -> EEnv
 makeModuleEnv md = [(n,tm) | Def n tm <- moduleEntries md]
-{--------------- not to be used. use small step cbv
--- | A monad to implement evaluation.
-newtype EvalMonad a = EvalMonad (ReaderT EEnv FreshM a)
-      deriving (Monad, Fresh, MonadReader EEnv )
-
--- | Execute the EvalMonad
-runEvalMonad :: EEnv -> EvalMonad t -> t
-runEvalMonad env (EvalMonad m) = runFreshM (runReaderT m env)
-
--- Evaluation, directly
--- | Large-step evaluation semantics
-eval :: (MonadReader [(TName, Term)] m, Fresh m) => Term -> m Term
-eval (Paren t) = eval t
-eval (Pos _ t) = eval t
-eval (App Runtime e1 e2) = do
-  e1' <- eval e1
-  e2' <- eval e2
-  case e1' of
-    Lam Runtime binding -> do
-     (n,body) <- unbind binding
-     eval (subst n e2' body)
-    -- If the result is anything else, then
-    -- we simply evaluate the argument and
-    -- reconstruct an application. This is used,
-    -- for example, when evaluating constructors
-    _ -> return $ App Runtime e1' e2'
-eval (App Erased e1 _) = do
-  e1' <- eval e1
-  case e1' of
-    Lam Erased binding -> do
-      (_,body) <- unbind binding
-      return body
-    -- We drop the application, since it's an implicit argument
-    _ -> return e1'
-
-
-eval (Var x) = do
-  env <- ask
-  case lookup x env of
-    Just (Pos _ t) ->  return t
-    Just (Paren t) -> return t
-    Just t -> return t
-    Nothing ->
-      -- Free variables should evaluate to themselves?
-      return (Var x)
-      -- fail $ "eval: no such variable in scope " ++ (show x)
-
-eval (Case dis bnd) = do
-  d' <- eval dis
-  (_,alts) <- unbind bnd
-  let (cons,args) = cname d' []
-      Just bd = lookup cons alts
-  (ns,altBody) <- unbind bd
-  -- FIXME: What to do about the extra witness parameters?
-  return $ sub (map fst ns) args altBody
-  where cname (Pos _ t) acc = cname t acc
-        cname (Paren t) acc = cname t acc
-        cname (App _ x y) acc = cname x (y:acc)
-        cname (Con v) acc = (v,acc)
-        cname _ _ = error "case evaluation: cannot find the constructor name"
-        sub (p:ps) (a:as) t = sub ps as $ subst p a t
-        sub _ _ t = t
-
-eval t
-  | isValue t = return t
-  | otherwise = fail $  "eval: unhandled term " ++ show t
--}

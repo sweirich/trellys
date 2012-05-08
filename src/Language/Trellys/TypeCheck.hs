@@ -377,6 +377,19 @@ ta th (TerminationCase s binding) ty = do
                  $ ta th terminates ty
     return (TerminationCase es (bind w (eabort, (bind v eterm))))
 
+ta th TrustMe ty = return TrustMe
+
+ta th InferMe (TyEq ty1 ty2) = do
+  context <- getTys
+  let availableEqs = catMaybes $ map (\(x,th,ty) -> do guard (th==Logic)
+                                                       (ty1,ty2) <- isTyEq ty
+                                                       Just (x,th,ty1,ty2))
+                                      context
+  err [DS "I was asked to prove:", DD (Goal (map (\(x,th,ty1,ty2) -> Sig x th (TyEq ty1 ty2)) availableEqs) 
+                                            (TyEq ty1 ty2))]
+
+ta th InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
+
 -- rule T_chk
 ta th a tyB = do
   (ea,tyA) <- ts th a
@@ -849,3 +862,6 @@ occursPositive tName ty = do
 -- Alpha equality, dropping parens and source positions.
 aeqSimple :: Alpha t => t -> t -> Bool
 aeqSimple x y = delPosParenDeep x `aeq` delPosParenDeep y
+
+uncurry3 :: (a->b->c->d) -> (a,b,c) -> d
+uncurry3 f (x,y,z) = f x y z

@@ -197,6 +197,7 @@ trellysStyle = Token.LanguageDef
                   ,"axiom"
                   ,"erased"
                   ,"termcase"
+                  ,"TRUSTME"
                   ]
                , Token.reservedOpNames =
                  ["!","?","\\",":",".", "<", "=", "+", "-", "^", "()", "_", "@"]
@@ -385,6 +386,11 @@ termCase = do
 
   return $ TerminationCase scrutinee (bind pf (a,t))
 
+trustme :: LParser Term
+trustme = do reserved "TRUSTME"; return TrustMe
+
+inferme :: LParser Term
+inferme = do reservedOp "_" ; return InferMe
 
 ordax :: LParser Term
 ordax = 
@@ -469,6 +475,8 @@ factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                 , ordtrans  <?> "ordtrans"
                 , join      <?> "join"
                 , termCase  <?> "a termcase"
+                , trustme   <?> "TRUSTME"
+                , inferme   <?> "a placeholder (_)"
                 , impProd   <?> "an implicit function type"
                 , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"
