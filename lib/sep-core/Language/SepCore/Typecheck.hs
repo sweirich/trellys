@@ -380,19 +380,38 @@ compType (TermApplication term arg stage) = do
                                          Left _ -> return (Right $ "The term "++show(term)++ " is ill-formed")
                                          Right s -> return (Right s)
 
+-- | Term abort
+compType (Abort t) = do theType <- compType t
+                        case theType of
+                          Left (Type i) -> return (Left t)
+                          Left _ -> return (Right "unknown from term-abort")
+                          Right s -> return (Right s)
 
+-- | Term_REC
+compType (Rec b) = do ((x, f, Embed (Pi t' Plus)), t) <- unbind b
+                      ((y, Embed t1), t2) <- unbind t'
+                      theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
+                      case theType of
+                        Left ty -> if aeq t2 ty then return (Left (Pi (bind (y, Embed t1) t2) Plus))
+                                   else return (Right $ "the term" ++show(t)++ " is not type checked.")
+                        Right s -> return (Right s)
 
+-- | Term_let
 
+compType (TermLetTerm1 b t) = do (x, t1) <- unbind b
+                                 theType <- compType t
+                                 case theType of 
+                                   Left t' -> (local (M.insert (ArgNameTerm x) (ArgClassTerm t', NonValue)) (compType t1))
+                                   Right s -> return (Right s)
 
+compType (TermLetProof b p) = do (x, t1) <- unbind b
+                                 thePred <- compPred p
+                                 case thePred of 
+                                   Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
+                                   Right s -> return (Right s)
 
-
-
--- compType (TermApplication t a stage) = do
---                      A <- compType a
---                      b <- compType t
---                     ((name, Embed (ArgClassTerm A), t')) <- unbind b
---                     app b (a, A)
-
+-- | Term_case
+compType (TermCase1 t branches) = 
 
 
 
