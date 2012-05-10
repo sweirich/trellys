@@ -8,7 +8,7 @@ module Language.SepCore.Syntax(
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
      Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),
-    
+     Module(..)
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
