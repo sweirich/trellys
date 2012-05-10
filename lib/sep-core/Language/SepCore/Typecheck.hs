@@ -13,6 +13,7 @@ import qualified Generics.RepLib as RL
 import Generics.RepLib hiding (Con,Val,Equal,Refl)
 import Text.PrettyPrint
 import Data.Typeable
+import Data.Functor.Identity
 import "mtl" Control.Monad.Reader hiding (join)
 import "mtl" Control.Monad.Error hiding (join)
 import "mtl" Control.Monad.State hiding (join)
@@ -24,7 +25,7 @@ import qualified Data.Map as M
 
 -- global env: Context, having IO side effects.
 
-newtype TCMonad a = TCMonad{ runTCMonad :: ReaderT Context (FreshMT IO) a}   
+newtype TCMonad a = TCMonad{ runTCMonad :: (ReaderT Context (FreshMT Identity)) a}   
  deriving (Monad, MonadReader Context, Fresh)
 
 
@@ -410,17 +411,112 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                    Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
                                    Right s -> return (Right s)
 
--- | Term_case
-compType (TermCase1 t branches) = 
+-- | Term_case, todo
+compType (TermCase1 t branches) = do theType <- compType t
 
 
 
+
+
+
+type Env = State Context
+
+-- type-check data type declaration
+checkData :: Datatypedecl -> Env Bool
+checkData (Datatypedecl dataname datatype constructors) = do
+  env <- get
+  case dataname of
+    TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
+                    Left (Type i) -> do
+                      put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
+                      checkConstructors constructors
+                    _ -> return False
+    _ -> return False
+
+checkConstructors :: [(Term, Term)] -> Env Bool
+
+checkConstructors [] = return True
+checkConstructors ((t1,t2):l) = do 
+  env <- get
+  case t1 of
+    TermVar c ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
+                    Left (Type i) -> do
+                      put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
+                      checkConstructors l
+                    _ -> return False
+    _ -> return False
+
+-- type-check program declaration
+
+checkProgDecl :: Progdecl -> Env Bool
+checkProgDecl (Progdecl t t') = do
+  env <- get
+  case t of
+    TermVar x -> case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t')) env)) of
+                    Left (Type i) -> do
+                      put (M.insert (ArgNameTerm x)  (ArgClassTerm t', NonValue) env)
+                      return True
+                    _ -> return False
+    _ -> return False
+
+-- type-check program definition
+checkProgDef :: Progdef -> Env Bool 
+checkProgDef (Progdef t t') = do
+  env <- get
+  case t of
+    TermVar x -> case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t')) env)) of
+                    Left t'' -> case (getClass (ArgNameTerm x) env) of
+                                Left t1 -> if aeq t1 (ArgClassTerm t'') then return True else return False
+                                _ -> return False
+                    _ -> return False
+    _ -> return False
+
+
+
+
+-- 
+
+{-
+
+
+collector :: Module -> Env
+collector ((DeclData d@(Datatypedecl dataname datatype constructors )): tail') = do 
+  current <- get
+  case dataname of
+    TermVar x -> 
+                  let next = M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) current in 
+                  do        
+                    put next
+                    pushConstructors constructors
+                    collector tail'
+    _ -> return current
+
+collector (DeclProgdecl)
+
+
+
+
+pushConstructors :: [(Term, Term)] -> Env
+pushConstructors [] = do current <- get
+                         return current
+
+pushConstructors ((t1, t2):tail') = do current <- get
+                                       case t1 of
+                                         TermVar x ->
+                                               let next = M.insert (ArgNameTerm x)  (ArgClassTerm t2, NonValue) current 
+                                               in 
+                                                 do put next
+                                                    pushConstructors tail'
+                                         _ -> return current
+-}
 -- test code 
+
+{-
 sample = M.fromList [((ArgNameTerm (string2Name "nat")),(ArgClassTerm (Type 0), Value))]
 
 test :: IO()
 test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 56))) (TermVar (string2Name "nat"))) Plus ))) sample)
           print c
-
+-}
 -- checkData :: Datatypedecl -> IO ()
 -- checkData Datatypedecl t1 t2 branches =         checkTerm
