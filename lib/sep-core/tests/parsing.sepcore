@@ -1,8 +1,12 @@
+
 data nat :: type 0 where
 Z :: nat
 | S :: pi x:+nat.nat
 
-x :: type 0
-x := y
-y := z
+plusnat :: pi x:+nat.pi y:+nat.nat
+plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
+	       case x of  
+	       	   Z -> y
+		 | S u -> (+ (+ plus u) y)
 
+$x :: @y
