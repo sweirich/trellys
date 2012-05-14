@@ -412,8 +412,9 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                    Right s -> return (Right s)
 
 -- | Term_case, todo
-compType (TermCase1 t branches) = do theType <- compType t
-
+-- compType (TermCase1 t branches) = do theType <- compType t
+--                                      case theType of
+--                                        Left 
 
 
 
@@ -421,7 +422,7 @@ compType (TermCase1 t branches) = do theType <- compType t
 
 type Env = State Context
 
--- type-check data type declaration
+-- type-check data type declaration, todo
 checkData :: Datatypedecl -> Env Bool
 checkData (Datatypedecl dataname datatype constructors) = do
   env <- get
@@ -429,14 +430,14 @@ checkData (Datatypedecl dataname datatype constructors) = do
     TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
                     Left (Type i) -> do
                       put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
-                      checkConstructors constructors
+                      checkConstructors dataname constructors
                     _ -> return False
     _ -> return False
 
-checkConstructors :: [(Term, Term)] -> Env Bool
+checkConstructors :: Term -> [(Term, Term)] -> Env Bool
 
-checkConstructors [] = return True
-checkConstructors ((t1,t2):l) = do 
+checkConstructors dataname [] = return True
+checkConstructors dataname ((t1,t2):l) = do 
   env <- get
   case t1 of
     TermVar c ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of

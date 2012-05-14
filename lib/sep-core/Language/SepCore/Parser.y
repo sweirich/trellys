@@ -93,14 +93,23 @@ Preddecl : PredVar "::" LogicalKind                  {Preddecl (PredicateVar (st
 
 Preddef : PredVar ":=" Predicate                        {Preddef (PredicateVar (string2Name $1)) $3}
 
-Datatypedecl : data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | Data TermVar "::" Term where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | Data TermVar "::" Term Where Dataconstrs                         {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'                          {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | data TermVar "::" Specialterm Where Dataconstrs '.'                        {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | Data TermVar "::" Specialterm where Dataconstrs  '.'                        {Datatypedecl (TermVar (string2Name $2)) $4 $6}
+             | Data TermVar "::" Specialterm Where Dataconstrs  '.'                       {Datatypedecl (TermVar (string2Name $2)) $4 $6}
 
+Specialterm : Type int     {Type $2}
+            | type int     {Type $2}
+            | Pi TermVar ':' Stage Term '.' Specialterm {Pi (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
 
-Dataconstrs : TermVar "::" Term                           {[((TermVar (string2Name $1)), $3)]}
-            |  Dataconstrs '|' TermVar "::" Term           {((TermVar (string2Name $3)), $5):$1}
+Dataterm : Appform       {$1}
+         | Pi TermVar ':' Stage Term '.' Dataterm  {Pi (bind (ArgNameTerm (string2Name $2), Embed(ArgClassTerm $5)) $7) $4}
+
+Appform : TermVar          {TermVar (string2Name $1)}
+        | Appform TermVar   {TermApplication $1 (ArgTerm (TermVar (string2Name $2))) Plus}
+
+Dataconstrs : TermVar "::" Dataterm                           {[((TermVar (string2Name $1)), $3)]}
+|  Dataconstrs '|' TermVar "::" Dataterm                      {$1++[((TermVar (string2Name $3)), $5)]}
 
 {-Low level definitions-}
 
