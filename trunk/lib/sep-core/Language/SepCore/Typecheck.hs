@@ -19,10 +19,9 @@ import "mtl" Control.Monad.Error hiding (join)
 import "mtl" Control.Monad.State hiding (join)
 import Control.Exception(Exception)
 import Control.Applicative
-import Text.Parsec.Pos
 import Data.List(nubBy, nub,find, (\\),intersect,sortBy,groupBy)
 import qualified Data.Map as M
-
+import Data.Set
 -- global env: Context, having IO side effects.
 
 newtype TCMonad a = TCMonad{ runTCMonad :: (ReaderT Context (FreshMT Identity)) a}   
@@ -420,10 +419,33 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
 
 
 
-type Env = State Context
+type Env = StateT Context IO
 
--- type-check data type declaration, todo
-checkData :: Datatypedecl -> Env Bool
+typechecker :: Module -> Env String
+
+typechecker [] = return "Type checker seems to approve your program, so congratulation!"
+
+typechecker ((DeclData d):l) = do s <- checkData d
+                                  case s of 
+                                    Left str -> return str
+                                    Right _ -> typechecker l
+
+
+typechecker ((DeclProgdecl p):l) = do s <- checkProgDecl p
+                                      case s of 
+                                        Left str -> return str
+                                        Right _ -> typechecker l
+
+
+typechecker ((DeclProgdef p):l) = do  s <- checkProgDef p
+                                      case s of 
+                                        Left str -> return str
+                                        Right _ -> typechecker l
+
+
+
+-- type-check data type declaration
+checkData :: Datatypedecl -> Env (Either String Bool)
 checkData (Datatypedecl dataname datatype constructors) = do
   env <- get
   case dataname of
@@ -431,46 +453,51 @@ checkData (Datatypedecl dataname datatype constructors) = do
                     Left (Type i) -> do
                       put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
                       checkConstructors dataname constructors
-                    _ -> return False
-    _ -> return False
+                    _ -> return $ Left $ "The type of "++show(dataname)++ " is not well-typed."
+    _ -> return $ Left $ "unkown error"
 
-checkConstructors :: Term -> [(Term, Term)] -> Env Bool
+checkConstructors :: Term -> [(Term, Term)] -> Env (Either String Bool)
 
-checkConstructors dataname [] = return True
+checkConstructors dataname [] = return $ Right True
 checkConstructors dataname ((t1,t2):l) = do 
   env <- get
-  case t1 of
-    TermVar c ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
-                    Left (Type i) -> do
-                      put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
-                      checkConstructors l
-                    _ -> return False
-    _ -> return False
+  case dataname of
+    TermVar d -> 
+        case t1 of
+          TermVar c -> if (elem d (fv t2)) && (size ((fv t2)::Set (Name Term))) == 1 {-buggy condition-}then  
+                           case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
+                             Left (Type i) -> do
+                                           put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
+                                           checkConstructors dataname l
+                             _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed." 
+                       else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
+          _ -> return $ Left $ "unkown error"
+    _ -> return $ Left $ "unkown error"
 
 -- type-check program declaration
 
-checkProgDecl :: Progdecl -> Env Bool
+checkProgDecl :: Progdecl -> Env (Either String Bool)
 checkProgDecl (Progdecl t t') = do
   env <- get
   case t of
     TermVar x -> case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t')) env)) of
                     Left (Type i) -> do
                       put (M.insert (ArgNameTerm x)  (ArgClassTerm t', NonValue) env)
-                      return True
-                    _ -> return False
-    _ -> return False
+                      return (Right True)
+                    _ -> return $ Left $ "The type of " ++show(t')++" is not well-typed"
+    _ -> return $ Left $ "unkown error"
 
 -- type-check program definition
-checkProgDef :: Progdef -> Env Bool 
+checkProgDef :: Progdef -> Env (Either String Bool)
 checkProgDef (Progdef t t') = do
   env <- get
   case t of
     TermVar x -> case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t')) env)) of
                     Left t'' -> case (getClass (ArgNameTerm x) env) of
-                                Left t1 -> if aeq t1 (ArgClassTerm t'') then return True else return False
-                                _ -> return False
-                    _ -> return False
-    _ -> return False
+                                Left t1 -> if aeq t1 (ArgClassTerm t'') then return (Right True) else return $ Left $ "Expecting "++show(t1)++ ", but actually getting " ++show(t'') 
+                                _ -> return $ Left $ "Can't find "++show (x)++ " from the context, it is not defined."
+                    _ -> return $ Left $ "The type of " ++show(t')++" is not well-typed"
+    _ -> return $ Left $ "unkown error"
 
 
 

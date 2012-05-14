@@ -107,7 +107,7 @@ Dataterm : Appform       {$1}
 
 Appform : TermVar          {TermVar (string2Name $1)}
         | Appform TermVar   {TermApplication $1 (ArgTerm (TermVar (string2Name $2))) Plus}
-
+        | '(' Appform ')' {$2}
 Dataconstrs : TermVar "::" Dataterm                           {[((TermVar (string2Name $1)), $3)]}
 |  Dataconstrs '|' TermVar "::" Dataterm                      {$1++[((TermVar (string2Name $3)), $5)]}
 

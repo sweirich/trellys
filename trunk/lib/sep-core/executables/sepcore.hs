@@ -2,16 +2,18 @@ module Main where
 import Language.SepCore.Parser
 import Language.SepCore.Lexer
 import Language.SepCore.Syntax
+import Language.SepCore.Typecheck
 import Unbound.LocallyNameless(Embed(..),bind,string2Name)
 import Text.PrettyPrint(render)
 import System.Console.CmdArgs
 import Data.Typeable
 import Control.Exception
+import Control.Monad.State
 import System.Environment
 import System.Exit
 import System.IO(withFile,hGetContents,IOMode(..),hClose,openFile)
 import System.Environment
-
+import Data.Map
 
 main = do
   args <- getArgs
@@ -20,6 +22,9 @@ main = do
       cnts <- readFile filename;
       case runAlex cnts parser of
              Left e -> error e
-             Right a ->putStrLn $ "Parsing success! \n" ++(show a)
+             Right a -> do putStrLn $ "Parsing success! \n" ++(show a)
+                           s <- evalStateT (typechecker a) Data.Map.empty
+                           print s
+
 
     _ -> putStrLn "usage: sepcore <filename>"
