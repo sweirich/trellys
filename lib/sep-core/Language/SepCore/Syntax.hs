@@ -7,7 +7,7 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..)
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..)
      
                                ) where 
 
@@ -177,7 +177,8 @@ data Term =  TermVar (Name Term)
            | Abort Term
 
            | Rec (Bind (Name Term, Name Term, Embed Term) Term)
-
+           
+           | Undefined
 --bind two term in a term.
 
   deriving(Show)

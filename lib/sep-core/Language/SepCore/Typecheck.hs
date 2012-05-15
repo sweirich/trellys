@@ -281,7 +281,6 @@ compPred (ProofApplication p a) = do b <- compPred p
                                          Right s -> return (Right s)
 
 
-
 compType :: Term -> TCMonad (Either Term String)
 
 -- | TERM_TYPE
@@ -411,16 +410,53 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                    Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
                                    Right s -> return (Right s)
 
--- | Term_case, todo
+type Env = StateT Context IO
+type LocalEnv = StateT Context (FreshMT Identity)
+
+-- | Term_case
 -- compType (TermCase1 t branches) = do theType <- compType t
 --                                      case theType of
---                                        Left 
+--                                        Left (TermVar d) -> 
+--                                         checkBranch Undefined theType branches
+                                                                               
+                                                                                      
+--                                        Left (TermApplication t arg st) -> 
+--                                        Left _ -> return (Right $ show(t)++"is not well-typed")
+--                                        Right s -> return (Right s)
+
+
+calcLocalContext :: TermScheme -> Term -> LocalEnv (Either String Bool)
+calcLocalContext ((TermVar c):[]) _ = return $ Right True
+calcLocalContext ((TermVar c):l) (Pi b st) = do  
+  ((argname, Embed argclass),res)  <- unbind b 
+  env <- get
+  case head l of
+    TermVar u -> do put (M.insert (ArgNameTerm u) (argclass, NonValue) env)
+                    calcLocalContext l res 
+    _ -> return $ Left "Incorrect pattern."
+
+calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with the constructor ."
+    
+
+-- checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
+-- checkBranch state theType ((c:sch, t1): l) = do 
+--   case state of
+--     Undefined -> do 
+--                case unWrap theType of
+--                  Left dataname -> do
+--                    env <- ask
+--                    case getClass (ArgNameTerm c) env of
+--                      Left (ArgClassTerm ctype) -> 
+--                          case unWrap ctype of
+--                            Left d' -> if aeq d' dataname then 
+                                          
+                                           
+                                                                    
+                                                                    
 
 
 
 
-
-type Env = StateT Context IO
 
 unWrap :: Term -> Either Term String
 unWrap (Pi b stage) = let (b1, t1) = unsafeUnbind b in
@@ -514,41 +550,7 @@ checkProgDef (Progdef t t') = do
 
 
 
--- 
 
-{-
-
-
-collector :: Module -> Env
-collector ((DeclData d@(Datatypedecl dataname datatype constructors )): tail') = do 
-  current <- get
-  case dataname of
-    TermVar x -> 
-                  let next = M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) current in 
-                  do        
-                    put next
-                    pushConstructors constructors
-                    collector tail'
-    _ -> return current
-
-collector (DeclProgdecl)
-
-
-
-
-pushConstructors :: [(Term, Term)] -> Env
-pushConstructors [] = do current <- get
-                         return current
-
-pushConstructors ((t1, t2):tail') = do current <- get
-                                       case t1 of
-                                         TermVar x ->
-                                               let next = M.insert (ArgNameTerm x)  (ArgClassTerm t2, NonValue) current 
-                                               in 
-                                                 do put next
-                                                    pushConstructors tail'
-                                         _ -> return current
--}
 -- test code 
 
 {-
@@ -558,5 +560,3 @@ test :: IO()
 test = do c <- runFreshMT (runReaderT (runTCMonad (compType (Pi (bind (ArgNameTerm (string2Name "x"), Embed (ArgClassTerm (Type 56))) (TermVar (string2Name "nat"))) Plus ))) sample)
           print c
 -}
--- checkData :: Datatypedecl -> IO ()
--- checkData Datatypedecl t1 t2 branches =         checkTerm
