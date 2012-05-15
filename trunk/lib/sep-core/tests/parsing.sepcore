@@ -1,12 +1,18 @@
 
 data nat :: type 0 where
 Z :: nat
-| S :: pi x:+nat.nat
+| S :: pi x:+nat.nat .
 
-plusnat :: pi x:+nat.pi y:+nat.nat
-plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
-	       case x of  
-	       	   Z -> y
-		 | S u -> (+ (+ plus u) y)
 
-$x :: @y
+data tree :: Pi x : + nat. type 0 where
+Leaf :: tree Z
+| Node :: Pi x:+nat . Pi trl : + (+ tree x) . Pi trr : + (+ tree x).  tree x.
+
+
+-- plusnat :: pi x:+nat.pi y:+nat.nat
+-- plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
+-- 	       case x of  
+-- 	       	   Z -> y
+-- 		 | S u -> (+ (+ plus u) y)
+
+--$x :: @y
