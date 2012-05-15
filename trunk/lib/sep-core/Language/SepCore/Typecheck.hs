@@ -21,6 +21,7 @@ import Control.Exception(Exception)
 import Control.Applicative
 import Data.List(nubBy, nub,find, (\\),intersect,sortBy,groupBy)
 import qualified Data.Map as M
+import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Data.Set
 -- global env: Context, having IO side effects.
 
@@ -421,6 +422,16 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
 
 type Env = StateT Context IO
 
+unWrap :: Term -> Either Term String
+unWrap (Pi b stage) = let (b1, t1) = unsafeUnbind b in
+                      case t1 of
+                        Pi c st -> unWrap (Pi c st)
+                        TermApplication t a st -> Left t
+                        TermVar t -> Left (TermVar t)
+                        _ -> Right "Not a standard form"
+unWrap (TermApplication t a st) = Left t
+unWrap (TermVar t) = Left (TermVar t)
+unWrap _ = Right "Not a standard form"
 typechecker :: Module -> Env String
 
 typechecker [] = return "Type checker seems to approve your program, so congratulation!"
@@ -464,13 +475,14 @@ checkConstructors dataname ((t1,t2):l) = do
   case dataname of
     TermVar d -> 
         case t1 of
-          TermVar c -> if (elem d (fv t2)) && (size ((fv t2)::Set (Name Term))) == 1 {-buggy condition-}then  
-                           case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
-                             Left (Type i) -> do
-                                           put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
-                                           checkConstructors dataname l
-                             _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed." 
-                       else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
+          TermVar c -> case unWrap t2 of
+                         Left t2' -> if aeq dataname t2' then
+                                         case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
+                                           Left (Type i) -> do
+                                             put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
+                                             checkConstructors dataname l
+                                           _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed."                                      else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
+                         Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
           _ -> return $ Left $ "unkown error"
     _ -> return $ Left $ "unkown error"
 
