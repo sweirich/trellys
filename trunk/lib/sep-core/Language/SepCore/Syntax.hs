@@ -7,8 +7,7 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..)
-     
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..), TermBranches(..)
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
@@ -46,7 +45,8 @@ data Preddef = Preddef Predicate Predicate
 
 data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
              deriving(Show)
-
+-- data Sepcialterm = Specialterm Term 
+--                  deriving(Show)
 
       
 data Stage = Plus | Minus deriving(Show)
