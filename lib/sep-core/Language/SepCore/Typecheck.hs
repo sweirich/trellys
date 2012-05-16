@@ -27,9 +27,9 @@ import Data.Set
 
 newtype TCMonad a = TCMonad{ runTCMonad :: (ReaderT Context (FreshMT Identity)) a}   
  deriving (Monad, MonadReader Context, Fresh)
-
-
 type Context = M.Map ArgName (ArgClass, Value)
+type Env = StateT Context IO
+type LocalEnv = StateT Context (FreshMT Identity)
 
 lookupVar :: ArgName -> Context -> Either (ArgClass, Value) String
 lookupVar name context = case (M.lookup name context) of
@@ -280,7 +280,6 @@ compPred (ProofApplication p a) = do b <- compPred p
                                          Left _ -> return (Right $ "The predicate "++show(p)++ " is ill-formed")
                                          Right s -> return (Right s)
 
-
 compType :: Term -> TCMonad (Either Term String)
 
 -- | TERM_TYPE
@@ -410,19 +409,15 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                    Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
                                    Right s -> return (Right s)
 
-type Env = StateT Context IO
-type LocalEnv = StateT Context (FreshMT Identity)
-
 -- | Term_case
--- compType (TermCase1 t branches) = do theType <- compType t
---                                      case theType of
---                                        Left (TermVar d) -> 
---                                         checkBranch Undefined theType branches
-                                                                               
-                                                                                      
---                                        Left (TermApplication t arg st) -> 
---                                        Left _ -> return (Right $ show(t)++"is not well-typed")
---                                        Right s -> return (Right s)
+compType (TermCase1 t branches) = do theType <- compType t
+                                     case theType of
+                                       Left t' -> do
+                                         theType' <- checkBranch Undefined t' branches
+                                         case theType' of
+                                           Right t'' -> return (Left t'')
+                                           Left s -> return (Right s)
+                                       Right s -> return (Right s)
 
 
 calcLocalContext :: TermScheme -> Term -> LocalEnv (Either String Bool)
@@ -437,26 +432,30 @@ calcLocalContext ((TermVar c):l) (Pi b st) = do
 
 calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with the constructor ."
     
+-- The type of the whole case expression, the type of t in case t, branches. 
+checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
+checkBranch state theType (((TermVar c):sch, t1): l) = 
+               case unWrap theType of
+                 Left dataname -> do
+                   env <- ask
+                   case getClass (ArgNameTerm c) env of
+                     Left (ArgClassTerm ctype) -> 
+                         case unWrap ctype of
+                           Left d' -> if aeq d' dataname then 
+                                          let context = runIdentity (runFreshMT (execStateT (calcLocalContext ((TermVar c):sch) ctype) M.empty)) in 
+                                          do theType' <- local (M.union context) (compType t1)
+                                             case theType' of
+                                               Left t1' -> if aeq state Undefined then checkBranch t1' theType l
+                                                           else if aeq t1' state then checkBranch t1' theType l
+                                                                else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
+                                               Right s -> return $ Left s
+                                      else return $ Left $ "The actual type of the datatype constructor " ++show(c)++ " doesn't fit the corresponding datatype "++show(dataname)
+                           Right s -> return $ Left s
+                     Left _ -> return $ Left $ "Couldn't find the type for " ++show(c)
+                     Right s -> return $ Left s
+                 Right s -> return $ Left s
 
--- checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
--- checkBranch state theType ((c:sch, t1): l) = do 
---   case state of
---     Undefined -> do 
---                case unWrap theType of
---                  Left dataname -> do
---                    env <- ask
---                    case getClass (ArgNameTerm c) env of
---                      Left (ArgClassTerm ctype) -> 
---                          case unWrap ctype of
---                            Left d' -> if aeq d' dataname then 
-                                          
-                                           
-                                                                    
-                                                                    
-
-
-
-
+checkBranch state theType [] = return $ Right state
 
 unWrap :: Term -> Either Term String
 unWrap (Pi b stage) = let (b1, t1) = unsafeUnbind b in
