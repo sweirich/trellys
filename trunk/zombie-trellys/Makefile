@@ -1,7 +1,7 @@
 # Main Rules
 # ==========
 #
-# make [all]: does a sandboxed install of trellys-core.
+# make [all]: does a sandboxed install of zombie trellys.
 #             Assumes you have Cabal installed, and that the default
 #             Cabal install dir is on your path (~/.cabal/bin for
 #             default "per-user" setup).  A trellys binary will be
