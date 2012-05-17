@@ -237,8 +237,8 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | '(' Term ')'    {$2}
 
-TermBranches : TermScheme "->" Term                    {[($1, $3)]}
-             | TermBranches '|' TermScheme "->" Term       {$1 ++ [($3, $5)]}
+TermBranches : TermScheme "->" Term                    {[(head $1, (bind (tail $1) $3))]}
+             | TermBranches '|' TermScheme "->" Term       {$1 ++ [(head $3,(bind (tail $3) $5))]}
 
 TermScheme : TermVar                               {[TermVar (string2Name $1)]}
            | TermScheme TermVar                    {$1 ++ [TermVar( string2Name $2)] }

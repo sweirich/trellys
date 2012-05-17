@@ -134,9 +134,9 @@ data Proof =  ProofVar (Name Proof)
 
 type TermScheme = [Term]
 
--- type TermBranches = [Bind TermScheme Term]
+type TermBranches = [(Term, (Bind TermScheme Term))]
 
-type TermBranches = [(TermScheme,Term)]
+-- type TermBranches = [(TermScheme,Term)]
 
 data Equality = Equality Predicate
             
