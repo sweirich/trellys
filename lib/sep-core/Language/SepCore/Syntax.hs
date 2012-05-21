@@ -7,7 +7,7 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..), TermBranches(..)
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..), TermBranches(..), Tele(..)
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
@@ -43,8 +43,14 @@ data Preddecl = Preddecl Predicate LogicalKind
 data Preddef = Preddef Predicate Predicate
              deriving(Show)
 
-data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
-             deriving(Show)
+data Tele = Empty 
+          | TCons (Rebind (ArgName, Embed ArgClass) Tele) 
+          deriving (Show)
+
+data Datatypedecl = Datatypedecl Term (Bind Tele [(ArgName,Term)])    deriving (Show)
+
+-- data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
+--              deriving(Show)
 -- data Sepcialterm = Specialterm Term 
 --                  deriving(Show)
 
@@ -213,7 +219,7 @@ data Value = Value | NonValue deriving (Show)
 
          
 
-$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind, ''Equality])
+$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind, ''Equality, ''Tele])
 
 type TypingContext = [(ArgName, ArgClass,Value )]
 
@@ -301,6 +307,7 @@ instance Alpha Value
 instance Alpha ArgClass
 instance Alpha Arg
 instance Alpha ArgName
+instance Alpha Tele
 
 {- Building a small-scale test case for substitution:
  

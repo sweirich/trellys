@@ -409,7 +409,9 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                    Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
                                    Right s -> return (Right s)
 
+
 -- | Term_case
+{-
 compType (TermCase1 t branches) = do theType <- compType t
                                      case theType of
                                        Left t' -> do
@@ -456,25 +458,26 @@ checkBranch state theType (((TermVar c):sch, t1): l) =
                  Right s -> return $ Left s
 
 checkBranch state theType [] = return $ Right state
-
-unWrap :: Term -> Either Term String
+-}
+unWrap :: Term -> Either [Term] String
 unWrap (Pi b stage) = let (b1, t1) = unsafeUnbind b in
                       case t1 of
                         Pi c st -> unWrap (Pi c st)
-                        TermApplication t a st -> Left t
-                        TermVar t -> Left (TermVar t)
+                        TermApplication t a st -> Left [t: (unWrap a)]
+                        TermVar t -> Left [(TermVar t)]
                         _ -> Right "Not a standard form"
-unWrap (TermApplication t a st) = Left t
-unWrap (TermVar t) = Left (TermVar t)
+unWrap (TermApplication t a st) = Left [t:unWrap a]
+unWrap (TermVar t) = Left [(TermVar t)]
 unWrap _ = Right "Not a standard form"
+
 typechecker :: Module -> Env String
 
 typechecker [] = return "Type checker seems to approve your program, so congratulation!"
 
-typechecker ((DeclData d):l) = do s <- checkData d
-                                  case s of 
-                                    Left str -> return str
-                                    Right _ -> typechecker l
+-- typechecker ((DeclData d):l) = do s <- checkData d
+--                                   case s of 
+--                                     Left str -> return str
+--                                     Right _ -> typechecker l
 
 
 typechecker ((DeclProgdecl p):l) = do s <- checkProgDecl p
@@ -491,15 +494,24 @@ typechecker ((DeclProgdef p):l) = do  s <- checkProgDef p
 
 
 -- type-check data type declaration
+teleArrow Empty end = end
+teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) Plus
+ where ((argname,argclass),rest) = unrebind binding
+       arrRest = teleArrow rest end
+
+
 checkData :: Datatypedecl -> Env (Either String Bool)
-checkData (Datatypedecl dataname datatype constructors) = do
+checkData (Datatypedecl dataname bindings) = do
+  (tele, cs) <- unbind bindings
   env <- get
+  let datatype = teleArrow tele (Type 0)
+  in
   case dataname of
     TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
                     Left (Type i) -> do
                       put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
                       checkConstructors dataname constructors
-                    _ -> return $ Left $ "The type of "++show(dataname)++ " is not well-typed."
+                    _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
     _ -> return $ Left $ "unkown error"
 
 checkConstructors :: Term -> [(Term, Term)] -> Env (Either String Bool)
