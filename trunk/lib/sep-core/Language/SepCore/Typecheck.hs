@@ -3,14 +3,14 @@ NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
 PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables, TemplateHaskell #-}
 
 module Language.SepCore.Typecheck where
-import Prelude hiding (pred)
+import Prelude hiding (pred,compare)
 import Language.SepCore.Syntax
 import Data.Maybe
-import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl)
+import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl, flatten)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import qualified Unbound.LocallyNameless.Alpha as Alpha
-import qualified Generics.RepLib as RL
-import Generics.RepLib hiding (Con,Val,Equal,Refl)
+import qualified Generics.RepLib as RL hiding (flatten)
+import Generics.RepLib hiding (Con,Val,Equal,Refl, flatten)
 import Text.PrettyPrint
 import Data.Typeable
 import Data.Functor.Identity
@@ -28,7 +28,7 @@ import Data.Set
 newtype TCMonad a = TCMonad{ runTCMonad :: (ReaderT Context (FreshMT Identity)) a}   
  deriving (Monad, MonadReader Context, Fresh)
 type Context = M.Map ArgName (ArgClass, Value)
-type Env = StateT Context IO
+type Env = StateT Context (FreshMT IO)
 type LocalEnv = StateT Context (FreshMT Identity)
 
 lookupVar :: ArgName -> Context -> Either (ArgClass, Value) String
@@ -421,7 +421,6 @@ compType (TermCase1 t branches) = do theType <- compType t
                                            Left s -> return (Right s)
                                        Right s -> return (Right s)
 
-
 calcLocalContext :: TermScheme -> Term -> LocalEnv (Either String Bool)
 calcLocalContext ((TermVar c):[]) _ = return $ Right True
 calcLocalContext ((TermVar c):l) (Pi b st) = do  
@@ -459,25 +458,32 @@ checkBranch state theType (((TermVar c):sch, t1): l) =
 
 checkBranch state theType [] = return $ Right state
 -}
-unWrap :: Term -> Either [Term] String
-unWrap (Pi b stage) = let (b1, t1) = unsafeUnbind b in
-                      case t1 of
-                        Pi c st -> unWrap (Pi c st)
-                        TermApplication t a st -> Left [t: (unWrap a)]
-                        TermVar t -> Left [(TermVar t)]
-                        _ -> Right "Not a standard form"
-unWrap (TermApplication t a st) = Left [t:unWrap a]
-unWrap (TermVar t) = Left [(TermVar t)]
-unWrap _ = Right "Not a standard form"
+
+flatten :: Term -> Either [Arg] String
+flatten (Pi b stage) = let (b1, t1) = unsafeUnbind b in
+                                 case t1 of
+                                   Pi c st -> flatten (Pi c st)
+                                   TermApplication t a st -> case (flatten t) of 
+                                                               Left ls -> Left (ls++[a])
+                                                               Right s -> Right s
+                                   TermVar t -> Left [ArgTerm (TermVar t)]
+                                   _ -> Right "Not a standard form"
+
+flatten (TermApplication t a st) = case (flatten t) of 
+                                     Left ls -> Left (ls++[a])
+                                     Right s -> Right s
+
+flatten (TermVar t) = Left [ArgTerm (TermVar t)]
+flatten _ = Right "Not a standard form"
 
 typechecker :: Module -> Env String
 
 typechecker [] = return "Type checker seems to approve your program, so congratulation!"
 
--- typechecker ((DeclData d):l) = do s <- checkData d
---                                   case s of 
---                                     Left str -> return str
---                                     Right _ -> typechecker l
+typechecker ((DeclData d):l) = do s <- checkData d
+                                  case s of 
+                                    Left str -> return str
+                                    Right _ -> typechecker l
 
 
 typechecker ((DeclProgdecl p):l) = do s <- checkProgDecl p
@@ -505,30 +511,66 @@ checkData (Datatypedecl dataname bindings) = do
   (tele, cs) <- unbind bindings
   env <- get
   let datatype = teleArrow tele (Type 0)
-  in
   case dataname of
-    TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
-                    Left (Type i) -> do
-                      put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
-                      checkConstructors dataname constructors
-                    _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
-    _ -> return $ Left $ "unkown error"
+      TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
+                      Left (Type i) -> do
+                        put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
+                        checkConstructors dataname tele (localContext tele) cs
+                      _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
+      _ -> return $ Left $ "unkown error"
 
-checkConstructors :: Term -> [(Term, Term)] -> Env (Either String Bool)
 
-checkConstructors dataname [] = return $ Right True
-checkConstructors dataname ((t1,t2):l) = do 
+--compare :: [Arg] -> Tele -> Bool
+compare [] Empty = return $ Left True
+compare (h:l) (TCons bindings) = do let ((argname, argclass),res) = unrebind bindings
+                                    case argname of
+                                      ArgNameTerm u ->
+                                          case h of
+                                            ArgTerm (TermVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+                                      ArgNameProof u ->
+                                          case h of
+                                            ArgProof (ProofVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+                                      ArgNamePredicate u ->
+                                          case h of
+                                            ArgPredicate (PredicateVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+
+compare _ _ = return $ Right "error"
+
+localContext :: Tele -> Context
+localContext Empty = M.empty
+localContext (TCons bindings) = let ((argname, Embed argclass), res) = unrebind bindings in
+                                  M.insert argname (argclass, NonValue) (localContext res)
+
+checkConstructors :: Term -> Tele -> Context -> [(ArgName, Term)] -> Env (Either String Bool)
+
+checkConstructors dataname _ _ [] = return $ Right True
+checkConstructors dataname tele localC ((constr,t2):l) = do 
   env <- get
   case dataname of
     TermVar d -> 
-        case t1 of
-          TermVar c -> case unWrap t2 of
-                         Left t2' -> if aeq dataname t2' then
-                                         case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) env)) of
-                                           Left (Type i) -> do
-                                             put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
-                                             checkConstructors dataname l
-                                           _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed."                                      else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
+        case constr of
+          ArgNameTerm c -> case flatten t2 of
+                         Left ls -> if aeq (head ls) (ArgTerm dataname) then
+                                        do result <- compare (tail ls) tele
+                                           case result of
+                                             Left True -> 
+                                                 case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) (M.union (env) localC))) of
+                                                   Left (Type i) -> do
+                                                         put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
+                                                         checkConstructors dataname tele localC l
+                                                   _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed. 0"
+                                             Left False -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 1." 
+                                             Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 3." 
+                                     else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 2." 
                          Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
           _ -> return $ Left $ "unkown error"
     _ -> return $ Left $ "unkown error"
