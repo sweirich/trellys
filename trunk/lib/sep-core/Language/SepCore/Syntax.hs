@@ -47,7 +47,8 @@ data Tele = Empty
           | TCons (Rebind (ArgName, Embed ArgClass) Tele) 
           deriving (Show)
 
-data Datatypedecl = Datatypedecl Term (Bind Tele [(ArgName,Term)])    deriving (Show)
+data Datatypedecl = Datatypedecl Term (Bind Tele [(ArgName,Term)])    
+                    deriving (Show)
 
 -- data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
 --              deriving(Show)
@@ -138,9 +139,9 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
-type TermScheme = [Term]
+type Scheme = [Arg]
 
-type TermBranches = [(Term, (Bind TermScheme Term))]
+type TermBranches = [(Bind Scheme Term)]
 
 -- type TermBranches = [(TermScheme,Term)]
 

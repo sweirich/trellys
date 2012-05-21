@@ -411,7 +411,7 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
 
 
 -- | Term_case
-{-
+
 compType (TermCase1 t branches) = do theType <- compType t
                                      case theType of
                                        Left t' -> do
@@ -435,11 +435,12 @@ calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with t
     
 -- The type of the whole case expression, the type of t in case t, branches. 
 checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
-checkBranch state theType (((TermVar c):sch, t1): l) = 
-               case unWrap theType of
-                 Left dataname -> do
+checkBranch state theType (binding : l) = 
+               case flatten theType of
+                 Left ls -> do
+                   ([h,args],t) <- unbind binding
                    env <- ask
-                   case getClass (ArgNameTerm c) env of
+                   case getClass (ArgNameTerm h) env of
                      Left (ArgClassTerm ctype) -> 
                          case unWrap ctype of
                            Left d' -> if aeq d' dataname then 
@@ -457,7 +458,7 @@ checkBranch state theType (((TermVar c):sch, t1): l) =
                  Right s -> return $ Left s
 
 checkBranch state theType [] = return $ Right state
--}
+
 
 flatten :: Term -> Either [Arg] String
 flatten (Pi b stage) = let (b1, t1) = unsafeUnbind b in
