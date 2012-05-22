@@ -411,7 +411,7 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
 
 
 -- | Term_case
-
+{-                                       
 compType (TermCase1 t branches) = do theType <- compType t
                                      case theType of
                                        Left t' -> do
@@ -420,8 +420,9 @@ compType (TermCase1 t branches) = do theType <- compType t
                                            Right t'' -> return (Left t'')
                                            Left s -> return (Right s)
                                        Right s -> return (Right s)
+--begin
 
-calcLocalContext :: TermScheme -> Term -> LocalEnv (Either String Bool)
+calcLocalContext :: Scheme -> [Arg] -> LocalEnv (Either String Bool)
 calcLocalContext ((TermVar c):[]) _ = return $ Right True
 calcLocalContext ((TermVar c):l) (Pi b st) = do  
   ((argname, Embed argclass),res)  <- unbind b 
@@ -438,12 +439,12 @@ checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
 checkBranch state theType (binding : l) = 
                case flatten theType of
                  Left ls -> do
-                   ([h,args],t) <- unbind binding
+                   ([h,argnames],t1) <- unbind binding
                    env <- ask
-                   case getClass (ArgNameTerm h) env of
+                   case getClass h env of
                      Left (ArgClassTerm ctype) -> 
-                         case unWrap ctype of
-                           Left d' -> if aeq d' dataname then 
+                         case flatten ctype of
+                           Left d' -> if aeq (head d') (head ls) then 
                                           let context = runIdentity (runFreshMT (execStateT (calcLocalContext ((TermVar c):sch) ctype) M.empty)) in 
                                           do theType' <- local (M.union context) (compType t1)
                                              case theType' of
@@ -458,7 +459,7 @@ checkBranch state theType (binding : l) =
                  Right s -> return $ Left s
 
 checkBranch state theType [] = return $ Right state
-
+-}
 
 flatten :: Term -> Either [Arg] String
 flatten (Pi b stage) = let (b1, t1) = unsafeUnbind b in
@@ -501,6 +502,8 @@ typechecker ((DeclProgdef p):l) = do  s <- checkProgDef p
 
 
 -- type-check data type declaration
+-- Append a tele in front of a term
+teleArrow :: Tele -> Term -> Term
 teleArrow Empty end = end
 teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) Plus
  where ((argname,argclass),rest) = unrebind binding
@@ -516,12 +519,13 @@ checkData (Datatypedecl dataname bindings) = do
       TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
                       Left (Type i) -> do
                         put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
-                        checkConstructors dataname tele (localContext tele) cs
+                        checkConstructors dataname tele cs
                       _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
       _ -> return $ Left $ "unkown error"
 
 
---compare :: [Arg] -> Tele -> Bool
+--compare :: Monad M => [Arg] -> Tele -> M Bool
+--compare the order of [arg] and Tele
 compare [] Empty = return $ Left True
 compare (h:l) (TCons bindings) = do let ((argname, argclass),res) = unrebind bindings
                                     case argname of
@@ -546,15 +550,15 @@ compare (h:l) (TCons bindings) = do let ((argname, argclass),res) = unrebind bin
 
 compare _ _ = return $ Right "error"
 
-localContext :: Tele -> Context
-localContext Empty = M.empty
-localContext (TCons bindings) = let ((argname, Embed argclass), res) = unrebind bindings in
-                                  M.insert argname (argclass, NonValue) (localContext res)
+-- localContext :: Tele -> Context
+-- localContext Empty = M.empty
+-- localContext (TCons bindings) = let ((argname, Embed argclass), res) = unrebind bindings in
+--                                   M.insert argname (argclass, NonValue) (localContext res)
 
-checkConstructors :: Term -> Tele -> Context -> [(ArgName, Term)] -> Env (Either String Bool)
+checkConstructors :: Term -> Tele -> [(ArgName, Term)] -> Env (Either String Bool)
 
-checkConstructors dataname _ _ [] = return $ Right True
-checkConstructors dataname tele localC ((constr,t2):l) = do 
+checkConstructors dataname _ [] = return $ Right True
+checkConstructors dataname tele ((constr,t2):l) = do 
   env <- get
   case dataname of
     TermVar d -> 
@@ -564,10 +568,11 @@ checkConstructors dataname tele localC ((constr,t2):l) = do
                                         do result <- compare (tail ls) tele
                                            case result of
                                              Left True -> 
-                                                 case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2)) (M.union (env) localC))) of
+                                                 let t2' = teleArrow tele t2 in
+                                                 case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2')) env)) of
                                                    Left (Type i) -> do
-                                                         put (M.insert (ArgNameTerm c)  (ArgClassTerm t2, NonValue) env)
-                                                         checkConstructors dataname tele localC l
+                                                         put (M.insert (ArgNameTerm c)  (ArgClassTerm t2', NonValue) env)
+                                                         checkConstructors dataname tele l
                                                    _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed. 0"
                                              Left False -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 1." 
                                              Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 3." 

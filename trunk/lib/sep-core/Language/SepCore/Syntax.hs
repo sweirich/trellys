@@ -7,7 +7,7 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), TermScheme(..), TermBranches(..), Tele(..)
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), Scheme(..), TermBranches(..), Tele(..)
                                ) where 
 
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
@@ -139,7 +139,7 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
-type Scheme = [Arg]
+type Scheme = [ArgName]
 
 type TermBranches = [(Bind Scheme Term)]
 
