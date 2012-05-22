@@ -11,7 +11,7 @@ module Language.Trellys.GenericBind
   ,name2Integer,name2String,integer2Name,string2Name,makeName
   ,binders,patfv,fv,fvAny,swaps
   ,aeq, acompare
-  ,Bind,rBind,bind,unbind,unbind2,unbind3
+  ,Bind,bind,unbind,unbind2,unbind3
   ,Embed,embed,unembed
   ,Rec
   ,Rebind,rRebind,rebind -- ,reopen

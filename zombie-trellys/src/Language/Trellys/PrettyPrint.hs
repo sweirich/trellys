@@ -220,6 +220,12 @@ instance Disp Goal where
    foldr ($+$) empty (map disp ctx)
    $+$ text "========================================="
    $+$ disp statement
+{-
+   $+$ text "\nOr printed less prettily:"
+   $+$ foldr ($+$) empty (map (text . show) ctx)
+   $+$ text "========================================="
+   $+$ text (show statement)
+ -}
 
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
@@ -236,7 +242,7 @@ instance Display Term where
     return $ dn <+> hsep dargs
       where displayArg (t, ep) = do
                                       dt <- display t
-                                      return $ bindParens ep dt
+                                      return $ wraparg t $ bindParens ep dt
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
   display (Arrow ep bnd) = do
@@ -273,20 +279,7 @@ instance Display Term where
   display (App ep f x) = do
      df <- display f
      dx <- display x
-     -- NC copied this wrapper code from display EApp below without
-     -- much thought or testing ... it works pretty well down there
-     let wrapx = case x of
-                   App _ _ _   -> parens
-                   Lam _ _     -> parens
-                   Let _ _ _   -> parens
-                   Case _ _    -> parens
-                   _           -> id
-     let wrapf = case f of
-                   Lam _ _     -> parens
-                   Let _ _ _   -> parens
-                   Case _ _    -> parens
-                   _           -> id
-     return $ wrapf df <+> wrapx (bindParens ep dx)
+     return $ wrapf f df <+> wraparg x (bindParens ep dx)
   display (Paren e) = do
      de <- display e
      return $ (parens de)
@@ -371,10 +364,6 @@ instance Display Term where
     db <- display b
     return $ parens (da <+> text ":" <+> db)
 
-  display (AppInf tm n) = do 
-    da <- display tm
-    return $ da <+> text "_" <+> int n
-
   display (At ty th) = do 
     da <- display ty
     return $ da <+> text "@" <+> disp th
@@ -393,6 +382,24 @@ instance Display Term where
 
   display TrustMe = return $ text "TRUSTME"
   display InferMe = return $ text "_"
+
+
+-- NC copied this wrapper code from display EApp below without
+-- much thought or testing ... it works pretty well down there
+wraparg :: Term -> (Doc -> Doc)
+wraparg x = case x of
+              App _ _ _   -> parens
+              Lam _ _     -> parens
+              Let _ _ _   -> parens
+              Case _ _    -> parens
+              Con _ (_:_) -> parens
+              _           -> id
+wrapf :: Term -> (Doc -> Doc)
+wrapf f = case f of
+            Lam _ _     -> parens
+            Let _ _ _   -> parens
+            Case _ _    -> parens
+            _           -> id
 
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem

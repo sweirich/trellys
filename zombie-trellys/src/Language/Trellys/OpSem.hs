@@ -77,7 +77,6 @@ erase (Contra _)        = return EContra
 erase (Ann a _)         = erase a
 erase (Paren a)         = erase a
 erase (Pos _ a)         = erase a
-erase (AppInf a _)      = erase a
 erase (At a th)         = do
       a' <- erase a 
       return $ EAt a' th
@@ -247,7 +246,6 @@ isValue (Contra _)         = False
 isValue (Ann a _)          = isValue a
 isValue (Paren a)          = isValue a
 isValue (Pos _ a)          = isValue a
-isValue (AppInf _ _)       = False
 isValue (At _ _)           = True
 isValue (TerminationCase _ _)     = False
 isValue TrustMe            = True

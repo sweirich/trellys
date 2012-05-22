@@ -239,3 +239,7 @@ ind plusZero' a =
       by conv (join 0) by aeq at h.h = a
       at h.add' a 0 = h
 
+
+--------- Demonstrating the wonders of TRUSTME
+magic : Vector Nat 2 -> Vector Nat 4
+magic = \v. conv v  by (TRUSTME: 2 = 4) at x.Vector Nat x

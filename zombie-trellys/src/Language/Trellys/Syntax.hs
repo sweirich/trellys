@@ -102,8 +102,6 @@ data Term = Var TName    -- | variables
           | Paren Term
           -- | 'Pos' wraps a term with its source position.
           | Pos SourcePos Term
-          -- | An inferred appplication of implicit, compile-time-only arguments
-          | AppInf Term Int
           -- | Internalized Typing Judgement
           | At Term Theta
           -- | Termination case
