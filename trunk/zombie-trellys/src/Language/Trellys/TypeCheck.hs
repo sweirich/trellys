@@ -14,6 +14,7 @@ import Language.Trellys.Options
 import Language.Trellys.Environment
 import Language.Trellys.Error
 import Language.Trellys.TypeMonad
+import Language.Trellys.EqualityReasoning
 
 import Language.Trellys.GenericBind
 import Generics.RepLib.Lib(subtrees)
@@ -83,7 +84,7 @@ ta th (Join s1 s2) (TyEq a b) =
      when (picky && not (k1 `aeqSimple` k2)) $
          err [DS "Cannot join terms of different types:", DD a,
          DS "has type", DD k1, DS "and", DD b, DS "has type", DD k2]
-     t1E <- erase =<< substDefs a
+     t1E <- erase =<< substDefs a  --fixme, maybe we should actually compare elaborated types?
      t2E <- erase =<< substDefs b
      joinable <- join s1 s2 t1E t2E
      unless joinable $
@@ -159,7 +160,7 @@ ta th (Lam lep lbody) a@(Arrow aep abody) = do
   ebody <- extendCtx (Sig x th (unembed tyA)) (ta th body tyB)
 
   -- perform the FV and value checks if in T_Lam2
-  bodyE <- erase body
+  bodyE <- erase ebody
   -- The free variables function fv is ad-hoc polymorphic in its
   -- return type, so we fix the type of xE.
   -- If we did (x `S.member` fv bodyE), fv would always return an empty set...
@@ -205,7 +206,7 @@ ta _ (Ind ep binding) arr@(Arrow aep abnd) = do
   ea <- extendCtx (Sig f Logic tyC) $
           extendCtx (Sig y Logic (unembed tyA)) $ ta Logic a tyB
   -- in the case where ep is Erased, we have the two extra checks:
-  aE <- erase a
+  aE <- erase ea
   when (ep == Erased && translate y `S.member` fv aE) $
        err [DS "ta: In implicit ind, variable", DD y,
             DS "appears free in body", DD a]
@@ -236,7 +237,7 @@ ta Program (Rec ep binding) fty@(Arrow aep abnd) = do
             ta Program a tyB
 
   -- perform the FV and value checks if in T_RecImp
-  aE <- erase a
+  aE <- erase ea
   when (ep == Erased && translate y `S.member` fv aE) $
        err [DS "ta: In implicit rec, variable", DD y,
             DS "appears free in body", DD a]
@@ -306,7 +307,7 @@ ta th (Case b bnd) tyA = do
              eai <- extendCtx (Sig y Logic eqtype) $
                       extendCtxTele subdeltai th $ ta th ai tyA
              -- premise 6
-             aE <- erase ai
+             aE <- erase eai
              let yEs = map translate $ y : domTeleMinus deltai
              let shouldBeNull = S.fromList yEs `S.intersection` fv aE
              unless (S.null shouldBeNull) $
@@ -328,13 +329,13 @@ ta th (Let th' ep bnd) tyB =
     -- premise 1
     (ea,tyA) <- ts th' (unembed a)
     -- premise 2
-    eb <- extendCtx (Sig y Logic (TyEq (Var x) (unembed a))) $
+    eb <- extendCtx (Sig y Logic (TyEq (Var x) ea)) $
             extendCtx (Sig x th' tyA) $
               ta th b tyB
     -- premise 3
     kc th tyB
     -- premises 4 and 5
-    bE <- erase b
+    bE <- erase eb
     when (translate y `S.member` fv bE) $
       err [DS "The equality variable bound in a let is not allowed to",
            DS "appear in the erasure of the body, but here", DD y,
@@ -383,10 +384,16 @@ ta th InferMe (TyEq ty1 ty2) = do
   context <- getTys
   let availableEqs = catMaybes $ map (\(x,th,ty) -> do guard (th==Logic)
                                                        (ty1,ty2) <- isTyEq ty
-                                                       Just (x,th,ty1,ty2))
+                                                       Just (x,ty1,ty2))
                                       context
-  err [DS "I was asked to prove:", DD (Goal (map (\(x,th,ty1,ty2) -> Sig x th (TyEq ty1 ty2)) availableEqs) 
-                                            (TyEq ty1 ty2))]
+  warn [DS "About to go off and try to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+                                               (TyEq ty1 ty2))]
+  isTrue <- prove availableEqs (ty1,ty2)
+  unless isTrue $
+    err [DS "I was unable to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+                                               (TyEq ty1 ty2))]
+  warn [DS "Successfully proved it, too!"]
+  return TrustMe
 
 ta th InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
 
@@ -555,7 +562,7 @@ ts tsTh tsTm =
     ts' th (Conv b as bnd) =
       do (xs,c) <- unbind bnd
 
-         erasedTerm <- erase c
+         erasedTerm <- erase c   --fixme, maybe this check needs to be on an elaborated something or other.
          let runtimeVars = fv erasedTerm
 
          let chkTy (False,pf) _ = do
@@ -621,13 +628,13 @@ ts tsTh tsTm =
         -- premise 1
         (ea,tyA) <- ts th' (unembed a)
         -- premise 2
-        (eb,tyB) <- extendCtx (Sig y Logic (TyEq (Var x) (unembed a))) $
+        (eb,tyB) <- extendCtx (Sig y Logic (TyEq (Var x) ea)) $
                       extendCtx (Sig x th' tyA) $
                         ts th b
         -- premise 3
         kc th tyB
         -- premises 4 and 5
-        bE <- erase b
+        bE <- erase eb
         when (translate y `S.member` fv bE) $
           err [DS "The equality variable bound in a let is not allowed to",
                DS "appear in the erasure of the body, but here", DD y,

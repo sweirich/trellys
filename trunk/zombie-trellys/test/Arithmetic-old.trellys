@@ -69,33 +69,52 @@ rec div n = \m .
 minus_same_zero : (n : Nat) -> (minus n n = 0)
 ind minus_same_zero n =
     case n [n_eq] of
-      Zero -> conv (join : (minus 0 0 = 0)) by (_ : (minus 0 0 = 0) = (minus n n = 0)) at x.x
+      Zero -> conv (join : (minus 0 0 = 0)) by
+		  	 		    (sym Nat Nat n 0 n_eq) at
+			   			  hole.(minus hole hole = 0)
+							  -- minus n n = 0
       Succ pred ->
+
         let step [step_eq] =
          (join : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+				 -- minus (Succ pred) (Succ pred) = minus pred pred
         let ic [ic_eq] = minus_same_zero pred [ord n_eq] in
-            conv ic by (_ : (minus pred pred = 0) = (minus n n = 0)) at x.x
+				-- minus pred pred = 0
+				let tc [_] = trans [Nat] [Nat] [Nat]
+                				   [minus (Succ pred) (Succ pred)]
+                				   [minus pred pred]
+                			           [0] [step] [ic] in
+        -- minus (Succ pred) (Succ pred) = 0
+				let [n_eq_sym] [n_eq_sym_eq] = sym Nat Nat n (Succ pred) n_eq in
+				-- TODO: should really be an application of 'sym'
+				conv tc
+             by n_eq_sym
+ 				     at hole.(minus hole hole = 0)
 
 -- n - 0 = n
 lemma_minus_zero_id : (n : Nat) -> (minus n 0 = n)
 lemma_minus_zero_id =
   \n . case n [eq_n] of 
-    Zero -> conv (join 10 : minus 0 0 = 0) by (_ : (minus 0 0 = 0) = (minus n 0 = n)) at x.x
+    Zero -> conv (join 10 : minus 0 0 = 0) by (sym Nat Nat n 0 eq_n) at hole.(minus hole 0 = hole)
     Succ n' -> 
       conv (join 10 : minus (Succ n') 0 = Succ n')
-        by (_ : (minus (Succ n') 0 = Succ n') = (minus n 0 = n))
-        at x.x
+        by (sym Nat Nat n (Succ n') eq_n)
+	at hole.(minus hole 0 = hole)
 
 -- (m + n) - m = n
 lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
 ind lemma_minus_plus_id m = \n .
   case m [m_eq] of
-     Zero -> let e1 [_] = (join : n = plus 0 n) in
-              conv lemma_minus_zero_id n by (_ : (minus n 0 = n) = (minus (plus m n) m = n)) at x.x
+     Zero -> conv (conv lemma_minus_zero_id n by (join : n = plus 0 n) at hole.(minus hole 0) = n)
+               by (sym Nat Nat m 0 m_eq)
+               at hole.((minus (plus hole n) hole) = n)
      Succ m' -> let e1 [_] = (join : minus (plus (Succ m') n) (Succ m')
                                    = minus (plus m' n) m') in
-                conv (lemma_minus_plus_id m' [ord m_eq] n)
-                by (_ : (minus (plus m' n) m' = n) = (minus (plus m n) m = n)) at x.x
+                --                 = n    (by (a + b) - a = b)
+                let e2 [_] = (conv e1 by (lemma_minus_plus_id m' [ord m_eq] n)
+                             at h . minus (plus (Succ m') n) (Succ m') = h) in
+                conv e2 by (sym Nat Nat m (Succ m') m_eq)
+                at m. ((minus (plus m n) m) = n)
 
 -- m*(n+1) / n = m
 log div_mult : (m : Nat) -> (n : Nat) ->
@@ -103,30 +122,52 @@ log div_mult : (m : Nat) -> (n : Nat) ->
 ind div_mult m = \n .
   case m [m_eq] of
     Zero -> conv (join : div (mult Zero (Succ n)) n = Zero)
-            by (_ : (div (mult Zero (Succ n)) n = Zero) = (div (mult m (Succ n)) n = m)) at x.x
+            by (sym Nat Nat m Zero m_eq)
+            at m . div (mult m (Succ n)) n = m
                -- (S m' * S n) / n = (let r = ((n + (m' * S n)) - n) / n in S r)
     Succ m' -> let e1 [_]    = (join: div (mult (Succ m') (Succ n)) n =
                                       (let prog r [_] = div (minus (plus n (mult m' (Succ n))) n) n
                                        in Succ r))
-               in let e2 [_] = lemma_minus_plus_id n (mult m' (Succ n))
-               in let e3 [_] = div_mult m' [ord m_eq] n
-               in let e4 [_] = (join : (let prog r [_] = m' in Succ r) = Succ m')
-               in (_ : (div (mult m (Succ n)) n = m))
+               --                  = (let r = (m' * S n) / n in S r)    (by (a + b) - a = b)
+               in let e2 [_] = conv e1 by (lemma_minus_plus_id n (mult m' (Succ n)))
+                               at h . div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = div h n
+                                       in Succ r)
+               --                  = (let r = m' in S r)                (by IH)
+               in let e3 [_] = conv e2 by (div_mult m' [ord m_eq] n)
+                               at h . div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = h
+                                       in Succ r)
+               --                  = S m'
+               in let e4 [_] = conv e3
+                               by (join : (let prog r [_] = m' in Succ r) = Succ m')
+                               at h . div (mult (Succ m') (Succ n)) n = h
+               in conv e4 by (sym Nat Nat m (Succ m') m_eq)
+                  at m . (div (mult m (Succ n)) n) = m
 
 plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
-    Zero -> conv (join : plus (plus 0 j) k = plus 0 (plus j k))
-             by (_ : (plus (plus 0 j) k = plus 0 (plus j k)) = (plus (plus i j) k = plus i (plus j k)))  at x.x
+    Zero -> let [ieq'] [_] = sym Nat Nat i 0 ieq -- evidence of backwards equality. NC
+            in conv (join 42 : plus (plus 0 j) k = plus 0 (plus j k)) by ieq'
+                 at i . plus (plus i j) k = plus i (plus j k)
+
                -- associate `plus` in `Succ` of the inductive case: S ((i'+j)+k) = S (i'+(j+k))
     Succ i' -> let ih [_] = pa i' [ord ieq] j k
+               in let e1 [p] = conv (join 0) by ih at h . Succ (plus (plus i' j) k) = Succ h
+
                -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
+               in let [ieq'] [_] = sym Nat Nat i (Succ i') ieq -- evidence of backwards equality. NC
                in let e2 [_] = (join 42 : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
+               in let e2' [_] = conv e2 by ieq' at h . Succ (plus (plus i' j) k) = plus (plus h j) k
+
                -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
-               in let e3 [_] = (join 42 : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
+               in let e3 [_] = (join 42 : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))
+               in let e3' [_] = conv e3 by ieq' at h . Succ (plus i' (plus j k)) = plus h (plus j k)
+
                -- move the `Succ` inside both sides
-               in (_ : (plus (plus i j) k) = (plus i (plus j k)))
+               in conv (conv e1 by e2' at h . h = Succ (plus i' (plus j k))) by e3' at h . plus (plus i j) k = h
 
 main : Nat
 main = plus 2 3
