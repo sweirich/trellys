@@ -141,7 +141,7 @@ data Proof =  ProofVar (Name Proof)
 
 type Scheme = [ArgName]
 
-type TermBranches = [(Bind Scheme Term)]
+type TermBranches = [(ArgName,(Bind Scheme Term))]
 
 -- type TermBranches = [(TermScheme,Term)]
 
