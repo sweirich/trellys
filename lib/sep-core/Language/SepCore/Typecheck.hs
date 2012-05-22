@@ -392,7 +392,7 @@ compType (Rec b) = do ((x, f, Embed (Pi t' Plus)), t) <- unbind b
                       theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
                       case theType of
                         Left ty -> if aeq t2 ty then return (Left (Pi (bind (y, Embed t1) t2) Plus))
-                                   else return (Right $ "the term" ++show(t)++ " is not type checked.")
+                                   else return (Right $ "the term" ++show(t)++ " is not type checked. rec")
                         Right s -> return (Right s)
 
 -- | Term_let
@@ -411,7 +411,7 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
 
 
 -- | Term_case
-{-                                       
+
 compType (TermCase1 t branches) = do theType <- compType t
                                      case theType of
                                        Left t' -> do
@@ -420,21 +420,66 @@ compType (TermCase1 t branches) = do theType <- compType t
                                            Right t'' -> return (Left t'')
                                            Left s -> return (Right s)
                                        Right s -> return (Right s)
---begin
 
-calcLocalContext :: Scheme -> [Arg] -> LocalEnv (Either String Bool)
-calcLocalContext ((TermVar c):[]) _ = return $ Right True
-calcLocalContext ((TermVar c):l) (Pi b st) = do  
+-- applying a datatype constructor's type to a list of arguments
+getInstance constrType@(Pi b st) (arg : cs) = do 
   ((argname, Embed argclass),res)  <- unbind b 
-  env <- get
-  case head l of
-    TermVar u -> do put (M.insert (ArgNameTerm u) (argclass, NonValue) env)
-                    calcLocalContext l res 
-    _ -> return $ Left "Incorrect pattern."
+  case argname of
+    ArgNameTerm nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
+    ArgNameProof nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
+    ArgNamePredicate nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
 
+getInstance constrType [] = return $ Right constrType
+getInstance _ _ = return $ Left "unkown error"
+        
+
+--calculate the local context for each branch
+
+--calcLocalContext :: Term -> Scheme -> LocalEnv (Either String Bool)
+--calcLocalContext ((TermVar c):[]) _ = return $ Right True
+
+calcLocalContext constrType@(Pi b st) (h:ls)  = do  
+  env <- get  
+  ((argname, Embed argclass), t) <- unbind b
+  put (M.insert h (argclass, NonValue) env)
+  calcLocalContext t ls 
+
+calcLocalContext (TermVar _ ) [] = return $ Right True
+calcLocalContext (TermApplication _ _ _ ) [] = return $ Right True
 calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with the constructor ."
     
 -- The type of the whole case expression, the type of t in case t, branches. 
+checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
+checkBranch state theType ((constr, binding): l) = 
+               case flatten theType of
+                 Left ls -> do
+                   (argnames,t1) <- unbind binding
+                   env <- ask
+                   case getClass constr env of
+                     Left (ArgClassTerm ctype) -> 
+                         case flatten ctype of
+                           Left d' -> if aeq (head d') (head ls) then 
+                                          do theType' <- getInstance ctype (tail ls)
+                                             case theType' of
+                                               Right t -> do
+                                                 theType'' <- local (M.union (runIdentity (runFreshMT (execStateT (calcLocalContext t argnames) M.empty)))) (compType t1)
+                                                 case theType'' of
+                                                   Left t1' -> if aeq state Undefined then checkBranch t1' theType l
+                                                               else if aeq t1' state then checkBranch t1' theType l
+                                                                    else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
+                                                   Right s -> return $ Left s
+                                               Left s -> return $ Left s
+                                      else return $ Left $ "The actual type of the datatype constructor " ++show(constr)++ " doesn't fit the corresponding datatype "++show(head ls)
+                           Right s -> return $ Left s
+                     Left _ -> return $ Left $ "Couldn't find the type for " ++show(constr)
+                     Right s -> return $ Left s
+                 Right s -> return $ Left s
+
+checkBranch state theType [] = return $ Right state
+{-
 checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
 checkBranch state theType (binding : l) = 
                case flatten theType of
@@ -591,7 +636,7 @@ checkProgDecl (Progdecl t t') = do
                     Left (Type i) -> do
                       put (M.insert (ArgNameTerm x)  (ArgClassTerm t', NonValue) env)
                       return (Right True)
-                    _ -> return $ Left $ "The type of " ++show(t')++" is not well-typed"
+                    _ -> return $ Left $ "The type of " ++show(t')++" is not well-typed. -- checkProgDecl"
     _ -> return $ Left $ "unkown error"
 
 -- type-check program definition
@@ -603,7 +648,7 @@ checkProgDef (Progdef t t') = do
                     Left t'' -> case (getClass (ArgNameTerm x) env) of
                                 Left t1 -> if aeq t1 (ArgClassTerm t'') then return (Right True) else return $ Left $ "Expecting "++show(t1)++ ", but actually getting " ++show(t'') 
                                 _ -> return $ Left $ "Can't find "++show (x)++ " from the context, it is not defined."
-                    _ -> return $ Left $ "The type of " ++show(t')++" is not well-typed"
+                    Right s -> return $ Left $ "The type of " ++show(t')++" is not well-typed. --checkProgDef" ++ show(s)
     _ -> return $ Left $ "unkown error"
 
 

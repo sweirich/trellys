@@ -254,10 +254,12 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | '(' Term ')'    {$2}
 
-TermBranches : Scheme "->" Term                    {[ (bind  $1 $3)]}
-             | TermBranches '|' Scheme "->" Term       {$1 ++ [(bind $3 $5)]}
+TermBranches : TermVar "->" Term                    {[(ArgNameTerm (string2Name $1), (bind [] $3))]}
+             | TermVar Scheme "->" Term                    {[(ArgNameTerm (string2Name $1), (bind $2 $4))]}
+             | TermBranches '|' TermVar Scheme "->" Term       {$1 ++ [(ArgNameTerm (string2Name $3),(bind $4 $6))]}
 
 Scheme : TermVar                               {[ArgNameTerm (string2Name $1)]}
+       | ProofVar                              {[ArgNameProof (string2Name $1)]}
        | Scheme TermVar                    {$1 ++ [ArgNameTerm ( string2Name $2)] }
        | Scheme ProofVar                    {$1 ++ [ArgNameProof ( string2Name $2)] }
 
