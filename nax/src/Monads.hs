@@ -63,6 +63,7 @@ handleP p m (FIO x) f = FIO w
                           else return(Fail loc n k s)
                    ok -> return(ok)}
 
+handleS :: FIO a -> (SourcePos -> String -> FIO a) -> FIO a
 handleS comp f = handleP (const True) 100 comp f
 
 handle = handleP (\ _ -> True)

@@ -16,17 +16,22 @@ import Data.List(groupBy)
 
 import Data.Char(digitToInt,isUpper)
 
+import Control.Monad.State
+
 -- These are for defining parsers
-import Text.ParserCombinators.Parsec  
-import Text.ParserCombinators.Parsec.Language(javaStyle,haskellStyle)
-import Text.ParserCombinators.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
-import Language.Trellys.LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
-                   -- and adds layout rule parsing capability
+import Text.Parsec hiding (State)
+import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
+-- Replaces Text.ParserCombinators.Parsec.Token
+import qualified Language.Trellys.LayoutToken as Token
+
 import Debug.Trace
 -----------------------------------------------
 -- running parsers
 
-parse1 file x s = runParser (whiteSp >> x) initState file s
+runMParser parser parserState name tokens stateState =
+  evalState (runParserT parser parserState name tokens) stateState
+
+parse1 file x s = runMParser (whiteSp >> x) initColumns file s initState
 
 parseWithName file x s =
   case parse1 file x s of
@@ -37,8 +42,6 @@ parse2 x s = parseWithName "keyboard input" x s
 
 parse3 p s = putStrLn (show state) >> return object
   where (object,state) = parse2 (do { x <- p; st <- getState; return(x,st)}) s
-
-parseState p = (do { x <- p; (state,_) <- getState; return(x,state)})
     
 parseString x s =
   case parse1 s x s of
@@ -56,7 +59,7 @@ parseFile parser file =
   do {  possible <- System.IO.Error.try (readFile file)
      ; case possible of
          Right contents -> 
-            case runParser (whiteSp >> parser) initState file contents of
+            case parse1 file parser contents of
               Right ans -> return ans
               Left message -> error(show message)
          Left err -> error(show err) }
@@ -64,46 +67,76 @@ parseFile parser file =
 --------------------------------------------         
 -- Internal state and the type of parsers
 
-type InternalState = (([(String, Typ)]   -- Map of a name of a TyCon and the TyCon (which includes its kind)
-                      ,[(Name,Kind)])    -- Map of a TyVar to its kind
-                     ,[Column]           -- column info for layout. This is fixed by "makeTokenParser" 
-                     )
-initState = ((predefinedTyCon,[]),[])
+type InternalState = ([(String, Typ)]   -- Map of a name of a TyCon and the TyCon (which includes its kind)
+                     ,[(Name,Kind)])    -- Map of a TyVar to its kind
+
+initState = (predefinedTyCon,[])
+initColumns = []
+
 -- use (updateState,setState,getState) to access state
 
 traceP p = do { ((c,vs),_) <- getState; ans <- p; ((d,us),_) <- getState
               ; trace ("In  "++show c++"\nOut "++show d) (return ans)}          
   
+type MParser a = ParsecT
+                    String                -- The input is a sequence of Char
+                    [Column]              -- The internal state for Layout tabs
+                    (State InternalState) -- The other internal state: type and kind mappings
+                    a                     -- the type of the object being parsed
 
-type MParser a = GenParser Char InternalState a
-
-lbStyle = haskellStyle{reservedNames = 
-                         ["if","then","else","case","of","let","in"
-                         ,"data","gadt","synonym"
-                         ,"mcata","mhist","mprim","msfcata","msfprim","where","with","Mu","In","forall","deriving"
-                         ]
-                      ,identStart = lower
-                      }
+-- Based on zombie-trellys/src/Language/Trellys/Parser.hs:
+--
+-- Based on Parsec's haskellStyle (which we can not use directly since
+-- Parsec gives it a too specific type).
+-- lbStyle :: (Stream s m Char, Monad m) => Token.GenLanguageDef s u m
+lbStyle = Token.LanguageDef
+                { Token.commentStart   = "{-"
+                , Token.commentEnd     = "-}"
+                , Token.commentLine    = "--"
+                , Token.nestedComments = True
+--                , Token.identStart     = letter
+                , Token.identStart     = lower
+                , Token.identLetter    = alphaNum <|> oneOf "_'"
+                , Token.opStart	       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.caseSensitive  = True
+                , Token.reservedOpNames =
+                  ["!","?","\\",":",".", "<", "=", "+", "-", "^", "()", "_", "@"]
+                , Token.reservedNames  = 
+                  ["if","then","else"
+                  ,"case","of"
+                  ,"let","in"
+                  ,"data"
+                  ,"gadt"
+                  ,"synonym"
+                  ,"mcata","mhist","mprim","msfcata","msfprim"
+                  ,"where"
+                  ,"with"
+                  ,"Mu","In"
+                  ,"forall"
+                  ,"deriving"
+                  ]
+                }
                       
-(funlog,LayFun layout) = makeTokenParser lbStyle "{" ";" "}"
+(funlog,Token.LayFun layout) = Token.makeTokenParser lbStyle "{" ";" "}"
 
-lexemE p    = lexeme funlog p
+lexemE p    = Token.lexeme funlog p
 arrow       = lexemE(string "->")
 larrow      = lexemE(string "<-")
 dot         = lexemE(char '.')
-under       = char '_'
+-- under       = char '_'
 parenS p    = between (symboL "(") (symboL ")") p
 braceS p    = between (symboL "{") (symboL "}") p
 bracketS p  = between (symboL "[") (symboL "]") p
-symboL      = symbol funlog
+symboL      = Token.symbol funlog
 natural     = lexemE(number 10 digit)
-whiteSp     = whiteSpace funlog
-ident       = identifier funlog
-sym         = symbol funlog
-keyword     = reserved funlog
-commA       = comma funlog
-resOp       = reservedOp funlog
-oper        = operator funlog
+whiteSp     = Token.whiteSpace funlog
+ident       = Token.identifier funlog
+sym         = Token.symbol funlog
+keyword     = Token.reserved funlog
+commA       = Token.comma funlog
+resOp       = Token.reservedOp funlog
+oper        = Token.operator funlog
 exactly s   = do { t <- ident; if s==t then return s else unexpected("Not the exact name: "++show s)}
 
 number ::  Integer -> MParser Char -> MParser Integer
@@ -116,9 +149,9 @@ number base baseDigit
 -------------------- Names and identifiers --------------------------
 
 -- conName :: MParser String
-conName = lexeme funlog (try construct)
+conName = Token.lexeme funlog (try construct)
   where construct = do{ c <- upper
-                      ; cs <- many (identLetter lbStyle)
+                      ; cs <- many (Token.identLetter lbStyle)
                       ; if (c:cs) == "Mu" 
                            then fail "Mu"
                            else return(c:cs)}
@@ -166,16 +199,16 @@ signed p = do { f <- sign; x <- p; return(f x) }
   where sign = (char '~' >> return negate) <|>
                (return id)   
                
-chrLit  = do{ c <- charLiteral funlog; return (LChar c) }
-doubleLit = do { n <- (signed (float funlog)); return(LDouble n)}
+chrLit  = do{ c <- Token.charLiteral funlog; return (LChar c) }
+doubleLit = do { n <- (signed (Token.float funlog)); return(LDouble n)}
 intLit = do{ c <- (signed Parser.natural); return (LInt (fromInteger c)) }
 strLit = do{ pos <- getPosition
-           ; s <- stringLiteral funlog
+           ; s <- Token.stringLiteral funlog
            ; let f c = ELit pos (LChar c)
            ; return(listExp (map f s))}
  
 literal :: MParser Literal
-literal = lexeme funlog
+literal = Token.lexeme funlog
    (try doubleLit)  <|>  -- float before natP or 123.45 leaves the .45
    (try intLit)     <|>  -- try or a "-" always expects digit, and won't fail, "->"
    -- (try strLit)     <|>
@@ -231,10 +264,10 @@ pattern = try infixPattern
 -- Defining Infix and Prefix operators
 -- See  "opList"  in Syntax.hs
 
-operatorTable :: [[Operator Char InternalState Expr]]
+-- operatorTable :: [[Operator Char InternalState Expr]]
 operatorTable = opList prefix infiX    
 
-prefix :: String -> Operator Char InternalState Expr
+-- prefix :: String -> Operator Char InternalState Expr
 prefix name = Prefix(do{ try (resOp name); exp2exp name })   
   where -- exp2exp:: String -> Expr -> Expr
         exp2exp "~" = return neg
@@ -520,7 +553,7 @@ dec = do { pos <- getPosition
 	    ((PCon c []):ps) ->  do { b<- expr; return(Def pos (PCon c ps) b)} }
 
 program = do { whiteSp
-             ; (ds,(tyConMap,vsMap)) <- parseState (layoutDecl (return ()))
+             ; ds <- layoutDecl (return ())
              ; eof
              ; return (Prog ds)}
 
@@ -555,14 +588,14 @@ typPat =
      ; return(toPat ty)}
 
 simpleT p = muT p <|> tycon <|> typevariable <|> special <|> parenS inside  <|> fmap TyLift p
-  where inside = fmap pairs (sepBy (typT p) (comma funlog))        
+  where inside = fmap pairs (sepBy (typT p) (Token.comma funlog))        
         pairs [] = tunit
         pairs [x] = x
         pairs (x:xs) = TyTuple Star (x:xs) -- pairT x (pairs xs)
         special = -- (try (sym "(,)") >> return tpair) <|>
                   -- (try (sym "(->)") >> return tarr) <|>
                   -- (try (sym "[]") >> return tlist)  <|>
-                  (fmap listT (brackets funlog (typT p)))
+                  (fmap listT (Token.brackets funlog (typT p)))
                                        
 -- typP :: MParser Typ
 

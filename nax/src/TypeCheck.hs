@@ -335,7 +335,7 @@ wellFormedType pos mess frag typ = do { x <- prune typ
         f (TyLift (Checked term)) = fail (unlines (("\nError *******\nChecked term: "++show term++", in wellFormedType."):mess))
         f (TyLift (Pattern term)) = fail (unlines (("\nError *******\nPattern term: "++show term++", in wellFormedType."):mess))
         f (TyLift (Parsed term)) = 
-          do { (rho,term2) <- handleS (inferExpT frag term) (\ s -> fail (unlines(s:mess)))
+          do { (rho,term2) <- handleS (inferExpT frag term) (\ s -> fail (unlines(show s:mess)))
              ; case rho of
                  Tau t -> return(TyLift (Checked term2),LiftK t)
                  Rarr x y -> fail (unlines (("\nLifted term in type: "++show term++", is a function, "++show rho++", not data"):mess)) }
@@ -484,7 +484,7 @@ inferBs env k (p:ps) =
 ---------------------------------
 
 handleM comp s = handleS comp f
-  where f message = fail(message ++ s)
+  where f message = fail(show message ++ s)
 
 applyTyp exp [] = exp
 applyTyp exp ts = AppTyp exp ts
