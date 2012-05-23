@@ -1,0 +1,403 @@
+-- defined in prelude
+
+-- data N r = Zero | Succ r deriving  fixpoint Nat
+-- data L a r = Nil | Cons a r deriving fixpoint List       
+-- data Bool = False | True
+-- data Either a b = Left a | Right b
+-- data Maybe a = Nothing | Just a
+
+
+three = [1,2,3]
+
+f3 (Just x) = x
+f3 Nothing = 0
+
+
+
+-- lists -----------------------------------------
+
+len y = 
+   mcata y with
+     len Nil = 0
+     len (Cons x xs) = 1 + len xs
+
+  
+head x = 
+  mcata x with
+    head Nil = 0
+    head (Cons y ys) = y
+
+safeHead x =
+  mcata x with
+    head Nil = Nothing
+    head (Cons x xs) = Just x
+
+tail x = 
+  mprim x with
+    tail cast Nil = []
+    tail cast (Cons y ys) = (cast ys )
+    
+append xs ys =
+  mcata xs with
+    cat Nil = ys
+    cat (Cons z zs) = cons z (cat zs)
+
+cat xs = 
+   mcata xs with
+     cat  Nil = []
+     cat  (Cons str xs) = append str (cat xs)
+     
+     
+      
+-- Natural numbers to Int -------------------------------------------
+
+nat2int x =
+  mcata x with
+    f Zero = 0
+    f (Succ n) = 1 + f n
+
+fact x =
+  mprim x with
+    fact cast Zero = 1
+    fact cast (Succ n) = (1 + nat2int(cast n)) * fact n
+                      
+fibonocci x =
+  mhist x with
+    fib out Zero = 1
+    fib out (Succ n) = 
+       case (out n) of
+         Zero -> 1
+         (Succ m) -> fib n + fib m    
+
+-- Natural numbers ----------------------------------------
+
+plus x y = mcata x with
+  pl Zero = y
+  pl (Succ m) = succ(pl m)
+  
+times x y = mcata x with
+  mult Zero = zero
+  mult (Succ m) = plus y (mult m)
+  
+factN x =
+  mprim x with
+    fact cast Zero = succ zero
+    fact cast (Succ n) = times (succ (cast n)) (fact n)
+    
+                                           
+iterateSub out x = mcata x with
+  sub2 Zero     n = n
+  sub2 (Succ m) n = case out n of
+                     Zero       -> n
+                     (Succ n2)  -> sub2 m n2
+                            
+
+divide x m = mhist x with
+  divByM out Zero      = zero
+  divByM out (Succ n)  = succ(divByM (iterateSub out m n))
+
+ -- HOAS ---------------------------------------
+
+-- data Lam x = App x x | Abs (x -> x)
+
+data Lam: * -> * where
+  App: r -> r -> Lam r
+  Abs: (r -> r) -> Lam r
+
+app x y = In[*] (App x y)
+abs f = In[*](Abs f)
+
+apply = abs (\ f -> abs (\ x -> app f x))
+
+new n = cat["x",show n]
+k x y = x
+
+-- showL: Mu[*] Lam -> Int -> String
+showL x = 
+  (msfcata x with 
+    sh inv (App x y) m = cat ["(",sh x m," ",sh y m,")"]
+    sh inv (Abs f) m = 
+       cat["(fn ",new m," => ",sh (f (inv (k (new m)))) (m+1),")"]) 0
+
+----------------------------------------------------
+-- example with polymorphic kinds
+data Seq a r s = 
+  Con (r a) (s a)
+
+-- polymorphic constant       
+empty = []      
+
+
+
+----------------------------------------------
+data Tag = E | O
+
+flip E = O
+flip O = E
+    
+data P: (Tag -> Nat -> *) -> Tag -> Nat -> * where
+  Base : P r {E} {In[*] Zero} 
+  StepO : r {O} {i} -> P r {E} {`succ i}
+  StepE : r {E} {i} -> P r {O} {`succ i}
+    deriving fixpoint Proof
+
+--base = In[Tag -> Nat -> *] Base
+--stepO x = In[Tag -> Nat -> *] (StepO x)
+--stepE x = In[Tag -> Nat -> *] (StepE x)
+
+p1 = stepE base
+p2 = stepO p1
+
+synonym Even x = Mu[Tag -> Nat -> *] P {E} {x}
+synonym Odd x = Mu[Tag -> Nat -> *] P {O} {x}
+
+
+flop x = 
+   -- mcata {{t} {i} . Mu[Tag -> Nat -> *] P {`flip t} {In[*] (Succ i)}} x 
+   mcata {{t} {i} . Proof {`flip t} {`succ i}} x    
+     with  f Base = stepE base
+           f (StepO p) = (stepE(f p))
+           f (StepE p) = stepO(f p)
+
+
+-----------------------------------------------------------
+-- Vectors or length indexed lists
+
+data V: * -> (Nat -> *) -> Nat -> * where
+  Vnil: V a r {`zero}
+  Vcons: a -> r {n} -> V a r {`succ n}
+    deriving fixpoint Vector
+
+v2 = vcons 3 (vcons 5 vnil)
+{-    
+appendV xs = mcata{ {i} . Vector a {j} -> Vector a {`plus i j}} xs
+  with app Vnil ys = ys
+       app (Vcons x xs) ys = vcons x (app xs ys)
+-}
+
+-- vnil = In[Nat -> *] Vnil 
+-- vcons x xs = In[Nat -> *] (Vcons x xs)
+
+vlen x = mcata{ {i} . Int} x with
+  len Vnil = 0
+  len (Vcons x xs) = 1 + len xs
+  
+ 
+vtail x = 
+  mprim{ {`succ i} . Vector a {i}} x with
+    -- tail cast Vnil = unreachable
+    tail cast (Vcons y ys) = cast ys    
+
+polarity x = 
+  mcata { {n} . Either (Even {n}) (Odd {n})} x with
+    pol Vnil = Left base
+    pol (Vcons x xs) = 
+         case pol xs of
+           Left p -> Right(stepE p)
+           Right p -> Left(stepO p)
+
+-------------------------------------------------
+
+-- data Nest r a = Tip a | Fork (r (a,a)) deriving fixpoint PowerTree
+
+data Nest: (* -> *) -> * -> * where
+   Tip: a -> Nest r a
+   Fork: r(a,a) -> Nest r a
+ deriving fixpoint PowerTree
+ 
+ 
+tree1 = tip 3
+tree2 = fork(tip(2,5))
+tree3 = fork(fork(tip((4,7),(0,2))))
+
+sumTree x = (mcata { a . (a -> Int) -> Int} x with
+  sum (Tip x) f = f x
+  sum (Fork x) f = sum x (\ (a,b) -> f a + f b)) (\ x -> x)
+
+
+-------------------------------------------------
+
+data Equal: a -> a -> * where
+  Refl: Equal x x
+
+{-  
+trans x = case{a b . Equal b c -> Equal a c} x of 
+            Refl -> \ y -> case
+-}
+
+-------------------------------------------------
+
+dec x = 
+  mprim x with
+    pred cast Zero = zero
+    pred cast (Succ ys) = cast ys    
+    
+
+data F: (Nat -> *) -> Nat -> * where
+  Zf: F f {`succ n}
+  Sf: f {n} -> F f {`succ n}
+    deriving fixpoint Fin
+
+
+-- synonym Fin n = Mu[Nat -> *] F {n}
+
+one = In[Nat -> *] Zf
+bump x = In[Nat -> *] (Sf x)
+
+
+data LamF: (Nat -> *) -> Nat -> * where
+  Var: Fin {n} -> LamF f {n}
+  App: f {n} -> f {n} -> LamF f {n}
+  Abs: f{`succ n} -> LamF f {n}
+    deriving fixpoint Lam
+
+-- synonym Lam n = Mu [Nat -> *] LamF {n}
+    
+-- var x = In[Nat -> *] (Var x) 
+-- app x y = In[Nat -> *] (App x y)
+-- abs x = In[Nat -> *] (Abs x)
+
+    
+    
+hom f x = mcata {{n} . (Fin{n} -> Fin{f n}) -> Lam{f n}} x with
+   h (Var i) f = var (f i)
+   h (App x y) f = app(h x f)(h y f)
+  -- h (Abs x) f = abs(h x (\ n -> s (f n)))
+    
+  
+ ------------------------------------------
+
+synonym String = List Char
+
+data Name:  Int -> * where
+  X1: Name {1}
+  X2: Name {2}
+  X3: Name {3}
+
+data TypeF: * -> * where
+   NatT: TypeF r
+   ArrT: r -> r -> TypeF r
+     deriving fixpoint Type
+     
+data EnvF r =
+  Closed | Ext Int Type r
+    deriving fixpoint Env
+
+data Val: (Type -> *) -> Type -> * where
+  Vint: Int -> Val r {`natT}
+  Vfun: (r {a} -> r {b}) -> Val r {`arrT a b}
+   deriving fixpoint Value
+       
+add3 x = msfcata{ {`natT} . Value {`natT}} x 
+   with rcall inv (Vint n) = (vint(n+3))
+              
+data Rec: (Env -> *) -> Env -> * where
+  Rnil: Rec r {`closed}
+  Rcons: Name {i} -> Value {t} -> r {env} -> Rec r {`ext i t env}
+    deriving fixpoint Record    
+
+
+data ExpF r 
+  = ZeroF 
+  | SuccF r
+  | IF r r r
+  | App r r
+  | Var Int
+  | Shift r
+  | Lam Int r
+     deriving fixpoint Exp
+     
+data J : (Exp -> Env -> Type -> *) -> Exp -> Env -> Type -> * where  
+  ZeroJ: J r {In[*] ZeroF} {e} {`natT}
+  SuccJ: r {x} {e} {`natT } -> J r { `succF x} {e} {`natT}
+  VarJ: Name {i} -> J r {`var i} {`ext i t e} {t}
+  IFJ: r {x1} {e} {`natT} ->
+       r {x2} {e} {t} ->
+       r {x3} {e} {t} ->
+       J r {`iF x1 x2 x3} {e} {t}
+  AppJ: r {x1} {e} {`arrT d rng} ->
+        r {x2} {e} {d} ->
+        J r {`app x1 x2} {e} {rng}
+  ShiftJ: r {x} {e} {t} -> J r {`shift x} {`ext n1 t1 e} {t}
+  LamJ: Name {i} -> 
+        r {body} {`ext i t1 e} {t2} ->
+        J r {`lam i body} {e} {`arrT t1 t2}
+  
+    deriving fixpoint Typing
+    
+term = appJ (lamJ X1 (succJ(varJ X1))) zeroJ 
+
+const x y = x
+
+test x = if x==5 then x else x
+
+
+
+-- applyV x = msfprim{ {`arrT a b} . Value {a} -> Value {b}} x
+--   with rcall inv cast (Vfun g) z = checkT g
+
+
+
+
+
+getfirst env = mcata{ {`ext i t env} . Value {t} } env
+  with get (Rcons nm v e) = v
+gettail env = mprim { {`ext i t env} . Record {env} } env
+  with get cast (Rcons nm v e) = cast e
+
+eval x = mcata{ {exp} {env} {t} . Record {env} -> Value {t}} x
+   with eval ZeroJ env = vint 0
+        eval (SuccJ x) env = 
+             mcata{{natT} . Value {natT}} (eval x env)
+               with f (Vint n) = vint (n+1)
+                     -- f (Vfun _) = unreachable
+        eval (VarJ n) env = getfirst env
+       -- eval (AppJ f x) env = applyV (eval f env) (eval x env)
+        eval (LamJ n body) env = vfun(\ v -> eval body (rcons n v env))
+        eval (ShiftJ x) env = eval x (gettail env)
+        
+        
+   
+-- Value
+-- eval:: Typing exp env t -> Record env -> Value t
+-- synonym Typing term env t = (Mu [Exp -> Env -> Type -> *] J) term env t
+
+-- zeroJ = In[Exp -> Env -> Type -> *] ZeroJ
+-- succJ  x = In[Exp -> Env -> Type -> *] (SuccJ x)
+-- varJ n = In[Exp -> Env -> Type -> *] (VarJ n)
+-- ifJ x y z = In[Exp -> Env -> Type -> *] (IfJ x y z)
+-- appJ x y = In[Exp -> Env -> Type -> *] (AppJ x y)
+-- shiftJ x = In[Exp -> Env -> Type -> *] (ShiftJ x)
+-- lamJ n x = In[Exp -> Env -> Type -> *] (LamJ n x)
+
+----------------------------------------------
+
+data SubstF: (Env -> Env -> *) -> Env -> Env -> * where
+  Id: SubstF r {env} {env}
+  Bnd: Name {a} -> 
+       Typing {x} {r2} {ttt} -> 
+       -- (Mu[Exp -> Env -> Type -> *] J) {x} {r2} {ttt} ->
+       r {r1} {r2} ->
+       SubstF r {`ext a ttt r1} {r2}
+  Push: r {r1} {r2} -> SubstF r {`ext a t r1} {`ext a t r2} 
+    deriving fixpoint Subst
+    
+-- synonym Subst x y = (Mu[Env -> Env -> *] SubstF) x y
+
+-- id = In[Env -> Env -> *] Id
+-- bnd nm term sub = In[Env -> Env -> *] (Bnd nm term sub)
+-- push sub = In[Env -> Env -> *] (Push sub)
+ 
+----------------------------------------------------------------
+-- causes an inifinite loop, looks as if "inv" and "cast"
+-- together are problematic
+
+data Y : * -> * where
+  MakeY: (r -> r) -> Y r
+
+{-  
+bad y = msfprim y with
+          inv cast (MakeY f) = cast(f (f (inv y)))
+          
+worse x =  bad (In * (MakeY bad))          
+-}
