@@ -22,7 +22,7 @@ import Data.Char(digitToInt,isUpper)
 import Text.ParserCombinators.Parsec  
 import Text.ParserCombinators.Parsec.Language(javaStyle,haskellStyle)
 import Text.ParserCombinators.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
-import LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
+import Language.Trellys.LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
                    -- and adds layout rule parsing capability
                    
 import Monads(FIO(..),handle,runFIO,fio,nextInteger,writeln

@@ -20,7 +20,7 @@ import Data.Char(digitToInt,isUpper)
 import Text.ParserCombinators.Parsec  
 import Text.ParserCombinators.Parsec.Language(javaStyle,haskellStyle)
 import Text.ParserCombinators.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
-import LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
+import Language.Trellys.LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
                    -- and adds layout rule parsing capability
 import Debug.Trace
 -----------------------------------------------
@@ -47,10 +47,10 @@ parseString x s =
 
 -- A special parser-transformer for seeing what input is left
 
-observeSuffix x = 
-  (do { a <- x; (col,tabs,left) <- getInfo; return(a,col,tabs,take 20 left)})
+-- observeSuffix x = 
+--   (do { a <- x; (col,tabs,left) <- getInfo; return(a,col,tabs,take 20 left)})
 
-ps x s = parse2 (observeSuffix x) s
+-- ps x s = parse2 (observeSuffix x) s
 
 parseFile parser file =
   do {  possible <- System.IO.Error.try (readFile file)
