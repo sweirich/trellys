@@ -29,8 +29,8 @@ import Data.Char(isSpace)
 
 -------------------------------------------------------------------------
 
-go = run "tests/data.nax"
-work = run "tests/work.nax"
+go = run "../test/data.nax"
+work = run "../test/work.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env
@@ -75,7 +75,7 @@ loadProgram pi (Prog ds) =
      ; let envs = (ce{ppinfo = pi},re)
      ; ref <- newRef envs
      ; let errF message = do { writeln message; readRef ref }
-     ; handle  5 (checkThenEvalOneAtATime ref ds envs) errF
+     ; handle  5 (checkThenEvalOneAtATime ref ds envs) (const errF)
      ; readRef ref }
 
 
@@ -263,7 +263,9 @@ instance Comp IO where
   next = nextinteger
   mkFun n f k = k(VFunM n f)
   
-
+main = do
+  work
+  go
  
 {-
 testdata = run "AlgData.funlog"
