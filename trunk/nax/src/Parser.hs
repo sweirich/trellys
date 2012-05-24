@@ -21,7 +21,7 @@ import Control.Monad.State
 -- These are for defining parsers
 import Text.Parsec hiding (State)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
--- Replaces Text.ParserCombinators.Parsec.Token
+-- Replaces Text.Parsec.Token
 import qualified Language.Trellys.LayoutToken as Token
 
 import Debug.Trace

@@ -8,7 +8,7 @@ import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 
 import qualified Text.PrettyPrint.HughesPJ as PP
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
-import Text.ParserCombinators.Parsec.Expr(Assoc(..))
+import Text.Parsec.Expr(Assoc(..))
 
 import Names
 import BaseTypes

@@ -18,10 +18,10 @@ import Data.List(groupBy)
 import Data.Char(digitToInt,isUpper)
 
 -- These are for defining parsers
-import Text.ParserCombinators.Parsec  
-import Text.ParserCombinators.Parsec.Language(javaStyle,haskellStyle)
-import Text.ParserCombinators.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
-import Language.Trellys.LayoutToken -- Replaces Text.ParserCombinators.Parsec.Token
+import Text.Parsec  
+import Text.Parsec.Language(javaStyle,haskellStyle)
+import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
+import Language.Trellys.LayoutToken -- Replaces Text.Parsec.Token
                    -- and adds layout rule parsing capability
 import Debug.Trace
 -----------------------------------------------

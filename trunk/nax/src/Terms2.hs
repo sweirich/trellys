@@ -1,6 +1,6 @@
 module Terms2 where 
 
-import Text.ParserCombinators.Parsec.Pos(SourcePos,newPos)
+import Text.Parsec.Pos(SourcePos,newPos)
 
 
 import qualified Text.PrettyPrint.HughesPJ as PP
