@@ -2,7 +2,7 @@ module Monads where
 
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import System.IO(fixIO,hClose,hFlush,stdout)
-import System.IO.Error(try)
+import qualified System.IO.Error
 import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
 
@@ -101,10 +101,10 @@ fixFIO f = FIO(fixIO (unFIO . unRight f))
     -- unreachable because of lazy ~pattern
 
 fio :: IO x -> FIO x
-fio x = FIO(do { result <- System.IO.Error.try x 
-               ; case result of
-                  Left err -> return(Fail noPos 0 "IO error" ("\n"++show err))
-                  Right ans ->return(Ok ans)})
+fio x = FIO $ do result <- System.IO.Error.tryIOError x 
+                 case result of
+                   Left err  -> return (Fail noPos 0 "IO error" ("\n"++show err))
+                   Right ans -> return (Ok ans)
 
 write = fio . putStr
 writeln = fio . putStrLn
