@@ -235,7 +235,9 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
        f (exp@(CSP (nm,i,u))) (CSP (n,j,v)) | i==j = return exp
        f s t = do { s2 <- zonkExp s
                   ; t2 <- zonkExp t
-                  ; let errF _ s = fail("While comparing the normal forms of\n   "++show s2++"\nand\n   "++show t2++"\n"++s)
+                  ; let errF srcPos s =
+                          fail (show srcPos ++ ": While comparing the normal forms of\n   "
+                          ++show s2++"\nand\n   "++show t2++"\n"++s)
                   ; handleS (compareTerms loc message s2 t2) errF
                   ; return(ContextHole s2 t2)}
                  
