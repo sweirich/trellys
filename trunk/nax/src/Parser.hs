@@ -56,13 +56,13 @@ parseString x s =
 -- ps x s = parse2 (observeSuffix x) s
 
 parseFile parser file =
-  do {  possible <- System.IO.Error.try (readFile file)
-     ; case possible of
+    do possible <- System.IO.Error.tryIOError (readFile file)
+       case possible of
          Right contents -> 
             case parse1 file parser contents of
               Right ans -> return ans
               Left message -> error(show message)
-         Left err -> error(show err) }
+         Left err -> error(show err)
 
 --------------------------------------------         
 -- Internal state and the type of parsers
