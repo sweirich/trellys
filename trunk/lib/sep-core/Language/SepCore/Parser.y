@@ -101,6 +101,7 @@ Datatypedecl : data TermVar "::" Specialterm where Dataconstrs            {Datat
 Specialterm : Type int     {Empty}
             | type int     {Empty}
             | Pi TermVar ':' Term '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
+            | Pi '(' TermVar ':' Term ')' '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $5)) $8)}
 
 Dataconstrs : TermVar "::" Term                           {[((ArgNameTerm (string2Name $1)), $3)]}
 |  Dataconstrs '|' TermVar "::" Term                      {$1++[((ArgNameTerm (string2Name $3)), $5)]}
@@ -156,9 +157,7 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 
 | '(' Predicate Predicate ')'                          {PredicateApplication $2 (ArgPredicate $3)}
 
-| Eq Term Term                                         {Equal $2 $3}
-
-| eq Term Term                                         {Equal $2 $3}
+|  Term '=' Term                                       {Equal $1 $3}
 
 | '!' Term                                             {Terminate $2}
 
@@ -208,17 +207,37 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | pi ProofVar ':' Stage Predicate '.' Term   {Pi (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
 
+     | Pi '(' PredVar ':' Stage LogicalKind ')' '.' Term  {Pi (bind (ArgNamePredicate (string2Name $3), Embed (ArgClassLogicalKind $6)) $9) $5}
+   
+     | Pi '(' TermVar ':' Stage Term ')' '.' Term        {Pi (bind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $6)) $9) $5}
+
+     | Pi '('ProofVar ':' Stage Predicate')' '.' Term   {Pi (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
+
+     | pi '(' PredVar ':' Stage LogicalKind')' '.' Term {Pi (bind (ArgNamePredicate (string2Name $3), Embed (ArgClassLogicalKind $6)) $9) $5}
+   
+     | pi '(' TermVar ':' Stage Term')' '.' Term         {Pi (bind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $6)) $9) $5}
+
+     | pi '(' ProofVar ':' Stage Predicate')' '.' Term  {Pi (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
+
      | '(' Stage Term Term ')'                    {TermApplication $3 (ArgTerm $4) $2}
 
      | '(' Stage Term Proof ')'                   {TermApplication $3 (ArgProof $4) $2}
 
      | '(' Stage Term Predicate ')'               {TermApplication $3 (ArgPredicate $4) $2}
 
+     | SpineForm                                  {$1}
+
      | '\\' TermVar ':' Stage Term '.' Term        {TermLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
  
      | '\\' ProofVar ':' Stage Predicate '.' Term  {TermLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
 
      | '\\' PredVar ':' Stage LogicalKind '.' Term {TermLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
+
+     | '\\''(' TermVar ':' Stage Term ')' '.' Term        {TermLambda (bind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $6)) $9) $5}
+ 
+     | '\\''(' ProofVar ':' Stage Predicate ')''.' Term  {TermLambda (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
+
+     | '\\' '(' PredVar ':' Stage LogicalKind ')' '.' Term {TermLambda (bind (ArgNamePredicate (string2Name $3), Embed (ArgClassLogicalKind $6)) $9) $5}
  
      | abort Term      {Abort $2}
 
@@ -252,7 +271,14 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | Rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | '(' Term ')'    {$2}
+     | '(' Term ')' {$2}
+
+SpineForm : Term Term      {TermApplication $1 $2 Plus}
+          
+          | Term SpineForm {TermApplication $1 $2 Plus}
+ 
+          | '(' SpineForm ')' {$2}
+
 
 TermBranches : TermVar "->" Term                    {[(ArgNameTerm (string2Name $1), (bind [] $3))]}
              | TermVar Scheme "->" Term                    {[(ArgNameTerm (string2Name $1), (bind $2 $4))]}
