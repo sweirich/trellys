@@ -74,8 +74,9 @@ loadProgram pi (Prog ds) =
   do { (ce,re) <- initialEnvs
      ; let envs = (ce{ppinfo = pi},re)
      ; ref <- newRef envs
-     ; let errF message = do { writeln message; readRef ref }
-     ; handle  5 (checkThenEvalOneAtATime ref ds envs) (const errF)
+     -- XXX: why the 'readRef ref' ???
+     ; let errF srcPos message = do { writeln $ show srcPos ++ ":" ++ message; readRef ref }
+     ; handle 5 (checkThenEvalOneAtATime ref ds envs) errF
      ; readRef ref }
 
 

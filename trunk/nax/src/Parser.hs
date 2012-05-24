@@ -264,10 +264,10 @@ pattern = try infixPattern
 -- Defining Infix and Prefix operators
 -- See  "opList"  in Syntax.hs
 
--- operatorTable :: [[Operator Char InternalState Expr]]
+operatorTable :: [[Operator String [Column] (State InternalState) Expr]]
 operatorTable = opList prefix infiX    
 
--- prefix :: String -> Operator Char InternalState Expr
+prefix :: String -> Operator String [Column] (State InternalState) Expr
 prefix name = Prefix(do{ try (resOp name); exp2exp name })   
   where -- exp2exp:: String -> Expr -> Expr
         exp2exp "~" = return neg

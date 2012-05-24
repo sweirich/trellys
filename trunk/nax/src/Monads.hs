@@ -52,6 +52,12 @@ failFIO loc n s = FIO(return(Fail loc n "" s))
 
 failFIOwith loc n failureTag s = FIO(return(Fail loc n failureTag s))
 
+-- XXX: what are these handlers and what do their names mean ???
+--
+-- This one appears to take a (P)redicate 'p' and an error handler 'f'
+-- which is called if the computation 'FIO x' fails with an error
+-- level less than 'm' and an error type 'k' for which the predicate
+-- 'p' holds.
 handleP :: (String -> Bool) -> Int -> FIO a ->
            (SourcePos -> String -> FIO a) -> FIO a
 handleP p m (FIO x) f = FIO w
