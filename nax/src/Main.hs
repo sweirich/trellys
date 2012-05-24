@@ -11,7 +11,7 @@ import Data.IORef(IORef)
 
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
-import Text.ParserCombinators.Parsec.Pos(SourcePos,newPos)
+import Text.Parsec.Pos(SourcePos,newPos)
 
 import UniqInteger(resetnext,nextinteger)
 import Names 

@@ -4,7 +4,7 @@ import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import System.IO(fixIO,hClose,hFlush,stdout)
 import System.IO.Error(try)
 import System.IO.Unsafe(unsafePerformIO)
-import Text.ParserCombinators.Parsec.Pos(SourcePos,newPos)
+import Text.Parsec.Pos(SourcePos,newPos)
 
 import Names(SourcePos,noPos)
 

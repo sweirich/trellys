@@ -22,7 +22,7 @@ import Control.Monad(foldM)
 import qualified Data.Map as DM
 import Data.Map (fromListWith)
 import Data.List(elemIndex)
-import Text.ParserCombinators.Parsec.Pos(SourcePos,newPos)
+import Text.Parsec.Pos(SourcePos,newPos)
 
 
 ----------------------------------

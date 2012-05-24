@@ -4,7 +4,7 @@ module Names(Name(..),Loc(..),SourcePos,newPos,name,bestPos
             , nameSupply,pre,strings) where
 
 import Data.Char(isSpace)
-import Text.ParserCombinators.Parsec.Pos(SourcePos,newPos,sourceLine,sourceColumn,sourceName)
+import Text.Parsec.Pos(SourcePos,newPos,sourceLine,sourceColumn,sourceName)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
 
 dropWhite xs = takeWhile (not . isSpace) (dropWhile isSpace xs)
