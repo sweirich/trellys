@@ -21,7 +21,7 @@ $alpha = [a-zA-Z]
                 | let | in | In | rec | Rec
 
 @reservedSymbols = \\ | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
-                  | "." | "|" | "->" | "="
+                  | "." | "|" | "->" | "=" | "[" | "]"
 tokens :-
 -- Notice: the order of the following productions actually matters. Becase there is
 -- a potential overlapping between termvar and reservedwords. So we need to scan reservedwords 
@@ -118,7 +118,8 @@ data Token =
        | TokenEquiv
 
        | TokenRec
-
+       | TokenSQL
+       | TokenSQR
   deriving (Show, Eq)
 
 data Lexeme = L AlexPosn Token String
@@ -195,6 +196,8 @@ lexReservedS a@(_,_,input) len = case take len input of
                                     "|" -> mkL TokenBar a len
                                     "->" -> mkL TokenArrow a len
                                     "=" -> mkL TokenEquiv a len
+                                    "[" -> mkL TokenSQL a len
+                                    "]" -> mkL TokenSQR a len
 
 
 getLineNum :: AlexPosn -> Int
