@@ -44,7 +44,7 @@ data Preddef = Preddef Predicate Predicate
              deriving(Show)
 
 data Tele = Empty 
-          | TCons (Rebind (ArgName, Embed ArgClass) Tele) 
+          | TCons (Rebind (ArgName,Stage,Embed ArgClass) Tele) 
           deriving (Show)
 
 data Datatypedecl = Datatypedecl Term (Bind Tele [(ArgName,Term)])    
