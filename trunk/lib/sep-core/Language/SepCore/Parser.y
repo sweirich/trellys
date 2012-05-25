@@ -59,6 +59,8 @@ import Unbound.LocallyNameless.Subst(substR1)
        ')'        {TokenBR}
        '{'        {TokenCBL}
        '}'        {TokenCBR}
+       '['        {TokenSQL}
+       ']'        {TokenSQR}
        "::"       {TokenDC}
        '+'        {TokenPlus }
        '-'        {TokenMinus}
@@ -81,22 +83,22 @@ Declaration : Logicdecl {DeclLogic $1}
             | Preddef {DeclPreddef $1}
             | Datatypedecl  {DeclData $1}
 
-Logicdecl : ProofVar "::" Predicate                  {Logicdecl (ProofVar (string2Name $1)) $3}
+Logicdecl : ProofVar "::" Predicate '.'                 {Logicdecl (ProofVar (string2Name $1)) $3}
 
-Proofdef : ProofVar ":=" Proof                       {Proofdef (ProofVar (string2Name $1)) $3} 
+Proofdef : ProofVar ":=" Proof '.'                      {Proofdef (ProofVar (string2Name $1)) $3} 
 
-Progdecl : TermVar "::" Term                         {Progdecl (TermVar (string2Name $1)) $3}
+Progdecl : TermVar "::" Term '.'                        {Progdecl (TermVar (string2Name $1)) $3}
 
-Progdef : TermVar ":=" Term                          {Progdef (TermVar (string2Name $1)) $3}
+Progdef : TermVar ":=" Term '.'                         {Progdef (TermVar (string2Name $1)) $3}
 
-Preddecl : PredVar "::" LogicalKind                  {Preddecl (PredicateVar (string2Name $1)) $3}
+Preddecl : PredVar "::" LogicalKind '.'                 {Preddecl (PredicateVar (string2Name $1)) $3}
 
-Preddef : PredVar ":=" Predicate                        {Preddef (PredicateVar (string2Name $1)) $3}
+Preddef : PredVar ":=" Predicate'.'                        {Preddef (PredicateVar (string2Name $1)) $3}
 
-Datatypedecl : data TermVar "::" Specialterm where Dataconstrs            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}
-             | data TermVar "::" Specialterm Where Dataconstrs            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
-             | Data TermVar "::" Specialterm where Dataconstrs            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
-             | Data TermVar "::" Specialterm Where Dataconstrs            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
+Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}
+             | data TermVar "::" Specialterm Where Dataconstrs '.'           {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
+             | Data TermVar "::" Specialterm where Dataconstrs '.'          {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
+             | Data TermVar "::" Specialterm Where Dataconstrs'.'       {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
 
 Specialterm : Type int     {Empty}
             | type int     {Empty}
@@ -189,7 +191,7 @@ Stage : '+'  {Plus}
       | '-'  {Minus}
 
 
-Term : TermVar   {TermVar (string2Name $1)}
+InnerTerm : TermVar   {TermVar (string2Name $1)}
    
      | type int  {Type $2}
 
@@ -219,14 +221,16 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | pi '(' ProofVar ':' Stage Predicate')' '.' Term  {Pi (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
 
+{-
      | '(' Stage Term Term ')'                    {TermApplication $3 (ArgTerm $4) $2}
 
      | '(' Stage Term Proof ')'                   {TermApplication $3 (ArgProof $4) $2}
 
      | '(' Stage Term Predicate ')'               {TermApplication $3 (ArgPredicate $4) $2}
 
-     | SpineForm                                  {$1}
 
+     | SpineForm                                  {$1}
+-}
      | '\\' TermVar ':' Stage Term '.' Term        {TermLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
  
      | '\\' ProofVar ':' Stage Predicate '.' Term  {TermLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
@@ -271,13 +275,19 @@ Term : TermVar   {TermVar (string2Name $1)}
 
      | Rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | '(' Term ')' {$2}
+     | '(' InnerTerm ')' {$2}
 
-SpineForm : Term Term      {TermApplication $1 $2 Plus}
-          
-          | Term SpineForm {TermApplication $1 $2 Plus}
- 
+Term : SpineForm {$1}
+
+SpineForm :  InnerTerm      {$1}
+          | SpineForm InnerTerm {TermApplication $1 (ArgTerm $2) Plus}
+          | SpineForm '['InnerTerm']' {TermApplication $1 (ArgTerm $3) Minus}
+{-
+          | SpineForm Proof {TermApplication $1 (ArgProof $2) Minus}
+          | SpineForm Predicate {TermApplication $1 (ArgPredicate $2) Minus}
+  -}
           | '(' SpineForm ')' {$2}
+
 
 
 TermBranches : TermVar "->" Term                    {[(ArgNameTerm (string2Name $1), (bind [] $3))]}
