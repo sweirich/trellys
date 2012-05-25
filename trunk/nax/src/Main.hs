@@ -2,7 +2,7 @@
 
 module Main where
 
--- to hide the 3.1.1 vwrsion of parsec, type at the cygwin prompt
+-- To hide the 3.1.1 version of parsec, type at the cygwin prompt
 -- ghc-pkg hide parsec-3.1.1
 
 import qualified Control.Exception as Ex
@@ -278,4 +278,4 @@ testform = run "formula.funlog"
 
 
 
--}     
+-}
