@@ -102,35 +102,16 @@ Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'            {D
 
 Specialterm : Type int     {Empty}
             | type int     {Empty}
-            | Pi TermVar ':' Term '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
-            | Pi '(' TermVar ':' Term ')' '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $5)) $8)}
+            | Pi TermVar ':' Stage Term '.' Specialterm  {TCons(rebind (ArgNameTerm (string2Name $2),$4, Embed (ArgClassTerm $5)) $7)}
+            | Pi '(' TermVar ':' Stage Term ')' '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $3),$5, Embed (ArgClassTerm $6)) $9)}
+            | Pi ProofVar ':' Stage Predicate '.' Specialterm  {TCons(rebind (ArgNameProof (string2Name $2),$4, Embed (ArgClassPredicate $5)) $7)}
+            | Pi '(' ProofVar ':' Stage Predicate ')' '.' Specialterm {TCons(rebind (ArgNameProof (string2Name $3),$5, Embed (ArgClassPredicate $6)) $9)}
 
 Dataconstrs : TermVar "::" Term                           {[((ArgNameTerm (string2Name $1)), $3)]}
 |  Dataconstrs '|' TermVar "::" Term                      {$1++[((ArgNameTerm (string2Name $3)), $5)]}
 
 
-{-
-Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'                          {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | data TermVar "::" Specialterm Where Dataconstrs '.'                        {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | Data TermVar "::" Specialterm where Dataconstrs  '.'                        {Datatypedecl (TermVar (string2Name $2)) $4 $6}
-             | Data TermVar "::" Specialterm Where Dataconstrs  '.'                       {Datatypedecl (TermVar (string2Name $2)) $4 $6}
 
-
-Specialterm : Type int     {Type $2}
-            | type int     {Type $2}
-            | Pi TermVar ':' Stage Term '.' Specialterm {Pi (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
-
-Dataterm : Appform       {$1}
-         | Pi TermVar ':' Stage Term '.' Dataterm  {Pi (bind (ArgNameTerm (string2Name $2), Embed(ArgClassTerm $5)) $7) $4}
-
-Appform : TermVar          {TermVar (string2Name $1)}
-        | Appform TermVar   {TermApplication $1 (ArgTerm (TermVar (string2Name $2))) Plus}
-        | '(' Appform ')' {$2}
-
-Dataconstrs : TermVar "::" Term                           {[((ArgNameTerm (string2Name $1)), $3)]}
-|  Dataconstrs '|' TermVar "::" Term                      {$1++[((ArgNameTerm (string2Name $3)), $5)]}
-
--}
 {-Low level definitions-}
 
 Predicate : PredVar                                    {PredicateVar (string2Name $1)}

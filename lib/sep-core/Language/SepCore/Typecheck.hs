@@ -350,8 +350,10 @@ compType (TermLambda b stage) = do ((argname, Embed argclass), prog) <- unbind b
 compType (TermApplication term arg stage) = do 
                                     b <- compType term
                                     case b of
-                                         Left (Pi b' stage') -> do ((argname, Embed argclass),prog) <- unbind b' 
-                                                                   case argname of
+                                         Left (Pi b' stage') -> 
+                                                           if aeq stage stage' then
+                                                               do ((argname, Embed argclass),prog) <- unbind b' 
+                                                                  case argname of
                                                                        ArgNameTerm at ->
                                                                            case arg of
                                                                              ArgTerm t -> do theType <- compType t
@@ -376,6 +378,7 @@ compType (TermApplication term arg stage) = do
                                                                                                      Left p' -> if aeq argclass (ArgClassPredicate p') then return (Left (subst prt pro prog))
                                                                                                                 else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
                                                                                                      Right s -> return (Right s)
+                                                           else return (Right $ "The stage of the argument "++show(arg)++ "doesn't match the stage of the function")
                                          Left _ -> return (Right $ "The term "++show(term)++ " is ill-formed")
                                          Right s -> return (Right s)
 
@@ -550,9 +553,14 @@ typechecker ((DeclProgdef p):l) = do  s <- checkProgDef p
 -- Append a tele in front of a term
 teleArrow :: Tele -> Term -> Term
 teleArrow Empty end = end
-teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) Plus
- where ((argname,argclass),rest) = unrebind binding
+teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) stage
+ where ((argname,stage,argclass),rest) = unrebind binding
        arrRest = teleArrow rest end
+teleArrowMinus :: Tele -> Term -> Term
+teleArrowMinus Empty end = end
+teleArrowMinus (TCons binding) end = Pi (bind (argname,argclass) arrRest) Minus
+ where ((argname,stage,argclass),rest) = unrebind binding
+       arrRest = teleArrowMinus rest end
 
 
 checkData :: Datatypedecl -> Env (Either String Bool)
@@ -572,7 +580,7 @@ checkData (Datatypedecl dataname bindings) = do
 --compare :: Monad M => [Arg] -> Tele -> M Bool
 --compare the order of [arg] and Tele
 compare [] Empty = return $ Left True
-compare (h:l) (TCons bindings) = do let ((argname, argclass),res) = unrebind bindings
+compare (h:l) (TCons bindings) = do let ((argname,stage ,argclass),res) = unrebind bindings
                                     case argname of
                                       ArgNameTerm u ->
                                           case h of
@@ -595,10 +603,6 @@ compare (h:l) (TCons bindings) = do let ((argname, argclass),res) = unrebind bin
 
 compare _ _ = return $ Right "error"
 
--- localContext :: Tele -> Context
--- localContext Empty = M.empty
--- localContext (TCons bindings) = let ((argname, Embed argclass), res) = unrebind bindings in
---                                   M.insert argname (argclass, NonValue) (localContext res)
 
 checkConstructors :: Term -> Tele -> [(ArgName, Term)] -> Env (Either String Bool)
 
