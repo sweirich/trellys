@@ -1,4 +1,4 @@
 module DuplicateSignature where
 
-declaredTwice : [a:Type 0] -> a
-declaredTwice : [a:Type 0] -> (b:a) -> a
+declaredTwice : [a:Type 0 @log] -> a
+declaredTwice : [a:Type 0 @log] -> (b:a@log) -> a

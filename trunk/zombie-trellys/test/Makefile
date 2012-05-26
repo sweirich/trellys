@@ -18,10 +18,6 @@ PASS=Prelude Arithmetic Vectors LetRebind Trees Append2 TypeTest NatElimination 
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd
-# FAIL are tests that *should* always fail.
-FAIL=Append  DuplicateDefinition DuplicateSignature ErrorFormatBug SigDefBug\
-     bad_datatype ErasedConvBad Test_T_Let_2_FV_1 Test_T_Rec2_FV Test_T_Let_1_FV\
-     Test_T_Let_2_FV_2  Test_T_RN2_FV FreeVarsBug Bug_T_Case_FV
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
@@ -41,7 +37,25 @@ clean:
 	rm *.trellys-elaborated
 
 pass: $(foreach p,$(PASS),$(p).pass)
-fail: $(foreach f,$(FAIL),$(f).fail)
+
+# FAIL are tests that *should* always fail.
+FAIL=Append \
+     Test_T_RN2_FV
+
+fail:
+	@./expect_error FreeVarsBug "variable n appears free in body"
+	@./expect_error DuplicateDefinition "Multiple definitions of"
+	@./expect_error DuplicateSignature "Duplicate type signature"
+	@./expect_error SigDefBug "The variable p was not found"
+	@./expect_error bad_datatype "occurs in non-positive position"
+	@./expect_error ErasedConvBad "is marked erased"
+	@./expect_error Test_T_Let_1_FV "appear in the erasure of the body"
+	@./expect_error Test_T_Let_2_FV_1 "appear in the erasure of the body"
+	@./expect_error Test_T_Let_2_FV_2 "appear in the erasure of the body"
+	@./expect_error Test_T_Rec2_FV "variable n appears free in body"
+	@./expect_error Bug_T_Case_FV "should not appear in the erasure"
+	@./expect_error Test_T_RN2_FV "variable n appears free in body"
+
 todo_pass: $(foreach f,$(TODO_PASS),$(f).pass)
 todo_fail: $(foreach f,$(TODO_FAIL),$(f).fail)
 todo: todo_pass todo_fail
