@@ -4,14 +4,14 @@ import Prelude
 
 -- Examples supplied by Chris.
 
-data Corner1 -> Type 0 where
-  C : (let x [x_eq] = Corner1 in x -> Nat) -> Corner1
+data Corner1 : Type 0 where
+  C of (((let x [x_eq] = Corner1 in x)@log) -> Nat)
 
 
 -- Corner case 2 involves mutual recursion, which we don't support.
 
-data Corner3 (a : Type 0) -> Type 0 where
-   C : a = Corner3 Nat -> Corner3 a
+data Corner3 (a : Type 0) : Type 0 where
+   C of (a = Corner3 Nat)
 
 ignoreType  : Type 0 ->  Type 0
 ignoreType = \ _ . Nat
@@ -23,22 +23,22 @@ ignoreType = \ _ . Nat
 
 axiom log idType : Type 0 -> Type 0
 
-data Corner5 -> Type 0 where
-  C : idType Corner5 -> Corner5
+data Corner5 : Type 0 where
+  C of (idType Corner5)
 
 
 -- Tim's Examples
-data False -> Type 0 where
+data False : Type 0 where
      {}
 
-data Id (a : Type 0) -> Type 0 where
-  IdC : (x : a) -> Id a
+data Id (a : Type 0) : Type 0 where
+  IdC of (x : a)
 
-data BadId -> Type 0 where
-  NBad : (f : Id ((b : BadId) -> False)) -> BadId
+data BadId : Type 0 where
+  NBad of (f : Id ((b : BadId) -> False))
 
-data Bad -> Type 0 where
-  CBad : (f:((b:Bad) -> False)) -> Bad
+data Bad : Type 0 where
+  CBad of (f:((b:Bad) -> False))
 
 not_bad : (b : Bad) -> False
 
@@ -49,15 +49,14 @@ inconsistent : False
 inconsistent = not_bad (CBad not_bad)
 
 
-data Ok -> Type 0 where
-  COk : (f:((b:Ok) => False)) => Ok
+data Ok : Type 0 where
+  COk of ((((b:Ok)@prog) -> False)@prog)
 
-prog still_ok : (b : Ok) => False
+prog still_ok : (b : Ok @prog) -> False
 
 still_ok = \ b . case b [beq] of COk f -> f b
 
 prog loop : False
-
 loop = still_ok (COk still_ok)
 
 

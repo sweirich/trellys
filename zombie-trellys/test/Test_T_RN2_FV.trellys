@@ -5,4 +5,4 @@ import Prelude
 
 -- Should fail: n is free.
 t1 : [Nat] -> Nat -> Nat
-recnat t1 [n] = (\x.n)
+ind t1 [n] = (\x.n)

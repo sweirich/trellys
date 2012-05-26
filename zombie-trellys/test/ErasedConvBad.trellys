@@ -13,7 +13,7 @@ axiom a : atype
 axiom btype : Type 0
 axiom b : btype
 
-axiom f : Nat -> [t:Type 0] -> t -> Nat
+axiom f : Nat -> [t:Type 0@log] -> (t@log) -> Nat
 
 
 axiom p : a = b
