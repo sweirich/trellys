@@ -454,6 +454,13 @@ calcLocalContext (TermVar _ ) [] = return $ Right True
 calcLocalContext (TermApplication _ _ _ ) [] = return $ Right True
 calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with the constructor ."
     
+sanityCheck :: Term -> [ArgName] -> Bool
+sanityCheck t (argname:cs) = case argname of
+                               ArgNameTerm tm -> (elem tm (fv t)) || (sanityCheck t cs) 
+                               ArgNameProof pr -> (elem pr (fv t)) || (sanityCheck t cs) 
+                               ArgNamePredicate pred -> (elem pred (fv t)) || (sanityCheck t cs)
+sanityCheck t [] = False
+
 -- The type of the whole case expression, the type of t in case t, branches. 
 checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
 checkBranch state theType ((constr, binding): l) = 
@@ -470,9 +477,12 @@ checkBranch state theType ((constr, binding): l) =
                                                Right t -> do
                                                  theType'' <- local (M.union (runIdentity (runFreshMT (execStateT (calcLocalContext t argnames) M.empty)))) (compType t1)
                                                  case theType'' of
-                                                   Left t1' -> if aeq state Undefined then checkBranch t1' theType l
-                                                               else if aeq t1' state then checkBranch t1' theType l
-                                                                    else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
+                                                   Left t1' -> 
+                                                     if not (sanityCheck t1' argnames) then  
+                                                         if aeq state Undefined then checkBranch t1' theType l
+                                                         else if aeq t1' state then checkBranch t1' theType l
+                                                              else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
+                                                     else return $ Left $ "An insane event just happened."
                                                    Right s -> return $ Left s
                                                Left s -> return $ Left s
                                       else return $ Left $ "The actual type of the datatype constructor " ++show(constr)++ " doesn't fit the corresponding datatype "++show(head ls)
@@ -482,32 +492,6 @@ checkBranch state theType ((constr, binding): l) =
                  Right s -> return $ Left s
 
 checkBranch state theType [] = return $ Right state
-{-
-checkBranch :: Term -> Term -> TermBranches -> TCMonad (Either String Term)
-checkBranch state theType (binding : l) = 
-               case flatten theType of
-                 Left ls -> do
-                   ([h,argnames],t1) <- unbind binding
-                   env <- ask
-                   case getClass h env of
-                     Left (ArgClassTerm ctype) -> 
-                         case flatten ctype of
-                           Left d' -> if aeq (head d') (head ls) then 
-                                          let context = runIdentity (runFreshMT (execStateT (calcLocalContext ((TermVar c):sch) ctype) M.empty)) in 
-                                          do theType' <- local (M.union context) (compType t1)
-                                             case theType' of
-                                               Left t1' -> if aeq state Undefined then checkBranch t1' theType l
-                                                           else if aeq t1' state then checkBranch t1' theType l
-                                                                else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
-                                               Right s -> return $ Left s
-                                      else return $ Left $ "The actual type of the datatype constructor " ++show(c)++ " doesn't fit the corresponding datatype "++show(dataname)
-                           Right s -> return $ Left s
-                     Left _ -> return $ Left $ "Couldn't find the type for " ++show(c)
-                     Right s -> return $ Left s
-                 Right s -> return $ Left s
-
-checkBranch state theType [] = return $ Right state
--}
 
 flatten :: Term -> Either [Arg] String
 flatten (Pi b stage) = let (b1, t1) = unsafeUnbind b in
