@@ -1,4 +1,5 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, TypeSynonymInstances, FlexibleInstances, UndecidableInstances, PackageImports #-}
+-- I use Garrin's file as a template.
 module Language.SepCore.PrettyPrint where
 
 import Language.SepCore.Syntax
@@ -135,10 +136,27 @@ instance Rep a => Display (Name a) where
   display = return . text . name2String
 
 
-instance Display Stage
-instance Display ArgClass
-instance Display Arg
-instance Display ArgName
+instance Display Stage where
+  display Plus = return $ text "+"
+  display Minus = return $ text "-"
+
+instance Display ArgClass where
+    display (ArgClassTerm t) = display t
+    display (ArgClassPredicate p) = display p
+    display (ArgClassLogicalKind l) = display l
+
+instance Display Arg where
+    display (ArgTerm t) = display t
+    display (ArgPredicate p) = display p
+    display (ArgProof p) = display p
+
+    
+instance Display ArgName where
+    display (ArgNameTerm t) = display t
+    display (ArgNamePredicate p) = display p
+    display (ArgNameProof l) = display l
+
+
 instance Display Term where
   display (TermVar n) = return $ text $ name2String n
   
@@ -196,9 +214,6 @@ instance Display Term where
               text ".",
               nest 2 dBody]
 
-  display (t@(Abort c)) = do
-    dc <- dParen (precedence t) c
-    return $ text "abort" <+> dc
 
 
   -- display e = error $ "display: " ++ show e
@@ -210,154 +225,181 @@ instance Display Term where
   precedence (Pi _ _) = 4
   precedence _ = 0
 
+instance Display Proof where
+  display (ProofVar p) = display p
 
-{-
--- bindingWrap adds the correct stage annotation for an abstraction binding.
-bindingWrap Dynamic = parens
-bindingWrap Static = brackets
+  display (ProofLambda binding) = do
+      lunbind binding fmt
+    where fmt ((n,Embed ty),ran) = do
+                        dn <- display n
+                        dty <- display ty
+                        dran <- display ran
+                        return $ text "\\" <+> (parens (dn <+> colon <+> dty)) <+> text "." <+> dran
 
-instance Display Decl where
-  display (ProgDecl n ty val) = do
+  display (p@(ProofApplication p0 arg)) = do
+    d0 <- dParen (precedence p - 1) p0
+    d1 <- dParen (precedence p) arg
+    return $ d0 <+> d1
+
+
+  display (t@(Join t0 t1)) = do
+    d0 <- termParen (precedence t) t0
+    d1 <- termParen (precedence t) t1
+    return $ text "join" <+> d0 <+> d1
+
+  display (w@(Valax t)) = do
+    d <- termParen (precedence w) t
+    return $ text "valax" <+> d
+
+  display (t@(Contra t0)) = do
+    d0 <- termParen (precedence t) t0
+    return $ text "contra" <+> d0
+
+
+  precedence (ProofVar _) = 12
+  precedence (ProofApplication _ _ ) = 10
+  precedence (Join _ _ ) = 5
+  precedence (Contra _ ) = 5
+  precedence (Valax _ ) = 5
+  precedence _ = 0
+
+instance Display Predicate where
+  display (PredicateVar p) = display p
+
+  display (PredicateLambda binding) = do
+      lunbind binding fmt
+    where fmt ((n,Embed ty),ran) = do
+                        dn <- display n
+                        dty <- display ty
+                        dran <- display ran
+                        return $ text "\\" <+> (parens (dn <+> colon <+> dty)) <+> text "." <+> dran
+
+  display (Forall binding) = do
+      lunbind binding fmt
+    where fmt ((n,Embed ty),ran) = do
+                        dn <- display n
+                        dty <- display ty
+                        dran <- display ran
+                        return $ text "Forall" <+> (parens (dn <+> colon <+> dty)) <+> text "." <+> dran
+
+  display (p@(PredicateApplication p0 arg)) = do
+    d0 <- dParen (precedence p - 1) p0
+    d1 <- dParen (precedence p) arg
+    return $ d0 <+> d1
+
+  display (t@(Equal t0 t1)) = do
+                     d0 <- dParen (precedence t) t0
+                     d1 <- dParen (precedence t) t1
+                     return $ fsep [d0, text "=", d1]
+
+  display (w@(Terminate t)) = do
+                     dt <- termParen (precedence w) t
+                     return $ text "!" <+>  dt
+  
+  display (t@(Bottom i)) = return $ text "bottom" <+> integer i
+
+
+  precedence (PredicateVar _) = 12
+  precedence (PredicateApplication _ _ ) = 10
+  precedence (Equal _ _ ) = 9
+  precedence (Terminate _ ) = 7
+
+  precedence _ = 0
+
+instance Display LogicalKind where
+  display (Formula i) = return $ text "formula" <+> integer i
+
+  display (QuasiForall binding) = do
+      lunbind binding fmt
+    where fmt ((n,Embed ty),ran) = do
+                        dn <- display n
+                        dty <- display ty
+                        dran <- display ran
+                        return $ text "Forall" <+> (parens (dn <+> colon <+> dty)) <+> text "." <+> dran
+
+instance Display Declaration where
+    display (DeclData d) = display d
+    display (DeclPreddecl p) = display p
+    display (DeclPreddef p) = display p
+    display (DeclProgdef p) = display p
+    display (DeclProgdecl p) = display p
+    display (DeclProof p) = display p
+    display (DeclLogic p) = display p
+
+instance Display Progdef where
+  display (Progdef n ty) = do
     dn <- display n
     dty <- display ty
-    dval <- display val
-    return $ text "type" <+> dn <+> text ":" <+> dty <> semi $$
-             cat[text "prog" <+> dn <+> text "=", nest 3 $ dval <> semi] $$ text ""
+    return $  dn <+> text "::" <+> dty <+> text "."
 
+instance Display Progdecl where
+  display (Progdecl n tm) = do
+    dn <- display n
+    dtm <- display tm
+    return $  cat[ dn <+> text ":=", nest 3 $ dtm <> semi] $$ text ""
 
-  display (ProofDecl n ty val) = do
+instance Display Logicdecl where
+  display (Logicdecl n ty) = do
     dn <- display n
     dty <- display ty
-    dval <- display val
-    return $ text "theorem" <+> dn <+> text ":" <+> dty <> semi $$
-             cat[text "proof" <+> dn <+> text "=",nest 3 $ dval <> semi] $$ text ""
+    return $  dn <+> text "::" <+> dty <> semi
+            
+instance Display Proofdef where
+  display (Proofdef n tm) = do
+    dn <- display n
+    dtm <- display tm
+    return $  cat[ dn <+> text ":=", nest 3 $ dtm <> semi] $$ text ""
 
-  display (AxiomDecl n ty) = do
+instance Display Preddecl where
+  display (Preddecl n ty) = do
     dn <- display n
     dty <- display ty
-    return $ text "axiom" <+> dn <+> text ":" <+> dty <> semi
+    return $ dn <+> text "::" <+> dty <> semi
+            
+instance Display Preddef where
+  display (Preddef n tm) = do
+    dn <- display n
+    dtm <- display tm
+    return $  cat[ dn <+> text ":=", nest 3 $ dtm <> semi] $$ text ""
 
 
-  display (DataDecl t1 binding) = do
+instance Display Datatypedecl where
+  display (Datatypedecl t1 binding) = do
     lunbind binding $ \(tele,cs) -> do
      d1 <- display t1
-     -- d2 <- display t2
      dtele <- displayTele tele
      dcs <- mapM displayCons cs
-     return $ hang (text "data" <+> d1 <+> colon <+> dtele <+> text "where") 2
-                       (vcat (punctuate semi dcs)) $$ text ""
+     return $ hang (text "data" <+> d1 <+> colon <>colon <+> dtele <+> text "where") 2
+                       (vcat (punctuate semi dcs)) $$ text "."
     where displayCons (c,t) = do
             dc <- display c
             dt <- display t
             return $ dc <+> colon <+> dt
 
-
           displayTele Empty = return $ text "Type"
           displayTele tele = do
              dtele <- display tele
-             return $ dtele <+> text "-> Type"
+             return $ dtele <+> text ".Type"
+
+
+
+instance Display Tele where
+    display Empty = return empty
+    display (TCons binding) = do
+      let ((n,stage,Embed ty),tele) = unrebind binding
+      dn <- display n
+      dty <- display ty
+      drest <- display tele
+      dst <- display stage
+      return $ text "Pi" <+> parens (dn <> colon <> dst <> dty) <> drest
+        
+
+{-
 
 
 
 
-instance Display Module where
-  display (Module n bindings) = do
-    dn <- display n
-    dbindings <- mapM display bindings
-    return $ text "module" <+> dn <+> text "where" $$
-             cat dbindings
 
-
-instance Display a => Display (Embed a) where
-  display (Embed e) = display e
-
-
-
-instance Display EExpr where
-  display (EVar v) = display v
-  display (ECon c) = display c
-  display EType = return $ text "Type"
-  display t@(EApp t1 t2) = do
-     d1 <- etermParen (precedence t - 1) t1
-     d2 <- etermParen (precedence t) t2
-     return $ d1 <+> d2
-  display t@(ERec binding) = do
-    lunbind binding $ \((f,args),body) -> do
-    df <- display f
-    dx <- mapM display args
-    dbody <- etermParen (precedence t) body
-    -- return $ text "rec" <+> df <+> (hcat dx) <+> text "." <+> dbody
-    return df
-
-  display t@(ELambda binding) =  do
-    lunbind binding $ \(x,body) -> do
-    dx <- display x
-    dbody <- etermParen (precedence t) body
-    return $ fsep [text "\\" <+> dx <+> text ".",nest 2 dbody]
-
-  display t@(ECase s alts) = do
-    ds <- display s
-    alts <- mapM displayAlt alts
-    return $ text "case" <+> ds <+> text "of" $$
-             nest 2 (vcat alts)
-   where displayAlt alt = do
-           lunbind alt $ \((c,pvars),body) -> do
-           dbody <- display body
-           dpvars <- mapM display pvars
-           return $ fsep $ [text c <+> hsep dpvars <+> text "->", nest 2 dbody]
-
-  display t@(ELet binding) = do
-     lunbind binding $ \((n,t),body) -> do
-     dn <- display n
-     dt <- display t
-     dbody <- display body
-     return $ text "let" <+> dn <+> text "=" <+> dt $$
-              text "in" <+> dbody
-  display t@(EPi stage binding) = do
-     lunbind binding $ \((n,t),body) -> do
-     dn <- display n
-     dt <- display t
-     dbody <- display body
-     return $ bindingWrap stage (dn <+> colon <+> dt) <+> text "->" <+> dbody
-
-
-  display (ETCast t) = do
-     dt <- display t
-     return $ text "tcast" <+> dt
-
-  display EAbort = return $ text  "abort"
-
-
-
-  precedence (EVar _) = 12
-  precedence (ECon _) = 12
-  precedence (EApp _ _) = 10
-  precedence (ERec _) = 0
-  precedence (ELambda _) = 0
-  precedence (ECase _ _) = 1
-  precedence (ETCast _) = 11
-  precedence (EPi _ _) = 4
-  precedence EAbort  = 0
-  precedence tm = error $ "precedence is not defined for " ++ (show tm)
-
-
-
-etermParen:: (Display a) => Int -> a -> M Doc
-etermParen level x
-  | level >= (precedence x) = parens <$> display x
-  | otherwise =  display x
-
-
--- instance Show TypeError where
---     show e = render $ display e
-
-
-
--- runDisplay t = render $ runFreshM (display t)
-
-instance Disp Stage where
-  disp Static = text "static"
-  disp Dynamic = text "runtime"
 
 instance Disp SourcePos where
   disp sp =  text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
@@ -371,15 +413,4 @@ instance Disp ParseError where
               (errorMessages pe)
 
 
-instance Display Tele where
-    display Empty = return empty
-    display (TCons binding) = do
-      let ((n,stage,Embed ty,inf),tele) = unrebind binding
-      dn <- display n
-      dty <- display ty
-      drest <- display tele
-      let dinf = if inf then text "?" else empty
-      case stage of
-        Static -> return $ brackets (dinf <+> dn <> colon <> dty) <> drest
-        Dynamic -> return $ parens (dinf <+> dn <> colon <> dty) <> drest
 -}
