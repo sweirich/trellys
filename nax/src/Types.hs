@@ -20,6 +20,7 @@ import Syntax
 import Monads(unionByM)
 import Eval(normform)
  
+import Debug.Trace 
 ----------------------------------------------------------------
 -- Matching a Typ with another, used in Synonyms
 
@@ -341,12 +342,18 @@ kindOf t = do { x <- prune t; f x }
   where f (TyVar s k) = pruneK k
         f (TcTv (u,ptr,k)) = pruneK k
         f (TyTuple k ts) = pruneK k
-        f (TyCon _ c k) = instanK noPos k >>= pruneK
+        f (TyCon _ c k) = do { temp <- instanK noPos k
+                             ; pruneK temp }
         f (TyProof _ _) = return Star
         f (TyArr _ _) = return(Karr Star (Karr Star Star))
         f (TySyn nm arity args body) = kindOf body
         f (TyMu k) = return (Karr (Karr k k) k)
-        f (TyApp f x) = do { t <- kindOf f; case t of {Karr x y -> return x} }
+        f (TyApp f x) = do { t2 <- kindOf f
+                           ; case t2 of 
+                               Karr x y -> return y
+                               zz -> error("\nIn the type application: "++show t++"\n"++
+                                           "the type constructor: "++show f++"\n"++
+                                           "does not have an kind arrow as its sort: "++show t2)}
         f (TyLift (Checked e)) = lift1 LiftK (typeOf e)
         f (TyLift e) = error ("No kindOf for lifted kinds over unchecked terms: "++show e)
         f (TyAll vs t) = kindOf t
@@ -693,9 +700,6 @@ zonkKind x = do { x1 <- pruneK x; f x1}
         f (LiftK b) = do { c <- zonk b; return(LiftK c)}
         f (Kname n) = return(Kname n)
 
-zonkTExp x =  do { x1 <- pruneE x; f x1}
-  where f (TEVar s s1) = do {s2 <- zonkScheme s1; return(TEVar s s2)}
-        f x = error "No ZOnk for TExp yet"
 
 ---------------------------------------------
 

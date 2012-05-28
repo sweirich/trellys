@@ -11,7 +11,7 @@ import Value(preDefinedDeclStrings)
 --             ,toTyp,tupleT,arrT,applyT,showK,showT,nat)
 
 import qualified System.IO
-import qualified System.IO.Error
+
 import Data.List(groupBy)
 
 import Data.Char(digitToInt,isUpper)
@@ -25,6 +25,10 @@ import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
 import Debug.Trace
+
+-- import qualified System.IO.Error -- Deprecated
+import qualified Control.Exception  -- use this instead
+
 -----------------------------------------------
 -- running parsers
 
@@ -56,13 +60,14 @@ parseString x s =
 -- ps x s = parse2 (observeSuffix x) s
 
 parseFile parser file =
-    do possible <- System.IO.Error.tryIOError (readFile file)
+    do possible <- Control.Exception.try (readFile file)
+                   -- System.IO.Error.tryIOError (readFile file)
        case possible of
          Right contents -> 
             case parse1 file parser contents of
               Right ans -> return ans
               Left message -> error(show message)
-         Left err -> error(show err)
+         Left err -> error(show (err::IOError))
 
 --------------------------------------------         
 -- Internal state and the type of parsers
