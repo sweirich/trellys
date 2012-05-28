@@ -19,7 +19,7 @@ import Syntax
 import Parser 
 import Value 
 import Eval 
-import Types(zonkRho,zonkScheme,zonkExp,zonk,zonkKind
+import Types(zonkRho,zonkScheme,zonkExp,zonk,zonkKind,zonkD
             ,generalizeRho)
 import TypeCheck(Frag(..),NameContents(..),addTable,elab,inferExpT,tvsEnv,nullFrag,wellFormedType,browseFrag)
 import Monads(FIO,runFIO,handle,fio,Id(..),runId
@@ -58,9 +58,10 @@ initialEnvs =
 checkEval :: IORef (Frag, VEnv) -> (Frag, VEnv) -> Decl Expr -> FIO (Frag, VEnv)
 checkEval ref (tcEnv,rtEnv) d = 
   do { (tcEnv2,d2) <- elab True tcEnv d
-     ; let doc = ppDecl (ppinfo tcEnv) ppTExpr d2
+     ; d3 <- zonkD d2
+     ; let doc = ppDecl (ppinfo tcEnv) ppTExpr d3
      ; writeln("\n\n"++render doc)
-     ; rtEnv2 <- fio (evalDecC rtEnv d2 return)
+     ; rtEnv2 <- fio (evalDecC rtEnv d3 return)
      ; let ans = (tcEnv2{values=ctbindings rtEnv2},rtEnv2)
      ; writeRef ref ans
      ; return ans }

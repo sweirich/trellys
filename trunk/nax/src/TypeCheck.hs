@@ -971,7 +971,7 @@ elab toplevel env (FunDec fpos f _ clauses) =
                 -- ; writeln("\nEntering inferExp in clause "++show body++" for "++show f)
                 ; (rng,body2) <- inferExpT env2 body
                 ; rng2 <- zonkRho rng
-                ; writeln("Body type is: "++show rng2)
+                -- ; writeln("Body type is: "++show rng2)
                 ; let -- nvars = sum(map (\ p -> length(patBinds p [])) ps)
                       m = (show pos ++"\nWhile checking\n"++plistf show "" ps " " ""++
                            " -> "++show body)
@@ -980,7 +980,7 @@ elab toplevel env (FunDec fpos f _ clauses) =
      ; clauses2 <- mapM (checkClause env typ) clauses
      ; t2 <- zonkRho typ
      ; free <- tvsEnv env
-     ; writeln("BEFORE GEN\n"++show t2)
+     -- ; writeln("BEFORE GEN\n"++show t2)
      ; (sig@(Sch vs _),sub) <- generalizeRho free t2 
      ; let subst = (sub,[],[])
      ; let g (ps,e) = do { ps2 <- mapM (patSubb (locL fpos ps) subst) ps

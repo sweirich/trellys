@@ -2,12 +2,18 @@ module Monads where
 
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import System.IO(fixIO,hClose,hFlush,stdout)
-import qualified System.IO.Error
+-- import qualified System.IO.Error as Err -- Deprecated
+import qualified Control.Exception         -- Use this instead
+
+
 import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
 
 import Names(SourcePos,noPos)
 
+
+tryIO :: IO a -> IO (Either IOError a)
+tryIO = Control.Exception.try
 --------------------------------------
 -- Monads for computing values
 -- Note that values include delayed computations 
@@ -101,7 +107,7 @@ fixFIO f = FIO(fixIO (unFIO . unRight f))
     -- unreachable because of lazy ~pattern
 
 fio :: IO x -> FIO x
-fio x = FIO $ do result <- System.IO.Error.tryIOError x 
+fio x = FIO $ do result <- tryIO x 
                  case result of
                    Left err  -> return (Fail noPos 0 "IO error" ("\n"++show err))
                    Right ans -> return (Ok ans)
