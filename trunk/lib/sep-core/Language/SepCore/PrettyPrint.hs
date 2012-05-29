@@ -182,6 +182,9 @@ instance Display Arg where
     display (ArgTerm t) = display t
     display (ArgPredicate p) = display p
     display (ArgProof p) = display p
+    precedence (ArgTerm t) = precedence t
+    precedence (ArgProof t) = precedence t
+    precedence (ArgPredicate t) = precedence t
 
     
 instance Display ArgName where
@@ -256,8 +259,9 @@ instance Display Term where
   precedence (TermApplication _ _ _) = 10
   precedence (Abort _) = 5
   precedence (Pi _ _) = 4
+  
   precedence _ = 0
-
+  
 instance Display Proof where
   display (ProofVar p) = display p
 
@@ -294,6 +298,7 @@ instance Display Proof where
   precedence (Join _ _ ) = 5
   precedence (Contra _ ) = 5
   precedence (Valax _ ) = 5
+  
   precedence _ = 0
 
 instance Display Predicate where
@@ -336,7 +341,7 @@ instance Display Predicate where
   precedence (PredicateApplication _ _ ) = 10
   precedence (Equal _ _ ) = 9
   precedence (Terminate _ ) = 7
-
+  
   precedence _ = 0
 
 instance Display LogicalKind where
