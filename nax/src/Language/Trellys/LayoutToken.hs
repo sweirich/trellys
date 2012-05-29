@@ -1,4 +1,4 @@
-------------------------------------------------------------------------
+link ------------------------------------------------------------------------
 -- THIS is a MODIFIED VERSION of
    -- Modified to support layout combinators by Tim Sheard 7/27/09
    -- Further updated to Parsec 3.1 by Vilhelm Sjoberg 2011-01-13
@@ -16,7 +16,7 @@
 -- A helper module to parse lexical elements (tokens). See 'makeTokenParser'
 -- for a description of how to use it.
 -- 
------------------------------------------------------------------------------
+link ------------------------------------------------------------------------
 
 {-# LANGUAGE PolymorphicComponents, NoMonomorphismRestriction  #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing -fno-warn-unused-do-bind -fno-warn-unused-matches #-}
@@ -736,7 +736,7 @@ makeTokenParser languageDef open sep close
         where
           startEnd   = nub (commentEnd languageDef ++ commentStart languageDef)
 
---MOD --------------------------------------------------------------------
+--MOD link ---------------------------------------------------------------
 -- THE FOLLOWING WAS ADDED FOR LAYOUT TOKEN PARSERS by Tim Sheard 7/27/09
 
     layoutSep   = (symbol sep)   <?> ("inserted layout separator ("++sep++")")
@@ -832,5 +832,5 @@ data LayoutFun s m =
              -> ParsecT s [Column] m [a])          
           
 -- End of added code          
---MOD --------------------------------------------------------------------
+--MOD link ---------------------------------------------------------------
           
