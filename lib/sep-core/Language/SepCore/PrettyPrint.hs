@@ -26,6 +26,39 @@ instance Disp String where
   disp  = text
 instance Disp Term where
   disp  = cleverDisp
+instance Disp Proof where
+  disp  = cleverDisp
+instance Disp Predicate where
+  disp  = cleverDisp
+instance Disp LogicalKind where
+  disp  = cleverDisp
+instance Disp Stage where
+  disp  = cleverDisp
+instance Disp ArgClass where  
+  disp  = cleverDisp
+instance Disp Arg where
+    disp  = cleverDisp
+instance Disp ArgName where
+    disp  = cleverDisp
+instance Disp Declaration where
+    disp  = cleverDisp
+instance Disp Progdef where
+    disp  = cleverDisp
+instance Disp Progdecl where
+    disp  = cleverDisp
+instance Disp Logicdecl where
+    disp  = cleverDisp
+instance Disp Proofdef where
+    disp  = cleverDisp
+instance Disp Preddecl where
+    disp  = cleverDisp
+instance Disp Preddef where
+    disp  = cleverDisp
+instance Disp Tele where
+    disp  = cleverDisp
+
+
+
 -- instance Disp Proof where
 --   disp = cleverDisp
 instance Rep a => Disp (Name a) where
@@ -394,23 +427,4 @@ instance Display Tele where
       return $ text "Pi" <+> parens (dn <> colon <> dst <> dty) <> drest
         
 
-{-
 
-
-
-
-
-
-instance Disp SourcePos where
-  disp sp =  text (sourceName sp) <> colon <> int (sourceLine sp) <> colon <> int (sourceColumn sp) <> colon
-
-instance Disp ParseError where
- disp pe = do
-    hang (disp (errorPos pe)) 2
-             (text "Parse Error:" $$ sem)
-  where sem = text $ showErrorMessages "or" "unknown parse error"
-              "expecting" "unexpected" "end of input"
-              (errorMessages pe)
-
-
--}
