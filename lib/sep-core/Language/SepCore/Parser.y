@@ -3,6 +3,7 @@
 module Language.SepCore.Parser where 
 import Language.SepCore.Syntax
 import Language.SepCore.Lexer
+import Language.SepCore.PrettyPrint
 import Data.Char
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Subst(substR1)
@@ -314,7 +315,7 @@ getPosition = Alex (\s -> Right $ (s,alex_pos s))
 parseError :: Token -> Alex a
 parseError xs = do
                 pos@(AlexPn _ line col) <- getPosition
-                alexError $  show line ++ ":" ++ show col ++": Parse error: unexpected " ++ (show xs)
+		alexError $  show line ++ ":" ++ show (col-length(show(disp xs))-1) ++": Parse error: unexpected " ++ show(disp xs)
 
 --alexMonadScan :: Alex Lexeme
 --unLexeme :: Lexeme -> Token

@@ -1,7 +1,8 @@
 
 {
 module Language.SepCore.Lexer where
-
+import Language.SepCore.PrettyPrint
+import Text.PrettyPrint
 }
 
 %wrapper "monad"
@@ -124,6 +125,84 @@ data Token =
 
 data Lexeme = L AlexPosn Token String
 
+
+instance Disp Token where
+	disp TokenType = text "Type"
+
+        disp TokenDef = text ":="
+
+        disp (TokenInt i) = integer i
+
+        disp TokenFm = text "formula"
+
+        disp TokenForall = text "forall"
+ 
+        disp (TokenProofVar s) = text s
+
+        disp (TokenPredVar s) = text s
+        disp TokenData = text "data"
+
+        disp TokenWhere = text "where"
+
+        disp (TokenTermVar s) = text s
+
+        disp TokenPi = text "Pi"
+
+        disp TokenEq = text "Eq"
+
+        disp TokenBot = text "bottom"
+
+        disp TokenLamb = text "\\"
+
+        disp TokenJoin = text "join"
+
+        disp TokenContr = text "contra"
+
+        disp TokenValax = text "valax"
+
+        disp TokenEx = text "!"
+
+        disp TokenBL = text "("
+
+        disp TokenBR = text ")"
+
+        disp TokenDC = text "::"
+
+        disp TokenPlus = text "+"
+
+        disp TokenMinus = text "-"
+
+        disp TokenCL = text ":"
+
+        disp TokenDot = text "."
+
+        disp TokenAb = text "abort"
+ 
+        disp TokenCBL = text "{"
+
+        disp TokenCBR = text "}"
+
+  
+        disp TokenBar = text "|"
+
+        disp TokenEOF = text "EOF"
+
+        disp TokenOf = text "of"
+
+        disp TokenCase = text "case"
+
+        disp TokenArrow = text "->"
+
+        disp TokenLet = text "let"
+
+        disp TokenIn = text "in"
+
+        disp TokenEquiv = text "="
+
+        disp TokenRec = text "rec"
+        disp TokenSQL = text "["
+        disp TokenSQR = text "]"
+
 mkL :: Token -> AlexInput -> Int -> Alex Lexeme
 mkL t (p,_,str) len = return (L p t (take len str))
 
@@ -211,7 +290,7 @@ alexMonadScan2 = do
   sc <- alexGetStartCode
   case alexScan inp sc of
     AlexEOF -> alexEOF
-    AlexError inp'@(p,_,s) -> alexError $ "Lexical error at line: "++ show (getLineNum p) ++ ", column: " ++ show (getColumnNum p) ++ "."
+    AlexError inp'@(p,_,s) -> alexError $ "Lexical error at line: "++ show (getLineNum p) ++ ", column: " ++ show ((getColumnNum p)-1) ++ "."
     AlexSkip  inp' len -> do
         alexSetInput inp'
         alexMonadScan2
