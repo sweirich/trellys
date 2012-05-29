@@ -220,7 +220,7 @@ data Value = Value | NonValue deriving (Show)
 
          
 
-$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind, ''Equality, ''Tele])
+$(derive [''Proof,''Term, ''Predicate, ''Arg, ''ArgName, ''Stage, ''Value, ''ArgClass, ''LogicalKind, ''Equality, ''Tele, ''Declaration, ''Logicdecl, ''Progdecl, ''Preddef, ''Proofdef,''Preddecl, ''Datatypedecl, ''Progdef])
 
 type TypingContext = [(ArgName, ArgClass,Value )]
 
@@ -309,7 +309,14 @@ instance Alpha ArgClass
 instance Alpha Arg
 instance Alpha ArgName
 instance Alpha Tele
-
+instance Alpha Declaration
+instance Alpha Progdef
+instance Alpha Progdecl
+instance Alpha Logicdecl
+instance Alpha Proofdef
+instance Alpha Datatypedecl
+instance Alpha Preddef
+instance Alpha Preddecl
 {- Building a small-scale test case for substitution:
  
 1. Show: [proof/proofvar]proof is working correctly.
