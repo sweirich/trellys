@@ -6,6 +6,8 @@ module Language.SepCore.Typecheck where
 import Prelude hiding (pred,compare)
 import Language.SepCore.Syntax
 import Language.SepCore.PrettyPrint
+import Language.SepCore.Parser(getPosition)
+import Language.SepCore.Lexer
 import Data.Maybe
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl, flatten)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -43,7 +45,7 @@ lookupVar name context = case (M.lookup name context) of
 getClass :: ArgName -> Context -> Either ArgClass String
 getClass name context = case (lookupVar name context) of
                        Left (t, _) -> Left t 
-                       Right s -> Right s
+                       Right s -> Right $ s++"getClass"
 
 getValue :: ArgName -> Context -> Either Value String
 getValue name context = case (lookupVar name context) of
@@ -394,13 +396,22 @@ compType (Abort t) = do theType <- compType t
                           Right s -> return (Right s)
 
 -- | Term_REC
-compType (Rec b) = do ((x, f, Embed (Pi t' Plus)), t) <- unbind b
-                      ((y, Embed t1), t2) <- unbind t'
-                      theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
-                      case theType of
-                        Left ty -> if aeq t2 ty then return (Left (Pi (bind (y, Embed t1) t2) Plus))
-                                   else return (Right $ "the term" ++show(t)++ " is not type checked. rec")
-                        Right s -> return (Right s)
+compType (Rec b) = do ((x, f, Embed pa), t) <- unbind b 
+                      case pa of
+                        (Pi t' Plus) -> do
+                            ((y, Embed t1), t2) <- unbind t'
+                            theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
+                            case theType of
+                              Left ty -> if aeq t2 ty then return (Left (Pi (bind (y, Embed t1) t2) Plus))
+                                         else return (Right $ "the term" ++show(t)++ " is not type checked. rec")
+                              Right s -> return (Right s)
+                        (Pos _ (Pi t' Plus)) -> do
+                                ((y, Embed t1), t2) <- unbind t'
+                                theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
+                                case theType of
+                                  Left ty -> if aeq t2 ty then return (Left (Pi (bind (y, Embed t1) t2) Plus))
+                                             else return (Right $ "the term" ++show(t)++ " is not type checked. rec")
+                                  Right s -> return (Right s)
 
 -- | Term_let
 
@@ -415,9 +426,15 @@ compType (TermLetProof b p) = do (x, t1) <- unbind b
                                  case thePred of 
                                    Left pred -> (local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1))
                                    Right s -> return (Right s)
+-- | position info
+compType (Pos pos@(AlexPn _ line col) t) = do 
+                          t' <- compType t 
+                          case t' of 
+                            Left t -> return t'
+                            Right s -> return $ Right $ show(line)++":" ++show(col)++":"++s
 
 
--- | Term_case
+-- | Term_case, weird bug need to be fixed.
 
 compType (TermCase1 t branches) = do theType <- compType t
                                      case theType of
@@ -456,6 +473,7 @@ calcLocalContext constrType@(Pi b st) (h:ls)  = do
 
 calcLocalContext (TermVar _ ) [] = return $ Right True
 calcLocalContext (TermApplication _ _ _ ) [] = return $ Right True
+calcLocalContext (Pos _ t) ls = calcLocalContext t ls 
 calcLocalContext _ _ = return $ Left "Patterns variables doesn't fit well with the constructor ."
     
 sanityCheck :: Term -> [ArgName] -> Bool
@@ -479,7 +497,7 @@ checkBranch state theType ((constr, binding): l) =
                                           do theType' <- getInstance ctype (tail ls)
                                              case theType' of
                                                Right t -> do
-                                                 theType'' <- local (M.union (runIdentity (runFreshMT (execStateT (calcLocalContext t argnames) M.empty)))) (compType t1)
+                                                 theType'' <- local (M.union (runIdentity (runFreshMT (execStateT (calcLocalContext t argnames) M.empty)))) (compType t1) 
                                                  case theType'' of
                                                    Left t1' -> 
                                                      if not (sanityCheck t1' argnames) then  
@@ -487,13 +505,13 @@ checkBranch state theType ((constr, binding): l) =
                                                          else if aeq t1' state then checkBranch t1' theType l
                                                               else return $ Left $ "Expected type: " ++show(state)++". Actual type " ++show(t1')
                                                      else return $ Left $ "An insane event just happened."
-                                                   Right s -> return $ Left s
-                                               Left s -> return $ Left s
+                                                   Right s -> return $ Left $ s++"hey"
+                                               Left s -> return $ Left $ s++"what"
                                       else return $ Left $ "The actual type of the datatype constructor " ++show(constr)++ " doesn't fit the corresponding datatype "++show(head ls)
-                           Right s -> return $ Left s
+                           Right s -> return $ Left$ s ++ "hey you"
                      Left _ -> return $ Left $ "Couldn't find the type for " ++show(constr)
-                     Right s -> return $ Left s
-                 Right s -> return $ Left s
+                     Right s -> return $ Left $ s ++ "here you are"
+                 Right s -> return $ Left $ s
 
 checkBranch state theType [] = return $ Right state
 
@@ -505,6 +523,7 @@ flatten (Pi b stage) = let (b1, t1) = unsafeUnbind b in
                                                                Left ls -> Left (ls++[a])
                                                                Right s -> Right s
                                    TermVar t -> Left [ArgTerm (TermVar t)]
+                                   Pos _ t -> flatten t
                                    _ -> Right "Not a standard form"
 
 flatten (TermApplication t a st) = case (flatten t) of 
@@ -512,7 +531,10 @@ flatten (TermApplication t a st) = case (flatten t) of
                                      Right s -> Right s
 
 flatten (TermVar t) = Left [ArgTerm (TermVar t)]
+flatten (Pos _ t) = flatten t
 flatten _ = Right "Not a standard form"
+
+                         
 
 typechecker :: Module -> Env String
 
@@ -614,7 +636,7 @@ checkConstructors dataname tele ((constr,t2):l) = do
                                              Left False -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 1." 
                                              Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 3." 
                                      else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 2." 
-                         Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed." 
+                         Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed. 7" 
           _ -> return $ Left $ "unkown error"
     _ -> return $ Left $ "unkown error"
 
