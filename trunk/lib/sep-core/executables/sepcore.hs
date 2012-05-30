@@ -3,6 +3,8 @@ import Language.SepCore.Parser
 import Language.SepCore.Lexer
 import Language.SepCore.Syntax
 import Language.SepCore.Typecheck
+import Language.SepCore.PrettyPrint
+
 import Unbound.LocallyNameless
 import Text.PrettyPrint(render)
 import System.Console.CmdArgs
@@ -22,9 +24,14 @@ main = do
       cnts <- readFile filename;
       case runAlex cnts parser of
              Left e -> error e
-             Right a -> do putStrLn $ "Parsing success! \n" ++(show a)
-                           s <- runFreshMT (evalStateT (typechecker a) Data.Map.empty)
-                           print s
+             Right a -> do putStrLn $ "Parsing success! \n" 
+                           (s,env) <- runFreshMT (runStateT (typechecker a) Data.Map.empty)
+                           putStrLn $ s ++ "\n"
+                           putStrLn $ "Environment is listed below.\n"
+                           putStrLn $ show (disp env)
+
+                           
+                           
 
 
     _ -> putStrLn "usage: sepcore <filename>"

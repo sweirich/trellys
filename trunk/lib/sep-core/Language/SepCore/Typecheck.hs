@@ -5,6 +5,7 @@ PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedType
 module Language.SepCore.Typecheck where
 import Prelude hiding (pred,compare)
 import Language.SepCore.Syntax
+import Language.SepCore.PrettyPrint
 import Data.Maybe
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl, flatten)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -31,6 +32,9 @@ type Context = M.Map ArgName (ArgClass, Value)
 type Env = StateT Context (FreshMT IO)
 type LocalEnv = StateT Context (FreshMT Identity)
 
+instance Disp Context where
+  disp context = (vcat [ disp argname<>colon <+> disp argclass | (argname, (argclass,_)) <-(M.toList context)])
+  
 lookupVar :: ArgName -> Context -> Either (ArgClass, Value) String
 lookupVar name context = case (M.lookup name context) of
                           Just a -> Left a

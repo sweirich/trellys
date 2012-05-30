@@ -119,7 +119,9 @@ data Token =
        | TokenEquiv
 
        | TokenRec
+
        | TokenSQL
+
        | TokenSQR
   deriving (Show, Eq)
 
@@ -290,7 +292,7 @@ alexMonadScan2 = do
   sc <- alexGetStartCode
   case alexScan inp sc of
     AlexEOF -> alexEOF
-    AlexError inp'@(p,_,s) -> alexError $ "Lexical error at line: "++ show (getLineNum p) ++ ", column: " ++ show ((getColumnNum p)-1) ++ "."
+    AlexError inp'@(p,_,s) -> alexError $ show (getLineNum p) ++ ":" ++ show ((getColumnNum p)-1) ++ ": Lexical error."
     AlexSkip  inp' len -> do
         alexSetInput inp'
         alexMonadScan2
