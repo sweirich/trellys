@@ -24,11 +24,12 @@ main = do
       cnts <- readFile filename;
       case runAlex cnts parser of
              Left e -> error e
-             Right a -> do putStrLn $ "Parsing success! \n" 
+             Right a -> do putStrLn $ "Parsing success! \n" ++(show a)
                            (s,env) <- runFreshMT (runStateT (typechecker a) Data.Map.empty)
                            putStrLn $ s ++ "\n"
                            putStrLn $ "Environment is listed below.\n"
                            putStrLn $ show (disp env)
+                           putStrLn $ show ( env)
 
                            
                            
