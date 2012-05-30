@@ -173,7 +173,7 @@ Stage : '+'  {Plus}
       | '-'  {Minus}
 
 
-InnerTerm : TermVar   {TermVar (string2Name $1)}
+InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
    
      | type int  {Type $2}
 
@@ -261,7 +261,7 @@ InnerTerm : TermVar   {TermVar (string2Name $1)}
 
 Term : SpineForm {$1}
 
-SpineForm :  InnerTerm      {$1}
+SpineForm :  InnerTerm      { %do pos<-getPosition; return (Pos pos $1)}
           | SpineForm InnerTerm {TermApplication $1 (ArgTerm $2) Plus}
           | SpineForm '['InnerTerm']' {TermApplication $1 (ArgTerm $3) Minus}
 {-
@@ -308,6 +308,8 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 | Valax Term                                        {Valax $2}
 
 | '(' Proof ')'                                     {$2}
+
+
 
 {
 
