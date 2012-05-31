@@ -385,7 +385,36 @@ compType (TermApplication term arg stage) = do
                                                                                                                 else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
                                                                                                      Right s -> return (Right s)
                                                            else return (Right $ "The stage of the argument "++show(arg)++ "doesn't match the stage of the function")
-                                         Left _ -> return (Right $ "The term "++show(term)++ " is ill-formed")
+                                         Left (Pos _ (Pi b' stage')) ->                                           
+                                           if aeq stage stage' then
+                                                               do ((argname, Embed argclass),prog) <- unbind b' 
+                                                                  case argname of
+                                                                       ArgNameTerm at ->
+                                                                           case arg of
+                                                                             ArgTerm t -> do theType <- compType t
+                                                                                             case theType of
+                                                                                                  Left t' -> 
+                                                                                                      if aeq argclass (ArgClassTerm t') then return (Left (subst at t prog))
+                                                                                                      else return (Right $ "Expected type: " ++show(argclass)++ ". Actual type: " ++ show(ArgClassTerm t') )
+                                                                                                  Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a term")
+                                                                       ArgNamePredicate pt ->
+                                                                           case arg of
+                                                                             ArgPredicate pred -> do theKind <- compLK pred
+                                                                                                     case theKind of
+                                                                                                              Left k -> if aeq argclass (ArgClassLogicalKind k) then return (Left (subst pt pred prog))
+                                                                                                                        else return (Right $ "Expected logical kind: " ++show(argclass)++ ". Actual kind: " ++ show(ArgClassLogicalKind k) )
+                                                                                                              Right s -> return (Right s)
+                                                                             _ -> return (Right $ "Expected argument should be a predicate")
+                                                                       ArgNameProof prt->
+                                                                                  case arg of
+                                                                             ArgProof pro -> do theP <- compPred pro
+                                                                                                case theP of
+                                                                                                     Left p' -> if aeq argclass (ArgClassPredicate p') then return (Left (subst prt pro prog))
+                                                                                                                else return (Right $ "Expected Predicate: " ++show(argclass)++ ". Actual predicate: " ++ show(ArgClassPredicate p') )
+                                                                                                     Right s -> return (Right s)
+                                                           else return (Right $ "The stage of the argument "++show(arg)++ "doesn't match the stage of the function")
+                                         Left _ -> return (Right $ "The term "++show(term)++ " is ill-formed. 00")
                                          Right s -> return (Right s)
 
 -- | Term abort
