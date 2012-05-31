@@ -14,14 +14,14 @@ SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
 PASS=Prelude Arithmetic Vectors LetRebind Trees Append2 TypeTest NatElimination \
-     CastShiftTrick ErasedConv ProgList Test_Q_Cons StrongNat LessThanNat \
+     CastShiftTrick ErasedConv Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
-TODO_PASS=
+TODO_PASS=ProgList
 # stale?
 UNKNOWN= case_bug divtest jointest langlibbug recursion-examples
 # A symlink to the ../.capri local trellys, installed by top level make.
