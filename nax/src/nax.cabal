@@ -5,6 +5,8 @@ Description: An implementation of Trellys tracking the development and
 Cabal-Version: >= 1.2
 Build-type: Simple
 tested-with: GHC == 7.4.1
+           , GHC == 7.2.1
+           , GHC == 7.0.4
 
 executable nax
   hs-source-dirs: . ../../lib/layout-token/src/
