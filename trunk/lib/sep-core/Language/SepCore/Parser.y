@@ -261,7 +261,9 @@ InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
 
 Term : SpineForm {$1}
 
-SpineForm :  InnerTerm      { %do pos<-getPosition; return (Pos pos $1)}
+GetPos : { %do pos<-getPosition; return pos}
+
+SpineForm :  GetPos InnerTerm      { Pos $1 $2 }
           | SpineForm InnerTerm {TermApplication $1 (ArgTerm $2) Plus}
           | SpineForm '['InnerTerm']' {TermApplication $1 (ArgTerm $3) Minus}
 {-
