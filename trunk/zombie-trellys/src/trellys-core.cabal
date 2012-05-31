@@ -6,7 +6,8 @@ Description: An implementation of Trellys tracking the development and
 -- Maintainer: Garrin Kimmell <kimmell@ku.edu>
 Cabal-Version: >= 1.2
 Build-type: Simple
-tested-with: GHC == 7.4.1
+tested-with: GHC == 7.2.1
+         --, GHC == 7.4.1
 
 library
   hs-source-dirs: . ../../lib/layout-token/src/
@@ -24,11 +25,14 @@ executable trellys
                  RepLib >= 0.5.1 && < 0.5.3, 
                  unbound >= 0.3.1 && < 0.5,
                  mtl,
-                 transformers == 0.2.2.0,
+                 -- 0.2.2.0, 0.3.0.0
+                 transformers,
                  array >= 0.3.0.2 && < 0.5,
                  containers,
-                 directory, filepath,
-                 HUnit, QuickCheck,
+                 directory,
+                 filepath,
+                 HUnit,
+                 QuickCheck,
                  bimap == 0.2.4
   Ghc-Options:     -main-is Trellys -Wall
 
