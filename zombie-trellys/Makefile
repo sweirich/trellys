@@ -14,10 +14,13 @@
 # make sandbox-trellys:
 #             does a sandboxed install or trellys-core.  Quicker than
 #             `make all`. Assumes you ran `make all` previously.
+#
 # make install: does a `cabal install` of trellys-core.
+#
+# make ghci, make cabal-dev-ghci: start ghci with appropriate includes.
 
 .PHONY: all sandbox-install sandbox-uninstall sandbox-trellys \
-	    install uninstall clean test
+	    install uninstall clean test ghci cabal-dev-ghci
 
 all: sandbox-install
 
@@ -53,3 +56,15 @@ test:
 
 etags:
 	find ./ -name .svn -prune -o -name '*.hs' -print | xargs hasktags --etags
+
+# Start ghci through cabal-dev.
+#
+# This kind of works, but I'm not sure how to load the Trellys (main)
+# module here and it's not available from `:m + Trellys` in the ghci
+# started.
+cabal-dev-ghci:
+	cd src && cabal-dev ghci
+
+# Start ghci with appropriate include dirs.
+ghci:
+	ghci -isrc -i../lib/layout-token/src src/Trellys.hs
