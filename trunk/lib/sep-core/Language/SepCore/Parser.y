@@ -16,44 +16,27 @@ import Unbound.LocallyNameless.Subst(substR1)
 %error { parseError }
 %token 
        data       {TokenData }
-       Data       {TokenData }
        where      {TokenWhere }
-       Where      {TokenWhere }
        ProofVar   {TokenProofVar $$}
        PredVar    {TokenPredVar $$}
        TermVar    {TokenTermVar $$}
        int        {TokenInt $$}
        type       {TokenType }
-       Type       {TokenType }
-       Formula    {TokenFm  }
-       formula    {TokenFm }
-       Bottom     {TokenBot}
+       formula    {TokenFm  }
        bottom     {TokenBot}
        Pi         {TokenPi }
-       pi         {TokenPi }
-       Eq         {TokenEq }
        eq         {TokenEq }
-       Forall     {TokenForall }
        forall     {TokenForall}
        '\\'       {TokenLamb }
        abort      {TokenAb }
-       Abort      {TokenAb }
        join       {TokenJoin}
-       Join       {TokenJoin}
        contr      {TokenContr}
-       Contr      {TokenContr}
        valax      {TokenValax }
-       Valax      {TokenValax}
        case       {TokenCase}
-       Case       {TokenCase}
        of         {TokenOf}
-       Of         {TokenOf}
        let        {TokenLet}
-       Let        {TokenLet}
        in         {TokenIn}
-       In         {TokenIn}
        rec        {TokenRec}
-       Rec        {TokenRec}
        '!'        {TokenEx}
        '='        {TokenEquiv}
        '('        {TokenBL}
@@ -73,8 +56,15 @@ import Unbound.LocallyNameless.Subst(substR1)
 
 %%
 
+{- A more efficient way is demonstrate below by Garrin. 
 Module : Declaration              {[$1]} 
        | Module Declaration       {$1 ++ [$2]}
+-}
+
+Module : ModuleRev  { reverse $1 }
+
+ModuleRev : Declaration              {[$1]} 
+          | ModuleRev Declaration       {$2 : $1}
 
 Declaration : Logicdecl {DeclLogic $1}
             | Proofdef {DeclProof $1}
@@ -97,12 +87,10 @@ Preddecl : PredVar "::" LogicalKind '.'                 {Preddecl (PredicateVar 
 Preddef : PredVar ":=" Predicate'.'                        {Preddef (PredicateVar (string2Name $1)) $3}
 
 Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}
-             | data TermVar "::" Specialterm Where Dataconstrs '.'           {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
-             | Data TermVar "::" Specialterm where Dataconstrs '.'          {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
-             | Data TermVar "::" Specialterm Where Dataconstrs'.'       {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}             
+       
 
-Specialterm : Type int     {Empty}
-            | type int     {Empty}
+Specialterm : 
+             type int     {Empty}
             | Pi TermVar ':' Stage Term '.' Specialterm  {TCons(rebind (ArgNameTerm (string2Name $2),$4, Embed (ArgClassTerm $5)) $7)}
             | Pi '(' TermVar ':' Stage Term ')' '.' Specialterm {TCons(rebind (ArgNameTerm (string2Name $3),$5, Embed (ArgClassTerm $6)) $9)}
             | Pi ProofVar ':' Stage Predicate '.' Specialterm  {TCons(rebind (ArgNameProof (string2Name $2),$4, Embed (ArgClassPredicate $5)) $7)}
@@ -122,12 +110,6 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 | '\\' PredVar ':' LogicalKind '.' Predicate           {PredicateLambda (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
 | '\\' TermVar ':' Term '.' Predicate                  {PredicateLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
- 
-| Forall PredVar ':' LogicalKind '.' Predicate         {Forall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
-
-| Forall TermVar ':' Term '.' Predicate                {Forall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
-
-| Forall ProofVar ':' Predicate '.' Predicate          {Forall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
 | forall PredVar ':' LogicalKind '.' Predicate         {Forall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
@@ -145,21 +127,13 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 
 | '!' Term                                             {Terminate $2}
 
-| Bottom  int                                          {Bottom $2}
-
 | bottom  int                                          {Bottom $2}
 
 | '(' Predicate ')'                                    {$2}
 
-LogicalKind : Formula int                              {Formula $2}
+LogicalKind : 
 
-            | formula int                              {Formula $2}
-
-            | Forall PredVar ':' LogicalKind '.' LogicalKind        {QuasiForall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
-
-            | Forall TermVar ':' Term '.' LogicalKind               {QuasiForall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
-
-            | Forall ProofVar ':' Predicate '.' LogicalKind       {QuasiForall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)} 
+            formula int                              {Formula $2}
 
             | forall PredVar ':' LogicalKind '.' LogicalKind        {QuasiForall (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $4)) $6)}
 
@@ -177,19 +151,11 @@ InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
    
      | type int  {Type $2}
 
-     | Type int  {Type $2}
-
      | Pi PredVar ':' Stage LogicalKind '.' Term  {Pi (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
    
      | Pi TermVar ':' Stage Term '.' Term         {Pi (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
 
      | Pi ProofVar ':' Stage Predicate '.' Term   {Pi (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
-
-     | pi PredVar ':' Stage LogicalKind '.' Term  {Pi (bind (ArgNamePredicate (string2Name $2), Embed (ArgClassLogicalKind $5)) $7) $4}
-   
-     | pi TermVar ':' Stage Term '.' Term         {Pi (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
-
-     | pi ProofVar ':' Stage Predicate '.' Term   {Pi (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
 
      | Pi '(' PredVar ':' Stage LogicalKind ')' '.' Term  {Pi (bind (ArgNamePredicate (string2Name $3), Embed (ArgClassLogicalKind $6)) $9) $5}
    
@@ -197,22 +163,6 @@ InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
 
      | Pi '('ProofVar ':' Stage Predicate')' '.' Term   {Pi (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
 
-     | pi '(' PredVar ':' Stage LogicalKind')' '.' Term {Pi (bind (ArgNamePredicate (string2Name $3), Embed (ArgClassLogicalKind $6)) $9) $5}
-   
-     | pi '(' TermVar ':' Stage Term')' '.' Term         {Pi (bind (ArgNameTerm (string2Name $3), Embed (ArgClassTerm $6)) $9) $5}
-
-     | pi '(' ProofVar ':' Stage Predicate')' '.' Term  {Pi (bind (ArgNameProof (string2Name $3), Embed (ArgClassPredicate $6)) $9) $5}
-
-{-
-     | '(' Stage Term Term ')'                    {TermApplication $3 (ArgTerm $4) $2}
-
-     | '(' Stage Term Proof ')'                   {TermApplication $3 (ArgProof $4) $2}
-
-     | '(' Stage Term Predicate ')'               {TermApplication $3 (ArgPredicate $4) $2}
-
-
-     | SpineForm                                  {$1}
--}
      | '\\' TermVar ':' Stage Term '.' Term        {TermLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $5)) $7) $4}
  
      | '\\' ProofVar ':' Stage Predicate '.' Term  {TermLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $5)) $7) $4}
@@ -227,38 +177,17 @@ InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
  
      | abort Term      {Abort $2}
 
-     | Abort Term      {Abort $2}
-
      | case Term of TermBranches {TermCase1 $2 $4}
-
-     | Case Term of TermBranches {TermCase1 $2 $4}
-
-     | case Term Of TermBranches {TermCase1 $2 $4}
-
-     | Case Term Of TermBranches {TermCase1 $2 $4}
 
      | let ProofVar '=' Proof in Term  {TermLetProof (bind (string2Name $2) $6) $4}
 
-     | Let ProofVar '=' Proof in Term  {TermLetProof (bind (string2Name $2) $6) $4}
-
-     | let ProofVar '=' Proof In Term  {TermLetProof (bind (string2Name $2) $6) $4}
-
-     | Let ProofVar '=' Proof In Term  {TermLetProof (bind (string2Name $2) $6) $4}
-
      | let TermVar '=' Term in Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
-
-     | Let TermVar '=' Term In Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
-
-     | Let TermVar '=' Term in Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
-
-     | let TermVar '=' Term In Term {TermLetTerm1 (bind (string2Name $2) $6) $4}
 
      | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | Rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
+     | '('Term ')' {$2}
 
-     | '(' InnerTerm ')' {$2}
-
+{- Another way to implement spine form is demonstrated by Garrin below:
 Term : SpineForm {$1}
 
 GetPos : { %do pos<-getPosition; return pos}
@@ -266,12 +195,20 @@ GetPos : { %do pos<-getPosition; return pos}
 SpineForm :  GetPos InnerTerm      { Pos $1 $2 }
           | SpineForm InnerTerm {TermApplication $1 (ArgTerm $2) Plus}
           | SpineForm '['InnerTerm']' {TermApplication $1 (ArgTerm $3) Minus}
-{-
-          | SpineForm Proof {TermApplication $1 (ArgProof $2) Minus}
-          | SpineForm Predicate {TermApplication $1 (ArgPredicate $2) Minus}
-  -}
           | '(' SpineForm ')' {$2}
+ -}
 
+GetPos : {% getPosition}
+
+Term : GetPos SpineForm {Pos $1 $2}
+
+SpineForm : InnerTerm TermArgs  { foldr ( \ (pm, x) f -> TermApplication f (ArgTerm x) pm) $1 $2}
+
+TermArg : '['Term']'    { (Minus, $2)}
+        | InnerTerm       { (Plus, $1) }
+
+TermArgs : { [] }
+         | TermArgs TermArg  { $2 : $1 }
 
 
 TermBranches : TermVar "->" Term                    {[(ArgNameTerm (string2Name $1), (bind [] $3))]}
@@ -293,8 +230,6 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | join Term Term                                    {Join $2 $3}
 
-| Join Term Term                                    {Join $2 $3}
-
 | '(' Proof Term ')'                                {ProofApplication $2 (ArgTerm $3)}
 
 | '(' Proof Proof ')'                               {ProofApplication $2 (ArgProof $3)}
@@ -303,11 +238,7 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | contr Proof                                       {Contra $2}
 
-| Contr Proof                                       {Contra $2}
-
 | valax Term                                        {Valax $2}
-
-| Valax Term                                        {Valax $2}
 
 | '(' Proof ')'                                     {$2}
 
