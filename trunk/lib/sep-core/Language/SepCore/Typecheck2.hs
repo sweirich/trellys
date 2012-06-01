@@ -28,29 +28,38 @@ import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Data.Set
 -- global env: Context, having IO side effects.
 
-newtype TCMonad a = TCMonad{runTCMonad ::  ReaderT Context (FreshMT Identity) a }   
- deriving (Monad, MonadReader Context, Fresh)
+newtype TCMonad a = TCMonad{runTCMonad ::  ReaderT Context (FreshMT (ErrorT Doc Identity)) a}   
+ deriving (Monad, MonadReader Context, Fresh, MonadError Doc)
+
 type Context = M.Map ArgName (ArgClass, Value)
+
 type Env = StateT Context (FreshMT IO)
+
 type LocalEnv = StateT Context (FreshMT Identity)
 
 instance Disp Context where
   disp context = (vcat [ disp argname<>colon <+> disp argclass | (argname, (argclass,_)) <-(M.toList context)])
+
 instance Error Doc where
-    strMsg doc = disp doc 
+    strMsg s = text s
+    noMsg = strMsg "<unknown>"
 
-lookupVar :: MonadError Doc  m => ArgName -> Context ->  m(ArgClass, Value) 
-lookupVar name context = case (M.lookup name context) of
-                          Just a -> return a
-                          Nothing -> throwError $ strMsg $ "Can't find variable "++show(name) ++" from the context."
 
--- getClass :: ArgName -> Context -> Either ArgClass String
--- getClass name context = case (lookupVar name context) of
---                        Left (t, _) -> Left t 
---                        Right s -> Right $ s++"getClass"
 
--- getValue :: ArgName -> Context -> Either Value String
--- getValue name context = case (lookupVar name context) of
---                        Left (_, v) -> Left v 
---                        Right s -> Right s
+lookupVar ::  ArgName  ->  TCMonad(ArgClass, Value) 
+lookupVar name = do
+  context <- ask
+  case (M.lookup name context) of
+    Just a -> return a
+    Nothing -> throwError $ (disp "Can't find variable ") <+> (disp name) <+> (disp "from the context.")
+
+getClass :: ArgName  -> TCMonad ArgClass
+getClass name  = do
+   (argclass, _) <- (lookupVar name) `catchError` (\ e -> throwError $ e <+> (disp "in the use of getClass"))
+   return argclass
+
+getValue :: ArgName  -> TCMonad Value
+getValue name  = do
+   (_, v) <- (lookupVar name) `catchError` (\ e -> throwError $ e <+> (disp "in the use of getValue"))
+   return v
 
