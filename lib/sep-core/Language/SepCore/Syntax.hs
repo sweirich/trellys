@@ -48,7 +48,7 @@ data Tele = Empty
           | TCons (Rebind (ArgName,Stage,Embed ArgClass) Tele) 
           deriving (Show)
 
-data Datatypedecl = Datatypedecl Term (Bind Tele [(ArgName,Term)])    
+data Datatypedecl = Datatypedecl String (Bind Tele [(String,Term)])    
                     deriving (Show)
 
 -- data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
@@ -92,7 +92,8 @@ data Predicate = PredicateVar (Name Predicate)
            | Bottom Integer
 
            | Order Term Term
-
+            
+           | PosPredicate AlexPosn Predicate
   deriving(Show)
 
 data Proof =  ProofVar (Name Proof)
@@ -136,13 +137,14 @@ data Proof =  ProofVar (Name Proof)
              | Contra Proof
             
              | Contraval Proof Proof
-
+            
+             | PosProof AlexPosn Proof
 
     deriving(Show)
 
 type Scheme = [ArgName]
 
-type TermBranches = [(ArgName,(Bind Scheme Term))]
+type TermBranches = [(String,(Bind Scheme Term))]
 
 -- type TermBranches = [(TermScheme,Term)]
 

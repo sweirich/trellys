@@ -57,6 +57,7 @@ import Unbound.LocallyNameless.Subst(substR1)
 %%
 
 {- A more efficient way is demonstrate below by Garrin. 
+
 Module : Declaration              {[$1]} 
        | Module Declaration       {$1 ++ [$2]}
 -}
@@ -86,8 +87,7 @@ Preddecl : PredVar "::" LogicalKind '.'                 {Preddecl (PredicateVar 
 
 Preddef : PredVar ":=" Predicate'.'                        {Preddef (PredicateVar (string2Name $1)) $3}
 
-Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'            {Datatypedecl (TermVar (string2Name $2)) (bind $4 $6)}
-       
+Datatypedecl : data TermVar "::" Specialterm where Dataconstrs '.'            {Datatypedecl ($2) (bind $4 $6)}
 
 Specialterm : 
              type int     {Empty}
@@ -96,14 +96,14 @@ Specialterm :
             | Pi ProofVar ':' Stage Predicate '.' Specialterm  {TCons(rebind (ArgNameProof (string2Name $2),$4, Embed (ArgClassPredicate $5)) $7)}
             | Pi '(' ProofVar ':' Stage Predicate ')' '.' Specialterm {TCons(rebind (ArgNameProof (string2Name $3),$5, Embed (ArgClassPredicate $6)) $9)}
 
-Dataconstrs : TermVar "::" Term                           {[((ArgNameTerm (string2Name $1)), $3)]}
-|  Dataconstrs '|' TermVar "::" Term                      {$1++[((ArgNameTerm (string2Name $3)), $5)]}
+Dataconstrs : TermVar "::" Term                           {[($1, $3)]}
+|  Dataconstrs '|' TermVar "::" Term                      {$1++[($3, $5)]}
 
 
 
 {-Low level definitions-}
 
-Predicate : PredVar                                    {PredicateVar (string2Name $1)}
+InnerPredicate : PredVar                                    {PredicateVar (string2Name $1)}
 
 | '\\' ProofVar ':' Predicate '.' Predicate            {PredicateLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
@@ -116,12 +116,14 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 | forall TermVar ':' Term '.' Predicate                {Forall (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
 | forall ProofVar ':' Predicate '.' Predicate          {Forall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
-  
+
+{-
 | '(' Predicate Proof ')'                              {PredicateApplication $2 (ArgProof $3)}
 
 | '(' Predicate Term ')'                               {PredicateApplication $2 (ArgTerm $3)}
 
 | '(' Predicate Predicate ')'                          {PredicateApplication $2 (ArgPredicate $3)}
+-}
 
 |  Term '=' Term                                       {Equal $1 $3}
 
@@ -130,6 +132,17 @@ Predicate : PredVar                                    {PredicateVar (string2Nam
 | bottom  int                                          {Bottom $2}
 
 | '(' Predicate ')'                                    {$2}
+
+Predicate : GetPos SpineFormPredicate {PosPredicate $1 $2}
+
+SpineFormPredicate : InnerPredicate PredicateArgs  { foldr ( \ x f -> PredicateApplication f  x) $1 $2}
+
+PredicateArg : InnerTerm    {ArgTerm $1}
+        | InnerProof   {ArgProof $1}
+        | InnerPredicate       { ArgPredicate $1}
+
+PredicateArgs : { [] }
+         | PredicateArgs PredicateArg  { $2 : $1 }
 
 LogicalKind : 
 
@@ -147,7 +160,7 @@ Stage : '+'  {Plus}
       | '-'  {Minus}
 
 
-InnerTerm : TermVar   {	  (TermVar (string2Name $1))}
+InnerTerm : TermVar   {(TermVar (string2Name $1))}
    
      | type int  {Type $2}
 
@@ -196,31 +209,34 @@ SpineForm :  GetPos InnerTerm      { Pos $1 $2 }
           | SpineForm InnerTerm {TermApplication $1 (ArgTerm $2) Plus}
           | SpineForm '['InnerTerm']' {TermApplication $1 (ArgTerm $3) Minus}
           | '(' SpineForm ')' {$2}
- -}
+-}
 
 GetPos : {% getPosition}
 
 Term : GetPos SpineForm {Pos $1 $2}
 
-SpineForm : InnerTerm TermArgs  { foldr ( \ (pm, x) f -> TermApplication f (ArgTerm x) pm) $1 $2}
+SpineForm : InnerTerm TermArgs  { foldr ( \ (pm, x) f -> TermApplication f x pm) $1 $2}
 
-TermArg : '['Term']'    { (Minus, $2)}
-        | InnerTerm       { (Plus, $1) }
+TermArg : '['Term']'    { (Minus, (ArgTerm $2))}
+        |'['Proof']'    { (Minus, (ArgProof $2))}
+        | '['Predicate']'    { (Minus, (ArgPredicate $2))}
+        | InnerTerm       { (Plus, (ArgTerm $1))}
 
 TermArgs : { [] }
          | TermArgs TermArg  { $2 : $1 }
 
 
-TermBranches : TermVar "->" Term                    {[(ArgNameTerm (string2Name $1), (bind [] $3))]}
-             | TermVar Scheme "->" Term                    {[(ArgNameTerm (string2Name $1), (bind $2 $4))]}
-             | TermBranches '|' TermVar Scheme "->" Term       {$1 ++ [(ArgNameTerm (string2Name $3),(bind $4 $6))]}
+
+TermBranches : TermVar "->" Term                    {[($1, (bind [] $3))]}
+             | TermVar Scheme "->" Term                    {[($1, (bind $2 $4))]}
+             | TermBranches '|' TermVar Scheme "->" Term       {$1 ++ [($3,(bind $4 $6))]}
 
 Scheme : TermVar                               {[ArgNameTerm (string2Name $1)]}
        | ProofVar                              {[ArgNameProof (string2Name $1)]}
        | Scheme TermVar                    {$1 ++ [ArgNameTerm ( string2Name $2)] }
        | Scheme ProofVar                    {$1 ++ [ArgNameProof ( string2Name $2)] }
 
-Proof : ProofVar                                    {ProofVar (string2Name $1)}
+InnerProof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | '\\' ProofVar ':' Predicate '.' Proof          {ProofLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
@@ -230,17 +246,32 @@ Proof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | join Term Term                                    {Join $2 $3}
 
+{-
+
 | '(' Proof Term ')'                                {ProofApplication $2 (ArgTerm $3)}
 
 | '(' Proof Proof ')'                               {ProofApplication $2 (ArgProof $3)}
 
 | '(' Proof Predicate ')'                           {ProofApplication $2 (ArgPredicate $3)}
 
+  -}
+
 | contr Proof                                       {Contra $2}
 
 | valax Term                                        {Valax $2}
 
 | '(' Proof ')'                                     {$2}
+
+Proof : GetPos SpineFormProof {PosProof $1 $2}
+
+SpineFormProof : InnerProof ProofArgs  { foldr ( \ x f -> ProofApplication f  x) $1 $2}
+
+ProofArg : InnerTerm    {ArgTerm $1}
+        | InnerPredicate    {ArgPredicate $1}
+        | InnerProof       { ArgProof $1}
+
+ProofArgs : { [] }
+         | ProofArgs ProofArg  { $2 : $1 }
 
 
 
