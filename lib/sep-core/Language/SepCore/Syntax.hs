@@ -59,12 +59,15 @@ data Datatypedecl = Datatypedecl String (Bind Tele [(String,Term)])
       
 data Stage = Plus | Minus deriving(Show)
 
-data SuperKind = Logical Integer deriving (Show)
+data SuperKind = Logical Integer 
+                deriving (Show)
 
 data LogicalKind = Formula Integer
 
          | QuasiForall (Bind (ArgName, Embed ArgClass) LogicalKind)
 
+         | PosLK AlexPosn LogicalKind
+           
   deriving(Show)
 
 data Predicate = PredicateVar (Name Predicate)
@@ -161,7 +164,6 @@ data Term =  TermVar (Name Term)
            | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
 
            | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
-
            | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
            
            | TermLetTerm1 (Bind (Name Term) Term) Term
@@ -368,6 +370,8 @@ instance Disp Preddef where
     disp  = cleverDisp
 instance Disp Tele where
     disp  = cleverDisp
+instance Disp AlexPosn where
+    disp (AlexPn _ line col) = disp line <> text ":" <> disp col <> text ":"
 
 dParen:: (Display a) => Int -> a -> M Doc
 dParen level x =
