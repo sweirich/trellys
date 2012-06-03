@@ -33,9 +33,7 @@ newtype TCMonad a = TCMonad{runTCMonad ::  ReaderT Context (FreshMT (ErrorT Doc 
 
 type Context = M.Map ArgName (ArgClass, Value)
 
-type Env = StateT Context (FreshMT IO)
-
-type LocalEnv = StateT Context (FreshMT Identity)
+type Env = StateT Context (FreshMT (ErrorT Doc IO))
 
 instance Disp Context where
   disp context = (vcat [ disp argname<>colon <+> disp argclass | (argname, (argclass,_)) <-(M.toList context)])
@@ -217,52 +215,187 @@ compType (TermVar var) = do
   return theType
                   
 -- | TERM_PI, TERM_PiPredicate, TERM_PILK
--- compType (Pi b stage) = do 
---   ((argname, Embed argclass), prog) <- unbind b
---                            case argclass of
---                                 ArgClassTerm t -> do theType <- compType t
---                                                      case theType of
---                                                        Left (Type 0) -> local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
---                                                        Left _ -> return (Right $ "The type of the term " ++show(t)++" is ill-typed")
---                                                        Right s -> return (Right s)
---                                 ArgClassPredicate pred -> do theKind <- compLK pred
---                                                              case theKind of
---                                                                Left k -> do sk <- compSK k
---                                                                             case sk of
---                                                                               Left (Logical i) -> local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog)
---                                                                               Right s -> return(Right s) 
---                                                                Right s -> return(Right s)
---                                 ArgClassLogicalKind lk -> do sk <- compSK lk
---                                                              case sk of
---                                                                Left (Logical i) -> local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog)
---                                                                Right s -> return(Right s) 
+compType (Pi b stage) = do 
+  ((argname, Embed argclass), prog) <- unbind b
+  case argclass of
+    ArgClassTerm t -> do 
+      compType t >>= ensureType
+      ensureType =<< local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
+    ArgClassPredicate pred -> do 
+      compLK pred >>= compSK
+      local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog) >>= ensureType
+    ArgClassLogicalKind lk -> do 
+      compSK lk
+      local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog) >>= ensureType
 
--- -- | Term_LamMinus, LamPlus, LamIMPI, notice here for LamMinus, I implement x \notin FV(t) but not x \notin FV(|t|). 
--- compType (TermLambda b stage) = do ((argname, Embed argclass), prog) <- unbind b
---                                    case argclass of
---                                      ArgClassTerm t -> case stage of
---                                                     Plus -> do
---                                                       theType <- local (M.insert argname (ArgClassTerm t, Value)) (compType prog)
---                                                       case theType of
---                                                         Left t' -> return (Left(Pi (bind (argname, Embed (ArgClassTerm t)) t') Plus))
---                                                         Right s -> return (Right s)
---                                                     Minus -> case argname of
---                                                                ArgNameTerm tname -> if elem tname (fv prog) then return (Right "undefined")
---                                                                                 else do theType <- local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
---                                                                                         case theType of
---                                                                                           Left t' -> return (Left(Pi (bind (argname, Embed (ArgClassTerm t)) t') Minus))
---                                                                                           Right s -> return (Right s)
---                                                                _ -> return (Right "undefined")
---                                      ArgClassPredicate pred -> do 
---                                               theType <- local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog)
---                                               case theType of
---                                                 Left ty -> return (Left(Pi (bind (argname, Embed (ArgClassPredicate pred)) ty) Minus))
---                                                 Right s -> return(Right s)
---                                      ArgClassLogicalKind lk -> do
---                                               theType <- local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog)
---                                               case theType of
---                                                 Left ty -> return (Left(Pi (bind (argname, Embed (ArgClassLogicalKind lk)) ty) Minus))
---                                                 Right s -> return(Right s) 
+
+-- | Term_LamPlus 
+compType (TermLambda b Plus) = do 
+  ((argname, Embed argclass), prog) <- unbind b
+  t <- ensureArgClassTerm argclass  
+  theType <- local (M.insert argname (ArgClassTerm t, Value)) (compType prog)
+  return (Pi (bind (argname, Embed (ArgClassTerm t)) theType) Plus)
+                                                        
+-- | Term_LambPred LambLK
+compType (TermLambda b Minus) = do 
+  ((argname, Embed argclass), prog) <- unbind b
+  case argclass of
+    ArgClassPredicate pred -> do 
+      theType <- local (M.insert argname (ArgClassPredicate pred, NonValue)) (compType prog)
+      return (Pi (bind (argname, Embed (ArgClassPredicate pred)) theType) Minus)
+    ArgClassLogicalKind lk -> do
+      theType <- local (M.insert argname (ArgClassLogicalKind lk, NonValue)) (compType prog)
+      return (Pi (bind (argname, Embed (ArgClassLogicalKind lk)) theType) Minus)
+    ArgClassTerm t -> do -- This case may be changed after I implement the erasure function.
+      theType <- local (M.insert argname (ArgClassTerm t, NonValue)) (compType prog)
+      return (Pi (bind (argname, Embed (ArgClassTerm t)) theType) Minus)
+                                                                
+-- | Term_App
+compType (TermApplication term arg stage) = do 
+  (Pi b' stage') <- compType term >>= ensurePi 
+  if aeq stage stage' then
+      do ((argname, Embed argclass),prog) <- unbind b' 
+         case argname of
+           ArgNameTerm at -> do
+             t <- ensureArgTerm arg  
+             theType <- compType t
+             if aeq argclass (ArgClassTerm theType) then return (subst at t prog) else throwError $ disp("Expected type:") <+>disp(argclass)<+> disp("Actual type:") <+> disp(ArgClassTerm theType) 
+           ArgNamePredicate pt -> do
+             pred <-ensureArgPredicate arg 
+             theKind <- compLK pred
+             if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred prog) else throwError $ disp("Expected logical kind:") <+>disp(argclass)<+>disp( "Actual kind:") <+> disp(ArgClassLogicalKind theKind)
+           ArgNameProof prt-> do
+              pro <- ensureArgProof arg
+              theP <- compPred pro
+              if aeq argclass (ArgClassPredicate theP) then return (subst prt pro prog) else throwError $ disp("Expected Predicate: ")<+>disp(argclass)<+> disp("Actual predicate:") <+> disp (ArgClassPredicate theP)  else throwError $ disp("The stage of the argument")<+>disp(arg)<+>disp( "doesn't match the stage of function")<+>disp(term)
+
+-- | Term abort
+compType (Abort t) = do  
+  compType t >>= ensureType
+  return t
+
+-- | Term_REC
+compType (Rec b) = do 
+  ((x, f, Embed pa), t) <- unbind b 
+  (Pi t' st) <- ensurePi pa
+  case st of
+    Minus -> throwError $ disp("stage error")
+    Plus -> do
+      ((y, Embed t1), t2) <- unbind t'
+      theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
+      if aeq t2 theType then return (Pi (bind (y, Embed t1) t2) Plus) else throwError $ disp("Expected:") <+>disp (t2)<+>disp("Actually get:")<+> disp theType
+
+-- | Term_let, a simple version 
+
+compType (TermLetTerm1 b t) = do 
+  (x, t1) <- unbind b
+  theType <- compType t
+  local (M.insert (ArgNameTerm x) (ArgClassTerm theType, NonValue)) (compType t1)
+
+compType (TermLetProof b p) = do 
+  (x, t1) <- unbind b
+  thePred <- compPred p
+  local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1)
+
+
+
+
+typechecker :: Module -> Env Doc
+
+typechecker [] = return $ disp "Type checker seems to approve your program, so congratulation!"
+
+typechecker ((DeclData d):l) = do  
+  checkData d
+  typechecker l
+
+typechecker ((DeclProgdecl p):l) = do 
+  checkProgDecl p
+  typechecker l
+
+typechecker ((DeclProgdef p):l) = do  
+  checkProgDef p
+  typechecker l
+
+-- type-check data type declaration
+-- Append a tele in front of a term
+teleArrow :: Tele -> Term -> Term
+teleArrow Empty end = end
+teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) stage
+ where ((argname,stage,argclass),rest) = unrebind binding
+       arrRest = teleArrow rest end
+teleArrowMinus :: Tele -> Term -> Term
+teleArrowMinus Empty end = end
+teleArrowMinus (TCons binding) end = Pi (bind (argname,argclass) arrRest) Minus
+ where ((argname,stage,argclass),rest) = unrebind binding
+       arrRest = teleArrowMinus rest end
+
+
+checkData :: Datatypedecl -> Env Doc
+checkData (Datatypedecl dataname bindings) = do
+  (tele, cs) <- unbind bindings
+  env <- get
+  let datatype = teleArrow tele (Type 0)
+  case dataname of
+      TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
+                      Left (Type i) -> do
+                        put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
+                        checkConstructors dataname tele cs
+                      _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
+      _ -> return $ Left $ "unkown error"
+
+
+--compare :: Monad M => [Arg] -> Tele -> M Bool
+--compare the order of [arg] and Tele
+compare [] Empty = return $ Left True
+compare (h:l) (TCons bindings) = do let ((argname,stage ,argclass),res) = unrebind bindings
+                                    case argname of
+                                      ArgNameTerm u ->
+                                          case h of
+                                            ArgTerm (TermVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+                                      ArgNameProof u ->
+                                          case h of
+                                            ArgProof (ProofVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+                                      ArgNamePredicate u ->
+                                          case h of
+                                            ArgPredicate (PredicateVar x) ->  
+                                                if aeq x u then compare l res
+                                                else return $ Left False
+                                            _ -> return $ Left False
+
+compare _ _ = return $ Right "error"
+
+
+checkConstructors :: Term -> Tele -> [(ArgName, Term)] -> Env (Either String Bool)
+
+checkConstructors dataname _ [] = return $ Right True
+checkConstructors dataname tele ((constr,t2):l) = do 
+  env <- get
+  case dataname of
+    TermVar d -> 
+        case constr of
+          ArgNameTerm c -> case flatten t2 of
+                         Left ls -> if aeq (head ls) (ArgTerm dataname) then
+                                        do result <- compare (tail ls) tele
+                                           case result of
+                                             Left True -> 
+                                                 let t2' = teleArrow tele t2 in
+                                                 case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2')) env)) of
+                                                   Left (Type i) -> do
+                                                         put (M.insert (ArgNameTerm c)  (ArgClassTerm t2', NonValue) env)
+                                                         checkConstructors dataname tele l
+                                                   _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed. 0"
+                                             Left False -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 1." 
+                                             Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 3." 
+                                     else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 2." 
+                         Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed. 7" 
+          _ -> return $ Left $ "unkown error"
+    _ -> return $ Left $ "unkown error"
 
 
 
@@ -293,6 +426,10 @@ ensureQForall t = case unWrapLKPos t of
 
 ensureForall t = case unWrapPredicatePos t of 
                     (Forall b) -> return (Forall b)
+                    _ -> throwError $  disp ("Unexpected:")<+> disp t 
+
+ensurePi t = case unWrapTermPos t of 
+                    (Pi b st) -> return (Pi b st)
                     _ -> throwError $  disp ("Unexpected:")<+> disp t 
 
 ensureArgClassLK (ArgClassLogicalKind lk) = return lk
