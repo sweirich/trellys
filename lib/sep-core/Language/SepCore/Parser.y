@@ -144,7 +144,7 @@ PredicateArg : InnerTerm    {ArgTerm $1}
 PredicateArgs : { [] }
          | PredicateArgs PredicateArg  { $2 : $1 }
 
-LogicalKind : 
+InnerLogicalKind : 
 
             formula int                              {Formula $2}
 
@@ -155,7 +155,9 @@ LogicalKind :
             | forall ProofVar ':' Predicate '.' LogicalKind       {QuasiForall (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
 
             | '(' LogicalKind ')'                       {$2}
-       
+     
+LogicalKind : GetPos InnerLogicalKind {PosLK $1 $2}  
+
 Stage : '+'  {Plus}
       | '-'  {Minus}
 
