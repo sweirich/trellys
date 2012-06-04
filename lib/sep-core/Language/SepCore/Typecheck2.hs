@@ -295,9 +295,7 @@ compType (TermLetTerm1 b t) = do
 compType (TermLetProof b p) = do 
   (x, t1) <- unbind b
   thePred <- compPred p
-  local (M.insert (ArgNameProof x) (ArgClassPredicate pred, NonValue)) (compType t1)
-
-
+  local (M.insert (ArgNameProof x) (ArgClassPredicate thePred, NonValue)) (compType t1)
 
 
 typechecker :: Module -> Env Doc
@@ -323,79 +321,107 @@ teleArrow Empty end = end
 teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) stage
  where ((argname,stage,argclass),rest) = unrebind binding
        arrRest = teleArrow rest end
-teleArrowMinus :: Tele -> Term -> Term
-teleArrowMinus Empty end = end
-teleArrowMinus (TCons binding) end = Pi (bind (argname,argclass) arrRest) Minus
- where ((argname,stage,argclass),rest) = unrebind binding
-       arrRest = teleArrowMinus rest end
 
+flatten :: MonadError Doc m => Term -> m [Arg]
+
+flatten (Pi b stage) = 
+  let (b1, t1) = unsafeUnbind b in
+  flatten t1
+
+flatten (TermApplication t (ArgTerm t') st) = do
+  ls <- flatten t
+  ls' <- flatten t'
+  return (ls++ls')
+flatten (TermApplication t nonargterm st) = do
+  ls <- flatten t
+  return (ls++[nonargterm])
+  
+flatten (TermVar t) = return [ArgTerm (TermVar t)]
+
+flatten (Pos _ t) = flatten t
+
+flatten _ = throwError $ disp( "Not a standard form.")
 
 checkData :: Datatypedecl -> Env Doc
 checkData (Datatypedecl dataname bindings) = do
   (tele, cs) <- unbind bindings
   env <- get
-  let datatype = teleArrow tele (Type 0)
-  case dataname of
-      TermVar x ->  case runIdentity (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)) of
-                      Left (Type i) -> do
-                        put (M.insert (ArgNameTerm x)  (ArgClassTerm datatype, NonValue) env)
-                        checkConstructors dataname tele cs
-                      _ -> return $ Left $ "The type of "++show(x)++ " is not well-typed."
-      _ -> return $ Left $ "unkown error"
+  let datatype = teleArrow tele (Type 0) 
+  case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)))  of
+    Left e -> throwError e
+    Right t -> ensureType t
+  put (M.insert (ArgNameTerm (string2Name dataname)) (ArgClassTerm datatype, NonValue) env)
+  checkConstructors dataname tele cs
 
 
 --compare :: Monad M => [Arg] -> Tele -> M Bool
 --compare the order of [arg] and Tele
-compare [] Empty = return $ Left True
-compare (h:l) (TCons bindings) = do let ((argname,stage ,argclass),res) = unrebind bindings
-                                    case argname of
-                                      ArgNameTerm u ->
-                                          case h of
-                                            ArgTerm (TermVar x) ->  
-                                                if aeq x u then compare l res
-                                                else return $ Left False
-                                            _ -> return $ Left False
-                                      ArgNameProof u ->
-                                          case h of
-                                            ArgProof (ProofVar x) ->  
-                                                if aeq x u then compare l res
-                                                else return $ Left False
-                                            _ -> return $ Left False
-                                      ArgNamePredicate u ->
-                                          case h of
-                                            ArgPredicate (PredicateVar x) ->  
-                                                if aeq x u then compare l res
-                                                else return $ Left False
-                                            _ -> return $ Left False
+compare [] Empty = return $ True
+compare (h:l) (TCons bindings) =
+  let ((argname,stage ,argclass),res) = unrebind bindings in
+      case argname of
+        ArgNameTerm u ->
+            case h of
+              ArgTerm (TermVar x) ->  
+                 if aeq x u then compare l res else throwError $ disp ("error")
+              _ -> throwError $ disp ("error")
+        ArgNameProof u ->
+                  case h of
+                    ArgProof (ProofVar x) ->  
+                        if aeq x u then compare l res else throwError $ disp ("error")
+                    _ -> throwError $ disp ("error")
+        ArgNamePredicate u ->
+            case h of
+              ArgPredicate (PredicateVar x) ->  
+                  if aeq x u then compare l res else throwError $ disp ("error")
+              _ -> throwError $ disp ("error")
 
-compare _ _ = return $ Right "error"
+compare _ _ = throwError $ disp("error")
 
+checkConstructors :: String -> Tele -> [(String, Term)] -> Env Doc
 
-checkConstructors :: Term -> Tele -> [(ArgName, Term)] -> Env (Either String Bool)
-
-checkConstructors dataname _ [] = return $ Right True
+checkConstructors dataname _ [] = return $ disp ("checked") <+> disp dataname
 checkConstructors dataname tele ((constr,t2):l) = do 
   env <- get
-  case dataname of
-    TermVar d -> 
-        case constr of
-          ArgNameTerm c -> case flatten t2 of
-                         Left ls -> if aeq (head ls) (ArgTerm dataname) then
-                                        do result <- compare (tail ls) tele
-                                           case result of
-                                             Left True -> 
-                                                 let t2' = teleArrow tele t2 in
-                                                 case runIdentity (runFreshMT (runReaderT (runTCMonad (compType t2')) env)) of
-                                                   Left (Type i) -> do
-                                                         put (M.insert (ArgNameTerm c)  (ArgClassTerm t2', NonValue) env)
-                                                         checkConstructors dataname tele l
-                                                   _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-typed. 0"
-                                             Left False -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 1." 
-                                             Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 3." 
-                                     else return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed 2." 
-                         Right _ -> return $ Left $ "The type of the data constructor "++show(c)++ " is not well-formed. 7" 
-          _ -> return $ Left $ "unkown error"
-    _ -> return $ Left $ "unkown error"
+  ls <- flatten t2 
+  if aeq (head ls) (ArgTerm (TermVar (string2Name dataname))) then
+      let t2' = teleArrow tele t2 in  
+      do compare (tail ls) tele
+         case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType t2')) env))) of
+           Left e -> throwError e
+           Right t -> ensureType t
+         put (M.insert (ArgNameTerm (string2Name constr))  (ArgClassTerm t2', NonValue) env)
+         checkConstructors dataname tele l  else throwError $ disp("The type of the data constructor")<+>disp(constr)<+> disp("is not well-formed.") 
+
+-- type-check program declaration
+
+checkProgDecl :: Progdecl -> Env Doc
+checkProgDecl (Progdecl t t') = do
+  env <- get
+  case t of
+    TermVar x -> do 
+     case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType t')) env))) of 
+       Left e -> throwError e
+       Right t -> ensureType t
+     put (M.insert (ArgNameTerm x)  (ArgClassTerm t', NonValue) env)
+     return $ disp("Checked declaration of")<+> disp t
+    _ -> throwError $ disp ("Unexpected term")<+> disp t
+
+-- type-check program definition
+checkProgDef :: Progdef -> Env Doc
+checkProgDef (Progdef t t') = do
+  env <- get
+  case t of
+    TermVar x ->  do
+      case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType t')) env))) of
+        Left e -> throwError e
+        Right t'' -> do
+          case runIdentity (runErrorT(runFreshMT (runReaderT (runTCMonad (getClass (ArgNameTerm x))) env))) of 
+            Left e -> throwError e
+            Right t1' -> do                         
+              t1 <- ensureArgClassTerm t1'
+              if aeq t1 t'' then return $ disp ("Checked definition of") <+> disp t else throwError $ disp("Expecting")<+>disp(t1)<+>disp("Actually get:")<+>disp(t'') 
+    _ -> throwError $ disp("Unexpected term")<+>disp t
 
 
 
