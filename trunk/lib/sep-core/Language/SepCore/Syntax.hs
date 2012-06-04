@@ -492,7 +492,7 @@ instance Display Term where
   
 instance Display Proof where
   display (ProofVar p) = display p
-
+  display (PosProof _ p) = display p
   display (ProofLambda binding) = do
       lunbind binding fmt
     where fmt ((n,Embed ty),ran) = do
@@ -531,7 +531,7 @@ instance Display Proof where
 
 instance Display Predicate where
   display (PredicateVar p) = display p
-
+  display (PosPredicate _ p) = display p
   display (PredicateLambda binding) = do
       lunbind binding fmt
     where fmt ((n,Embed ty),ran) = do
