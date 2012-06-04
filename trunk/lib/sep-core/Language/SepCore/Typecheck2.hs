@@ -297,6 +297,67 @@ compType (TermLetProof b p) = do
   thePred <- compPred p
   local (M.insert (ArgNameProof x) (ArgClassPredicate thePred, NonValue)) (compType t1)
 
+-- | Term_case
+
+compType (TermCase1 t branches) = do 
+  theType <- compType t
+  checkBranch Undefined theType branches
+      
+-- applying a datatype constructor's type to a list of arguments
+getInstance constrType@(Pi b st) (arg : cs) = do 
+  ((argname, Embed argclass),res)  <- unbind b 
+  case argname of
+    ArgNameTerm nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
+    ArgNameProof nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
+    ArgNamePredicate nm -> let res' = subst (translate nm) arg res in
+                      getInstance res' cs
+
+getInstance constrType [] = return constrType
+getInstance _ _ = throwError $ disp("error from the use of getInstance.")
+        
+
+--calculate the local context for each branch
+
+--calcLocalContext :: Term -> Scheme -> LocalEnv (Either String Bool)
+--calcLocalContext ((TermVar c):[]) _ = return $ Right True
+
+calcLocalContext constrType@(Pi b st) (h:ls)  = do  
+  env <- get  
+  ((argname, Embed argclass), t) <- unbind b
+  put (M.insert h (argclass, NonValue) env)
+  calcLocalContext t ls 
+
+calcLocalContext (TermVar _ ) [] = return $ True
+calcLocalContext (TermApplication _ _ _ ) [] = return $ True
+calcLocalContext (Pos _ t) ls = calcLocalContext t ls 
+calcLocalContext _ _ = throwError $ disp ("Patterns variables doesn't fit well with the constructor.")
+    
+sanityCheck :: Term -> [ArgName] -> Bool
+sanityCheck t (argname:cs) = case argname of
+                               ArgNameTerm tm -> (elem tm (fv t)) || (sanityCheck t cs) 
+                               ArgNameProof pr -> (elem pr (fv t)) || (sanityCheck t cs) 
+                               ArgNamePredicate pred -> (elem pred (fv t)) || (sanityCheck t cs)
+sanityCheck t [] = False
+
+-- The type of the whole case expression, the type of t in case t, branches. 
+checkBranch :: Term -> Term -> TermBranches -> TCMonad Term
+checkBranch state theType ((constr, binding): l) = do
+  ls <- flatten theType 
+  (argnames,t1) <- unbind binding
+  ctype <- getClass (ArgNameTerm (string2Name constr)) >>= ensureArgClassTerm
+  d' <- flatten ctype 
+  if aeq (head d') (head ls) then 
+      do theType' <- getInstance ctype (tail ls)
+         case runIdentity(runErrorT (runFreshMT (execStateT (calcLocalContext theType' argnames) M.empty))) of
+           Left e -> throwError e
+           Right env -> do
+               t1' <- local (M.union env) (compType t1) 
+               if not (sanityCheck t1' argnames) then  
+                   if aeq state Undefined then checkBranch t1' theType l else if aeq t1' state then checkBranch t1' theType l else throwError $ disp("Expected type:")<+>disp(state)<+>disp("Actual type:")<+>disp(t1') else throwError $ disp("An insane event just happened.") else throwError $ disp("The actual type of the datatype constructor") <+>disp(constr)<+> disp (" doesn't fit the corresponding datatype")<+>disp(head ls)
+                   
+checkBranch state theType [] = return $ state
 
 typechecker :: Module -> Env Doc
 
