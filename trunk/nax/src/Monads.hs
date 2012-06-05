@@ -5,7 +5,6 @@ import System.IO(fixIO,hClose,hFlush,stdout)
 -- import qualified System.IO.Error as Err -- Deprecated
 import qualified Control.Exception         -- Use this instead
 
-
 import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
 
@@ -162,16 +161,6 @@ runLifted (Lift x) y f =
 lifted :: Monad m => m a -> Lifted m a
 lifted comp = Lift(do{ x <- comp; return(Just x)})
 
----------------------------------------
-newtype Id x = Id x
-
-runId (Id x) = x
-
-instance Monad Id where
-  return x = Id x
-  (Id x) >>= f = f x
-  fail s = error s
-  
 -----------------------------------------------
 lift1 f comp = do { x <- comp;return(f x)}    
 lift2 f c1 c2 = do { x <- c1; y <- c2; return(f x y)}  
