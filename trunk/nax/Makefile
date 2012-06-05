@@ -65,6 +65,15 @@ etags:
 cabal-dev-ghci:
 	cd src && cabal-dev ghci
 
+ghc_include = src:../lib/layout-token/src
+
 # Start ghci with appropriate include dirs.
 ghci:
-	ghci -isrc -i../lib/layout-token/src src/Main.hs
+	ghci -i$(ghc_include) src/Main.hs
+
+# Compile w/o cabal: much quicker than cabal-dev
+test/nax: src/*.hs
+    # Save the intermediate .o and .hi files in a separate dir (./tmp)
+    # so that location information in inferior ghci in emacs will work
+    # (C-c M-.).
+	ghc --make src/Main.hs -i$(ghc_include) -o test/nax -hidir tmp -odir tmp
