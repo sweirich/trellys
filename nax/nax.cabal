@@ -16,4 +16,5 @@ executable nax
                , pretty >= 1.0.1.0
                , mtl
                , containers
+               , transformers
   Ghc-Options: -Wall

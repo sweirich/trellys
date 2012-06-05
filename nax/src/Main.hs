@@ -22,9 +22,10 @@ import Eval
 import Types(zonkRho,zonkScheme,zonkExp,zonk,zonkKind,zonkD
             ,generalizeRho)
 import TypeCheck(Frag(..),NameContents(..),addTable,elab,inferExpT,tvsEnv,nullFrag,wellFormedType,browseFrag)
-import Monads(FIO,runFIO,handle,fio,Id(..),runId
-             , writeln
+import Monads(FIO,runFIO,handle,fio
+             ,writeln
              ,newRef,writeRef,readRef)
+import Data.Functor.Identity
 import Data.Char(isSpace)             
 
 -------------------------------------------------------------------------
@@ -255,10 +256,10 @@ class Monad m => Comp m where
      (Value m -> m b) ->
      m b
 
-instance Comp Id where
+instance Comp Identity where
   println s = return ()
   next = return 0
-  mkFun n f k = k(VFun whoknows (\ v -> runId(f v return)))  -- use pure functions in the Id monad
+  mkFun n f k = k(VFun whoknows (\ v -> runIdentity(f v return)))  -- use pure functions in the Identity monad
 
 instance Comp IO where
   println = putStrLn

@@ -3,9 +3,8 @@ module Eval where
 
 import Data.List(isInfixOf)
 import System.IO(fixIO)
-import Monads(Id,runId)
 -- import Debug.Trace(trace)
-
+import Data.Functor.Identity
 
 import UniqInteger
 import Names
@@ -304,7 +303,7 @@ threadC efun env (p:ps) (v:vs) =
 
 
 
--- eval exp env = runId (evalC exp env return)
+-- eval exp env = runIdentity (evalC exp env return)
 
 evalIO :: TExpr -> VEnv -> IO (Value IO)
 evalIO exp env = evalC exp env return

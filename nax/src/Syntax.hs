@@ -9,10 +9,11 @@ import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Text.PrettyPrint.HughesPJ as PP
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
 import Text.Parsec.Expr(Assoc(..))
+import Data.Functor.Identity
 
 import Names
 import BaseTypes
-import Monads(Id,FIO,runId,lift1)
+import Monads(FIO,lift1)
 import Debug.Trace
 
 ---------------------------------------------------------
@@ -908,7 +909,7 @@ mapMDecl f h (FunDec pos nm ts cls) = lift1 (FunDec pos nm ts) (mapM g cls)
   where g (ps,e) = do { e2 <- f e; ps2 <- mapM h ps; return(ps2,e2)}
 mapMDecl f g (Synonym pos nm xs typ) = return(Synonym pos nm xs typ)
 
-mapDecl f x = runId (mapMDecl (return . f) return x)
+mapDecl f x = runIdentity (mapMDecl (return . f) return x)
       
 
 toPat:: Typ -> TypPat
