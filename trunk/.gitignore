@@ -1,7 +1,12 @@
-cabal-dev
 *.trellys-elaborated
-trellys
 TAGS
+
+# build
+cabal-dev
 *.hi
 *.o
 dist
+
+# executables
+zombie-trellys/test/trellys
+nax/test/nax
