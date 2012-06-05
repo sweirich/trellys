@@ -30,7 +30,7 @@ sandbox-uninstall:
 	-rm -rf cabal-dev
 
 sandbox-trellys: cabal-dev
-	cabal-dev install ./src
+	cabal-dev install .
 	ln -fs `pwd`/cabal-dev/bin/trellys test
 
 # You need to have the cabal install dir on your path (by default

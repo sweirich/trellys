@@ -9,7 +9,7 @@ tested-with: GHC == 7.4.1
            , GHC == 7.0.4
 
 executable nax
-  hs-source-dirs: . ../../lib/layout-token/src/
+  hs-source-dirs: src/ ../lib/layout-token/src/
   Main-is: Main.hs
   Build-depends: base >= 4
                , parsec >= 3.1 && < 3.2
