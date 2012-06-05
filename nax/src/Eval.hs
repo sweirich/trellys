@@ -14,10 +14,10 @@ import Terms(freeExp)
 import Value(Encoding(..),Typable(..),traceScheme,showScheme,prims,btype,imply,applyTE
             ,injectIII,injectBBB,injectIIB,notInfo,conkeyM)
 -- import Types(patBinds,tint,tbool,arrT)
-import Monads(FIO,lift1,lift2,lift3,fio)
+import Monads(FIO,fio)
 -- Miscellaneous stuff
 
-import Control.Monad(foldM)
+import Control.Monad(foldM,liftM,liftM2,liftM3)
 import qualified Data.Map as DM
 import Data.Map (fromListWith)
 import Data.List(elemIndex)
@@ -335,12 +335,12 @@ reify  n x  = help n x  where
       ; result <- f (VCode (TEVar name (error "type of var in reify"))) return
       ; body <- reify n result
       ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
-  help n (VTuple xs) = lift1 TETuple (mapM (reify n) xs)
-  help n (VCon mu arity c vs) = lift1 econ (mapM (reify n) vs)
+  help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
+  help n (VCon mu arity c vs) = liftM econ (mapM (reify n) vs)
    where econ es = TECon mu (toName c) (Tau tunit) arity es
         -- applyTE ( CSP(toName c,mu,VCon mu arity c []) : es)
 
-  help n (VIn kind x) = lift1 (TEIn kind) (reify n x)
+  help n (VIn kind x) = liftM (TEIn kind) (reify n x)
   help n (VInverse v) = error ("No VInverse in reify yet: "++show v)
   help n (VCode e) = return e
   help n (VProof t1 t2) = error ("No VProof in reify yet: "++show t1++"="++show t2)

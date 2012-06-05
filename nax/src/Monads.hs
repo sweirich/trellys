@@ -162,10 +162,6 @@ lifted :: Monad m => m a -> Lifted m a
 lifted comp = Lift(do{ x <- comp; return(Just x)})
 
 -----------------------------------------------
-lift1 f comp = do { x <- comp;return(f x)}    
-lift2 f c1 c2 = do { x <- c1; y <- c2; return(f x y)}  
-lift3 f c1 c2 c3 = do { x1 <- c1; x2 <- c2; x3 <- c3; return(f x1 x2 x3)}
-lift4 f c1 c2 c3 c4 = do { x1 <- c1; x2 <- c2; x3 <- c3; x4 <- c4; return(f x1 x2 x3 x4)}
 
 foldrM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
 foldrM acc base [] = return base

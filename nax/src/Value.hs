@@ -227,9 +227,6 @@ instance (Typable a ,Typable b ) => Typable(a -> b) where
 
 -- Creating values encoding functions in a computational monad
 
-liftM1 typ n f = VFunM n (\ x k -> do { ans <- f(from x); k(to ans)})
-liftM2 t1 t2 n f = (VFun t1(\ x -> liftM1 t2 n (f (from x))))
-    
 liftIII :: (Int -> Int -> Int) -> (Value m,Scheme)
 liftIII f = (to f,Sch [] (Tau(tint `arrT` (tint `arrT` tint))))
 
