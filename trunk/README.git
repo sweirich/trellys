@@ -1,6 +1,10 @@
 Clone the svn repo with git-svn:
 
-  git svn clone --prefix=svn/ --stdlayout --ignore-paths=nax/src/Language/Trellys/LayoutToken.hs https://trellys.googlecode.com/svn/ trellys-lang.git
+  git svn clone --prefix=svn/ \
+      --stdlayout \
+      --ignore-paths=nax/src/Language/Trellys/LayoutToken.hs \
+      https://trellys.googlecode.com/svn/ \
+      trellys-lang.git
 
 The --ignore-paths avoids the corrupted LayoutToken.hs.  It's not
 present in current revisions, but will still confuse git.
