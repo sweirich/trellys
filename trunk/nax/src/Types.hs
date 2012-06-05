@@ -9,7 +9,7 @@ import Monads
 import Data.List(union,unionBy,any,(\\),partition)
 import Data.Char(isUpper)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
-import Control.Monad(foldM)
+import Control.Monad (foldM,liftM,liftM2,liftM3)
 
 -- These are for pretty printing
 import qualified Text.PrettyPrint.HughesPJ as PP
@@ -17,7 +17,6 @@ import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
 import Names
 import BaseTypes
 import Syntax
-import Monads(unionByM)
 import Eval(normform)
  
 import Debug.Trace 
@@ -354,7 +353,7 @@ kindOf t = do { x <- prune t; f x }
                                zz -> error("\nIn the type application: "++show t++"\n"++
                                            "the type constructor: "++show f++"\n"++
                                            "does not have an kind arrow as its sort: "++show t2)}
-        f (TyLift (Checked e)) = lift1 LiftK (typeOf e)
+        f (TyLift (Checked e)) = liftM LiftK (typeOf e)
         f (TyLift e) = error ("No kindOf for lifted kinds over unchecked terms: "++show e)
         f (TyAll vs t) = kindOf t
         
@@ -411,15 +410,15 @@ checkScheme loc m (Sch vs r) k = checkRho loc m r k
 -- Zonking follows all mutable variable chains and eliminates them
 
 zonkD:: Decl (TExpr) -> FIO (Decl TExpr)
-zonkD (Def pos pat e) = lift1 (Def pos pat) (zonkExp e)
-zonkD (DataDec pos nm args cs derivs) = lift1 (\ x -> DataDec pos nm args x derivs) (mapM f cs)
+zonkD (Def pos pat e) = liftM (Def pos pat) (zonkExp e)
+zonkD (DataDec pos nm args cs derivs) = liftM (\ x -> DataDec pos nm args x derivs) (mapM f cs)
   where f (c,sch) = do { sch2 <- mapM zonkScheme sch; return(c,sch2)}
-zonkD (GADT pos nm k cs derivs) = lift2 (\ x y -> GADT pos nm x y derivs) (zonkKind k) (mapM f cs)
+zonkD (GADT pos nm k cs derivs) = liftM2 (\ x y -> GADT pos nm x y derivs) (zonkKind k) (mapM f cs)
   where f (nm,args,doms,rng) = 
           do { doms2 <- mapM zonkScheme doms
              ; rng2 <- zonkRho rng
              ; return(nm,args,doms2,rng2)}
-zonkD (FunDec pos fnm args cls) = lift2 (FunDec pos fnm) (mapM f args) (mapM g cls)
+zonkD (FunDec pos fnm args cls) = liftM2 (FunDec pos fnm) (mapM f args) (mapM g cls)
   where f (nm,k) = do { k2 <- zonkKind k; return(nm,k2)}
         g (ps,e) = do { e2 <- zonkExp e; return(ps,e)}
         
@@ -429,13 +428,13 @@ zonkE (ELit loc l) = return(ELit loc l)
 zonkE (EVar nm) = return (EVar nm) 
 zonkE (EFree nm) = return(EFree nm)
 zonkE (ECon nm) = return (ECon nm)
-zonkE (EApp x y) = lift2 EApp (zonkE x) (zonkE y)
---zonkE (EAbs e1 ms) = lift2 EAbs (zonkElim e1)(mapM g ms)
+zonkE (EApp x y) = liftM2 EApp (zonkE x) (zonkE y)
+--zonkE (EAbs e1 ms) = liftM2 EAbs (zonkElim e1)(mapM g ms)
 --            where g (p,e) = do { e2 <- zonkE e; return(p,e2)}
-zonkE (ETuple es) = lift1 ETuple (mapM zonkE es)
-zonkE (EIn k x) = lift2 EIn (zonkKind k)(zonkE x)
+zonkE (ETuple es) = liftM ETuple (mapM zonkE es)
+zonkE (EIn k x) = liftM2 EIn (zonkKind k)(zonkE x)
 {-
-zonkE (EMend tag elim scr ms) = lift3 (TEMend tag) (zonkElim elim) (zonkExp scr) (mapM g ms)
+zonkE (EMend tag elim scr ms) = liftM3 (TEMend tag) (zonkElim elim) (zonkExp scr) (mapM g ms)
             where g (ps,e) = do { e2 <- zonkExp e; return(ps,e2)}
 -}
 
@@ -447,43 +446,43 @@ pruneTEqual (k @ (TVar(uniq,ref))) =
 pruneTEqual t = return t
 
 zonkPat:: Pat -> FIO Pat
-zonkPat (PVar v (Just t)) = lift1 (PVar v . Just) (zonk t)
-zonkPat (PTuple ps) = lift1 PTuple (mapM zonkPat ps)
-zonkPat (PCon c ps) = lift1 (PCon c) (mapM zonkPat ps)
+zonkPat (PVar v (Just t)) = liftM (PVar v . Just) (zonk t)
+zonkPat (PTuple ps) = liftM PTuple (mapM zonkPat ps)
+zonkPat (PCon c ps) = liftM (PCon c) (mapM zonkPat ps)
 zonkPat p = return p
              
 zonkExp :: TExpr -> FIO TExpr
 zonkExp x = do { y <- pruneE x; f y}
    where f (TELit loc l) = return(TELit loc l)
-         f (TEVar nm sch) = lift1 (TEVar nm) (zonkScheme sch)
-         f (TECon mu nm rho a xs) = lift2 (\ r x -> TECon mu nm r a x) (zonkRho rho) (mapM zonkExp xs)
-         f (TEApp x y) = lift2 TEApp (zonkExp x) (zonkExp y)
-         f (TEAbs e1 ms) = lift2 TEAbs (zonkElim2 e1)(mapM g ms)
+         f (TEVar nm sch) = liftM (TEVar nm) (zonkScheme sch)
+         f (TECon mu nm rho a xs) = liftM2 (\ r x -> TECon mu nm r a x) (zonkRho rho) (mapM zonkExp xs)
+         f (TEApp x y) = liftM2 TEApp (zonkExp x) (zonkExp y)
+         f (TEAbs e1 ms) = liftM2 TEAbs (zonkElim2 e1)(mapM g ms)
             where g (p,e) = do { e2 <- zonkExp e; p2 <- zonkPat p; return(p2,e2)}
-         f (TETuple es) = lift1 TETuple (mapM zonkExp es)
-         f (TELet d x) = lift2 TELet (mapMDecl zonkExp zonkPat d) (zonkExp x)
-         f (TEIn k x) = lift2 TEIn (zonkKind k)(zonkExp x)
-         f (TEMend tag elim scr ms) = lift3 (TEMend tag) (zonkElim elim) (zonkExp scr) (mapM g ms)
+         f (TETuple es) = liftM TETuple (mapM zonkExp es)
+         f (TELet d x) = liftM2 TELet (mapMDecl zonkExp zonkPat d) (zonkExp x)
+         f (TEIn k x) = liftM2 TEIn (zonkKind k)(zonkExp x)
+         f (TEMend tag elim scr ms) = liftM3 (TEMend tag) (zonkElim elim) (zonkExp scr) (mapM g ms)
             where g (tele,ps,e) = do { e2 <- zonkExp e
                                      ; ps2 <- mapM zonkPat ps
                                      ; tele2 <- (mapM zonkClass tele)
                                      ; return(tele2,ps2,e2)}
-         f (AppTyp e t) = lift2 AppTyp (zonkExp e) (mapM zonk t)
-         f (AbsTyp ts e) = lift2 AbsTyp (mapM zonkClass ts) (zonkExp e)
-         f (TECast p e) = lift2 TECast (zonkTEqual p) (zonkExp e)
-         f (ContextHole e1 e2) = lift2 ContextHole (zonkExp e1) (zonkExp e2)
+         f (AppTyp e t) = liftM2 AppTyp (zonkExp e) (mapM zonk t)
+         f (AbsTyp ts e) = liftM2 AbsTyp (mapM zonkClass ts) (zonkExp e)
+         f (TECast p e) = liftM2 TECast (zonkTEqual p) (zonkExp e)
+         f (ContextHole e1 e2) = liftM2 ContextHole (zonkExp e1) (zonkExp e2)
          f (Emv(uniq,ptr,t)) = do { t2 <- zonk t; return(Emv(uniq,ptr,t2))}
          f (CSP x) = return(CSP x)
 
 zonkElim::  Elim (Telescope, [(Typ, Kind)]) -> FIO (Elim (Telescope, [(Typ, Kind)]))
 zonkElim ElimConst = return ElimConst
 zonkElim (ElimFun (tele,pairs) t) = 
-   lift2 (ElimFun) (lift2 (,) (zonkTele tele) (mapM f pairs)) (zonk t)
-  where f (t,k) = lift2 (,) (zonk t) (zonkKind k)
+   liftM2 (ElimFun) (liftM2 (,) (zonkTele tele) (mapM f pairs)) (zonk t)
+  where f (t,k) = liftM2 (,) (zonk t) (zonkKind k)
 
 zonkElim2::  Elim [(Name, Class () Kind Typ)] -> FIO (Elim [(Name, Class () Kind Typ)])
 zonkElim2 ElimConst = return ElimConst
-zonkElim2 (ElimFun ns t) = lift2 (ElimFun) (mapM f ns) (zonk t)
+zonkElim2 (ElimFun ns t) = liftM2 (ElimFun) (mapM f ns) (zonk t)
      where f (n,Type k) = do { k2 <- zonkKind k; return(n,Type k2)}
            f (n,Exp k) = do { k2 <- zonk k; return(n,Exp k2)}
            f (n,Kind ()) = return(n,Kind ()) 
@@ -492,16 +491,16 @@ zonkElim2 (ElimFun ns t) = lift2 (ElimFun) (mapM f ns) (zonk t)
 
 zonk :: Typ -> FIO Typ
 zonk t = do { x <- prune t; f x}
-  where f (TyVar s k) =  lift1 (TyVar s) (zonkKind k)
-        f (TyApp g x) = lift2 TyApp (zonk g) (zonk x)      
-        f (TyTuple k xs) = lift2 TyTuple (zonkKind k) (mapM zonk xs)
-        f (TyProof x y) = lift2 TyProof (zonk x) (zonk y)
-        f (TyArr x y) = lift2 TyArr (zonk x) (zonk y)
+  where f (TyVar s k) =  liftM (TyVar s) (zonkKind k)
+        f (TyApp g x) = liftM2 TyApp (zonk g) (zonk x)      
+        f (TyTuple k xs) = liftM2 TyTuple (zonkKind k) (mapM zonk xs)
+        f (TyProof x y) = liftM2 TyProof (zonk x) (zonk y)
+        f (TyArr x y) = liftM2 TyArr (zonk x) (zonk y)
         f (TySyn nm arity xs body) =
-            lift2 (TySyn nm arity) (mapM zonk xs) (zonk body)
-        f (TyMu k) = lift1 TyMu (zonkKind k)
-        f (TyLift (Checked e)) = lift1 (TyLift . Checked) (zonkExp e)
-        f (TyLift (Parsed e)) = return(TyLift (Parsed e)) -- lift1 (TyLift . Parsed) (zonkE e)                      
+            liftM2 (TySyn nm arity) (mapM zonk xs) (zonk body)
+        f (TyMu k) = liftM TyMu (zonkKind k)
+        f (TyLift (Checked e)) = liftM (TyLift . Checked) (zonkExp e)
+        f (TyLift (Parsed e)) = return(TyLift (Parsed e)) -- liftM (TyLift . Parsed) (zonkE e)                      
         f (TyCon syn c k) = do { k1 <- zonkPolyK k; return(TyCon syn c k) }
         f (TcTv (uniq,ptr,k)) =  do { k1 <- zonkKind k; return(TcTv(uniq,ptr,k1)) }
         f (TyAll vs r) =
@@ -725,7 +724,7 @@ remove x (m : more) ns =
 
 
 unionW:: Vars -> Vars -> FIO Vars
-unionW (xs,ys) (ms,ns) =  lift2 (,) (unionByM (f h) xs ms) (unionByM (f g) ys ns)
+unionW (xs,ys) (ms,ns) =  liftM2 (,) (unionByM (f h) xs ms) (unionByM (f g) ys ns)
   where h (Kind(uniq,ptr)) = (uniq,"Kind",noPos,"k"++show uniq)
         h (Type(uniq,ptr,kind)) = (uniq,"Type",loc kind,"t"++show uniq)
         h (Exp(uniq,ptr,typ)) = (uniq,"Exp",loc typ,"e"++show uniq)
@@ -993,7 +992,7 @@ new Exist pos nm env x =
          Kind () -> return(Kind(Kname nm2))
          Type k -> do { k2 <- kindSubb pos env k; return (Type(TyVar nm2 k2)) }
          Exp t ->  do { t2 <- tySubb pos env t
-                      ; lift1 Exp (rigidVar nm2 t2) } }
+                      ; liftM Exp (rigidVar nm2 t2) } }
                       -- return(Exp(TEVar nm2 (Sch [] (Tau t2)))) }} 
 
 rigidVar nm ty = do { i <- next; return(CSP(nm,i,VCode(TEVar nm (Sch [] (Tau ty)))))}
@@ -1184,8 +1183,8 @@ kindSubb:: SourcePos -> SubEnv -> Kind -> FIO Kind
 kindSubb loc (env@(ptrs,names,tycons)) x = do { y <- pruneK x; f y}
   where sub x = kindSubb loc env x
         f Star = return(Star)
-        f (Karr x y) = lift2 Karr (sub x) (sub y)
-        f (LiftK t) = lift1 LiftK (tySubb loc env t)
+        f (Karr x y) = liftM2 Karr (sub x) (sub y)
+        f (LiftK t) = liftM LiftK (tySubb loc env t)
         f (k@(Kvar (uniq,ptr))) = returnK (findE (Kind ptr) ptrs (Kind k))
         f (Kname n) = returnK(findF (Kind n) names (Kind(Kname n)))
 
@@ -1206,7 +1205,7 @@ elimSubb2:: SourcePos -> SubEnv -> Elim (Telescope,[(Typ,Kind)]) -> FIO (Elim (T
 elimSubb2 pos env ElimConst = return ElimConst
 elimSubb2 pos (env@(ptrs,names,tycons)) (ElimFun (vs,ts) t) =  -- note the vs are binding occurences
   do { (vs2,env2) <- alphaTele pos (vs,env)
-     ; ts2 <- mapM (\ (t,k) -> lift2 (,) (tySubb pos env2 t) (kindSubb pos env2 k))  ts
+     ; ts2 <- mapM (\ (t,k) -> liftM2 (,) (tySubb pos env2 t) (kindSubb pos env2 k))  ts
      ; t2 <- tySubb pos env2 t
      ; return(ElimFun (vs2,ts2) t2)}
   {-
@@ -1223,24 +1222,24 @@ expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
            do { sch2 <- schemeSubb pos env sch
               ; returnE(findF (Exp nm) names (Exp (TEVar nm sch2)))}
          f (TECon mu nm rho arity xs) =
-           lift2 (\ r x -> TECon mu nm r arity x) (rhoSubb pos env rho) (mapM sub xs)
-         f (TEApp x y) = lift2 TEApp (sub x) (sub y)
-         f (TEAbs e1 ms) = lift2 TEAbs (elimSubb pos env e1) (mapM g ms)
+           liftM2 (\ r x -> TECon mu nm r arity x) (rhoSubb pos env rho) (mapM sub xs)
+         f (TEApp x y) = liftM2 TEApp (sub x) (sub y)
+         f (TEAbs e1 ms) = liftM2 TEAbs (elimSubb pos env e1) (mapM g ms)
               where g (p,e) = do { p2 <- patSubb pos env p
                                  ; e2 <- expSubb pos (hideE p env) e
                                  ; return(p2,e2)}
-         f (TETuple es) = lift1 TETuple (mapM sub es)
-         f (TELet d x) = lift2 TELet (decSubb pos env d) (sub x)
-         f (TEIn k x) = lift2 TEIn (kindSubb pos env k) (sub x)
+         f (TETuple es) = liftM TETuple (mapM sub es)
+         f (TELet d x) = liftM2 TELet (decSubb pos env d) (sub x)
+         f (TEIn k x) = liftM2 TEIn (kindSubb pos env k) (sub x)
 
-         f (TEMend tag e1 scr ms) = lift3 (TEMend tag) (elimSubb2 pos env e1) (sub scr) (mapM g ms)
+         f (TEMend tag e1 scr ms) = liftM3 (TEMend tag) (elimSubb2 pos env e1) (sub scr) (mapM g ms)
             where g (tele,ps,e) = 
                      do { (vs2,env2) <- alphaTele pos (tele,env)
                         ;  ps2 <- mapM (patSubb pos env2) ps
                         ; e2 <- expSubb pos (foldr hideE env2 ps) e
                         ; return(vs2,ps2,e2)}
 
-         f (AppTyp e t) = lift2 AppTyp (sub e) (mapM (tySubb pos env) t)
+         f (AppTyp e t) = liftM2 AppTyp (sub e) (mapM (tySubb pos env) t)
          f (AbsTyp ts e) = 
             do { (vs2,env2) <- alphaTele pos (ts,env)
 	       ; e2 <- expSubb pos env2 e
@@ -1250,17 +1249,17 @@ expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
               ; e2 <- expSubb pos env2 e
               ; t2 <- eqSubb pos env2 t
               ; return(TECast (TGen vs2 t2) e2)}
-         f (TECast p e) = lift2 TECast (eqSubb pos env p) (expSubb pos env e)
+         f (TECast p e) = liftM2 TECast (eqSubb pos env p) (expSubb pos env e)
          f (Emv(uniq,ptr,t)) = 
             do { t2 <- tySubb pos env t
                ; returnE(findE (Exp ptr) ptrs (Exp(Emv(uniq,ptr,t2))))}
-         f (ContextHole e1 e2) = lift2 ContextHole (sub e1) (sub e2)
+         f (ContextHole e1 e2) = liftM2 ContextHole (sub e1) (sub e2)
          f (CSP x) = return(CSP x)
 
 patSubb :: SourcePos -> SubEnv -> Pat -> FIO Pat
-patSubb loc env (PVar x (Just t)) = lift1 (PVar x . Just) (tySubb loc env t)
-patSubb loc env (PTuple ps) = lift1 PTuple (mapM (patSubb loc env) ps)
-patSubb loc env (PCon c ps) = lift1 (PCon c) (mapM (patSubb loc env) ps)
+patSubb loc env (PVar x (Just t)) = liftM (PVar x . Just) (tySubb loc env t)
+patSubb loc env (PTuple ps) = liftM PTuple (mapM (patSubb loc env) ps)
+patSubb loc env (PCon c ps) = liftM (PCon c) (mapM (patSubb loc env) ps)
 patSubb loc env p = return p
 
 tySubb :: SourcePos -> SubEnv -> Typ -> FIO Typ
@@ -1269,17 +1268,17 @@ tySubb loc (env@(ptrs,names,tycons)) x = do { a <- prune x; f a }
         f (typ@(TyVar s k)) =
           do { k2 <- kindSubb loc env k
              ; returnT(findF (Type s) names (Type (TyVar s k2)))}
-        f (TyApp g x) = lift2 TyApp (sub g) (sub x)      
-        f (TyTuple k xs) = lift2 TyTuple (kindSubb loc env k) (mapM sub xs)       
+        f (TyApp g x) = liftM2 TyApp (sub g) (sub x)      
+        f (TyTuple k xs) = liftM2 TyTuple (kindSubb loc env k) (mapM sub xs)       
         f (typ@(TyCon syn c k)) = 
            case lookup c tycons of
-             Nothing -> lift1 (TyCon syn c) (polyKindSubb loc env k)
+             Nothing -> liftM (TyCon syn c) (polyKindSubb loc env k)
              Just t -> return t
-        f (TyProof x y) = lift2 TyProof (sub x) (sub y)
-        f (TyArr x y) = lift2 TyArr (sub x) (sub y)
-        f (TySyn nm arity xs body) = lift2 (TySyn nm arity) (mapM sub xs) (sub body)
-        f (TyMu k) = lift1 TyMu (kindSubb loc env k)        
-        f (TyLift (Checked e)) = lift1 (TyLift . Checked) (expSubb loc env e)
+        f (TyProof x y) = liftM2 TyProof (sub x) (sub y)
+        f (TyArr x y) = liftM2 TyArr (sub x) (sub y)
+        f (TySyn nm arity xs body) = liftM2 (TySyn nm arity) (mapM sub xs) (sub body)
+        f (TyMu k) = liftM TyMu (kindSubb loc env k)        
+        f (TyLift (Checked e)) = liftM (TyLift . Checked) (expSubb loc env e)
         f (TyLift (Parsed e)) = fail ("unchecked term in type inside tySubb: "++show e)        
         f (TcTv (uniq,ptr,k)) = 
           do { k2 <- kindSubb loc env k
@@ -1445,27 +1444,27 @@ subKind:: FOsub -> Kind -> FIO Kind
 subKind env x = do { y <- pruneK x; f y}
   where sub x = subKind env x
         f Star = return(Star)
-        f (Karr x y) = lift2 Karr (sub x) (sub y)
-        f (LiftK t) = lift1 LiftK (subTyp env t)
+        f (Karr x y) = liftM2 Karr (sub x) (sub y)
+        f (LiftK t) = liftM LiftK (subTyp env t)
         f (k@(Kvar (uniq,ptr))) = return k
         f (Kname n) = do { Kind k <- classFind (ret Kind (Kname n)) (Kind n) env; return k}   
 
 subTyp:: FOsub -> Typ -> FIO Typ        
 subTyp env x = do { a <- prune x; f a }
   where sub x = subTyp env x
-        f (TyApp g x) = lift2 TyApp (sub g) (sub x)     
+        f (TyApp g x) = liftM2 TyApp (sub g) (sub x)     
         f (typ@(TyVar s k)) =
           do { k2 <- subKind env k
              ; Type t <- classFind (ret Type (TyVar s k2)) (Type s) env; return t }             
-        f (TyTuple k xs) = lift2 TyTuple (subKind env k) (mapM sub xs)       
-        f (typ@(TyCon syn c k)) = lift1 (TyCon syn c) (subPolyKind env k)
-        f (TyProof x y) = lift2 TyProof (sub x) (sub y)
-        f (TyArr x y) = lift2 TyArr (sub x) (sub y)
-        f (TySyn nm arity xs body) = lift2 (TySyn nm arity) (mapM sub xs) (sub body)
-        f (TyMu k) = lift1 TyMu (subKind env k)        
+        f (TyTuple k xs) = liftM2 TyTuple (subKind env k) (mapM sub xs)       
+        f (typ@(TyCon syn c k)) = liftM (TyCon syn c) (subPolyKind env k)
+        f (TyProof x y) = liftM2 TyProof (sub x) (sub y)
+        f (TyArr x y) = liftM2 TyArr (sub x) (sub y)
+        f (TySyn nm arity xs body) = liftM2 (TySyn nm arity) (mapM sub xs) (sub body)
+        f (TyMu k) = liftM TyMu (subKind env k)        
         f (TyLift (Checked e)) = fail ("Checked expression in syntax macro expansion: "++show e)
-        f (TyLift (Parsed e)) = lift1 (TyLift . Parsed) (subExpr env e)
-        f (TcTv (uniq,ptr,k)) = lift1 (\ k -> TcTv(uniq,ptr,k)) (subKind env k)
+        f (TyLift (Parsed e)) = liftM (TyLift . Parsed) (subExpr env e)
+        f (TcTv (uniq,ptr,k)) = liftM (\ k -> TcTv(uniq,ptr,k)) (subKind env k)
         f (TyAll vs t) = 
 	  do { (vs2,env2) <- freshTele (vs,env)
 	     ; t2 <- subTyp env2 t
@@ -1494,14 +1493,14 @@ subExpr env x = f x
            do { Exp e <- classFind (ret Exp (EVar s)) (Exp s) env; return e }
          f (EFree s) = return(EFree s)
          f (ECon nm) = return(ECon nm)
-         f (EApp x y) = lift2 EApp (sub x) (sub y)
-         f (EAbs e1 ms) = lift2 EAbs (subElim env e1) (mapM g ms)
+         f (EApp x y) = liftM2 EApp (sub x) (sub y)
+         f (EAbs e1 ms) = liftM2 EAbs (subElim env e1) (mapM g ms)
            where g (p,e) = 
                    do { (p2,env2) <- freshPat nameSupply (p,env)
                       ; e2 <- subExpr env2 e
                       ; return(p2,e2)}
-         f (ETuple es) = lift1 ETuple (mapM sub es)
-         f (EIn k x) = lift2 EIn (subKind env k) (sub x)
+         f (ETuple es) = liftM ETuple (mapM sub es)
+         f (EIn k x) = liftM2 EIn (subKind env k) (sub x)
          f (x@(ELet d exp)) = fail ("No subExpr for (ELet _ _) yet: "++show x)
          f (x@(EMend tag e1 scr ms)) = fail ("No subExpr for (EMend _) yet: "++show x)
 
@@ -1563,17 +1562,17 @@ freshTele ((nm,Exp t):xs,env) =
 -------------------------------------------------------------------------
 
 zonkTEqual x = do { y <- pruneTEqual x; zonkEq y } where
-  zonkEq (TRefl t) = lift1 TRefl (zonk t) 
-  zonkEq (TCong x y) = lift2 TCong (zonkTEqual x) (zonkTEqual y)
-  zonkEq (TProofCong x y) = lift2 TProofCong (zonkTEqual x) (zonkTEqual y)
-  zonkEq (TComp x y) = lift2 TComp (zonkTEqual x) (zonkTEqual y)
-  zonkEq (TJoin x) = lift1 TJoin (zonkExp x)
-  zonkEq (TArrCong x y) = lift2 TArrCong (zonkTEqual x) (zonkTEqual y)
-  zonkEq (TTupleCong xs) = lift1 TTupleCong (mapM zonkTEqual xs)
-  zonkEq (TSpec sch ts) = lift2 TSpec (zonk sch) (mapM zonk ts)
-  zonkEq (TGen b x) = lift2 TGen (mapM zonkClass b) (zonkTEqual x)
+  zonkEq (TRefl t) = liftM TRefl (zonk t) 
+  zonkEq (TCong x y) = liftM2 TCong (zonkTEqual x) (zonkTEqual y)
+  zonkEq (TProofCong x y) = liftM2 TProofCong (zonkTEqual x) (zonkTEqual y)
+  zonkEq (TComp x y) = liftM2 TComp (zonkTEqual x) (zonkTEqual y)
+  zonkEq (TJoin x) = liftM TJoin (zonkExp x)
+  zonkEq (TArrCong x y) = liftM2 TArrCong (zonkTEqual x) (zonkTEqual y)
+  zonkEq (TTupleCong xs) = liftM TTupleCong (mapM zonkTEqual xs)
+  zonkEq (TSpec sch ts) = liftM2 TSpec (zonk sch) (mapM zonk ts)
+  zonkEq (TGen b x) = liftM2 TGen (mapM zonkClass b) (zonkTEqual x)
   zonkEq (TVar p) = return(TVar p)
-  zonkEq (TSym x) = lift1 TSym (zonkTEqual x)
+  zonkEq (TSym x) = liftM TSym (zonkTEqual x)
  
   
 getVarsTEqual:: TEqual -> FIO Vars
@@ -1606,17 +1605,17 @@ getVarsTEqual (TSym x) = getVarsTEqual x
 
 
 eqSubb::  SourcePos -> SubEnv -> TEqual -> FIO TEqual
-eqSubb pos env (TRefl x) = lift1 TRefl (tySubb pos env x)
-eqSubb pos env (TCong x y) = lift2 TCong (eqSubb pos env x)(eqSubb pos env y)  
-eqSubb pos env (TProofCong x y) = lift2 TProofCong (eqSubb pos env x)(eqSubb pos env y)  
-eqSubb pos env (TComp x y) = lift2 TComp(eqSubb pos env x)(eqSubb pos env y)  
-eqSubb pos env (TJoin x) = lift1 TJoin(expSubb pos env x) 
-eqSubb pos env (TArrCong x y) = lift2 TArrCong (eqSubb pos env x)(eqSubb pos env y)       
-eqSubb pos env (TTupleCong xs) = lift1 TTupleCong (mapM (eqSubb pos env) xs)
-eqSubb pos env (TSpec sch xs) = lift2 TSpec (tySubb pos env sch) (mapM (tySubb pos env) xs)
+eqSubb pos env (TRefl x) = liftM TRefl (tySubb pos env x)
+eqSubb pos env (TCong x y) = liftM2 TCong (eqSubb pos env x)(eqSubb pos env y)  
+eqSubb pos env (TProofCong x y) = liftM2 TProofCong (eqSubb pos env x)(eqSubb pos env y)  
+eqSubb pos env (TComp x y) = liftM2 TComp(eqSubb pos env x)(eqSubb pos env y)  
+eqSubb pos env (TJoin x) = liftM TJoin(expSubb pos env x) 
+eqSubb pos env (TArrCong x y) = liftM2 TArrCong (eqSubb pos env x)(eqSubb pos env y)       
+eqSubb pos env (TTupleCong xs) = liftM TTupleCong (mapM (eqSubb pos env) xs)
+eqSubb pos env (TSpec sch xs) = liftM2 TSpec (tySubb pos env sch) (mapM (tySubb pos env) xs)
 eqSubb pos env (p@(TGen sch xs)) = error ("There should be no embedded TGen, Should be handled in the TECast case of exprSubb: "++show p)
 eqSubb pos env (TVar x) = return(TVar x)
-eqSubb pos env (TSym x) = lift1 TSym (eqSubb pos env x)
+eqSubb pos env (TSym x) = liftM TSym (eqSubb pos env x)
      
 --------------------------------------------------------------------------   
 

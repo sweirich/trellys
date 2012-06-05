@@ -8,10 +8,9 @@ import Names
 import Syntax
 import BaseTypes
 import Types
-import Value
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleS,foldrM,foldlM,when,whenM)
-import Control.Monad(foldM)
+import Monads(FIO,fio,handleS,foldrM,foldlM,when,whenM,fresh)
+import Control.Monad(foldM,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
 import Eval(normform)
@@ -19,7 +18,6 @@ import Parser(parseExpr)
 
 import Data.List(unionBy,union,nub,find,(\\),isInfixOf)
 import Data.Char(toLower)
-import Monads(lift1,lift2,lift3,fresh)
 -- import SCC
 import UniqInteger(nextinteger)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
@@ -251,7 +249,7 @@ wfKind pos mess frag k = do { x <- pruneK k; f x }
         f (LiftK t) = do { (t2,kind) <- wellFormedType pos (("checking wff type: "++show t):mess) frag t
                          ; unifyK pos (("checking type lifted to kind, has kind *: "++show t):mess) kind Star
                          ; return(LiftK t2) }
-        f (Karr k1 k2) = lift2 Karr (wfKind pos mess frag k1) (wfKind pos mess frag k2)
+        f (Karr k1 k2) = liftM2 Karr (wfKind pos mess frag k1) (wfKind pos mess frag k2)
         f (k@(Kvar _)) = return k
         f (Kname nm) = 
             case DM.lookup nm (table frag) of
@@ -348,10 +346,10 @@ wellFormedRho pos mess frag (Tau t) =
    do { (t2,k) <- wellFormedType pos mess frag t
       ; return(Tau t2) }
 wellFormedRho pos mess frag (Rarr s r) =
-  lift2 Rarr (wellFormedScheme pos mess frag s) (wellFormedRho pos mess frag r)
+  liftM2 Rarr (wellFormedScheme pos mess frag s) (wellFormedRho pos mess frag r)
 
 wellFormedScheme:: SourcePos -> [String] -> Frag -> Scheme -> FIO Scheme
-wellFormedScheme pos mess frag (Sch [] rho) = lift1 monoR (wellFormedRho pos mess frag rho)
+wellFormedScheme pos mess frag (Sch [] rho) = liftM monoR (wellFormedRho pos mess frag rho)
 wellFormedScheme pos mess frag (Sch vs rho) = 
   do { (frag2,vs2,sub) <- freshPairs pos mess frag vs
      ; rho2 <- rhoSubb pos ([],sub,[]) rho
@@ -747,7 +745,7 @@ expand t ts = applyT(t:ts)
 
 
 getTypesFor [] (ptrs,names) = return []
-getTypesFor (x:xs) (e@(ptrs,names)) = lift2(:)(find x names)(getTypesFor xs e) 
+getTypesFor (x:xs) (e@(ptrs,names)) = liftM2(:)(find x names)(getTypesFor xs e) 
   where find x [] = fail ("Eliminator name: "++show x++" not mentioned in body.")
         find x (Kind y: ys) = if x==y then return(Kind y) else find x ys
         find x (Type y: ys) = if x==y then return(Type y) else find x ys
@@ -790,7 +788,7 @@ wellFormedElim pos env (elim@(ElimFun ts body)) =
      ; tele <- binderToTelescope namesToBind >>= zonkTele
      ; kind <- zonkKind (foldr acc k2 pairs)
      ; body3 <- zonk body2
-     ; pairs2 <- mapM (\ (t,k) -> lift2 (,) (zonk t) (zonkKind k)) pairs
+     ; pairs2 <- mapM (\ (t,k) -> liftM2 (,) (zonk t) (zonkKind k)) pairs
 --      ; writeln("\n\nElim = "++show (ElimFun (tele,pairs2) body3)++"\nKind = "++show kind)
      
      ; return(ElimFun (tele,pairs2) body3,kind)  }  
@@ -798,8 +796,8 @@ wellFormedElim pos env (elim@(ElimFun ts body)) =
 binderToTelescope :: [(Name, Class Kind Typ TExpr)] -> FIO Telescope
 binderToTelescope xs = mapM f xs
   where f (nm,Kind k) = return(nm,Kind ())
-        f (nm,Type t) = lift1 (nm,) (fmap Type (kindOf t))
-        f (nm,Exp e) = lift1 (nm,) (fmap Exp (typeOf e))
+        f (nm,Type t) = liftM (nm,) (fmap Type (kindOf t))
+        f (nm,Exp e) = liftM (nm,) (fmap Exp (typeOf e))
 
 
 
@@ -909,7 +907,7 @@ elab toplevel env (GADT pos t kind cs derivs) =
                 ; return((c,map fst namesToBind,doms2,rng2),namesToBind) }
      ; cs2 <- mapM doOneCon cs
      ; let conScheme ((c,_,ds,r),vs) = 
-              do { tele <- binderToTelescope vs; lift1 (c,length ds,) (zonkScheme(Sch tele (foldr Rarr r ds)))} 
+              do { tele <- binderToTelescope vs; liftM (c,length ds,) (zonkScheme(Sch tele (foldr Rarr r ds)))} 
      ; polykind <- generalizeK pos env kind2
      ; cs3 <- mapM conScheme cs2
      ; let env4 = addData (syntax derivs) t polykind cs3 env 
@@ -939,7 +937,7 @@ elab toplevel env (d@(DataDec pos tname args cs derivs)) =
                  ; return(c,ds,Sch ks mono)}
      ; cs2 <- mapM doOneCon cs
      ; unifyK pos ["checking "++show tname++" has a consistent Kind."] tkind protoKind  
-     ; cs3 <- mapM (\(c,ds,sch) -> lift1 (c,length ds,) (generalizeS pos env sch)) cs2
+     ; cs3 <- mapM (\(c,ds,sch) -> liftM (c,length ds,) (generalizeS pos env sch)) cs2
      ; polykind <- generalizeK pos env tkind 
      ; let env4 = addData (syntax derivs) tname polykind cs3 env
      ; return(env4,(DataDec pos tname args (map (\(c,ds,sch)->(c,ds)) cs2) derivs)) }

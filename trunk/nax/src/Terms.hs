@@ -12,7 +12,7 @@ import BaseTypes
 import Syntax
 import Value
 -- import Types(patBinds)
-import Monads(lift1)
+import Control.Monad (liftM)
 
   
        

@@ -13,7 +13,8 @@ import Data.Functor.Identity
 
 import Names
 import BaseTypes
-import Monads(FIO,lift1)
+import Monads(FIO)
+import Control.Monad (liftM)
 import Debug.Trace
 
 ---------------------------------------------------------
@@ -905,7 +906,7 @@ mapMDecl :: Monad m => (t -> m a) -> (Pat -> m Pat) -> Decl t -> m (Decl a)
 mapMDecl f g (Def loc p e) = do { e2 <- f e; p2 <- g p; return(Def loc p2 e2)}
 mapMDecl f g (DataDec loc nm args cs derivs) = return(DataDec loc nm args cs derivs)
 mapMDecl f g (GADT loc nm kind cs derivs) = return(GADT loc nm kind cs derivs)
-mapMDecl f h (FunDec pos nm ts cls) = lift1 (FunDec pos nm ts) (mapM g cls)
+mapMDecl f h (FunDec pos nm ts cls) = liftM (FunDec pos nm ts) (mapM g cls)
   where g (ps,e) = do { e2 <- f e; ps2 <- mapM h ps; return(ps2,e2)}
 mapMDecl f g (Synonym pos nm xs typ) = return(Synonym pos nm xs typ)
 
