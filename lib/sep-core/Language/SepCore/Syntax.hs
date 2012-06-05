@@ -7,7 +7,7 @@ module Language.SepCore.Syntax(
      LogicalKind(..), Predicate(..), Proof(..),
      Term(..), Arg(..), ArgName(..), ArgClass(..),
      Value(..), Equality(..), TypingContext, Proofdef(..),
-     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), Scheme(..), TermBranches(..), Tele(..)
+     Progdecl(..), Progdef(..), Preddecl(..), Preddef(..), Datatypedecl(..), Declaration(..),Module(..), Scheme(..), TermBranches(..), Tele(..), Expr(..)
                                ) where 
 import Language.SepCore.Lexer
 import Language.SepCore.PrettyPrint
@@ -51,6 +51,18 @@ data Tele = Empty
 data Datatypedecl = Datatypedecl String (Bind Tele [(String,Term)])    
                     deriving (Show)
 
+-- | I define expr data for display purpose only.
+data Expr = ExprTerm Term
+          | ExprProof Proof
+          | ExprPred Predicate
+          | ExprLK LogicalKind
+            deriving(Show)
+instance Disp Expr where
+  disp (ExprTerm t) = disp t
+  disp (ExprProof p) = disp p
+  disp (ExprPred p) = disp p
+  disp (ExprLK p) = disp p
+  
 -- data Datatypedecl = Datatypedecl Term Term [(Term, Term)]
 --              deriving(Show)
 -- data Sepcialterm = Specialterm Term 
@@ -371,7 +383,7 @@ instance Disp Preddef where
 instance Disp Tele where
     disp  = cleverDisp
 instance Disp AlexPosn where
-    disp (AlexPn _ line col) = disp line <> text ":" <> disp col <> text ":"
+    disp (AlexPn _ line col) = disp line <> colon <> disp col <> colon
 
 dParen:: (Display a) => Int -> a -> M Doc
 dParen level x =

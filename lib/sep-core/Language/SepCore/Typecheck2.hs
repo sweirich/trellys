@@ -8,6 +8,7 @@ import Language.SepCore.Syntax
 import Language.SepCore.PrettyPrint
 import Language.SepCore.Parser(getPosition)
 import Language.SepCore.Lexer
+import Language.SepCore.Error
 import Data.Maybe
 import Unbound.LocallyNameless hiding (Con,isTerm,Val,join,Equal,Refl, flatten)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
@@ -28,35 +29,32 @@ import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Data.Set
 -- global env: Context, having IO side effects.
 
-newtype TCMonad a = TCMonad{runTCMonad ::  ReaderT Context (FreshMT (ErrorT Doc Identity)) a}   
- deriving (Monad, MonadReader Context, Fresh, MonadError Doc)
+newtype TCMonad a = TCMonad{runTCMonad ::  ReaderT Context (FreshMT (ErrorT TypeError Identity)) a}   
+ deriving (Monad, MonadReader Context, Fresh, MonadError TypeError)
 
 type Context = M.Map ArgName (ArgClass, Value)
 
-type Env = StateT Context (FreshMT (ErrorT Doc IO))
+type Env = StateT Context (FreshMT (ErrorT TypeError IO))
 
 instance Disp Context where
-  disp context = (vcat [ disp argname<>colon <+> disp argclass | (argname, (argclass,_)) <-(M.toList context)])
+  disp context = hang (text "Current context:") 2 (vcat [ disp argname<>colon<>colon <+> disp argclass | (argname, (argclass,_)) <-(M.toList context)])
 
-instance Error Doc where
-    strMsg s = text s
-    noMsg = strMsg "<unknown>"
 
 lookupVar ::  ArgName  ->  TCMonad(ArgClass, Value) 
 lookupVar name = do
   context <- ask
   case (M.lookup name context) of
     Just a -> return a
-    Nothing -> throwError $ (disp "Can't find variable ") <+> (disp name) <+> (disp "from the context.")
+    Nothing -> typeError $ (disp "Can't find variable ") <+> (disp name) <+> (disp "from the context.")
 
 getClass :: ArgName  -> TCMonad ArgClass
 getClass name  = do
-   (argclass, _) <- (lookupVar name) `catchError` (\ e -> throwError $ e <+> (disp "in the use of getClass"))
+   (argclass, _) <- (lookupVar name) 
    return argclass
 
 getValue :: ArgName  -> TCMonad Value
 getValue name  = do
-   (_, v) <- (lookupVar name) `catchError` (\ e -> throwError $ e <+> (disp "in the use of getValue"))
+   (_, v) <- (lookupVar name) 
    return v
 
 -- \Gamma |- LK : Logical i
@@ -77,13 +75,13 @@ compSK (QuasiForall b) = do ((name, Embed a), lk) <- unbind b
                                      (Formula i) <- compLK p >>= ensureFormula
                                      (Logical j) <- local (M.insert name (ArgClassPredicate p, NonValue)) (compSK lk)
                                      return  (Logical (max (i+1) j))
-                              _ -> throwError $ disp "unsupport argClass for " <+> disp (QuasiForall b)
+                              _ -> typeError $ disp "unsupport argClass for " <+> disp (QuasiForall b)
 
-compSK (PosLK p lk) = compSK lk `catchError` (\ e -> throwError $ disp p <+> e)
+compSK (PosLK p lk) = compSK lk `catchError` addErrorPos p (ExprLK lk)
 
 compLK :: Predicate -> TCMonad LogicalKind 
 
-compLK (PosPredicate p pred) = compLK pred `catchError` (\ e -> throwError $ disp p <+> e)
+compLK (PosPredicate p pred) = compLK pred `catchError`addErrorPos p (ExprPred pred)
 
 -- | Predicate_Var, this function may produce position info
 compLK (PredicateVar p) = do 
@@ -145,20 +143,20 @@ compLK (PredicateApplication p a) = do
     ArgNameTerm at -> do
         t <- ensureArgTerm a 
         theType <- compType t
-        if aeq argclass (ArgClassTerm theType) then return (subst at t lk) else throwError $ disp ("Expected type: ") <+>disp(argclass) <+> disp(" Actual type:")<+> disp(ArgClassTerm theType) 
+        if aeq argclass (ArgClassTerm theType) then return (subst at t lk) else typeError $ disp ("Expected type: ") <+>disp(argclass) <+> disp(" Actual type:")<+> disp(ArgClassTerm theType) 
     ArgNamePredicate pt -> do
         pred <- ensureArgPredicate a 
         theKind <- compLK pred
-        if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred lk) else throwError $ disp ("Expected logical kind:")<+> disp(argclass) <+> disp ("Actual kind:")<+> disp(ArgClassLogicalKind theKind)
+        if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred lk) else typeError $ disp ("Expected logical kind:")<+> disp(argclass) <+> disp ("Actual kind:")<+> disp(ArgClassLogicalKind theKind)
     ArgNameProof prt-> do
         pr <- ensureArgProof a
         theP <- compPred pr
-        if aeq argclass (ArgClassPredicate theP) then return (subst prt pr lk) else throwError $ disp ("Expected Predicate:")<+>disp(argclass) <+> disp ("Actual predicate:")<+> disp (ArgClassPredicate theP) 
+        if aeq argclass (ArgClassPredicate theP) then return (subst prt pr lk) else typeError $ disp ("Expected Predicate:")<+>disp(argclass) <+> disp ("Actual predicate:")<+> disp (ArgClassPredicate theP) 
         
 
 compPred :: Proof -> TCMonad Predicate
 
-compPred (PosProof p prf) = compPred prf `catchError` (\ e -> throwError $ disp p <+> e)
+compPred (PosProof p prf) = compPred prf `catchError` addErrorPos p (ExprProof prf)
 
 -- | Proof_Var
 compPred (ProofVar p) = do 
@@ -191,19 +189,19 @@ compPred (ProofApplication p a) = do
     ArgNameTerm at -> do 
       t <- ensureArgTerm a 
       theType <- compType t
-      if aeq argclass (ArgClassTerm theType) then return (subst at t pr) else throwError $ disp ("Expected type: ") <+>disp(argclass)<+> disp("Actual type:")<+> disp (ArgClassTerm theType) 
+      if aeq argclass (ArgClassTerm theType) then return (subst at t pr) else typeError $ disp ("Expected type: ") <+>disp(argclass)<+> disp("Actual type:")<+> disp (ArgClassTerm theType) 
     ArgNamePredicate pt -> do
       pred <- ensureArgPredicate a 
       theKind <- compLK pred
-      if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred pr)else throwError $ disp( "Expected logical kind:")<+>disp(argclass)<+>disp( "Actual kind:")<+> disp(ArgClassLogicalKind theKind)
+      if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred pr)else typeError $ disp( "Expected logical kind:")<+>disp(argclass)<+>disp( "Actual kind:")<+> disp(ArgClassLogicalKind theKind)
     ArgNameProof prt-> do
       pro <- ensureArgProof a
       theP <- compPred pro
-      if aeq argclass (ArgClassPredicate theP) then return (subst prt pro pr) else throwError $ disp("Expected Predicate:")<+>disp(argclass)<+> disp(" Actual predicate:")<+> disp(ArgClassPredicate theP) 
+      if aeq argclass (ArgClassPredicate theP) then return (subst prt pro pr) else typeError $ disp("Expected Predicate:")<+>disp(argclass)<+> disp(" Actual predicate:")<+> disp(ArgClassPredicate theP) 
                     
 compType :: Term -> TCMonad Term
 
-compType (Pos p t) = compType t `catchError` (\ e -> throwError $ disp p <+> e)
+compType (Pos p t) = compType t `catchError`addErrorPos p (ExprTerm t)
 
 -- | TERM_TYPE
 compType (Type i)  =  return (Type i)
@@ -259,15 +257,15 @@ compType (TermApplication term arg stage) = do
            ArgNameTerm at -> do
              t <- ensureArgTerm arg  
              theType <- compType t
-             if aeq argclass (ArgClassTerm theType) then return (subst at t prog) else throwError $ disp("Expected type:") <+>disp(argclass)<+> disp("Actual type:") <+> disp(ArgClassTerm theType) 
+             if aeq argclass (ArgClassTerm theType) then return (subst at t prog) else typeError $ disp("Expected type:") <+>disp(argclass)<+> disp("Actual type:") <+> disp(ArgClassTerm theType) 
            ArgNamePredicate pt -> do
              pred <-ensureArgPredicate arg 
              theKind <- compLK pred
-             if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred prog) else throwError $ disp("Expected logical kind:") <+>disp(argclass)<+>disp( "Actual kind:") <+> disp(ArgClassLogicalKind theKind)
+             if aeq argclass (ArgClassLogicalKind theKind) then return (subst pt pred prog) else typeError $ disp("Expected logical kind:") <+>disp(argclass)<+>disp( "Actual kind:") <+> disp(ArgClassLogicalKind theKind)
            ArgNameProof prt-> do
               pro <- ensureArgProof arg
               theP <- compPred pro
-              if aeq argclass (ArgClassPredicate theP) then return (subst prt pro prog) else throwError $ disp("Expected Predicate: ")<+>disp(argclass)<+> disp("Actual predicate:") <+> disp (ArgClassPredicate theP)  else throwError $ disp("The stage of the argument")<+>disp(arg)<+>disp( "doesn't match the stage of function")<+>disp(term)
+              if aeq argclass (ArgClassPredicate theP) then return (subst prt pro prog) else typeError $ disp("Expected Predicate: ")<+>disp(argclass)<+> disp("Actual predicate:") <+> disp (ArgClassPredicate theP)  else typeError $ disp("The stage of the argument")<+>disp(arg)<+>disp( "doesn't match the stage of function")<+>disp(term)
 
 -- | Term abort
 compType (Abort t) = do  
@@ -279,11 +277,11 @@ compType (Rec b) = do
   ((x, f, Embed pa), t) <- unbind b 
   (Pi t' st) <- ensurePi pa
   case st of
-    Minus -> throwError $ disp("stage error")
+    Minus -> typeError $ disp("stage error")
     Plus -> do
       ((y, Embed t1), t2) <- unbind t'
       theType <- local((M.insert (ArgNameTerm f) (ArgClassTerm (Pi (bind (y, Embed t1) t2) Plus), Value)) . (M.insert (ArgNameTerm x) (t1, Value))) (compType t)
-      if aeq t2 theType then return (Pi (bind (y, Embed t1) t2) Plus) else throwError $ disp("Expected:") <+>disp (t2)<+>disp("Actually get:")<+> disp theType
+      if aeq t2 theType then return (Pi (bind (y, Embed t1) t2) Plus) else typeError $ disp("Expected:") <+>disp (t2)<+>disp("Actually get:")<+> disp theType
 
 -- | Term_let, a simple version 
 
@@ -315,7 +313,7 @@ getInstance constrType@(Pi b st) (arg : cs) = do
                       getInstance res' cs
 
 getInstance constrType [] = return constrType
-getInstance _ _ = throwError $ disp("error from the use of getInstance.")
+getInstance _ _ = typeError $ disp("error from the use of getInstance.")
         
 
 --calculate the local context for each branch
@@ -332,7 +330,7 @@ calcLocalContext constrType@(Pi b st) (h:ls)  = do
 calcLocalContext (TermVar _ ) [] = return $ True
 calcLocalContext (TermApplication _ _ _ ) [] = return $ True
 calcLocalContext (Pos _ t) ls = calcLocalContext t ls 
-calcLocalContext _ _ = throwError $ disp ("Patterns variables doesn't fit well with the constructor.")
+calcLocalContext _ _ = typeError $ disp ("Patterns variables doesn't fit well with the constructor.")
     
 sanityCheck :: Term -> [ArgName] -> Bool
 sanityCheck t (argname:cs) = case argname of
@@ -355,7 +353,7 @@ checkBranch state theType ((constr, binding): l) = do
            Right env -> do
                t1' <- local (M.union env) (compType t1) 
                if not (sanityCheck t1' argnames) then  
-                   if aeq state Undefined then checkBranch t1' theType l else if aeq t1' state then checkBranch t1' theType l else throwError $ disp("Expected type:")<+>disp(state)<+>disp("Actual type:")<+>disp(t1') else throwError $ disp("An insane event just happened.") else throwError $ disp("The actual type of the datatype constructor") <+>disp(constr)<+> disp (" doesn't fit the corresponding datatype")<+>disp(head ls)
+                   if aeq state Undefined then checkBranch t1' theType l else if aeq t1' state then checkBranch t1' theType l else typeError $ disp("Expected type:")<+>disp(state)<+>disp("Actual type:")<+>disp(t1') else typeError $ disp("An insane event just happened.") else typeError $ disp("The actual type of the datatype constructor") <+>disp(constr)<+> disp (" doesn't fit the corresponding datatype")<+>disp(head ls)
                    
 checkBranch state theType [] = return $ state
 
@@ -383,7 +381,7 @@ teleArrow (TCons binding) end = Pi (bind (argname,argclass) arrRest) stage
  where ((argname,stage,argclass),rest) = unrebind binding
        arrRest = teleArrow rest end
 
-flatten :: MonadError Doc m => Term -> m [Arg]
+flatten :: MonadError TypeError m => Term -> m [Arg]
 
 flatten (Pi b stage) = 
   let (b1, t1) = unsafeUnbind b in
@@ -401,7 +399,7 @@ flatten (TermVar t) = return [ArgTerm (TermVar t)]
 
 flatten (Pos _ t) = flatten t
 
-flatten _ = throwError $ disp( "Not a standard form.")
+flatten _ = typeError $ disp( "Not a standard form.")
 
 checkData :: Datatypedecl -> Env Doc
 checkData (Datatypedecl dataname bindings) = do
@@ -424,20 +422,20 @@ compare (h:l) (TCons bindings) =
         ArgNameTerm u ->
             case h of
               ArgTerm (TermVar x) ->  
-                 if aeq x u then compare l res else throwError $ disp ("error")
-              _ -> throwError $ disp ("error")
+                 if aeq x u then compare l res else typeError $ disp ("error")
+              _ -> typeError $ disp ("error")
         ArgNameProof u ->
                   case h of
                     ArgProof (ProofVar x) ->  
-                        if aeq x u then compare l res else throwError $ disp ("error")
-                    _ -> throwError $ disp ("error")
+                        if aeq x u then compare l res else typeError $ disp ("error")
+                    _ -> typeError $ disp ("error")
         ArgNamePredicate u ->
             case h of
               ArgPredicate (PredicateVar x) ->  
-                  if aeq x u then compare l res else throwError $ disp ("error")
-              _ -> throwError $ disp ("error")
+                  if aeq x u then compare l res else typeError $ disp ("error")
+              _ -> typeError $ disp ("error")
 
-compare _ _ = throwError $ disp("error")
+compare _ _ = typeError $ disp("error")
 
 checkConstructors :: String -> Tele -> [(String, Term)] -> Env Doc
 
@@ -452,7 +450,7 @@ checkConstructors dataname tele ((constr,t2):l) = do
            Left e -> throwError e
            Right t -> ensureType t
          put (M.insert (ArgNameTerm (string2Name constr))  (ArgClassTerm t2', NonValue) env)
-         checkConstructors dataname tele l  else throwError $ disp("The type of the data constructor")<+>disp(constr)<+> disp("is not well-formed.") 
+         checkConstructors dataname tele l  else typeError $ disp("The type of the data constructor")<+>disp(constr)<+> disp("is not well-formed.") 
 
 -- type-check program declaration
 
@@ -466,7 +464,7 @@ checkProgDecl (Progdecl t t') = do
        Right t -> ensureType t
      put (M.insert (ArgNameTerm x)  (ArgClassTerm t', NonValue) env)
      return $ disp("Checked declaration of")<+> disp t
-    _ -> throwError $ disp ("Unexpected term")<+> disp t
+    _ -> typeError $ disp ("Unexpected term")<+> disp t
 
 -- type-check program definition
 checkProgDef :: Progdef -> Env Doc
@@ -481,8 +479,8 @@ checkProgDef (Progdef t t') = do
             Left e -> throwError e
             Right t1' -> do                         
               t1 <- ensureArgClassTerm t1'
-              if aeq t1 t'' then return $ disp ("Checked definition of") <+> disp t else throwError $ disp("Expecting")<+>disp(t1)<+>disp("Actually get:")<+>disp(t'') 
-    _ -> throwError $ disp("Unexpected term")<+>disp t
+              if aeq t1 t'' then return $ disp ("Checked definition of") <+> disp t else typeError $ disp("Expecting")<+>disp(t1)<+>disp("Actually get:")<+>disp(t'') 
+    _ -> typeError $ disp("Unexpected term")<+>disp t
 
 
 
@@ -501,39 +499,39 @@ unWrapLKPos t = t
 
 ensureType t = case unWrapTermPos t of
                  Type i -> return (Type i)
-                 _ -> throwError $ vcat [disp ("Expected:") <+> disp "Type", disp ("Actually get:")<+> disp t ]
+                 _ -> typeError $ vcat [disp ("Expected:") <+> disp "Type", disp ("Actually get:")<+> disp t ]
                                   
 ensureFormula t = case unWrapLKPos t of 
                     (Formula i) -> return (Formula i)
-                    _ -> throwError $ vcat [disp ("Expected:") <+> disp "Formula", disp ("Actually get:")<+> disp t ]
+                    _ -> typeError $ vcat [disp ("Expected:") <+> disp "Formula", disp ("Actually get:")<+> disp t ]
 
 ensureQForall t = case unWrapLKPos t of 
                     (QuasiForall b) -> return (QuasiForall b)
-                    _ -> throwError $  disp ("Unexpected:")<+> disp t 
+                    _ -> typeError $  disp ("Unexpected:")<+> disp t 
 
 ensureForall t = case unWrapPredicatePos t of 
                     (Forall b) -> return (Forall b)
-                    _ -> throwError $  disp ("Unexpected:")<+> disp t 
+                    _ -> typeError $  disp ("Unexpected:")<+> disp t 
 
 ensurePi t = case unWrapTermPos t of 
                     (Pi b st) -> return (Pi b st)
-                    _ -> throwError $  disp ("Unexpected:")<+> disp t 
+                    _ -> typeError $  disp ("Unexpected:")<+> disp t 
 
 ensureArgClassLK (ArgClassLogicalKind lk) = return lk
-ensureArgClassLK t = throwError $  vcat [disp ("Expected:") <+> disp "any LogicalKind", disp ("Actually get:")<+> disp t ]
+ensureArgClassLK t = typeError $  vcat [disp ("Expected:") <+> disp "any LogicalKind", disp ("Actually get:")<+> disp t ]
 
 ensureArgClassPred (ArgClassPredicate pred) = return pred
-ensureArgClassPred t = throwError $  vcat [disp ("Expected:") <+> disp "any Predicate", disp ("Actually get:")<+> disp t ]
+ensureArgClassPred t = typeError $  vcat [disp ("Expected:") <+> disp "any Predicate", disp ("Actually get:")<+> disp t ]
 
 ensureArgClassTerm (ArgClassTerm t) = return t
-ensureArgClassTerm t = throwError $  vcat [disp ("Expected:") <+> disp "any Term", disp ("Actually get:")<+> disp t ]
+ensureArgClassTerm t = typeError $  vcat [disp ("Expected:") <+> disp "any Term", disp ("Actually get:")<+> disp t ]
 
 
 ensureArgTerm (ArgTerm t) = return t                                              
-ensureArgTerm t = throwError $  disp ("Unexpected:")<+> disp t 
+ensureArgTerm t = typeError $  disp ("Unexpected:")<+> disp t 
 
 ensureArgPredicate (ArgPredicate t) = return t                                              
-ensureArgPredicate t = throwError $  disp ("Unexpected:")<+> disp t 
+ensureArgPredicate t = typeError $  disp ("Unexpected:")<+> disp t 
 
 ensureArgProof (ArgProof t) = return t                                              
-ensureArgProof t = throwError $  disp ("Unexpected:")<+> disp t 
+ensureArgProof t = typeError $  disp ("Unexpected:")<+> disp t 
