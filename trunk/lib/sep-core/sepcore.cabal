@@ -14,7 +14,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 
 library
-  exposed-modules:    Language.SepCore.Lexer, Language.SepCore.Parser, Language.SepCore.Syntax, Language.SepCore.Typecheck, Language.SepCore.PrettyPrint
+  exposed-modules:    Language.SepCore.Lexer, Language.SepCore.Parser, Language.SepCore.Syntax, Language.SepCore.Typecheck2, Language.SepCore.PrettyPrint, Language.SepCore.Error
   -- other-modules:       
   build-depends:       base >= 4, unbound, array, RepLib >= 0.5.1, pretty, mtl, containers, transformers   
   build-tools:         happy, alex
