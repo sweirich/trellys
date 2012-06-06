@@ -162,22 +162,12 @@ lifted comp = Lift(do{ x <- comp; return(Just x)})
 
 -----------------------------------------------
 
-fmapM :: Monad m => (a -> m b) -> m a -> m b
-fmapM f comp = do { x <- comp; f x;}
-
 ifM :: Monad m => m Bool -> m b -> m b -> m b
 ifM test x y = do { b <- test; if b then x else y }
 
 anyM :: Monad m => (b -> m Bool) -> [b] -> m Bool
 anyM p xs = do { bs <- mapM p xs; return(or bs) }
 
-
-allM :: Monad m => (b -> m Bool) -> [b] -> m Bool
-allM p xs = do { bs <- mapM p xs; return(and bs) }
-
-
-orM :: Monad m => m Bool -> m Bool -> m Bool
-orM x y = do { a <- x; b <- y; return (a || b) }
 
 maybeM :: Monad m => m(Maybe a) -> (a -> m b) -> (m b) -> m b
 maybeM mma f mb = do { x <- mma; case x of { Nothing -> mb ; Just x -> f x }}
@@ -189,4 +179,3 @@ elemByM f x (y:ys) = ifM (f x y) (return True) (elemByM f x ys)
 unionByM f xs [] = return xs
 unionByM f xs (y:ys) = 
    ifM (elemByM f y xs) (unionByM f xs ys) (unionByM f (y:xs) ys)
-             
