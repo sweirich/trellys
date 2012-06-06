@@ -21,3 +21,15 @@ Save your work in progress to the git remote:
 
 The -u makes github/<branch> the default remote for the local
 <branch>.
+
+Problem: even linear history causes problems with git-svn.  When
+svn/trunk is a strict ancestor of both github/master and master, a
+`git svn dcommit` makes master and github/master diverge.  One is a
+subset of the other, but the commits have been rewritten by the
+implicit rebase in the dcommit.  This does not work:
+
+  git co master
+  git merge --strategy ours github/master
+
+It confuses svn.  And even if it didn't, there would be a spurious
+merge commit :P
