@@ -1,3 +1,9 @@
+
+
+plus x y = mcata x with
+  pl Zero = y
+  pl (Succ m) = succ(pl m)
+
 data V: * -> (Nat -> *) -> Nat -> * where
   Vnil: V a r {`zero}
   Vcons: a -> r {n} -> V a r {`succ n}
@@ -6,32 +12,6 @@ data V: * -> (Nat -> *) -> Nat -> * where
 
 v2 = vcons 3 (vcons 5 vnil)
 
-vlen x = mcata{ {i} . Int} x with
-  len Vnil = 0
-  len (Vcons x xs) = 1 + len xs
-  
- 
-vtail x = 
-  mprim{ {`succ i} . Vector a {i}} x with
-    -- tail cast Vnil = unreachable
-    tail cast (Vcons y ys) = cast ys    
-
-{-
-data Tag = E | O
-
-flip E = O
-flip O = E
-    
-data P: (Tag -> Nat -> *) -> Tag -> Nat -> * where
-  Base : P r {E} {In[*] Zero} 
-  StepO : r {O} {i} -> P r {E} {`succ i}
-  StepE : r {E} {i} -> P r {O} {`succ i}
-    deriving fixpoint Proof
-    
-flop x = 
-   mcata {{t} {i} . Proof {`flip t} {`succ i}} x    
-     with  f Base = stepE base
-           f (StepO p) = (stepE(f p))
-           f (StepE p) = stepO(f p)    
-           
--}           
+appendV xs = mcata{ {i} . Vector a {j} -> Vector a {`plus i j}} xs
+  with app Vnil ys = ys
+       app (Vcons x xs) ys = vcons x (app xs ys)

@@ -144,13 +144,14 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
       | Just numpats <- sameLenClauses2 (near x++tag) ms
       = do { phi <- unwind ms env numpats [] return
            ; arg <- evalC x env return
-           ; case tag of
-              "mcata"   -> mcata (plistf showPair2 "\n  " ms "\n  " "") phi (\ f -> app "mcata" f arg k)
-              "mhist"   -> mhist   phi (\ f -> app "mhist" f arg k)  
-              "mprim"   -> mprim   phi (\ f -> app "mprim" f arg k)
-              "msfcata" -> msfcata phi (\ f -> app "msfcata" f arg k)
-              "msfprim" -> msfprim phi (\ f -> app "msfprim" f arg k)
-              x -> fail ("Unimplemented mendler operator: "++x)
+           ; case (arg,tag) of
+              (VCode e,_) -> error("\nBad arg to Mendler "++show e)
+              (_,"mcata")   -> mcata (plistf showPair2 "\n  " ms "\n  " "") phi (\ f -> app "mcata" f arg k)
+              (_,"mhist")   -> mhist   phi (\ f -> app "mhist" f arg k)  
+              (_,"mprim")   -> mprim   phi (\ f -> app "mprim" f arg k)
+              (_,"msfcata") -> msfcata phi (\ f -> app "msfcata" f arg k)
+              (_,"msfprim") -> msfprim phi (\ f -> app "msfprim" f arg k)
+              (_,x) -> fail ("Unimplemented mendler operator: "++x)
               }
   heval (CSP(nm,i,v)) env k = k v              
 
@@ -186,7 +187,14 @@ mcata ms phi k =
       ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
             f (VIn kind x) k = do { v <- app "mcata" phi (VFunM i f) return
                                   ; app "mcata" v x k}
-            f v k = fail ("mcata applied to non Mu type: "++show v++" "++show i++"\n"++ms)
+{-
+--- What if its code? like this?
+
+            f (VCode e) k = do { v <- app "mcata" phi (VFunM i f) return
+                               ; app "mcata" v (VCode e) k}
+-}                               
+                               
+            f v k = fail ("mcata applied to non Mu type value: "++show v++" "++show i++"\n"++ms)
       ; k(VFunM i f)}   
       
 mplus :: forall b . Value IO -> String -> Value IO -> (Value IO -> IO b) -> IO b
