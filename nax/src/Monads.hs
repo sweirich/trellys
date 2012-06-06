@@ -168,11 +168,6 @@ ifM test x y = do { b <- test; if b then x else y }
 anyM :: Monad m => (b -> m Bool) -> [b] -> m Bool
 anyM p xs = do { bs <- mapM p xs; return(or bs) }
 
-
-maybeM :: Monad m => m(Maybe a) -> (a -> m b) -> (m b) -> m b
-maybeM mma f mb = do { x <- mma; case x of { Nothing -> mb ; Just x -> f x }}
-
-
 elemByM f x [] = return False
 elemByM f x (y:ys) = ifM (f x y) (return True) (elemByM f x ys)
 
