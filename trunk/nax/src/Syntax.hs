@@ -120,7 +120,7 @@ data Kind
 data PolyKind = PolyK Telescope Kind
 
 ----------
-data Term = Parsed Expr | Checked TExpr | Pattern Pat
+data Term = Parsed Expr | Checked TExpr -- | Pattern Pat
 
 data Typ 
    = TyVar Name Kind
@@ -239,7 +239,7 @@ instance Eq TExpr where
 instance Eq Term where
   (Parsed x)==(Parsed y) = x==y
   (Checked x)==(Checked y) = x==y
-  (Pattern x) == (Pattern y) = x==y
+--  (Pattern x) == (Pattern y) = x==y
   _ == _ = False
 
 instance Eq Kind where
@@ -528,7 +528,7 @@ ppTExpr p e =
     
 ppTerm p (Parsed x) = ppExpr p x -- <> text "%"
 ppTerm p (Checked x) = ppTExpr p x -- <> text "#" 
-ppTerm p (Pattern x) = ppPat p x    -- <> text "&" 
+-- ppTerm p (Pattern x) = ppPat p x    -- <> text "&" 
 
 ---------------------------------------------------
 -- Patterns
@@ -922,7 +922,7 @@ toPat (TyProof x y) = TPBin Proof (toPat x) (toPat y)
 toPat (TyArr x y) = TPBin Arrow (toPat x) (toPat y)
 toPat (TySyn nm i xs t) = toPat t
 toPat (TyMu k) = TPMu k
-toPat (TyLift(Pattern p)) = TPLift p
+-- toPat (TyLift(Pattern p)) = TPLift p
 toPat (TyAll bs v) = error ("No TyAll in toPat yet")
 toPat (TyLift x) = error ("Non pattern in TyLift in Type Pattern context: "++show x)
 
@@ -955,7 +955,7 @@ typLoc (TyMu k) = kindLoc k
 typLoc (TcTv (u,p,k)) = kindLoc k
 typLoc (TyLift (Parsed x)) = loc x
 typLoc (TyLift (Checked x)) = loc x
-typLoc (TyLift (Pattern x)) = loc x
+-- typLoc (TyLift (Pattern x)) = loc x
 typLoc (TyArr x y) = bestPos (typLoc x) (typLoc y)
 typLoc (TySyn n1 a1 xs1 b1) = loc n1
 typLoc (TyAll bs t) = loc t
@@ -1111,7 +1111,7 @@ pureSubPoly env x = x  -- All PolyKinds should be closed terms
 pureSubTerm :: [(Name,Class Kind Typ TExpr)] ->  Term -> Term
 pureSubTerm env (Checked t) = Checked(pureSubTExpr env t)
 pureSubTerm env (Parsed t) =  error ("No Parsed yet")
-pureSubTerm env (Pattern p) =  error ("No Pattern yet")
+-- pureSubTerm env (Pattern p) =  error ("No Pattern yet")
 
 pureSubTExpr :: [(Name,Class Kind Typ TExpr)] -> TExpr -> TExpr
 pureSubTExpr env (TELit p l) = TELit p l
