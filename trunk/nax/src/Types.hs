@@ -421,6 +421,8 @@ zonkD (GADT pos nm k cs derivs) = liftM2 (\ x y -> GADT pos nm x y derivs) (zonk
 zonkD (FunDec pos fnm args cls) = liftM2 (FunDec pos fnm) (mapM f args) (mapM g cls)
   where f (nm,k) = do { k2 <- zonkKind k; return(nm,k2)}
         g (ps,e) = do { e2 <- zonkExp e; return(ps,e)}
+zonkD (Synonym pos nm args typ) = 
+  do { typ2 <- zonk typ; return(Synonym pos nm args typ)}
         
         
 zonkE :: Expr -> FIO Expr
