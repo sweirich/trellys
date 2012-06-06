@@ -1,3 +1,22 @@
+data V: * -> (Nat -> *) -> Nat -> * where
+  Vnil: V a r {`zero}
+  Vcons: a -> r {n} -> V a r {`succ n}
+    deriving fixpoint Vector
+
+
+v2 = vcons 3 (vcons 5 vnil)
+
+vlen x = mcata{ {i} . Int} x with
+  len Vnil = 0
+  len (Vcons x xs) = 1 + len xs
+  
+ 
+vtail x = 
+  mprim{ {`succ i} . Vector a {i}} x with
+    -- tail cast Vnil = unreachable
+    tail cast (Vcons y ys) = cast ys    
+
+{-
 data Tag = E | O
 
 flip E = O
@@ -14,3 +33,5 @@ flop x =
      with  f Base = stepE base
            f (StepO p) = (stepE(f p))
            f (StepE p) = stepO(f p)    
+           
+-}           

@@ -168,8 +168,11 @@ data V: * -> (Nat -> *) -> Nat -> * where
   Vcons: a -> r {n} -> V a r {`succ n}
     deriving fixpoint Vector
 
+
+
 v2 = vcons 3 (vcons 5 vnil)
-{-    
+
+{-  -- requires equating  e   == `plus `zero e     and `plus is recursive
 appendV xs = mcata{ {i} . Vector a {j} -> Vector a {`plus i j}} xs
   with app Vnil ys = ys
        app (Vcons x xs) ys = vcons x (app xs ys)
@@ -401,3 +404,4 @@ bad y = msfprim y with
           
 worse x =  bad (In * (MakeY bad))          
 -}
+

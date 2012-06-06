@@ -30,8 +30,8 @@ import Data.Char(isSpace)
 
 -------------------------------------------------------------------------
 
-go = run "./data.nax"
-work = run "./work.nax"
+go = run "../test/data.nax"
+work = run "../test/work.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env
