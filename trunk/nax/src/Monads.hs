@@ -168,9 +168,6 @@ fmapM f comp = do { x <- comp; f x;}
 when :: Monad m => Bool -> m () -> m ()
 when x  comp = if x then comp else return ()
 
-whenM :: Monad m => m Bool -> m b -> [Char] -> m b
-whenM test x s = do { b <- test; if b then x else error s}
-
 ifM :: Monad m => m Bool -> m b -> m b -> m b
 ifM test x y = do { b <- test; if b then x else y }
 
