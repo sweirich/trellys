@@ -258,11 +258,14 @@ unifyExpVar loc message (x@(u1,r1,typ)) term =
   do { (ptrs,names) <- getVarsExpr term
      ; let same (Exp(u0,r0,k0)) = r0==r1
            same _ = False
+    --  ; writeln("Unifying var "++show (Emv x)++" and "++show term)
     
-    ; if (any same ptrs) 
+     ; if (any same ptrs) 
           then do { term2 <- zonkExp term
+                  ; tnf <- normform term2
                   ; (matchErr loc (("\nExp Occurs check\n "++show (Emv x)++
-                        " in f"++show term2++" with vars "++show ptrs): message)  (Emv x) term2) }
+                        " in ("++show term2++") with vars "++show ptrs++
+                        "\nnormal form = "++show tnf++"\n"++show term): message)  (Emv x) term2) }
           else return ()
               
     {-
@@ -308,7 +311,11 @@ unify loc message x y = do { x1 <- prune x; y1 <- prune y
         f (TcTv (u1,r1,k1)) (TcTv (u2,r2,k2)) | r1==r2 = return ()
         f (TcTv x) t = unifyVar loc message x t
         f t (TcTv x) = unifyVar loc message x t 
-        f (TyLift (Checked e)) (TyLift (Checked g)) = unifyExp loc message e g          
+        f (TyLift (Checked e)) (TyLift (Checked g)) = 
+            do { enf <- normform e
+               ; gnf <- normform g
+               ; writeln ("\nNormalizing "++show e++", "++show g)
+               ; unifyExp loc message enf gnf }
         f (TyLift (Parsed e)) _ = error ("unchecked term in type inside unify: "++show e)
         f _ (TyLift (Parsed e)) = error ("unchecked term in type inside unify: "++show e)
 --         f (TyLift (Pattern e)) _ = error ("unchecked term in type inside unify: "++show e)
@@ -473,7 +480,7 @@ zonkExp x = do { y <- pruneE x; f y}
          f (AbsTyp ts e) = liftM2 AbsTyp (mapM zonkClass ts) (zonkExp e)
          f (TECast p e) = liftM2 TECast (zonkTEqual p) (zonkExp e)
          f (ContextHole e1 e2) = liftM2 ContextHole (zonkExp e1) (zonkExp e2)
-         f (Emv(uniq,ptr,t)) = do { t2 <- zonk t; return(Emv(uniq,ptr,t2))}
+         f (Emv(uniq,ptr,t)) = do { t2 <- zonk t; pruneE(Emv(uniq,ptr,t2))}
          f (CSP x) = return(CSP x)
 
 zonkElim::  Elim (Telescope, [(Typ, Kind)]) -> FIO (Elim (Telescope, [(Typ, Kind)]))
@@ -1652,7 +1659,16 @@ unifyT loc mess variance x y = do { x1 <- prune x; y1 <- prune y
          ; c2 <- unifyT loc mess variance y b
          ; return(tArrCong c1 c2)}       
   f (TyLift (Checked e)) (TyLift (Checked g)) = 
-    do { e <- unifyExpT loc mess e g
+    do { (writeln ("\n*****\nIn UnifyT Normalizing\n Handle TEqual for normlization\n  "++
+                   show e++", "++show g))
+       ; ez <- zonkExp e  
+       ; gz <- zonkExp g  
+       ; writeln("After zonk "++show ez++", "++show gz)
+       ; enf <- normform ez
+       ; gnf <- normform gz
+       ; writeln("After norm "++show enf++", "++show gnf)       
+     
+       ; e <- unifyExpT loc mess enf gnf     
        ; if nosplit e
             then return (tRefl(TyLift (Checked e)))
             else return (TJoin e) }
