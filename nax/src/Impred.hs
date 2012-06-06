@@ -26,9 +26,10 @@ import Language.Trellys.LayoutToken -- Replaces Text.Parsec.Token
                    -- and adds layout rule parsing capability
                    
 import Monads(FIO(..),handle,runFIO,fio,nextInteger,writeln
-             ,unionByM,lift1,lift2,lift3,lift4,when,anyM
+             ,unionByM,anyM
              ,newRef,writeRef,readRef,failFIOwith,handleP
              )
+import Control.Monad (when)
              
 import Debug.Trace             
 ---------------------------------------------------------

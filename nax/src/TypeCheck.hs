@@ -9,8 +9,8 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleS,when,fresh)
-import Control.Monad(foldM,liftM,liftM2)
+import Monads(FIO,fio,handleS,fresh)
+import Control.Monad(foldM,when,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
 import Eval(normform)

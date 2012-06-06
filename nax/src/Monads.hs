@@ -165,9 +165,6 @@ lifted comp = Lift(do{ x <- comp; return(Just x)})
 fmapM :: Monad m => (a -> m b) -> m a -> m b
 fmapM f comp = do { x <- comp; f x;}
 
-when :: Monad m => Bool -> m () -> m ()
-when x  comp = if x then comp else return ()
-
 ifM :: Monad m => m Bool -> m b -> m b -> m b
 ifM test x y = do { b <- test; if b then x else y }
 
