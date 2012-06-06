@@ -6,6 +6,7 @@ import System.IO(fixIO,hClose,hFlush,stdout)
 import qualified Control.Exception         -- Use this instead
 import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
+import Control.Monad (filterM,liftM)
 
 import Names(SourcePos,noPos)
 
@@ -162,15 +163,9 @@ lifted comp = Lift(do{ x <- comp; return(Just x)})
 
 -----------------------------------------------
 
-ifM :: Monad m => m Bool -> m b -> m b -> m b
-ifM test x y = do { b <- test; if b then x else y }
-
 anyM :: Monad m => (b -> m Bool) -> [b] -> m Bool
-anyM p xs = do { bs <- mapM p xs; return(or bs) }
+anyM p xs = or `liftM` mapM p xs
 
-elemByM f x [] = return False
-elemByM f x (y:ys) = ifM (f x y) (return True) (elemByM f x ys)
-
-unionByM f xs [] = return xs
-unionByM f xs (y:ys) = 
-   ifM (elemByM f y xs) (unionByM f xs ys) (unionByM f (y:xs) ys)
+unionByM :: Monad m => (a -> a -> m Bool) -> [a] -> [a] -> m [a]
+unionByM eqM xs ys = (xs ++) `liftM` filterM notElemXsM ys
+ where notElemXsM y = not `liftM` anyM (eqM y) xs
