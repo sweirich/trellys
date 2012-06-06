@@ -588,9 +588,9 @@ simplekindP = simplekindT (fmap Parsed (braceS expr))
 firstOrderP = firstOrderT (fmap Parsed (braceS expr))
 kindP       = kindT       (fmap Parsed (braceS expr))
 
-typPat = 
-  do { ty <- typT (fmap Pattern (braceS pattern))
-     ; return(toPat ty)}
+--typPat = 
+--  do { ty <- typT (fmap Pattern (braceS pattern))
+--     ; return(toPat ty)}
 
 simpleT p = muT p <|> tycon <|> typevariable <|> special <|> parenS inside  <|> fmap TyLift p
   where inside = fmap pairs (sepBy (typT p) (Token.comma funlog))        

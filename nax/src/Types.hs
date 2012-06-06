@@ -311,8 +311,8 @@ unify loc message x y = do { x1 <- prune x; y1 <- prune y
         f (TyLift (Checked e)) (TyLift (Checked g)) = unifyExp loc message e g          
         f (TyLift (Parsed e)) _ = error ("unchecked term in type inside unify: "++show e)
         f _ (TyLift (Parsed e)) = error ("unchecked term in type inside unify: "++show e)
-        f (TyLift (Pattern e)) _ = error ("unchecked term in type inside unify: "++show e)
-        f _ (TyLift (Pattern e)) = error ("unchecked term in type inside unify: "++show e)        
+--         f (TyLift (Pattern e)) _ = error ("unchecked term in type inside unify: "++show e)
+--        f _ (TyLift (Pattern e)) = error ("unchecked term in type inside unify: "++show e)        
         f (TyAll vs t) (TyAll us s) = error ("No TyAll in unify yet")
         f s t = matchErr loc ((show s++ " =/= " ++show t++" (Different types)") : message)  s t
 
@@ -905,7 +905,7 @@ getVars t = do { x <- prune t; f x }
         f (TyMu k) = getVarsKind k
         f (TyLift (Checked e)) = getVarsExpr e       
         f (TyLift (Parsed e)) = getVarsE e
-        f (TyLift (Pattern p)) = return([],map Exp (patBinds p []))
+--         f (TyLift (Pattern p)) = return([],map Exp (patBinds p []))
         f (TcTv (t@(uniq,ptr,k))) = 
           do { pair <- getVarsKind k             
              ; (unionW pair ([Type t],[])) }
@@ -1658,8 +1658,8 @@ unifyT loc mess variance x y = do { x1 <- prune x; y1 <- prune y
             else return (TJoin e) }
   f (TyLift (Parsed e)) _ = error ("unchecked term in type inside unify: "++show e)
   f _ (TyLift (Parsed e)) = error ("unchecked term in type inside unify: "++show e)
-  f (TyLift (Pattern e)) _ = error ("unchecked term in type inside unify: "++show e)
-  f _ (TyLift (Pattern e)) = error ("unchecked term in type inside unify: "++show e)   
+--  f (TyLift (Pattern e)) _ = error ("unchecked term in type inside unify: "++show e)
+--  f _ (TyLift (Pattern e)) = error ("unchecked term in type inside unify: "++show e)   
   f (TyAll vs t) (TyAll us s) = error ("No TyAll in unifyT yet")
   f (TcTv x) t2 = unifyVar loc mess x t2 >> return (tRefl t2)
   f t2 (TcTv x) = unifyVar loc mess x t2 >> return (tRefl t2)
