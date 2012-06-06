@@ -9,7 +9,7 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleS,foldrM,when,whenM,fresh)
+import Monads(FIO,fio,handleS,when,whenM,fresh)
 import Control.Monad(foldM,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
@@ -997,9 +997,9 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
   do { checkDec toplevel env nm
        -- if toplevel then write (show nm++", ") else return()
      ; (ptrs,names) <- getVars body  -- all the variables, those not in "xs" must be in the environment.
-     ; let acc2 (nm,Type t) (ns,k) = do { k2 <- kindOf t; return ((nm,k2):ns,Karr k2 k)}
-	   acc2 (nm,Exp e) (ns,k) = do { t2 <-typeOf e; return ((nm,LiftK t2):ns,Karr (LiftK t2) k)}
-           acc2 (nm,Kind _) (ns,k) = fail ("Kind variable in synonym: "++show nm)
+     ; let (ns,k) `acc2` (nm,Type t) = do { k2 <- kindOf t; return ((nm,k2):ns,Karr k2 k)}
+	   (ns,k) `acc2` (nm,Exp e) = do { t2 <-typeOf e; return ((nm,LiftK t2):ns,Karr (LiftK t2) k)}
+           (ns,k) `acc2` (nm,Kind _) = fail ("Kind variable in synonym: "++show nm)
            find (Kind n : more) nm | nm==n = return(Kind n)
            find (Type n : more) nm | nm==n = return(Type n)
            find (Exp n  : more) nm | nm==n = return(Exp n)
@@ -1010,7 +1010,7 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
      ; let env2 = addMulti boundnames env  -- extend the environment with these assumptions
      ; (body2,k) <- wellFormedType pos ["Checking wff type: "++show body++"\nin type synonym:\n"++show dec] env2 body
                     -- body2 has had the variables in the global env replaced with CSP constants
-     ; (zs,kind) <- foldrM acc2 ([],k) (reverse boundnames)     
+     ; (zs,kind) <- foldM acc2 ([],k) (reverse boundnames)     
      ; tele <- binderToTelescope boundnames
      ; let polyk = PolyK tele kind 
     --  ; writeln("\nSynonym "++show nm++show nameList++": "++show polyk++" = "++show body2)

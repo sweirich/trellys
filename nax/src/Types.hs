@@ -44,7 +44,7 @@ matchT vars (pat,typ) env =
     (TyApp x y,TyApp m n) -> 
        do { env2 <- matchT vars (x,m) env; matchT vars (y,n) env2}
     (TyTuple _ xs,TyTuple _ ys) | length xs==length ys ->
-       foldrM (matchT vars) env (zip xs ys)
+       foldM (flip $ matchT vars) env (zip xs ys)
     (TyCon _ n _,TyCon _ m _) | n==m -> return env   
     (TyProof x y,TyProof m n) -> 
        do { env2 <- matchT vars (x,m) env; matchT vars (y,n) env2}
@@ -82,9 +82,9 @@ matchE vars (pat,exp) env =
        do { env2 <- matchE vars (x,m) env; matchE vars (y,n) env2}  
     (TEAbs _ _,TEAbs _ _) -> error ("No TEAbs in matchE yet: "++show pat++" =?= "++show exp)
     (TECon _ c1 _ a1 xs1,TECon _ c2 _ a2 xs2) | c1==c2 && a1==a2 
-       ->  foldrM (matchE vars) env (zip xs1 xs2) 
+       ->  foldM (flip $ matchE vars) env (zip xs1 xs2) 
     (TETuple xs,TETuple ys) | length xs==length ys ->
-       foldrM (matchE vars) env (zip xs ys) 
+       foldM (flip $ matchE vars) env (zip xs ys) 
     (TELet _ _,TELet _ _) -> error ("No TELet in matchE yet: "++show pat++" =?= "++show exp)
     (TEIn k1 x,TEIn k2 y) ->
        do { env2 <- matchE vars (x,y) env; matchK vars (k1,k2) env2} 
