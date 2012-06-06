@@ -124,6 +124,7 @@ next = fio nextInteger
 fresh = unique "_x"
 unique s = do { n <- next; return (s++show n)}
 
+-- ???: why unsafePerformIO ?
 counter :: IORef Integer
 counter = unsafePerformIO(newIORef 0)
 
@@ -166,10 +167,6 @@ lifted comp = Lift(do{ x <- comp; return(Just x)})
 foldrM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
 foldrM acc base [] = return base
 foldrM acc base (x:xs) = do { b <- acc x base; foldrM acc b xs}
-
-foldlM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
-foldlM acc base [] = return base
-foldlM acc base (x:xs) = do { b <- foldrM acc base xs; acc x b; }
 
 fmapM :: Monad m => (a -> m b) -> m a -> m b
 fmapM f comp = do { x <- comp; f x;}
