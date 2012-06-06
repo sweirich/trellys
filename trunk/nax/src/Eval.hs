@@ -86,10 +86,9 @@ trymatching env ms [] v k = fail ("No pattern matches "++show v++"\n   "++show m
 -- trymatching env ms ((pat,exp):more) (v@(VCode e)) k = 
      -- at PatVar would be OK here -- error ("Try matching sees a code value: "++show v)
 trymatching env ms ((pat,exp):more) v k =
-            maybeM (matchM env pat v)
-                   (\ env2 -> evalC exp env2 k)
-                   (trymatching env ms more v k) 
-
+            maybe (trymatching env ms more v k)   
+                  (\ env2 -> evalC exp env2 k)
+              =<< matchM env pat v
 
 matchM:: VEnv -> Pat -> Value IO -> IO(Maybe (VEnv))
 matchM env p v = 
@@ -98,9 +97,10 @@ matchM env p v =
        Nothing -> return Nothing
   where new (nm,v) = do { u <- nextinteger; return(nm,u,v)}
 
+{-
 maybeM comp justf nothing =
   do { v <- comp; case v of { Just x -> justf x; Nothing -> nothing }}
-
+-}
 
 
 
@@ -232,7 +232,7 @@ mprim phi k = mplus (VFun whoknows id) "mprim" phi k
 evalDecC :: VEnv -> Decl TExpr -> (VEnv -> IO a) -> IO a 
 evalDecC env (d@(Def _ pat exp)) k = 
    -- println ("\n\nDefining: "++show d++"\nIn environment\n"++ browse (Just 10) env) >>
-   evalC exp env (\ v -> maybeM (matchM env pat v) k (fail "no Match"))
+   evalC exp env ((maybe (fail "no Match") k =<<) . matchM env pat)
 evalDecC env (DataDec pos t args cs derivs) k = k env
 {-
    do { let acc env (c,argtyps) = 
@@ -284,19 +284,20 @@ tryClauses:: TExpr -> [([Pat], TExpr)]  -> VEnv -> [Value IO] -> [([Pat], TExpr)
 tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++plistf show "" vs " " ""++plistf g "\n  " allcls "\n  " "\n")
    where g (ps,e) = plistf show "" ps " " "-> " ++ show e
 tryClauses efun allcls env2 vs ((ps,e):more) k = -- putStrLn ("TRY CLAUSES "++show vs++ show ps) >>
-   maybeM (threadC efun env2 ps vs)
-          (\ env3 -> evalC e env3 k)
-          (tryClauses efun allcls env2 vs more k)  
+   maybe (tryClauses efun allcls env2 vs more k)  
+         (\ env3 -> evalC e env3 k)
+     =<< threadC efun env2 ps vs
           
 threadC :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(Maybe (VEnv))
 threadC efun env [] [] = return(Just env)
 threadC efun env (p:ps) (v:vs) = 
-   maybeM (matchM env p v)
-          (\ env2 -> threadC efun env2 ps vs)
-          (case v of
-	     (VCode e) -> fail ("Code value in threadC: "++ show (TEApp efun e))
-             _ -> return Nothing)
-          
+  maybe n
+        (\ env2 -> threadC efun env2 ps vs)
+    =<< matchM env p v
+ where
+  n = case v of
+        (VCode e) -> fail ("Code value in threadC: "++ show (TEApp efun e))
+        _ -> return Nothing
 	 	
                 
 
