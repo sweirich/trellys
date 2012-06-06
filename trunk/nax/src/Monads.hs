@@ -4,12 +4,10 @@ import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import System.IO(fixIO,hClose,hFlush,stdout)
 -- import qualified System.IO.Error as Err -- Deprecated
 import qualified Control.Exception         -- Use this instead
-
 import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
 
 import Names(SourcePos,noPos)
-
 
 tryIO :: IO a -> IO (Either IOError a)
 tryIO = Control.Exception.try
@@ -163,10 +161,6 @@ lifted :: Monad m => m a -> Lifted m a
 lifted comp = Lift(do{ x <- comp; return(Just x)})
 
 -----------------------------------------------
-
-foldrM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
-foldrM acc base [] = return base
-foldrM acc base (x:xs) = do { b <- acc x base; foldrM acc b xs}
 
 fmapM :: Monad m => (a -> m b) -> m a -> m b
 fmapM f comp = do { x <- comp; f x;}

@@ -26,7 +26,7 @@ import Language.Trellys.LayoutToken -- Replaces Text.Parsec.Token
                    -- and adds layout rule parsing capability
                    
 import Monads(FIO(..),handle,runFIO,fio,nextInteger,writeln
-             ,unionByM,lift1,lift2,lift3,lift4,foldrM,when,anyM
+             ,unionByM,lift1,lift2,lift3,lift4,when,anyM
              ,newRef,writeRef,readRef,failFIOwith,handleP
              )
              
@@ -583,20 +583,20 @@ typeFomega mess env cs e expect = -- writeln("\nTypeExp "++show e++" : "++show e
              ; fio(writeIORef ref (TyArr dom rng))
              ; return(FAbs p2 body2,popFrag frag cs2)} 
     (ETuple es) -> 
-      do { let acc e (ts,xs,cs2) = 
+      do { let (ts,xs,cs2) `acc` e = 
                    do { (t,x,cs3) <- inferFomega mess env cs2 e
                       ; return(t:ts,x:xs,cs3)}
-         ; (ts,xs,cs2) <- foldrM acc ([],[],cs) es
+         ; (ts,xs,cs2) <- foldM acc ([],[],cs) es
          ; p <- unifyExpect mess (TyTuple (reverse ts)) expect
          ; return(FTuple (reverse xs),cs2)} 
     ELet d e -> error ("Not yet ELet in typeFomega")
     ECase scr arms -> 
       do { (dom,scr2,cs2) <- inferFomega mess env cs scr
-         ; let typArm (pat,exp) (arms,cs) =
+         ; let (arms,cs) `typArm` (pat,exp) =
                  do { (p2,frag) <- bindPat env ((dom,pat),([],[]))
                     ; (body2,cs3) <- typeFomega mess (extendPatEnv env frag) cs exp expect
                     ; return((p2,body2):arms,cs3)}
-         ; (arms2,cs3) <- foldrM typArm ([],cs2) arms
+         ; (arms2,cs3) <- foldM typArm ([],cs2) arms
          ; return(FCase scr2 arms2,cs3)}
     EPolyStar (EVar nm) ->
       case lookup nm (evar env) of
@@ -753,17 +753,17 @@ typeTerm mess env cs e expect = -- writeln("\nTypeExp "++show e++" : "++show exp
          ; p2 <- unifyExpect mess rng expect         
          ; return(teCast p2 (TEApp (teCast p1 f2) x2),cs3) }
     (ETuple es) -> 
-      do { let acc e (ts,xs,cs2) = do { (t,x,cs3) <- inferTerm mess env cs2 e; return(t:ts,x:xs,cs3)}
-         ; (ts,xs,cs2) <- foldrM acc ([],[],cs) es
+      do { let (ts,xs,cs2) `acc` e = do { (t,x,cs3) <- inferTerm mess env cs2 e; return(t:ts,x:xs,cs3)}
+         ; (ts,xs,cs2) <- foldM acc ([],[],cs) es
          ; p <- unifyExpect mess (TyTuple ts) expect
          ; return(teCast p (TETuple xs),cs2)}
     ECase scr arms -> 
       do { (dom,scr2,cs2) <- inferTerm mess env cs scr
-         ; let typArm (pat,exp) (arms,cs) =
+         ; let (arms,cs) `typArm` (pat,exp) =
                  do { (p2,frag) <- bindPat env ((dom,pat),([],[]))
                     ; (body2,cs3) <- typeTerm mess (extendPatEnv env frag) cs exp expect
                     ; return((p2,body2):arms,cs3)}
-         ; (arms2,cs3) <- foldrM typArm ([],cs2) arms
+         ; (arms2,cs3) <- foldM typArm ([],cs2) arms
          ; return(TECase scr2 arms2,cs3)}         
              
 -- Typable where all variables are kown to be Asterix
@@ -2112,14 +2112,14 @@ ptrToSub bad (ps@((ExprP(trip@(uniq,ptr,typ))):more)) (n:names) (env@(ns,ptrs)) 
              ; return(env2,ExprB n typ1 : bs) }
 
 getNamesSub :: [Sub] -> FIO [Name]
-getNamesSub env = foldrM getname [] env
-  where getname (KindS nm k) ans = 
+getNamesSub env = foldM getname [] env
+  where ans `getname` (KindS nm k) = 
            do { (_,cl) <- getVarsKind k
               ; return(map unName cl ++ ans)}
-        getname (TypeS nm t k) ans = 
+        ans `getname` (TypeS nm t k) = 
            do { (_,cl) <- getVarsTyp t
               ; return(map unName cl ++ ans)}
-        getname (ExprS nm e t) ans = 
+        ans `getname` (ExprS nm e t) = 
            do { (_,cl) <- getVarsExpr e
               ; return(map unName cl ++ ans)}
               
@@ -2310,8 +2310,8 @@ getVarsPat (PTyp p t) =
      ; us <- getVarsTyp t
      ; ws <- unionW vs us
      ; return(ns,ws)}
-getVarsPat (PCon nm ps) = foldrM acc ([],([],[])) ps
-  where acc p (ns,vs) = do { (ms,us) <- getVarsPat p
+getVarsPat (PCon nm ps) = foldM acc ([],([],[])) ps
+  where (ns,vs) `acc` p = do { (ms,us) <- getVarsPat p
                            ; ws <- unionW vs us
                            ; return(union ns ms,ws)}     
                            
@@ -2477,7 +2477,7 @@ getVarsTyp t = do { x <- pruneTyp t; f x }
           do { trip1 <- getVarsTyp x 
              ; trip2 <- getVarsTyp y
              ; (unionW trip1 trip2)}  
-        f (TyTuple ts) = foldrM (\ x p1 -> do { p2 <- getVarsTyp x; unionW p1 p2}) ([],[]) ts
+        f (TyTuple ts) = foldM (\ p1 x -> do { p2 <- getVarsTyp x; unionW p1 p2}) ([],[]) ts
         f (TcTv (t@(uniq,ptr,k))) = 
           do { pair <- getVarsKind k             
              ; (unionW pair ([TypeP t],[])) }
@@ -2549,9 +2549,9 @@ zonkFrag (ts,es) = do { ts2 <- mapM f ts; es2 <- mapM g es; return(ts2,es2)}
         g (nm,(t,gp)) = do { t2 <- zonkTyp t; return(nm,(t2,gp))}  
 
 tvsEnv :: Env -> FIO ([POINTER],[NAME])
-tvsEnv env = foldrM f ([],[]) monoSchemes 
+tvsEnv env = foldM f ([],[]) monoSchemes 
   where monoSchemes = map snd (lamBnd env) 
-        f s (ps,ns) = do { (ptrs,names) <- getVarsTyp s; return (ptrs++ps,names++ns) } 
+        (ps,ns) `f` s = do { (ptrs,names) <- getVarsTyp s; return (ptrs++ps,names++ns) } 
 
         
 generalizeR:: Env -> Typ -> FIO(Typ,TEqual, [Bind])
