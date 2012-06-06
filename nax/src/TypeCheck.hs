@@ -9,7 +9,7 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleS,foldrM,foldlM,when,whenM,fresh)
+import Monads(FIO,fio,handleS,foldrM,when,whenM,fresh)
 import Control.Monad(foldM,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
