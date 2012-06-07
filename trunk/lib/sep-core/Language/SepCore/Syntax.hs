@@ -157,7 +157,7 @@ data Proof =  ProofVar (Name Proof)
 
     deriving(Show)
 
-type Scheme = [ArgName]
+type Scheme = [(ArgName,Stage)]
 
 type TermBranches = [(String,(Bind Scheme Term))]
 
@@ -176,6 +176,7 @@ data Term =  TermVar (Name Term)
            | Pi (Bind (ArgName, Embed ArgClass) Term) Stage
 
            | TermLambda (Bind (ArgName, Embed ArgClass) Term) Stage
+
            | TermLetTerm (Bind (Name Term, Name Proof) Term) Term
            
            | TermLetTerm1 (Bind (Name Term) Term) Term
@@ -469,11 +470,13 @@ instance Display Term where
     return $ text "case" <+> dScrutinee <+> text "of" $$
              nest 2 (vcat dAlts)
     where dAlt (con, binding) = do
-            lunbind binding $ \(vars,body) -> do
-            dcon <- display con
-            dPvars <- mapM (\var -> display var) vars
-            dBody <- display body
-            return $ cat [dcon <+> hsep dPvars <+> text "-> ",nest 2 dBody]
+            lunbind binding $ \(tuples,body) -> 
+               let vars = map fst tuples in
+               do
+                 dcon <- display con
+                 dPvars <- mapM (\var -> display var) vars
+                 dBody <- display body
+                 return $ cat [dcon <+> hsep dPvars <+> text "-> ",nest 2 dBody]
               
   display (w@(Abort t)) = do
     d <- dParen (precedence w) t

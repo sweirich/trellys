@@ -233,11 +233,12 @@ TermBranches : TermVar "->" Term                    {[($1, (bind [] $3))]}
              | TermVar Scheme "->" Term                    {[($1, (bind $2 $4))]}
              | TermBranches '|' TermVar Scheme "->" Term       {$1 ++ [($3,(bind $4 $6))]}
 
-Scheme : TermVar                               {[ArgNameTerm (string2Name $1)]}
-       | ProofVar                              {[ArgNameProof (string2Name $1)]}
-       | Scheme TermVar                    {$1 ++ [ArgNameTerm ( string2Name $2)] }
-       | Scheme ProofVar                    {$1 ++ [ArgNameProof ( string2Name $2)] }
-
+Scheme : TermVar                               {[(ArgNameTerm (string2Name $1), Plus)]}
+       | ProofVar                              {[(ArgNameProof (string2Name $1),Minus )]}
+       | '['TermVar']'                         {[(ArgNameTerm (string2Name $2),Minus )]}
+       | Scheme TermVar                    {$1 ++ [(ArgNameTerm ( string2Name $2), Plus)] }
+       | Scheme ProofVar                    {$1 ++ [(ArgNameProof ( string2Name $2),Minus )] }
+       | Scheme '['TermVar']'              {$1 ++ [(ArgNameTerm ( string2Name $3), Minus)] }
 InnerProof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | '\\' ProofVar ':' Predicate '.' Proof          {ProofLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
