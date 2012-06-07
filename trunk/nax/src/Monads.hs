@@ -97,13 +97,6 @@ instance Show a => Show (FIO a) where
   show x = show (unsafePerformIO(runFIO x errf))
              where errf pos i mess = fail mess
 
-
-fixFIO :: (a -> FIO a) -> FIO a
-fixFIO f = FIO(fixIO (unFIO . unRight f))
-  where unRight f ~(Ok x) = f x
-    --  unRight f other = FIO(return other)
-    -- unreachable because of lazy ~pattern
-
 fio :: IO x -> FIO x
 fio x = FIO $ do result <- tryIO x 
                  case result of
@@ -131,42 +124,6 @@ newRef x = fio(newIORef x)
 readRef r = fio(readIORef r)
 writeRef x r = fio(writeIORef x r)
 
--------------------------------------------------------------
--- A lifted monad, is a monad that returns a maybe object
--- This gives two levels of failure
---   fail s    non recoverable
---   none      testable (i.e. return Nothing in the original monad)
-
-{- !!!: GHC 7.4.1 bug ???
---
--- Commenting this causes a type error in Syntax.hs, even though none
--- of the this code is used there, and the type error is unrelated as
--- far as I can tell.
---
-newtype Lifted f x = Lift (f(Maybe x))
-instance Monad f => Monad (Lifted f) where
-  return x = Lift(return(Just x))
-  (Lift comp) >>= g = Lift comp2
-    where comp2 = do { ans <- comp
-                     ; case ans of
-                         Nothing -> return Nothing
-                         Just a -> case g a of
-                                    (Lift comp3) -> comp3 }
-  fail s = Lift(fail s) 
-
-none :: Monad m => Lifted m a
-none = Lift(return Nothing)
-
-runLifted :: Monad m => Lifted m a -> m b -> (a -> m b) -> m b
-runLifted (Lift x) y f = 
-   do { ans <- x
-      ; case ans of
-          Nothing -> y
-          Just x -> f x }
-          
-lifted :: Monad m => m a -> Lifted m a
-lifted comp = Lift(do{ x <- comp; return(Just x)})
--}
 -----------------------------------------------
 
 anyM :: Monad m => (b -> m Bool) -> [b] -> m Bool
