@@ -468,6 +468,21 @@ ppExpr p e =
     (EMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppExpr p exp <+> text "where"): map f ms)
        where f (ps,body) = PP.nest 2(PP.sep[PP.hsep (map (ppPat p) ps) <+> text "=",PP.nest 2 (ppExpr p body)])
 
+
+-- !!!: GHC 7.4.1 bug ???
+--
+-- W/o this type sig, I get 
+--
+--   src/Syntax.hs:452:54:
+--       Couldn't match expected type `TExpr' with actual type `Expr'
+--       Expected type: PI -> TExpr -> Doc
+--         Actual type: PI -> Expr -> Doc
+--       In the second argument of `ppMatch', namely `ppExpr'
+--       In the first argument of `map', namely `(ppMatch p ppExpr)'
+--
+-- when the *unused* 'Lifted' code in Monads.hs is commented out.
+--
+-- ppMatch :: PI -> (PI -> t -> Doc) -> (Pat, t) -> Doc
 ppMatch p ppf (pat,body) = PP.sep [ppPat p pat <+> text "->",PP.nest 2 (ppf p body)]
 
 flatLet (ELet d e) ds = flatLet e (d:ds)
