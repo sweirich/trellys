@@ -344,18 +344,17 @@ checkBranch :: Term -> Term -> TermBranches -> TCMonad Term
 checkBranch state theType ((constr, binding): l) = do
   ls <- flatten theType 
   (tuples,t1) <- unbind binding
-  let argnames =  map fst tuples in
-  do
-    ctype <- getClass (ArgNameTerm (string2Name constr)) >>= ensureArgClassTerm
-    d' <- flatten ctype 
-    if aeq (head d') (head ls) then 
+  let argnames =  Prelude.map fst tuples
+  ctype <- getClass (ArgNameTerm (string2Name constr)) >>= ensureArgClassTerm
+  d' <- flatten ctype 
+  if aeq (head d') (head ls) then 
       do theType' <- getInstance ctype (tail ls)
          case runIdentity(runErrorT (runFreshMT (execStateT (calcLocalContext theType' argnames) M.empty))) of
            Left e -> throwError e
            Right env -> do
-               t1' <- local (M.union env) (compType t1) 
-               if not (sanityCheck t1' argnames) then  
-                   if aeq state Undefined then checkBranch t1' theType l else if aeq t1' state then checkBranch t1' theType l else typeError $ disp("Expected type:")<+>disp(state)<+>disp("Actual type:")<+>disp(t1') else typeError $ disp("An insane event just happened.") else typeError $ disp("The actual type of the datatype constructor") <+>disp(constr)<+> disp (" doesn't fit the corresponding datatype")<+>disp(head ls)
+             t1' <- local (M.union env) (compType t1) 
+             if not (sanityCheck t1' argnames) then  
+                 if aeq state Undefined then checkBranch t1' theType l else if aeq t1' state then checkBranch t1' theType l else typeError $ disp("Expected type:")<+>disp(state)<+>disp("Actual type:")<+>disp(t1') else typeError $ disp("An insane event just happened.") else typeError $ disp("The actual type of the datatype constructor") <+>disp(constr)<+> disp (" doesn't fit the corresponding datatype")<+>disp(head ls)
                    
 checkBranch state theType [] = return $ state
 

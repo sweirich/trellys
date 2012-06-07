@@ -110,19 +110,20 @@ erase (TermLetProof binding proof) = do
   (x,body) <- unbind binding
   erase body
 
-erase (TermCase1 scrutinee alts) = do
-  ECase <$> erase scrutinee <*> mapM eraseAlt alts
+-- Case expression is problematic in erasure.
+-- erase (TermCase1 scrutinee alts) = do
+--   ECase <$> erase scrutinee <*> mapM eraseAlt alts
 
 
 
 erase (Tcast t p) = ETCast <$> erase t
 erase (Abort _) = return EAbort
 
-eraseAlt (str,binding) = do
-  (vs,body) <- unbind binding
-  let vs' = [translate v | (ArgNameTerm v) <- vs]
-  eb <- erase body
-  return (str,(bind vs' eb))
+-- eraseAlt (str,binding) = do
+--   (vs,body) <- unbind binding
+--   let vs' = [translate v | (ArgNameTerm v, Plus) <- vs]
+--   eb <- erase body
+--   return (str,(bind vs' eb))
 
 ensureArgNameTerm (ArgNameTerm t) = return t
 ensureArgNameTerm _ = typeError $ disp ("expected a ArgNameTerm")
