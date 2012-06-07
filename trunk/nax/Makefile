@@ -49,7 +49,7 @@ uninstall:
 	@echo You can find them with \`which trellys\`
 
 clean:
-	-rm -rf src/dist
+	-rm -rf dist tmp
 
 test:
 	cd test && make
