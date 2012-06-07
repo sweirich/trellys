@@ -137,6 +137,12 @@ writeRef x r = fio(writeIORef x r)
 --   fail s    non recoverable
 --   none      testable (i.e. return Nothing in the original monad)
 
+{- !!!: GHC 7.4.1 bug ???
+--
+-- Commenting this causes a type error in Syntax.hs, even though none
+-- of the this code is used there, and the type error is unrelated as
+-- far as I can tell.
+--
 newtype Lifted f x = Lift (f(Maybe x))
 instance Monad f => Monad (Lifted f) where
   return x = Lift(return(Just x))
@@ -160,7 +166,7 @@ runLifted (Lift x) y f =
           
 lifted :: Monad m => m a -> Lifted m a
 lifted comp = Lift(do{ x <- comp; return(Just x)})
-
+-}
 -----------------------------------------------
 
 anyM :: Monad m => (b -> m Bool) -> [b] -> m Bool
