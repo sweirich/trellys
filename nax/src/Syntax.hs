@@ -482,7 +482,10 @@ ppExpr p e =
 --
 -- when the *unused* 'Lifted' code in Monads.hs is commented out.
 --
--- ppMatch :: PI -> (PI -> t -> Doc) -> (Pat, t) -> Doc
+-- Checkout revision 540 and try:
+--
+--   ghc -odir tmp -hidir tmp -isrc:../lib/layout-token/src src/Syntax.hs
+ppMatch :: PI -> (PI -> t -> Doc) -> (Pat, t) -> Doc
 ppMatch p ppf (pat,body) = PP.sep [ppPat p pat <+> text "->",PP.nest 2 (ppf p body)]
 
 flatLet (ELet d e) ds = flatLet e (d:ds)
