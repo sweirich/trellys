@@ -20,22 +20,6 @@ import Types(tMu,tint,tbool,arrT,applyT,tstring,tunit
 -}
 import Monads(FIO)            
 
--------------------------------------------------
--- Types of values
-
-typeNameVal :: Value m -> String
-typeNameVal (VBase pos x)   = typeNameLit x
-typeNameVal (VFun typ g)    = "? -> ?"
-typeNameVal (VFunM n g)    = "? => ?"
-typeNameVal (VTuple vs) = plistf typeNameVal "(" vs "," ")"
-typeNameVal (VCon _ arity c vs) = "T?"
-typeNameVal (VIn k x) = "Mu "++typeNameVal x
-typeNameVal (VInverse x) = "?"
- 
-commafy [] = PP.empty
-commafy [x] = x
-commafy (x:xs) = x <> text "," <> commafy xs
-
 --------------------------------------------------------   
 
 class Typable t where

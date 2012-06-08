@@ -1,7 +1,6 @@
 module BaseTypes where
 
-import qualified Text.PrettyPrint.HughesPJ as PP
-import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
+import Text.PrettyPrint.HughesPJ (Doc,text)
 
 data Literal 
    = LInt Int                  -- 5 , -5
@@ -17,12 +16,6 @@ instance Eq Literal where
   (LChar n) == (LChar m) = n==m
   LUnit == LUnit = True
   _ == _ = False
-
-typeNameLit (LInt n) = "Int"
-typeNameLit (LInteger n) = "Integer"
-typeNameLit (LDouble n) = "Double"
-typeNameLit (LChar c) = "Char"
-typeNameLit LUnit = "()"
 
 ppLit :: Literal -> Doc
 ppLit (LInt n) = text(show n)
