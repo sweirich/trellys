@@ -235,10 +235,10 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
        f (exp@(CSP (nm,i,u))) (CSP (n,j,v)) | i==j = return exp
        f s t = do { s2 <- zonkExp s
                   ; t2 <- zonkExp t
-                  ; let errF srcPos s =
-                          fail (show srcPos ++ ": While comparing the normal forms of\n   "
-                          ++show s2++"\nand\n   "++show t2++"\n"++s)
-                  ; handleS (compareTerms loc message s2 t2) errF
+                  ; let trans msg =
+                          "While comparing the normal forms of\n   "
+                          ++show s2++"\nand\n   "++show t2++"\n"++msg
+                  ; handleM (compareTerms loc message s2 t2) trans
                   ; return(ContextHole s2 t2)}
                  
 
@@ -1722,9 +1722,6 @@ morepolyRRT loc mess x y = f x y where
                      ; p3 <- morepolySST loc mess m a
                      ; return(tComp p1 (tArrCong (tSym p3) p2))}
   f (Tau x) (Tau y) = unifyT loc mess Pos x y
-     where message = ("\nWhile checking that "++show x++" is more polymorphic than"++
-                      "\n                    "++show y):mess
-           -- not clear this additional message ever helps
 
 
 morepolySST:: SourcePos -> [String] -> Scheme -> Scheme -> FIO TEqual
