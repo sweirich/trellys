@@ -1075,12 +1075,6 @@ tstring = listT tchar
 
 nat = (TyApp (TyMu Star) (TyCon (Syn "Nat") (toName "N") (PolyK [] (Karr Star Star))))
 
-toTyp Int = tint
-toType Char = tchar
-toType Double = tdouble
-toType Integer = tinteger
-toType Unit = tunit
-
 ta = TyVar (pre "a") Star
 tb = TyVar (pre "b") Star
 tc = TyVar (pre "c") Star
