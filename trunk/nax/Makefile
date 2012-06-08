@@ -49,7 +49,7 @@ uninstall:
 	@echo You can find them with \`which trellys\`
 
 clean:
-	-rm -rf dist tmp
+	-rm -rf dist tmp test/nax
 
 test:
 	cd test && make
@@ -66,7 +66,6 @@ cabal-dev-ghci:
 	cd src && cabal-dev ghci
 
 ghc_include = src:../lib/layout-token/src
-
 # Start ghci with appropriate include dirs.
 ghci:
 	ghci -i$(ghc_include) src/Main.hs
@@ -76,4 +75,11 @@ test/nax: src/*.hs
     # Save the intermediate .o and .hi files in a separate dir (./tmp)
     # so that location information in inferior ghci in emacs will work
     # (C-c M-.).
-	ghc --make src/Main.hs -i$(ghc_include) -o test/nax -hidir tmp -odir tmp
+    #
+    # E.g. do `ghc_flags=-fwarn-unused-binds make test/nax` to get
+    # warnings.
+	ghc $(ghc_flags) --make src/Main.hs -i$(ghc_include) -o test/nax -hidir tmp -odir tmp
+
+test/nax.whiney:
+	make clean
+	ghc_flags=-fwarn-unused-binds make test/nax
