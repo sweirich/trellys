@@ -8,6 +8,7 @@ module Main where
 import qualified Control.Exception as Ex
 import Control.Monad(foldM)
 import Data.IORef(IORef)
+import System.Environment(getArgs)
 
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
@@ -266,17 +267,7 @@ instance Comp IO where
   mkFun n f k = k(VFunM n f)
   
 main = do
-  work
-  go
- 
-{-
-testdata = run "AlgData.funlog"
-testsoduko = run "Soduko.funlog"
-testfun = run "Functions.funlog"
-teste = run "empty.funlog"
-testform = run "formula.funlog"
-
-
-
-
--}
+  args <- getArgs
+  case args of
+    []     -> error "usage: nax FILE"
+    file:_ -> run file
