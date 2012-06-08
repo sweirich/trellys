@@ -557,7 +557,6 @@ rigidize (Sch xs r) = do { (env@(ptrs,names,tycons)) <- rigidTele noPos xs ([],[
                          ; return(map fst names,map ff names, ans)}
   where freshen xs = mapM g xs
         g (name,kind) = do { n <- fio(nextInteger); return(name,Type (TyVar (Nm("_"++show n,noPos)) kind)) }
-        h (name,Type(TyVar nm kind)) = nm
         ff (nm,Type t) = t
         ff (nm,Exp e) = TyLift (Checked e)
 
@@ -1447,7 +1446,7 @@ classFind def (Kind x) ((_,Kind t):more) = return(Kind t)
 classFind def (Type x) ((_,Type t):more) = return(Type t)
 classFind def x ((_,y):m) = fail (ycl++" variable '"++show xstr++"' used in "++xcl++" context.")
   where (xcl,xstr) = showCl x
-        (ycl,ystr) = showCl y
+        (ycl,_)    = showCl y
         
 subKind:: FOsub -> Kind -> FIO Kind
 subKind env x = do { y <- pruneK x; f y}
@@ -1517,8 +1516,6 @@ subElim:: FOsub -> Elim [Name] -> FIO(Elim [Name])
 subElim env ElimConst = return(ElimConst)
 subElim env (ElimFun xs t) = 
   do { ys <- mapM (\ n -> freshFO n env nameSupply) xs
-     ; let g old new = (old,Exp(EVar new))
-           env2 = (zipWith g xs ys++env)
      ; t2 <- subTyp env t
      ; return(ElimFun ys t2)}
 

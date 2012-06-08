@@ -52,7 +52,7 @@ initialEnvs =
   where pairsRT = map fst smartPrims 
         rtSub = map f smartPrims
         f (x@(nm,n,v),typecheck) = (nm,Exp(CSP x))
-        (nm,index,v) = last pairsRT
+        (_nm,index,v) = last pairsRT
         decls = parseWithName "predefined" (layout decl (return ())) (unlines preDefinedDeclStrings)
 
 
@@ -231,7 +231,7 @@ envIO =
 
 failT m a =  a `arrT` (TyApp m a)
 failSch m a = Sch [(av,Type Star)] (Tau (failT m a))
- where (TyVar av k) = a
+ where (TyVar av _) = a
 
 bindT m a b = (TyApp m a) `arrT` ((a `arrT` (TyApp m b)) `arrT` (TyApp m b))
 bindSch m a b = Sch [(av,Type Star),(bv,Type Star)] (Tau (bindT m a b))
@@ -240,7 +240,7 @@ bindSch m a b = Sch [(av,Type Star),(bv,Type Star)] (Tau (bindT m a b))
        
 
 returnSch m a = Sch [(av,Type Star)] (Tau (returnT m a))
-  where (TyVar av k) = a
+  where (TyVar av _) = a
         returnT m a = a `arrT` (TyApp m a)
 
 

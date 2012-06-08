@@ -176,9 +176,7 @@ patvariable =
 
 expvariable  :: MParser Expr               
 expvariable = escape <|> (do { s <- nameP; return(EVar s)})
-  where var (x@(Nm(str@(_:xs),pos))) | last str == '\'' = EFree (Nm(init str,pos))
-        var x = EVar x
-        escape = do { char '`'; s <- nameP; return(EFree s)}
+  where escape = do { char '`'; s <- nameP; return(EFree s)}
         
 
 expconstructor  :: MParser Expr
@@ -527,8 +525,6 @@ derivation = do { sym "fixpoint"; fmap Syntax conName }
 constr2 =
   do { c <- conP
      ; sym ":"
-     ; let name = do { n <- nameP; return(n,Star)}
-   --  ; freeTs <- (do { ns <- many1 name; sym "."; return ns}) <|> (return [])     
      ; (schs,rho) <- rhoParts
      ; return(c,[] {- map fst freeTs -},schs,rho)}
      
