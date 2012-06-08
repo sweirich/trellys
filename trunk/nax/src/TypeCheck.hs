@@ -847,8 +847,7 @@ freeNames frag (ptrs,names) = filter p names
 -- the environment for each new Decl
 
 bindPolyPat env free rho (PVar nm _) = (env2,PVar nm (Just (TyAll free (rhoToTyp rho))))
-  where env1 = addTermVar nm (Sch free rho) LetBnd env
-        env2 = addTable EVAR (nm,Left (TEVar nm (Sch free rho),Sch free rho)) env
+  where env2 = addTable EVAR (nm,Left (TEVar nm (Sch free rho),Sch free rho)) env
 bindPolyPat env free rho (p@(PWild loc)) = (env,p)
 bindPolyPat env free rho (p@(PLit loc i)) = (env,p)
 bindPolyPat env free (Tau (TyTuple _ ts)) (PTuple ps) = (env4,PTuple qs)
@@ -984,7 +983,6 @@ elab toplevel env (FunDec fpos f _ clauses) =
      ; let unType (nm,Type k) ans = (nm,k):ans
            unType (nm,Kind ()) ans = ans
            unType (nm,Exp t) ans = (nm,LiftK t):ans  
-           env1 = addTermVar (Nm(f,fpos)) sig LetBnd env
      ; let env2 = addTable EVAR (Nm(f,fpos),Left(TEVar (Nm(f,fpos)) sig,sig)) env
      ; return(env2,FunDec fpos f (foldr unType [] vs) cls3)
      }
@@ -1011,7 +1009,6 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
      ; let polyk = PolyK tele kind 
     --  ; writeln("\nSynonym "++show nm++show nameList++": "++show polyk++" = "++show body2)
      ; let printer = synonymPrint nm xs body2
-           expander = synonymExpand nm nameList polyk body2
            expander2 = synonymExpand2 nm nameList polyk body -- check body is well formed, but use the old one in the expanded
            env2 = addSyn printer env
            env4 = addTable TYCON2 (nm,expander2) env2
@@ -1077,7 +1074,7 @@ constrMacro kind arity cname mname = (mname,arity,f)
   where body k xs = return(EIn k (applyE (ECon cname : xs)))
         f pos xs = 
            do { monokind <- instanK noPos kind
-              ; let (kind2,before,after) = runcount "T" monokind
+              ; let (kind2,_before,after) = runcount "T" monokind
               ; body2 <- (body kind2 xs)
               ; case compare (length xs) arity of
                   EQ -> (body kind2 xs)

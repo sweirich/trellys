@@ -581,7 +581,6 @@ ppDecl p ppf (DataDec pos nm args cs derivs) =
                , PP.nest 2 (ppSepBy (map f cs) " | ")]
         ,PP.sep (derivations derivs)]
   where f (c,xs) = ppName c <+> PP.sep (map ppS xs)
-        g (nm,k) = PP.parens(ppName nm<>text ":"<>ppKind p k)
         ppS (Sch [] (Tau x)) =
            if needsParens x then (PP.parens (ppTyp p x)) else (ppTyp p x)
         ppS sch = PP.parens(ppScheme p sch)
@@ -1218,8 +1217,8 @@ visualT (TSpec (tyall@(TyAll tele body)) ts) = (tyall,pureSubTyp env body)
 visualT (TJoin e2) = ((TyLift(Checked x)),(TyLift(Checked y)))
   where (x,y) = split e2
 visualT (TComp x y) = (a,d)
-  where (a,b) = visualT x
-        (c,d) = visualT y  
+  where (a,_) = visualT x
+        (_,d) = visualT y  
 visualT (TSym x) = (b,a) where (a,b) = visualT x          
 
 

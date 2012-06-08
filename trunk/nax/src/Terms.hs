@@ -94,7 +94,7 @@ freeExp (EApp f x) ans = freeExp f (freeExp x ans)
 freeExp (EAbs elim ps) ans = foldr g ans ps
   where g (p,e) ans = freeExp e ans \\ (map name bound)
           where (bound) = patBinds p ([])          
-freeExp (ELet d e) ans = (freeExp e ans2) \\ bound where (ans2,bound,newTypCon) = freeDec d ans
+freeExp (ELet d e) ans = (freeExp e ans2) \\ bound where (ans2,bound,_) = freeDec d ans
 freeExp (ETuple xs) ans = foldr freeExp ans xs
 freeExp (EIn k x) ans = freeExp x ans
 -- freeExp (ECon pos c xs) ans = foldr freeExp ans xs
