@@ -21,38 +21,7 @@ instance Eq Literal where
   (LChar n) == (LChar m) = n==m
   LUnit == LUnit = True
   _ == _ = False
-  
 
-class Basic t where
-  toLit :: t -> Literal
-  fromLit:: Literal -> t
-  base :: t -> Base
-  
-instance Basic Int where
-  toLit = LInt
-  fromLit (LInt n) = n
-  base _ = Int
-  
-instance Basic Integer where
-  toLit = LInteger
-  fromLit (LInteger n) = n
-  base _ = Integer
-  
-instance Basic Double where
-  toLit = LDouble
-  fromLit (LDouble n) = n
-  base _ = Double
-  
-instance Basic  Char where
-  toLit = LChar
-  fromLit (LChar n) = n
-  base _ = Char
-  
-instance Basic () where
-  toLit () = LUnit
-  fromLit LUnit = ()
-  base _ = Unit
-  
 litToBase (LInt n) = Int
 litToBase (LInteger n) = Integer
 litToBase (LDouble n) = Double
