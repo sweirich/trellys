@@ -9,7 +9,7 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleS,fresh)
+import Monads(FIO,fio,handleM,fresh)
 import Control.Monad(foldM,when,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
@@ -57,7 +57,7 @@ data Frag = Frag
                        -- There should be no Kind or Typ things stored in here
             , ppinfo :: PI
             , table:: DM.Map Name NameContents
-            }                       
+            }
          
 nullFrag = Frag [] [] [] pi0 tyConTable
 
@@ -333,9 +333,8 @@ wellFormedType pos mess frag typ = do { x <- prune typ
         f (TyLift (Checked term)) = fail (unlines (("\nError *******\nChecked term: "++show term++", in wellFormedType."):mess))
 --         f (TyLift (Pattern term)) = fail (unlines (("\nError *******\nPattern term: "++show term++", in wellFormedType."):mess))
         f (TyLift (Parsed term)) =
-          do let handler srcPos msg = fail (unlines $ srcPosMsg : mess) where
-                   srcPosMsg = show srcPos ++ ":" ++ msg
-             (rho,term2) <- handleS (inferExpT frag term) handler
+          do let trans msg = unlines (msg:mess)
+             (rho,term2) <- handleM (inferExpT frag term) trans
              case rho of
                Tau t -> return(TyLift (Checked term2),LiftK t)
                Rarr x y -> fail (unlines (("\nLifted term in type: "++show term++", is a function, "++show rho++", not data"):mess))
@@ -482,9 +481,6 @@ inferBs env k (p:ps) =
      ; return(rho:rhos,k3,p2:ps2)}
 
 ---------------------------------
-
-handleM comp s = handleS comp handler
-  where handler srcPos message = fail (show srcPos ++ ":" ++ message ++ s)
 
 applyTyp exp [] = exp
 applyTyp exp ts = AppTyp exp ts
@@ -1225,26 +1221,26 @@ typeExpT env (e@(EApp fun arg)) expect =
         ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
         ; let cast (e@(TECon mu nm rho n es)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
-        ; let message t = [near e++"\nInfering the application: ("++show e++") where\n   "++
+        ; let mkTrans t msg = unlines [msg,near e++"\nInfering the application: ("++show e++") where\n   "++
                            show fun++": "++show fun_ty++
                            "\n   "++show arg++": "++ show t++
                            "\n   expected type: "++show expect]
         ; case arg_ty of
            Sch [] argRho -> do { -- writeln("arg = "++show arg++": "++show argRho);
                                  x <- handleM (typeExpT env arg (Check argRho))
-                                              (unlines (message arg_ty))
+                                              (mkTrans arg_ty)
                                ; tt <- zonkRho argRho
-                               ; p2 <- morepolyRExpectR_ (expLoc arg) (message arg_ty) res_ty expect                               
+                               ; p2 <- morepolyRExpectR_ (expLoc arg) [mkTrans arg_ty ""] res_ty expect                               
                                ; eprime <- (smartApp (cast f) x)
                                ; return(teCast p2 eprime)}
-           sigma -> do { (ty,x) <- handleM (inferExpT env arg) (unlines ("\n":(message sigma)))
+           sigma -> do { (ty,x) <- handleM (inferExpT env arg) (mkTrans sigma)
                        ; free <- tvsEnv env
                        ; (sig,sub) <- generalizeRho free ty
                        ; sigma2 <- zonkScheme sigma >>= alpha
                        ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):(message sigma)
+                                  "\nis expected to be polymorphic: "++ show sigma2):[mkTrans sigma ""]
                        ; p3 <- morepolySST (expLoc arg) m2 sig sigma2
-                       ; p4 <- morepolyRExpectR_ (expLoc arg) (message sigma) res_ty expect
+                       ; p4 <- morepolyRExpectR_ (expLoc arg) [mkTrans sigma ""] res_ty expect
                        -- Do some stuff with p3 and p4 here
                        ; smartApp (cast f) x }
         }

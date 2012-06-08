@@ -23,6 +23,7 @@ import Types(zonkRho,zonkScheme,zonkExp,zonk,zonkKind,zonkD
             ,generalizeRho)
 import TypeCheck(Frag(..),NameContents(..),addTable,elab,inferExpT,tvsEnv,nullFrag,wellFormedType,browseFrag)
 import Monads(FIO,runFIO,handle,fio
+             ,showFail
              ,writeln
              ,newRef,writeRef,readRef)
 import Data.Functor.Identity
@@ -77,12 +78,10 @@ loadProgram pi (Prog ds) =
      ; let envs = (ce{ppinfo = pi},re)
      ; ref <- newRef envs
      -- XXX: why the 'readRef ref' ???
-     ; let errF srcPos message = do { writeln $ show srcPos ++ ":" ++ message; readRef ref }
-     ; handle 5 (checkThenEvalOneAtATime ref ds envs) errF
+     ; let errF f = do { writeln . showFail $ f; readRef ref }
+     ; handle (checkThenEvalOneAtATime ref ds envs) errF
      ; readRef ref }
 
-
-errF pos n message = error (show pos ++ message)
 
 run name = runX pi0 name
 
@@ -91,7 +90,7 @@ runX pi name =
            handlers = [Ex.Handler catch]
      ; prog <- Ex.catches (parseFile program name) handlers
      -- ; putStrLn(show prog)
-     ; (tcEnv,rtEnv) <- runFIO (loadProgram pi prog) errF
+     ; (tcEnv,rtEnv) <- runFIO (loadProgram pi prog)
      ; putStrLn ("\nNax interpretor\n")
      ; loop2 name (tcEnv,rtEnv)
      }
@@ -152,12 +151,12 @@ kCom (tcEnv,rtEnv) more =
   do { let mess = ["Computing the kind of the type:\n   "++more++"\nusing the :k command."]
            typ = (parse2 typP more)
      ; kind <- runFIO (do { (typ,kind) <- wellFormedType noPos mess tcEnv typ
-                          ; zonkKind kind} ) errF
+                          ; zonkKind kind} )
      ; putStrLn (show kind) }
      
 ----------------------------------------------
 tCom (envx@(tcEnv,rtEnv)) more =
-  do { pair@(sig,term) <- runFIO(checkType envx (parse2 expr more)) errF
+  do { pair@(sig,term) <- runFIO(checkType envx (parse2 expr more))
      ; let pi = ppinfo tcEnv
      ; putStrLn(render(vcat[sep[text "The term"
                                ,parens(ppTExpr pi term)
@@ -179,7 +178,7 @@ action :: (Frag, VEnv) -> [Char] -> IO String
 action (tcEnv,rtEnv) s = 
   do { let exp = (parse2 expr s)
      -- ; putStrLn("|"++show exp++"|")
-     ; (sch,exp2) <- runFIO (checkType (tcEnv,rtEnv) exp) errF
+     ; (sch,exp2) <- runFIO (checkType (tcEnv,rtEnv) exp)
      ; v <- evalC exp2 rtEnv return
      ; let pi = ppinfo tcEnv
      ; return (render(sep[sep[ppTExpr pi exp2<>text ":",ppScheme pi sch,text "="]
