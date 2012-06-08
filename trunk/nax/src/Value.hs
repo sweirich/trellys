@@ -88,15 +88,6 @@ instance Encoding Char m where
     from (VBase noPos (LChar n)) = n
     from v = error ("Value not a Char: "++(show v))
 
-baseToTyp:: Base -> Typ
-baseToTyp Int = tint
-baseToTyp Integer = tinteger
-baseToTyp Double = tdouble
-baseToTyp Char = tchar
-baseToTyp Unit = tunit
-
-btype x = baseToTyp(base x)
-   
 ---------------------------------
 -- datatype instances
 

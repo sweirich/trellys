@@ -11,7 +11,7 @@ import Names
 import Syntax
 import BaseTypes
 import Terms(freeExp)
-import Value(Encoding(..),Typable(..),traceScheme,showScheme,prims,btype,imply,applyTE
+import Value(Encoding(..),Typable(..),traceScheme,showScheme,prims,imply,applyTE
             ,injectIII,injectBBB,injectIIB,notInfo,conkeyM)
 -- import Types(patBinds,tint,tbool,arrT)
 import Monads(FIO,fio)
