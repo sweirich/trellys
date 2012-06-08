@@ -127,6 +127,12 @@ InnerPredicate : PredVar                                    {PredicateVar (strin
 
 |  Term '=' Term                                       {Equal $1 $3}
 
+|  '('Term')' '=' '('Term ')'                          {Equal $2 $6}
+
+|  '('Term')' '=' Term                           {Equal $2 $5}
+
+|  Term '=' '('Term ')'                          {Equal $1 $4}
+
 | '!' Term                                             {Terminate $2}
 
 | bottom  int                                          {Bottom $2}
@@ -200,7 +206,7 @@ InnerTerm : TermVar   {(TermVar (string2Name $1))}
 
      | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | '('Term ')' {$2}
+     | '(' Term ')' {$2}
 
 {- Another way to implement spine form is demonstrated by Garrin below:
 Term : SpineForm {$1}
@@ -247,7 +253,13 @@ InnerProof : ProofVar                                    {ProofVar (string2Name 
 
 | '\\' TermVar ':' Term '.' Proof                {ProofLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
-| join Term Term                                    {Join $2 $3}
+| Term join Term                                    {Join $1 $3}
+
+| '('Term')' join Term                                    {Join $2 $5}
+
+| '('Term')' join '('Term')'                                    {Join $2 $6}
+
+| Term join '('Term')'                                    {Join $1 $4}
 
 {-
 
