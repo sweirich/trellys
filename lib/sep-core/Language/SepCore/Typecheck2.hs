@@ -30,7 +30,7 @@ import Data.Set
 -- global env: Context, having IO side effects.
 
 newtype TCMonad a = TCMonad{runTCMonad :: (ReaderT CombineContext (FreshMT (ErrorT TypeError Identity)))  a}   
- deriving (Monad, MonadReader CombineContext,Fresh, MonadError TypeError)
+ deriving (Monad, MonadReader CombineContext,Fresh, MonadError TypeError, Applicative, Functor)
 
 type CombineContext = (Context, DefContext)
 
@@ -428,7 +428,7 @@ checkData (Datatypedecl dataname bindings) = do
   case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType datatype)) env)))  of
     Left e -> throwError e
     Right t -> ensureType t
-  put (M.insert (ArgNameTerm (string2Name dataname)) (ArgClassTerm datatype, NonValue) (fst env), snd env)
+  put (M.insert (ArgNameTerm (string2Name dataname)) (ArgClassTerm datatype, Value) (fst env), snd env)
   checkConstructors dataname tele cs
 
 
@@ -468,7 +468,7 @@ checkConstructors dataname tele ((constr,t2):l) = do
          case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compType t2')) env))) of
            Left e -> throwError e
            Right t -> ensureType t
-         put ((M.insert (ArgNameTerm (string2Name constr))  (ArgClassTerm t2', NonValue)) (fst env),snd env )
+         put ((M.insert (ArgNameTerm (string2Name constr))  (ArgClassTerm t2', Value)) (fst env),snd env )
          checkConstructors dataname tele l  else typeError $ disp("The type of the data constructor")<+>disp(constr)<+> disp("is not well-formed.") 
 
 -- type-check program declaration
