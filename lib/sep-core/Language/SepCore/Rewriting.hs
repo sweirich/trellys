@@ -11,9 +11,12 @@ import Control.Monad.Trans
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Error
+import Data.List
 import Text.PrettyPrint(render, text,(<+>),($$))
 import qualified Data.Map as M
 
+
+--type Trace = StateT [ETerm] (FreshMT (ErrorT TypeError IO))
 
 -- | val t judgement
 isValue :: ETerm -> TCMonad Bool
@@ -61,10 +64,9 @@ inst (ETermVar x) = do
 -- | one step reduction
 rewrite :: ETerm -> TCMonad ETerm 
 
--- rewrite (ETermVar x) = do 
---   v <- isValue (ETermVar x)
---   if v then return (ETermVar x)
---   else inst(ETermVar x)
+rewrite (ETermVar x) = do 
+  v <-isValue (ETermVar x)
+  if v then return (ETermVar x) else inst (ETermVar x)
 
 -- | beta-v reduction
 rewrite (EApp t1 t2) = do 
@@ -73,16 +75,14 @@ rewrite (EApp t1 t2) = do
             v <- isValue t2
             if v then do 
                    (n, t) <- unbind b
-                   return (subst n t2 t)
-            else do t2'<- rewrite t2
-                    return (EApp (ELambda b) t2')
+                   return (subst n t2 t) else do t2'<- rewrite t2
+                                                 return (EApp (ELambda b) t2')
     ERec b -> do
             v <- isValue t2
             if v then do 
                    ((x, f),t) <- unbind b
-                   return (subst f (ERec b) (subst x t2 t))
-            else do t2' <- rewrite t2
-                    return (EApp (ERec b) t2')
+                   return (subst f (ERec b) (subst x t2 t)) else do t2' <- rewrite t2
+                                                                    return (EApp (ERec b) t2')
     t -> do t' <- rewrite t
             return (EApp t' t2)
 
@@ -90,9 +90,8 @@ rewrite (ELet b t) = do
   v <- isValue t
   if v then do 
          (x,t') <- unbind b
-         return (subst x t t')
-  else do t1 <- rewrite t
-          return (ELet b t1)
+         return (subst x t t')  else do t1 <- rewrite t
+                                        return (ELet b t1)
 
 
 rewrite (ETCast t) = do 
@@ -112,9 +111,22 @@ rewrite (ECase t b) = do
                             let n = zip ls (tail a) 
                             return (substs n t1)
                           Nothing -> typeError $ disp ("Can't find data constructors from the branches")
-        _ -> typeError $ disp ("not a correct form")
-  else do  t' <- rewrite t
-           return $ ECase t' b
+        _ -> typeError $ disp ("not a correct form")  else do  t' <- rewrite t
+                                                               return $ ECase t' b
+
+rewrite t = return t
+
+reduce :: ETerm -> Integer -> TCMonad [ETerm]
+reduce t i = do t' <- rewrite t
+                cs <- reduce t' (i-1)
+                return (t':cs)
+
+joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
+joinable t1 i t2 j = do trace1 <- reduce t1 i
+                        trace2 <- reduce t2 j
+                        let r = intersectBy aeq trace1 trace2
+                        if null r then return False else return True
+
 
 flat (EApp t1 t2) = flat t1 ++ flat t2
 flat t = [t] 
