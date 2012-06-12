@@ -2,7 +2,7 @@ module Language.SepCore.Rewriting where
 import Language.SepCore.Erasure
 import Language.SepCore.Syntax
 import Language.SepCore.PrettyPrint
-import Language.SepCore.Typecheck2
+import Language.SepCore.Monad
 import Language.SepCore.Error
 import Generics.RepLib hiding (Con(..))
 import Control.Monad.Reader hiding (join)

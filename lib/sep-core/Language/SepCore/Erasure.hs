@@ -5,8 +5,7 @@
 module Language.SepCore.Erasure where 
 import Language.SepCore.Syntax
 import Language.SepCore.Error
-import Language.SepCore.Lexer
-import Language.SepCore.Typecheck2(ensureArgClassTerm)
+import Language.SepCore.Monad
 import Language.SepCore.PrettyPrint
 import Unbound.LocallyNameless hiding (Con,Val,Refl,Equal)
 import Unbound.LocallyNameless.Alpha(aeqR1)
