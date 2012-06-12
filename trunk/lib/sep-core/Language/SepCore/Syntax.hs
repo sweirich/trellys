@@ -187,6 +187,8 @@ data Term =  TermVar (Name Term)
 
            | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
 
+           | Conv Term Proof (Bind [(Name Term)] Term)
+
            | TermCase Term (Bind (Name Term)  [(Term, [ArgName],Term)])
 
            | TermCase1 Term TermBranches

@@ -206,9 +206,14 @@ InnerTerm : TermVar   {(TermVar (string2Name $1))}
 
      | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
+     | '{' Proof '}' Term '{' TermScheme '-'':'  Term '}' {Conv $4 $2 (bind $6 $9)}
+
      | '(' Term ')' {$2}
 
-{- Another way to implement spine form is demonstrated by Garrin below:
+TermScheme : TermVar {[string2Name $1]}
+           | TermScheme '.' TermVar {(string2Name $3):$1}
+{-
+ Another way to implement spine form is demonstrated by Garrin below:
 Term : SpineForm {$1}
 
 GetPos : { %do pos<-getPosition; return pos}
