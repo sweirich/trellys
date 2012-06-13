@@ -37,6 +37,7 @@ import Unbound.LocallyNameless.Subst(substR1)
        let        {TokenLet}
        in         {TokenIn}
        rec        {TokenRec}
+       conv       {TokenConv}
        '!'        {TokenEx}
        '='        {TokenEquiv}
        '('        {TokenBL}
@@ -53,7 +54,9 @@ import Unbound.LocallyNameless.Subst(substR1)
        ':'        {TokenCL}
        '.'        {TokenDot}
        '|'        {TokenBar}
-
+       ','        {TokenComma}
+       '@'        {TokenAp}
+        by         {TokenBy}
 %%
 
 {- A more efficient way is demonstrate below by Garrin. 
@@ -125,13 +128,7 @@ InnerPredicate : PredVar                                    {PredicateVar (strin
 | '(' Predicate Predicate ')'                          {PredicateApplication $2 (ArgPredicate $3)}
 -}
 
-|  Term '=' Term                                       {Equal $1 $3}
-
-|  '('Term')' '=' '('Term ')'                          {Equal $2 $6}
-
-|  '('Term')' '=' Term                           {Equal $2 $5}
-
-|  Term '=' '('Term ')'                          {Equal $1 $4}
+| '{' Term ',' Term '}'                                      {Equal $2 $4}
 
 | '!' Term                                             {Terminate $2}
 
@@ -206,12 +203,10 @@ InnerTerm : TermVar   {(TermVar (string2Name $1))}
 
      | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | '{' Proof '}' Term '{' TermScheme '-'':'  Term '}' {Conv $4 $2 (bind $6 $9)}
+     | conv  Term by Proof '@' TermVar '.'  Term  {Conv $2 $4 (bind [(string2Name $6)] $8)}
 
      | '(' Term ')' {$2}
 
-TermScheme : TermVar {[string2Name $1]}
-           | TermScheme '.' TermVar {(string2Name $3):$1}
 {-
  Another way to implement spine form is demonstrated by Garrin below:
 Term : SpineForm {$1}
@@ -250,6 +245,7 @@ Scheme : TermVar                               {[(ArgNameTerm (string2Name $1), 
        | Scheme TermVar                    {$1 ++ [(ArgNameTerm ( string2Name $2), Plus)] }
        | Scheme ProofVar                    {$1 ++ [(ArgNameProof ( string2Name $2),Minus )] }
        | Scheme '['TermVar']'              {$1 ++ [(ArgNameTerm ( string2Name $3), Minus)] }
+
 InnerProof : ProofVar                                    {ProofVar (string2Name $1)}
 
 | '\\' ProofVar ':' Predicate '.' Proof          {ProofLambda (bind (ArgNameProof (string2Name $2), Embed (ArgClassPredicate $4)) $6)}
@@ -258,13 +254,8 @@ InnerProof : ProofVar                                    {ProofVar (string2Name 
 
 | '\\' TermVar ':' Term '.' Proof                {ProofLambda (bind (ArgNameTerm (string2Name $2), Embed (ArgClassTerm $4)) $6)}
 
-| Term join Term                                    {Join $1 $3}
+| '['Term ',' Term ']'                                    {Join $2 $4}
 
-| '('Term')' join Term                                    {Join $2 $5}
-
-| '('Term')' join '('Term')'                                    {Join $2 $6}
-
-| Term join '('Term')'                                    {Join $1 $4}
 
 {-
 

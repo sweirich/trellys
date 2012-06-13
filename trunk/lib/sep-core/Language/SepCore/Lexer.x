@@ -13,16 +13,16 @@ $alpha = [a-zA-Z]
 @num = $digit+
 @proofVar = "$" $alpha [$alpha $digit \_ \']*
 @termVar = $alpha [$alpha $digit \_ \']*
-@predVar = "@" $alpha [$alpha $digit \_ \']*
+@predVar = "&" $alpha [$alpha $digit \_ \']*
 @comments =  "--".* 
 
 @reservedWords = data | Data | where | Where | type | Type | Formula | formula
                 | Bottom | bottom | pi | Pi | Eq | eq | Forall | forall | abort | Abort
                 | join | Join | contr | Contr | valax | Valax | Case | case | of | Of | Let
-                | let | in | In | rec | Rec
+                | let | in | In | rec | Rec | conv | Conv | by | By
 
 @reservedSymbols = \\ | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
-                  | "." | "|" | "->" | "=" | "[" | "]"
+                  | "." | "|" | "->" | "=" | "[" | "]" | "," | "@"
 tokens :-
 -- Notice: the order of the following productions actually matters. Becase there is
 -- a potential overlapping between termvar and reservedwords. So we need to scan reservedwords 
@@ -123,6 +123,12 @@ data Token =
        | TokenSQL
 
        | TokenSQR
+
+       | TokenComma
+
+       | TokenAp
+       | TokenConv
+       | TokenBy
   deriving (Show, Eq)
 
 data Lexeme = L AlexPosn Token String
@@ -204,6 +210,10 @@ instance Disp Token where
         disp TokenRec = text "rec"
         disp TokenSQL = text "["
         disp TokenSQR = text "]"
+        disp TokenComma = text ","
+        disp TokenAp = text "@"
+        disp TokenConv = text "conv"
+        disp TokenBy = text "by"
 
 mkL :: Token -> AlexInput -> Int -> Alex Lexeme
 mkL t (p,_,str) len = return (L p t (take len str))
@@ -256,6 +266,10 @@ lexReservedW a@(_,_,input) len = case take len input of
                                     "In" -> mkL TokenIn a len
                                     "rec" -> mkL TokenRec a len
                                     "Rec" -> mkL TokenRec a len
+                                    "Conv" -> mkL TokenConv a len
+                                    "conv" -> mkL TokenConv a len
+                                    "by" -> mkL TokenBy a len
+                                    "By" -> mkL TokenBy a len
 
 -- @reservedSymbols = "\\" | "!" | "(" | ")" | "{" | "}" | "::" | ":" | "+" | "-" | ":="
 --                  | "." | "|"
@@ -279,6 +293,8 @@ lexReservedS a@(_,_,input) len = case take len input of
                                     "=" -> mkL TokenEquiv a len
                                     "[" -> mkL TokenSQL a len
                                     "]" -> mkL TokenSQR a len
+                                    "," -> mkL TokenComma a len
+                                    "@" -> mkL TokenAp a len
 
 
 getLineNum :: AlexPosn -> Int
