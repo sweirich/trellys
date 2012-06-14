@@ -328,13 +328,25 @@ instance Subst Predicate AlexPosn
 
 instance Alpha AlexPosn
 instance Alpha Equality
-instance Alpha Predicate
+instance Alpha Predicate where
+  aeq' c (PosPredicate _ t1) t2 = t1 `aeq` t2
+  aeq' c t1 (PosPredicate _ t2) = t1 `aeq` t2
+  aeq' c t1 t2 = aeqR1 rep1 c t1 t2
+
 instance Alpha Term where
   aeq' c (Pos _ t1) t2 = t1 `aeq` t2
   aeq' c t1 (Pos _ t2) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
-instance Alpha Proof
-instance Alpha LogicalKind
+instance Alpha Proof where
+  aeq' c (PosProof _ t1) t2 = t1 `aeq` t2
+  aeq' c t1 (PosProof _ t2) = t1 `aeq` t2
+  aeq' c t1 t2 = aeqR1 rep1 c t1 t2
+
+instance Alpha LogicalKind where
+  aeq' c (PosLK _ t1) t2 = t1 `aeq` t2
+  aeq' c t1 (PosLK _ t2) = t1 `aeq` t2
+  aeq' c t1 t2 = aeqR1 rep1 c t1 t2
+
 instance Alpha Stage
 instance Alpha Value
 instance Alpha ArgClass
