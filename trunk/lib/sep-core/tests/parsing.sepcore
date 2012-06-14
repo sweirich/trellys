@@ -45,4 +45,6 @@ plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat.
     	       	   Z -> y
     		 | S u -> plus u y.
 
+$r :: { S (S (S Z)) , plusnat (S (S Z)) (S Z)}.
+$r := [ S (S (S Z)) , plusnat (S (S Z)) (S Z)].
 --$x :: @y
