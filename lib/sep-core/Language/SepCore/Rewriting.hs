@@ -12,7 +12,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Error
 import Data.List
-import Text.PrettyPrint(render, text,(<+>),($$))
+import Text.PrettyPrint
 import qualified Data.Map as M
 
 
@@ -59,14 +59,15 @@ inst (ETermVar x) = do
   env <- ask
   case M.lookup (ArgNameTerm (translate x)) (snd env) of
     Just a -> eraseArg a
-    Nothing -> typeError $ disp ("undefined") <+> disp x
+    Nothing -> return (ETermVar x)
 
 -- | one step reduction
 rewrite :: ETerm -> TCMonad ETerm 
 
 rewrite (ETermVar x) = do 
-  v <-isValue (ETermVar x)
-  if v then return (ETermVar x) else inst (ETermVar x)
+  inst (ETermVar x)
+  -- v <-isValue (ETermVar x)
+  -- if v then return (ETermVar x) else inst (ETermVar x)
 
 -- | beta-v reduction
 rewrite (EApp t1 t2) = do 
@@ -124,10 +125,16 @@ reduce t i = do t' <- rewrite t
                       cs <- reduce t' (i-1)
                       return (t':cs)
 
+type LETerm = [ETerm]
+instance Disp LETerm where
+  disp [] = Text.PrettyPrint.empty
+  disp (c:cs) = hang  (disp c) 2  (vcat (disp cs))
 
 joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
 joinable t1 i t2 j = do trace1 <- reduce t1 i
                         trace2 <- reduce t2 j
+                        typeError $ disp trace1 <+> text "$$"<+>disp trace2
+
                         let r = intersectBy aeq trace1 trace2
                         if null r then return False else return True
 
