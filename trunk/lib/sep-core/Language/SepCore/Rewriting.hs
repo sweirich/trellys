@@ -117,9 +117,13 @@ rewrite (ECase t b) = do
 rewrite t = return t
 
 reduce :: ETerm -> Integer -> TCMonad [ETerm]
+reduce t 0 = return [t]
 reduce t i = do t' <- rewrite t
-                cs <- reduce t' (i-1)
-                return (t':cs)
+                if aeq t t' then return [t'] else 
+                    do
+                      cs <- reduce t' (i-1)
+                      return (t':cs)
+
 
 joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
 joinable t1 i t2 j = do trace1 <- reduce t1 i

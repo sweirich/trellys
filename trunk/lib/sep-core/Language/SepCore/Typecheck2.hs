@@ -161,7 +161,7 @@ compPred (Join t1 t2) = do
   t2' <- erase t2
   r <- joinable t1' 1000 t2' 1000
   if r then return $ Equal t1 t2 else typeError $ disp t1 <+> disp "is not joinable with" <+> disp t2 <+> disp "in 1000 steps."
- 
+
 -- | Proof_app
 compPred (ProofApplication p a) = do 
   (Forall b) <- compPred p >>= ensureForall
@@ -371,6 +371,15 @@ typechecker ((DeclProgdef p):l) = do
   checkProgDef p
   typechecker l
 
+typechecker ((DeclLogic p):l) = do  
+  checkProofDecl p
+  typechecker l
+
+typechecker ((DeclProof p):l) = do  
+  checkProofDef p
+  typechecker l
+
+
 -- type-check data type declaration
 -- Append a tele in front of a term
 teleArrow :: Tele -> Term -> Term
@@ -482,5 +491,34 @@ checkProgDef (Progdef t t') = do
                               return $ disp ("Checked definition of") <+> disp t else typeError $ disp("Expecting")<+>disp(t1)<+>disp("Actually get:")<+>disp(t'') 
     _ -> typeError $ disp("Unexpected term")<+>disp t
 
+checkProofDecl :: Logicdecl -> Env Doc
+checkProofDecl (Logicdecl p pred) = do
+  env <- get
+  case p of
+    ProofVar x -> do 
+     case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compLK pred)) env))) of 
+       Left e -> throwError e
+       Right lk -> case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compSK lk)) env ))) of
+                     Left e -> throwError e
+                     Right k -> do
+                       put ((M.insert (ArgNameProof x)  (ArgClassPredicate pred, NonValue)) (fst env), snd env)
+                       return $ disp("Checked declaration of")<+> disp p
+    _ -> typeError $ disp ("Unexpected proof")<+> disp p
 
+checkProofDef :: Proofdef -> Env Doc
+checkProofDef (Proofdef p p') = do
+  env <- get
+  case p of
+    ProofVar x ->  do
+      case runIdentity (runErrorT (runFreshMT (runReaderT (runTCMonad (compPred p')) env))) of
+        Left e -> throwError e
+        Right p'' -> do
+          case runIdentity (runErrorT(runFreshMT (runReaderT (runTCMonad (getClass (ArgNameProof x))) env))) of 
+            Left e -> throwError e
+            Right p1' -> do                         
+              p1 <- ensureArgClassPred p1'
+              if aeq p1 p'' then do
+                              put (fst env, M.insert (ArgNameProof x) (ArgProof p') (snd env) )
+                              return $ disp ("Checked definition of") <+> disp p else typeError $ disp("Expecting1")<+>disp(p1)<+>disp("Actually get:")<+>disp(p'') 
+    _ -> typeError $ disp("Unexpected proof")<+>disp p
 
