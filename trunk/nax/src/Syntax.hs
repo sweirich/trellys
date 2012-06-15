@@ -122,6 +122,8 @@ data PolyKind = PolyK Telescope Kind
 ----------
 data Term = Parsed Expr | Checked TExpr -- | Pattern Pat
 
+data Theta = L | P deriving Show
+
 data Typ 
    = TyVar Name Kind
    | TyApp Typ Typ
@@ -134,6 +136,7 @@ data Typ
    | TcTv (Uniq,Pointer Typ,Kind)
    | TyLift Term
    | TyAll Telescope Typ
+   | Typ :@: Theta
 
 ----------
 data Rho 
@@ -645,7 +648,6 @@ ppPolyK p (PolyK zs k) = PP.sep [text "all", ppSepBy (ppKArgs p zs) "," <+> text
 isSyn p t = match (synonymInfo p) 
   where match [] = Nothing
         match (f:fs) = case f t of { Nothing -> match fs; Just w -> Just w }
-        
 
 ppTyp :: PI -> Typ -> Doc
 ppTyp p t | Just w <- isSyn p t = ppTyp p w
@@ -674,7 +676,10 @@ ppTyp p (TyAll [] t) = ppTyp p t
 ppTyp p (TyAll vs t) = PP.sep [PP.sep [text "forall"
                                        ,PP.nest 3 (ppSepBy (ppKArgs p vs) "," <+> text ".")]
                                ,PP.nest 3 (ppTyp p t)]
+ppTyp p (t :@: l) = PP.parens (ppTyp p t) <> text "@" <> ppTheta p l
 
+ppTheta :: PI -> Theta -> Doc
+ppTheta _ = text . show
 
 
 shorthand p (TyApp (TyMu k) args) ts | not(printChoice "Mu" p) = g args ts
