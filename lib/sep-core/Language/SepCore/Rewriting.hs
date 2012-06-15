@@ -113,8 +113,12 @@ rewrite (ECase t b) = do
                         case lookup (name2String x) b of
                           Just branch -> do
                             (ls, t1) <- unbind branch
-                            let n = zip ls (instantiate (arg t) ls) 
-                            return (substs n t1)
+                            let args = (arg t) 
+                            let lenarg = length ls 
+                            let lenact = length args
+                            let n = zip ls args       
+                            if lenarg == lenact then
+                                return (substs n t1) else typeError $ disp ("The arguments of the term doesn't match with constructor") <+> disp (x)
                           Nothing -> typeError $ disp ("Can't find data constructors from the branches")
         _ -> typeError $ disp ("not a correct form")  else do  t' <- rewrite t
                                                                return $ ECase t' b
@@ -137,17 +141,21 @@ instance Disp LETerm where
 joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
 joinable t1 i t2 j = do trace1 <- reduce t1 i
                         trace2 <- reduce t2 j
---                        typeError $ disp trace1 <+> text "$$"<+>disp trace2 <+> text "end."
+                        typeError $ disp trace1 <+> text "$$"<+>disp trace2 <+> text "end."
                         let r = intersectBy aeq trace1 trace2
                         if null r then return False else return True
 
 -- need to think more about this.
-fun (EApp t1 t2) = t1
+fun (EApp t1 t2) = fun t1
 fun t = t
-arg (EApp t1 t2) = t2
-arg t = t
 
-instantiate t [] = []
-instantiate t (h:[]) = [t]
-instantiate (EApp t t') (h:cs) = t : (instantiate t' cs)
+-- flat (EApp t1 t2) = flat t1 ++ flat t2
+-- flat t = t
+
+arg (EApp t1 t2) = arg t1 ++ [t2]
+arg t = []
+
+-- instantiate t [] = []
+-- instantiate t (h:[]) = [t]
+-- instantiate (EApp t t') (h:cs) = t : (instantiate t' cs)
 
