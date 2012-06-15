@@ -187,7 +187,7 @@ data Term =  TermVar (Name Term)
 
            | ConvTerm Term [Equality] (Bind [(Name Term)] Term)
 
-           | Conv Term Proof (Bind [(Name Term)] Term)
+           | Conv Term Proof (Bind (Name Term) Term)
 
            | TermCase Term (Bind (Name Term)  [(Term, [ArgName],Term)])
 
@@ -507,10 +507,21 @@ instance Display Term where
               text ".",
               nest 2 dBody]
 
-
+  display (Conv t pfs binding) = do 
+    lunbind binding $ \(vars,ty) -> do
+      dVars <- display vars
+      dTy <- display ty
+      dt <- display t
+      dPfs <- display pfs
+      return $ fsep ([text "conv" <+> dt, text "by"] ++
+                     [dPfs] ++
+                    [text "@"] ++
+                    [dVars] ++
+                    [text ".", dTy])
+                        
 
   -- display e = error $ "display: " ++ show e
-
+  precedence (Pos _ t) = precedence t
   precedence (TermVar _) = 12
   precedence (Type _) = 12
   precedence (TermApplication _ _ _) = 10
@@ -539,7 +550,7 @@ instance Display Proof where
   display (t@(Join t0 t1)) = do
     d0 <- termParen (precedence t) t0
     d1 <- termParen (precedence t) t1
-    return $ text "join" <+> d0 <+> d1
+    return $ text "[" <+> d0 <+>text ","<+> d1<+>text "]"
 
   display (w@(Valax t)) = do
     d <- termParen (precedence w) t
@@ -549,7 +560,7 @@ instance Display Proof where
     d0 <- termParen (precedence t) t0
     return $ text "contra" <+> d0
 
-
+  precedence (PosProof _ p) = precedence p
   precedence (ProofVar _) = 12
   precedence (ProofApplication _ _ ) = 10
   precedence (Join _ _ ) = 5
@@ -585,7 +596,7 @@ instance Display Predicate where
   display (t@(Equal t0 t1)) = do
                      d0 <- dParen (precedence t) t0
                      d1 <- dParen (precedence t) t1
-                     return $ fsep [d0, text "=", d1]
+                     return $ text "{" <+> d0<+>text ","<+> d1 <+> text "}"
 
   display (w@(Terminate t)) = do
                      dt <- termParen (precedence w) t
@@ -593,7 +604,7 @@ instance Display Predicate where
   
   display (t@(Bottom i)) = return $ text "bottom" <+> integer i
 
-
+  precedence (PosPredicate _ p) = precedence p
   precedence (PredicateVar _) = 12
   precedence (PredicateApplication _ _ ) = 10
   precedence (Equal _ _ ) = 9
@@ -603,7 +614,7 @@ instance Display Predicate where
 
 instance Display LogicalKind where
   display (Formula i) = return $ text "formula" <+> integer i
-
+  display (PosLK _ k) = display k
   display (QuasiForall binding) = do
       lunbind binding fmt
     where fmt ((n,Embed ty),ran) = do
