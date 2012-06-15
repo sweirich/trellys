@@ -803,7 +803,7 @@ undent =
      ; setState ps
      }
      
-eoln whiteSpace = 
+_eoln whiteSpace =
   do { c <- satisfy (=='\n')  -- c == '\n' to succeed
      ; (col,tabs@(p:ps),input) <- getInfo
      ; whiteSpace -- this may screw up the tabs, 
