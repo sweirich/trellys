@@ -3,11 +3,11 @@ Data nat :: type 0 where
  Z :: nat
 | S :: pi x:+nat.nat. 
 
-$v :: {Pi x:+nat.nat,(\x: + type 0. x) (Pi x:+nat.nat)}.
-$v := [Pi x:+nat.nat,(\x:+type 0. x) (Pi x:+nat.nat)].
+-- $v :: {Pi x:+nat.nat,(\x: + type 0. x) (Pi x:+nat.nat)}.
+-- $v := [Pi x:+nat.nat,(\x:+type 0. x) (Pi x:+nat.nat)].
 
-id:: (\x:+type 0. x) (Pi x:+nat.nat).
-id := conv (\x:+nat.x) by $v @ y. y.
+-- id:: (\x:+type 0. x) (Pi x:+nat.nat).
+-- id := conv (\x:+nat.x) by $v @ y. y.
 
 
 
@@ -20,8 +20,8 @@ pred := \ x:+nat. case x of
      	  	       Z -> Z
 		       | S n -> n.
 
- $p :: {pred (S Z) ,  Z}.
- $p := [pred (S Z) ,  Z].
+ -- $p :: {pred (S (S Z)) , S Z}.
+ -- $p := [pred (S (S Z)) , S Z].
 -- data Balance :: Pi (hL:-nat). Pi (hR:-nat). Pi (hMax:-nat). Type 0 where
 --     Less :: Pi $u:-  (hR) = (S hL).Pi $v:-  hMax = hR. Balance [hL] [hR] [hMax]
 --   | Same :: pi $u:- hR= hL. pi $v:- hMax = hR. Balance [hL] [hR] [hMax]
@@ -40,10 +40,15 @@ largerThan := rec a f : (Pi a:+nat. Pi b:+nat. Bool).\b:+nat.
               |S b' ->  f a' b'.
 
 plusnat :: pi x:+nat.pi y:+nat.nat.
-plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
-    	       case x of  
-    	       	   Z -> y
-    		 | S u -> plus u y.
+-- plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
+--     	       case x of  
+--     	       	   Z -> y
+--     		 | S u ->  (plus u (S y)).
+
+ plusnat := rec x plus : (pi x:+nat.pi y:+nat.nat). \y:+nat. 
+     	       case x of  
+     	       	   Z -> y
+     		 | S u -> S (plus u  y).
 
 $r :: { S (S (S Z)) , plusnat (S (S Z)) (S Z)}.
 $r := [ S (S (S Z)) , plusnat (S (S Z)) (S Z)].

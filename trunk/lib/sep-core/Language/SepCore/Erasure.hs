@@ -59,6 +59,84 @@ instance Subst ETerm ETerm where
 instance Subst ETerm Stage where
   isvar _ = Nothing
 
+etermParen:: (Display a) => Int -> a -> M Doc
+etermParen level x
+  | level >= (precedence x) = parens <$> display x
+  | otherwise =  display x
+
+instance Disp ETerm where
+    disp = cleverDisp
+
+instance Display ETerm where
+  display (ETermVar v) = display v
+
+  display (EType i) = return $ text "Type"<+> integer i
+
+  display t@(EApp t1 t2) = do
+     d1 <- etermParen (precedence t - 1) t1
+     d2 <- etermParen (precedence t) t2
+     return $ d1 <+> d2
+
+  display t@(ERec binding) = do
+    lunbind binding $ \((f,arg),body) -> do
+    df <- display f
+    dx <- display arg
+    dbody <- etermParen (precedence t) body
+    return $ text "rec" <+> dx <+>  df <+> text "." <+> dbody
+
+  display t@(ELambda binding) =  do
+    lunbind binding $ \(x,body) -> do
+    dx <- display x
+    dbody <- etermParen (precedence t) body
+    return $ fsep [text "\\" <+> dx <+> text ".",nest 2 dbody]
+
+  display t@(ECase s alts) = do
+    ds <- display s
+    alts <- mapM displayAlt alts
+    return $ text "case" <+> ds <+> text "of" $$
+             nest 2 (vcat alts)
+   where displayAlt (con, binding) = do
+           lunbind binding $ \(pvars,body) -> do
+           dbody <- display body
+           dpvars <- mapM display pvars
+           return $ fsep $ [text con <+> hsep dpvars <+> text "->", nest 2 dbody]
+
+  display (ELet binding t) = do
+     lunbind binding $ \(n,body) -> do
+     dn <- display n
+     dt <- display t
+     dbody <- display body
+     return $ text "let" <+> dn <+> text "=" <+> dt $$
+              text "in" <+> dbody
+
+  display t@(EPi binding stage) = do
+     lunbind binding $ \((n,Embed t),body) -> do
+     dn <- display n
+     dt <- display t
+     dbody <- display body
+     dst <- display stage
+     return $ text "Pi"<+> (dn <+> colon<+>dst<+> dt) <+> text "." <+> dbody
+
+
+  display (ETCast t) = do
+     dt <- display t
+     return $ text "tcast" <+> dt
+
+  display EAbort = return $ text  "abort"
+
+
+
+  precedence (ETermVar _) = 12
+
+  precedence (EApp _ _) = 10
+  precedence (ERec _) = 0
+  precedence (ELambda _) = 0
+  precedence (ECase _ _) = 1
+  precedence (ETCast _) = 11
+  precedence (EPi _ _) = 4
+  precedence EAbort  = 0
+  precedence tm = error $ "precedence is not defined for " ++ (show tm)
+
 eraseArg (ArgTerm t) = erase t
 
 erase :: (Applicative m, Fresh m, MonadError TypeError m) => Term -> m ETerm

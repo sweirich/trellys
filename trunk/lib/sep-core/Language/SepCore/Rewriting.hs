@@ -1,3 +1,7 @@
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, ScopedTypeVariables,
+  FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
+  UndecidableInstances, TypeSynonymInstances  #-}
+
 module Language.SepCore.Rewriting where
 import Language.SepCore.Erasure
 import Language.SepCore.Syntax
@@ -103,13 +107,13 @@ rewrite (ETCast t) = do
 rewrite (ECase t b) = do 
   v <- isValue t
   if v then
-      let a = flat t in
-      case head a of 
+      let a = fun t in
+      case  a of 
         (ETermVar x) -> do 
                         case lookup (name2String x) b of
                           Just branch -> do
                             (ls, t1) <- unbind branch
-                            let n = zip ls (tail a) 
+                            let n = zip ls (instantiate (arg t) ls) 
                             return (substs n t1)
                           Nothing -> typeError $ disp ("Can't find data constructors from the branches")
         _ -> typeError $ disp ("not a correct form")  else do  t' <- rewrite t
@@ -126,18 +130,24 @@ reduce t i = do t' <- rewrite t
                       return (t':cs)
 
 type LETerm = [ETerm]
+
 instance Disp LETerm where
-  disp [] = Text.PrettyPrint.empty
-  disp (c:cs) = hang  (disp c) 2  (vcat (disp cs))
+  disp cs =  (vcat [braces (disp c') | c' <- cs])
 
 joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
 joinable t1 i t2 j = do trace1 <- reduce t1 i
                         trace2 <- reduce t2 j
-                        typeError $ disp trace1 <+> text "$$"<+>disp trace2
-
+--                        typeError $ disp trace1 <+> text "$$"<+>disp trace2 <+> text "end."
                         let r = intersectBy aeq trace1 trace2
                         if null r then return False else return True
 
+-- need to think more about this.
+fun (EApp t1 t2) = t1
+fun t = t
+arg (EApp t1 t2) = t2
+arg t = t
 
-flat (EApp t1 t2) = flat t1 ++ flat t2
-flat t = [t] 
+instantiate t [] = []
+instantiate t (h:[]) = [t]
+instantiate (EApp t t') (h:cs) = t : (instantiate t' cs)
+
