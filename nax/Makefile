@@ -49,7 +49,7 @@ uninstall:
 	@echo You can find them with \`which trellys\`
 
 clean:
-	-rm -rf dist tmp test/nax
+	-rm -rf dist tmp test/nax .hpc
 
 test:
 	cd test && make
@@ -83,4 +83,14 @@ test/nax: src/*.hs
 test/nax.whiney:
 	make clean
 	ghc_flags="-fwarn-unused-binds -fwarn-unused-imports" \
-    make test/nax
+	  make test/nax
+
+.PHONEY: hpc build-hpc run-hpc
+hpc: clean build-hpc run-hpc
+build-hpc:
+	ghc_flags="-fhpc" \
+	  make test/nax
+run-hpc:
+	test/nax test/data.nax < /dev/null
+	hpc report nax
+	hpc markup nax --destdir=.hpc
