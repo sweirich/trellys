@@ -203,7 +203,7 @@ InnerTerm : TermVar   {(TermVar (string2Name $1))}
 
      | rec TermVar TermVar ':' Term '.' Term {Rec (bind ((string2Name $2), (string2Name $3), Embed $5) $7)}
 
-     | conv  Term by Proof '@' TermVar '.'  Term  {Conv $2 $4 (bind [(string2Name $6)] $8)}
+     | conv  Term by Proof '@' TermVar '.'  Term  {Conv $2 $4 (bind (string2Name $6) $8)}
 
      | '(' Term ')' {$2}
 
