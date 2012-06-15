@@ -286,17 +286,22 @@ compType (TermCase1 t branches) = do
 compType (Conv t p binding) = do 
   t' <- compType t
   (Equal t1 t2) <- compPred p >>= ensureEqual
-  (ls, t) <- unbind binding
-  let n = zipWith ls t1;
-      n' = zipWith ls t2
-  if aeq (substs n t) t' then do
-                          compType (substs n' t) >>= ensureType
-                          return (substs n' t) else typeError $ disp ("Expected:") <+> disp t' <+> disp ("Actually get:") <+> disp (substs n t)
+  (n, t) <- unbind binding
+  if aeq (subst n t1 t) t' then do
+                          compType (subst n t2 t) >>= ensureType
+                          return (subst n t2 t) else typeError $ disp ("Expected:") <+> disp t' <+> disp ("Actually get:") <+> disp (subst n t1 t)
 
 
-zipWith :: [Name Term] -> Term -> [(Name Term, Term)]      
-zipWith [] _ =  []
-zipWith (l:cs) t = (l,t):(zipWith cs t)
+--   let n = zipWith ls t1;
+--       n' = zipWith ls t2
+--   if aeq (substs n t) t' then do
+--                           compType (substs n' t) >>= ensureType
+--                           return (substs n' t) else typeError $ disp ("Expected:") <+> disp t' <+> disp ("Actually get:") <+> disp (substs n t)
+
+
+-- zipWith :: [Name Term] -> Term -> [(Name Term, Term)]      
+-- zipWith [] _ =  []
+-- zipWith (l:cs) t = (l,t):(zipWith cs t)
 
 -- applying a datatype constructor's type to a list of arguments
 getInstance constrType@(Pi b st) (arg : cs) = do 
