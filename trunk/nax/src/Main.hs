@@ -92,8 +92,9 @@ runX pi name =
      ; prog <- Ex.catches (parseFile program name) handlers
      -- ; putStrLn(show prog)
      ; (tcEnv,rtEnv) <- runFIO (loadProgram pi prog)
-     ; putStrLn ("\nNax interpretor\n")
-     ; loop2 name (tcEnv,rtEnv)
+     ; return ()
+--     ; putStrLn ("\nNax interpretor\n")
+--     ; loop2 name (tcEnv,rtEnv)
      }
 
 loop2 :: String -> (Frag,VEnv) -> IO ()
