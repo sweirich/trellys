@@ -1,4 +1,7 @@
-module BaseTypes where
+module BaseTypes
+  ( Literal(..)
+  , ppLit
+  ) where
 
 import Text.PrettyPrint.HughesPJ (Doc,text)
 

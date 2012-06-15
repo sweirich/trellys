@@ -148,7 +148,8 @@ data P: (Tag -> Nat -> *) -> Tag -> Nat -> * where
 p1 = stepE base
 p2 = stepO p1
 
-synonym Even x = Mu[Tag -> Nat -> *] P {E} {x}
+-- Define synonym of synonym
+synonym Even x = Proof {E} {x}
 synonym Odd x = Mu[Tag -> Nat -> *] P {O} {x}
 
 
