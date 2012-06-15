@@ -850,9 +850,6 @@ instance Show PolyKind where
 instance Show TypPat where
   show p = render(ppTypPat pi0 p)
 
-
-showPair (x,y) = show x++":"++show y
-
 ----------------------------------------------------------------------
 -- for debugging when you need to see all the structure of a type
 

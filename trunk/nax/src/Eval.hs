@@ -30,14 +30,10 @@ import Text.Parsec.Pos(SourcePos,newPos)
 
 data VEnv   = VEnv { rtbindings:: [(Name,Integer,Value IO)]
                    , ctbindings:: [(Name, Class Kind Typ TExpr)] }
-valuesOf x  = rtbindings x
-
-closedEnv = VEnv [] []
 
 instance Show (VEnv) where
   show x = (plistf id "(" (map f (rtbindings x)) "," ")")
     where f (Nm (nm,p),uniq,val) = nm
-
 
 browse:: String -> VEnv -> String     
 browse n venv = plistf id "\n" strings "\n" "\n"
@@ -74,7 +70,7 @@ thread s (p:ps) (v:vs) =
 evalMVar:: [(Name,Integer,Value m)] -> Name -> [(Name,Integer,Value m)] -> IO(Integer,Value m)
 evalMVar all nm [] = 
      fail (near nm++"Variable not found: "++show (name nm) ++
-            plistf (\ (nm,i,v) -> showPair(nm,v)) "\n  " (take 6 all) "\n  " "")
+            plistf (\(nm,_,v) -> show nm++":"++show v) "\n  " (take 6 all) "\n  " "")
 evalMVar all nm ((name,uniq,v):more) =
   if nm==name then return (uniq,v) else evalMVar all nm more
 
@@ -97,12 +93,6 @@ matchM env p v =
        Nothing -> return Nothing
   where new (nm,v) = do { u <- nextinteger; return(nm,u,v)}
 
-{-
-maybeM comp justf nothing =
-  do { v <- comp; case v of { Just x -> justf x; Nothing -> nothing }}
--}
-
-
 
 ----------------------------------------------------
 apply:: TExpr -> TExpr -> Value IO -> Value IO -> (Value IO -> IO a) -> IO a
@@ -115,6 +105,7 @@ apply g y fun arg k =
    help (VCode fun) v k = do { putStrLn ("THERE "++show fun); arg <- reify Nothing v; k(VCode(TEApp fun arg))}
    help nonfun x k = fail ( near g ++ "A nonfunction ("++show nonfun++") in function position.\nArising from the term\n "++show(TEApp g y))
 
+-- ???: what is 'C'?
 evalC:: TExpr -> VEnv -> (Value IO -> IO a) -> IO a
 evalC exp env k =   -- println ("Entering eval: "++ show exp) >> 
                     heval exp env k where 
@@ -146,7 +137,7 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
            ; arg <- evalC x env return
            ; case (arg,tag) of
               (VCode e,_) -> error("\nBad arg to Mendler "++show e)
-              (_,"mcata")   -> mcata (plistf showPair2 "\n  " ms "\n  " "") phi (\ f -> app "mcata" f arg k)
+              (_,"mcata")   -> mcata (plistf (\(_,x,y) -> show x++":"++show y) "\n  " ms "\n  " "") phi (\ f -> app "mcata" f arg k)
               (_,"mhist")   -> mhist   phi (\ f -> app "mhist" f arg k)  
               (_,"mprim")   -> mprim   phi (\ f -> app "mprim" f arg k)
               (_,"msfcata") -> msfcata phi (\ f -> app "msfcata" f arg k)
@@ -155,8 +146,6 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
               }
   heval (CSP(nm,i,v)) env k = k v              
 
-showPair2 (_,x,y) = show x++":"++show y
-              
 unwind:: [(Telescope,[Pat], TExpr)] -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
 unwind cls env 0 vs k = tryClauses (error "NO TERM for unwind") cls2 env (reverse vs) cls2 k
   where proj(tele,ps,e) = (ps,e)
@@ -306,29 +295,11 @@ threadC efun env (p:ps) (v:vs) =
   n = case v of
         (VCode e) -> fail ("Code value in threadC: "++ show (TEApp efun e))
         _ -> return Nothing
-	 	
-                
-
-
-
-
--- eval exp env = runIdentity (evalC exp env return)
 
 evalIO :: TExpr -> VEnv -> IO (Value IO)
 evalIO exp env = evalC exp env return
 
 ------------------------------------------------------------
-
-
-----------------------------------------------------------------
-
-
-
-
----------------------------------------------------------------------
-
-
-
 
 reify  n x  = help n x  where
   help n (VBase pos x) = return (TELit noPos x)
@@ -361,3 +332,4 @@ reify  n x  = help n x  where
 
 normform :: TExpr -> FIO TExpr 
 normform x = fio (evalC x closedEnv (reify 0))
+  where closedEnv = VEnv [] []

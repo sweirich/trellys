@@ -888,7 +888,7 @@ elab :: Bool -> Frag -> Decl Expr -> FIO (Frag,Decl TExpr)
 elab toplevel env (GADT pos t kind cs derivs) = 
   do { checkDec toplevel env t 
      -- if toplevel then write ((show t)++", ") else return()
-     ; (kind2,newvs) <- wfGadtKind pos ["checking gadt "++showPair(t,kind)] env kind
+     ; (kind2,newvs) <- wfGadtKind pos ["checking gadt "++show t++":"++show kind] env kind
      ; let doOneCon (c,(v:vs),doms,rng) = fail "No foralls in constructor yet"
            doOneCon (c,[],doms,rng) = 
              do { rngVars <- getVarsRho rng
