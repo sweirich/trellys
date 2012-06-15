@@ -82,4 +82,5 @@ test/nax: src/*.hs
 
 test/nax.whiney:
 	make clean
-	ghc_flags=-fwarn-unused-binds make test/nax
+	ghc_flags="-fwarn-unused-binds -fwarn-unused-imports" \
+    make test/nax
