@@ -50,6 +50,7 @@ uninstall:
 
 clean:
 	-rm -rf dist tmp test/nax .hpc
+	find ./ -name '*.tix' -exec rm {} +
 
 test:
 	cd test && make
@@ -79,7 +80,8 @@ test/nax: src/*.hs
     #
     # E.g. do `ghc_flags=-fwarn-unused-binds make test/nax` to get
     # warnings.
-	ghc $(ghc_flags) --make src/Main.hs -i$(ghc_include) -o test/nax -hidir tmp -odir tmp
+	ghc $(ghc_flags) --make src/Main.hs -i$(ghc_include) \
+	  -o test/nax -hidir tmp -odir tmp
 
 test/nax.whiney:
 	make clean
@@ -92,6 +94,9 @@ build-hpc:
 	ghc_flags="-fhpc" \
 	  make test/nax
 run-hpc:
-	test/nax test/data.nax < /dev/null
-	hpc report nax
-	hpc markup nax --destdir=.hpc
+# There may be an easier way to make all the hpc files end up in .hpc
+# ...
+	mkdir -p .hpc
+	cd .hpc && ../test/nax ../test/data.nax < /dev/null > /dev/null
+	hpc report .hpc/*.tix
+	hpc markup .hpc/*.tix --destdir .hpc
