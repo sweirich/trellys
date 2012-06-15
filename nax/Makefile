@@ -55,7 +55,8 @@ test:
 	cd test && make
 
 etags:
-	find ./ -name .svn -prune -o -name '*.hs' -print | xargs hasktags --etags
+	find src ../lib/layout-token/src -name .svn -prune \
+	  -o -name '*.hs' -print | xargs hasktags --etags
 
 # Start ghci through cabal-dev.
 #
