@@ -1,6 +1,10 @@
 *.trellys-elaborated
 TAGS
 
+# hpc
+.hpc
+*.tix
+
 # build
 cabal-dev
 *.hi
