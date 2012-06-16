@@ -59,30 +59,31 @@ initialEnvs =
 
 
 
-checkEval :: IORef (Frag, VEnv) -> (Frag, VEnv) -> Decl Expr -> FIO (Frag, VEnv)
-checkEval ref (tcEnv,rtEnv) d = 
+checkEval :: (Frag, VEnv) -> Decl Expr -> FIO (Frag, VEnv)
+checkEval (tcEnv,rtEnv) d =
   do { (tcEnv2,d2) <- elab True tcEnv d
      ; d3 <- zonkD d2
      ; let doc = ppDecl (ppinfo tcEnv) ppTExpr d3
      ; writeln("\n\n"++render doc)
      ; rtEnv2 <- fio (evalDecC rtEnv d3 return)
-     ; let ans = (tcEnv2{values=ctbindings rtEnv2},rtEnv2)
-     ; writeRef ref ans
-     ; return ans }
-     
-checkThenEvalOneAtATime ref [] envs = return envs
-checkThenEvalOneAtATime ref (d:ds) envs = 
-  do { envs2 <- checkEval ref envs d
-     ; checkThenEvalOneAtATime ref ds envs2 }
+     ; return (tcEnv2{values=ctbindings rtEnv2},rtEnv2) }
+
+-- | Fold 'checkEval' over decls, updating env.
+--
+-- Returns most recent env on exception.
+checkThenEvalOneAtATime [] envs = return envs
+checkThenEvalOneAtATime (d:ds) envs = handle updateEnv handler
+  where
+     handler f = do
+       writeln . showFail $ f
+       return envs
+     updateEnv =
+       checkThenEvalOneAtATime ds =<< checkEval envs d
         
 loadProgram pi (Prog ds) = 
   do { (ce,re) <- initialEnvs
      ; let envs = (ce{ppinfo = pi},re)
-     ; ref <- newRef envs
-     -- XXX: why the 'readRef ref' ???
-     ; let errF f = do { writeln . showFail $ f; readRef ref }
-     ; handle (checkThenEvalOneAtATime ref ds envs) errF
-     ; readRef ref }
+     ; checkThenEvalOneAtATime ds envs }
 
 run :: FilePath -> IO ()
 run file =
