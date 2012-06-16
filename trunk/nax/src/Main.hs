@@ -8,7 +8,7 @@ module Main where
 import qualified Control.Exception as Ex
 import Control.Monad(foldM,when)
 import Data.IORef(IORef)
-import System.Environment(getArgs)
+import System.IO(hFlush,stdout)
 
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
@@ -103,9 +103,7 @@ loadAndMaybeRepl cfg pi = do
 
 repl :: Conf -> (Frag,VEnv) -> IO ()
 repl cfg (envx@(frag,venv)) = Ex.catches
-   (do { putStr "nax> "
-       -- ; putStrLn(plistf id "(" (map fst envx) "," ")")
-       ; s <- getLine
+   (do { s <- prompt
        ; case s of
            (':' : '?' : _) ->
                putStrLn ("\n:q    Quit"++
@@ -132,7 +130,9 @@ repl cfg (envx@(frag,venv)) = Ex.catches
        }) handlers
   where catchError (Ex.ErrorCall s) = putStrLn s >> repl cfg (envx)
         handlers = [Ex.Handler catchError]
-
+        prompt = do
+          putStr "nax> " >> hFlush stdout
+          getLine
 -----------------------------------------------
 -- control the printing environment
 
