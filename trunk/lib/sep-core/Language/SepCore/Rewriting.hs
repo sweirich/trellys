@@ -88,9 +88,13 @@ rewrite (EApp t1 t2) = do
                    ((x, f),t) <- unbind b
                    return (subst f (ERec b) (subst x t2 t)) else do t2' <- rewrite t2
                                                                     return (EApp (ERec b) t2')
-    t -> do t' <- rewrite t
-            return (EApp t' t2)
-
+    t -> do v <- isValue t
+            if v then do
+                   t2' <- rewrite t2
+                   return (EApp t1 t2') else do 
+                                          t' <- rewrite t                                          
+                                          return (EApp t' t2)
+    
 rewrite (ELet b t) = do 
   v <- isValue t
   if v then do 
@@ -141,7 +145,7 @@ instance Disp LETerm where
 joinable :: ETerm -> Integer -> ETerm  -> Integer -> TCMonad Bool
 joinable t1 i t2 j = do trace1 <- reduce t1 i
                         trace2 <- reduce t2 j
-                        typeError $ disp trace1 <+> text "$$"<+>disp trace2 <+> text "end."
+--                        typeError $ disp trace1 <+> text "$$"<+>disp trace2 <+> text "end."
                         let r = intersectBy aeq trace1 trace2
                         if null r then return False else return True
 
