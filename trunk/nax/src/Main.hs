@@ -6,7 +6,7 @@ module Main where
 -- ghc-pkg hide parsec-3.1.1
 
 import qualified Control.Exception as Ex
-import Control.Monad(foldM)
+import Control.Monad(foldM,when)
 import Data.IORef(IORef)
 import System.Environment(getArgs)
 
@@ -14,6 +14,7 @@ import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
 import Text.Parsec.Pos(SourcePos,newPos)
 
+import Options
 import UniqInteger(resetnext,nextinteger)
 import Names 
 import Syntax   
@@ -83,22 +84,25 @@ loadProgram pi (Prog ds) =
      ; handle (checkThenEvalOneAtATime ref ds envs) errF
      ; readRef ref }
 
+run :: FilePath -> IO ()
+run file =
+  loadAndMaybeRepl
+    (defaultConf { file = file
+                 , interactive = True })
+    pi0
 
-run name = runX pi0 name
+loadAndMaybeRepl :: Conf -> PI -> IO ()
+loadAndMaybeRepl cfg pi = do
+  let catch (Ex.ErrorCall s) = putStrLn s >> return(Prog [])
+      handlers = [Ex.Handler catch]
+  prog <- Ex.catches (parseFile program $ file cfg) handlers
+  (tcEnv,rtEnv) <- runFIO (loadProgram pi prog)
+  when (interactive cfg) $ do
+    putStrLn ("\nNax interpretor\n")
+    repl cfg (tcEnv,rtEnv)
 
-runX pi name =
-  do { let catch (Ex.ErrorCall s) = putStrLn s >> return(Prog [])
-           handlers = [Ex.Handler catch]
-     ; prog <- Ex.catches (parseFile program name) handlers
-     -- ; putStrLn(show prog)
-     ; (tcEnv,rtEnv) <- runFIO (loadProgram pi prog)
-     ; return ()
---     ; putStrLn ("\nNax interpretor\n")
---     ; loop2 name (tcEnv,rtEnv)
-     }
-
-loop2 :: String -> (Frag,VEnv) -> IO ()
-loop2 path (envx@(frag,venv)) = Ex.catches 
+repl :: Conf -> (Frag,VEnv) -> IO ()
+repl cfg (envx@(frag,venv)) = Ex.catches
    (do { putStr "nax> "
        -- ; putStrLn(plistf id "(" (map fst envx) "," ")")
        ; s <- getLine
@@ -110,23 +114,23 @@ loop2 path (envx@(frag,venv)) = Ex.catches
                          "\n:t x  Type x"++
                          "\n:k x  Kind x"++
                          "\n:p x  Flip printing parameter x"++
-                         "\n exp  Evaluate exp") >> loop2 path envx
+                         "\n exp  Evaluate exp") >> repl cfg envx
            ":q" -> return ()
            (':' : 'b' : more) -> 
                  do { let tag = (dropWhite more)
                     ; putStrLn(browse tag venv)
                     ; putStrLn(browseFrag tag frag)
-                    ; loop2 path envx }
-           ":r" -> runX (ppinfo frag) path
-           (':' : 't' : more) -> tCom envx more >> loop2 path envx
-           (':' : 'k' : more) -> kCom envx more >> loop2 path envx
-           (':' : 'p' : more) -> do { e <- pCom envx more; loop2 path e}
-           "" -> loop2 path (envx)
+                    ; repl cfg envx }
+           ":r" -> loadAndMaybeRepl cfg (ppinfo frag)
+           (':' : 't' : more) -> tCom envx more >> repl cfg envx
+           (':' : 'k' : more) -> kCom envx more >> repl cfg envx
+           (':' : 'p' : more) -> do { e <- pCom envx more; repl cfg e}
+           "" -> repl cfg (envx)
            _  -> do { string <- action envx s
                     ; putStrLn string 
-                    ; loop2 path (envx) }
+                    ; repl cfg (envx) }
        }) handlers
-  where catchError (Ex.ErrorCall s) = putStrLn s >> loop2 path (envx)
+  where catchError (Ex.ErrorCall s) = putStrLn s >> repl cfg (envx)
         handlers = [Ex.Handler catchError]
 
 -----------------------------------------------
@@ -268,7 +272,5 @@ instance Comp IO where
   mkFun n f k = k(VFunM n f)
   
 main = do
-  args <- getArgs
-  case args of
-    []     -> error "usage: nax FILE"
-    file:_ -> run file
+  cfg <- getOpts
+  loadAndMaybeRepl cfg pi0
