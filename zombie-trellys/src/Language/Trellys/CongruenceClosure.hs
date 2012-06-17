@@ -3,7 +3,7 @@
 module Language.Trellys.CongruenceClosure(
  Constant(..), EqConstConst(..), EqBranchConst(..), Equation, 
  Proof(..),
-  newState, find, propagate, reprs,
+  newState, propagate, reprs, isEqual,
   printState
 ) where
 
@@ -20,6 +20,7 @@ module Language.Trellys.CongruenceClosure(
 import Control.Monad
 import Control.Monad.ST
 import Control.Arrow (first,second)
+import Control.Applicative
 import Data.Array.MArray
 import Data.Array.ST
 import Data.Either
@@ -133,6 +134,15 @@ findExplainSize id reprs = do
          else 
            return (p,id',size)
     Right size  -> return (refl id, id, size)
+
+-- If a and b are in the same equivalence class return a proof of that, otherwise return Nothing. 
+isEqual :: (Proof proof) => Constant -> Constant -> Reprs proof s -> ST s (Maybe proof)
+isEqual a b reprs = do
+  (p, a') <- findExplain a reprs
+  (q, b') <- findExplain b reprs
+  if a' == b' 
+   then return $ Just (trans p (symm q))
+   else return Nothing
 
 -- Returns the old representative of the smaller class.
 union :: Proof proof => Constant -> Constant -> proof -> Reprs proof s -> ST s Constant
@@ -291,6 +301,7 @@ forAll2M gen p = do
   a2 <- pick gen
   p a1 a2
 
+
 congTest :: [Equation TermLabel] -> Term -> Term -> Bool
 congTest eqs a b = isJust (congTestExplain eqs a b)
 
@@ -302,11 +313,7 @@ congTestExplain eqs a b =
        st <- newState (Constant 0, cmax)
        st <- propagate st (   map (\eq -> (Assumption eq, eq)) eqs 
                            ++ map (\eq -> (Refl (fst (equationToTerms (Right eq))), Right eq)) eqsAB)
-       (p1, acnst') <- findExplain acnst (reprs st)
-       (p2, bcnst') <- findExplain bcnst (reprs st)
-       if acnst' == bcnst'
-         then return $ Just (substDefnsExplanation naming $ Trans p1 (Leaf acnst') (Symm p2))
-         else return Nothing
+       fmap (substDefnsExplanation naming) <$> isEqual acnst bcnst (reprs st)
 
 -- Take a term to think about and name each subterm in it with a separate constant,
 -- while at the same time recording equations relating terms to their subterms.
@@ -373,37 +380,6 @@ test3 = runST $ do
   st <- newState (Constant 0, Constant 6)
   st <- merges st [Left (EqConstConst 4 1),Left (EqConstConst 2 3),Right (EqBranchConst (TermLabel "a") [2,3,1,2] 4),Right (EqBranchConst (TermLabel "a") [2,2,3,1] 1),Right (EqBranchConst (TermLabel "b") [2,2,2,3] 0),Left (EqConstConst 4 2),Right (EqBranchConst (TermLabel "a") [4,4] 0)]
   printState st
-
-
-testbug = runST $ do
-  st <- newState (Constant 0, Constant 18)
-  st <- merges st  [
-    Right $ EqBranchConst (TermLabel "Succ") [Constant 2]               (Constant 1),
-    Left $ EqConstConst (Constant 0) (Constant 1),
-    Right $ EqBranchConst (TermLabel "Succ") [Constant 2]               (Constant 1),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 8, Constant 1]   (Constant 7),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 7, Constant 9]   (Constant 6),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 5, Constant 6]   (Constant 4),
-    Right $ EqBranchConst (TermLabel "Succ") [Constant 2]               (Constant 1),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 4, Constant 1]   (Constant 3),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 8, Constant 2]   (Constant 13),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 13, Constant 9]   (Constant 12),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 5, Constant 12]   (Constant 11),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 11, Constant 0]   (Constant 10),
-    Left $ EqConstConst (Constant 3) (Constant 10),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 8, Constant 2]   (Constant 13),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 13, Constant 9]   (Constant 12),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 5, Constant 12]   (Constant 11),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 11, Constant 0]   (Constant 10),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 8, Constant 0]   (Constant 17),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 17, Constant 9]   (Constant 16),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 5, Constant 16]   (Constant 15),
-    Right $ EqBranchConst (TermLabel "@")    [Constant 15, Constant 0]   (Constant 14)]
-  (p1, acnst') <- findExplain (Constant 10) (reprs st)
-  (p2, bcnst') <- findExplain (Constant 14) (reprs st)
-  if acnst' == bcnst'
-    then return $ Just (simplExplanation (Trans p1 (Leaf acnst') (Symm p2)))
-    else return Nothing
 
 {-- The High-level specification of the algorithm -}
 

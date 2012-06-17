@@ -68,6 +68,8 @@ instance LFresh (Reader DispInfo) where
   avoid names = local upd where
      upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
 
+  getAvoids = dispAvoid <$> ask
+
 type M = Reader DispInfo
 
 -- | The 'Display' class is like the 'Disp' class. It qualifies
