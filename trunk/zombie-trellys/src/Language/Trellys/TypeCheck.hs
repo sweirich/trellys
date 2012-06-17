@@ -386,14 +386,12 @@ ta th InferMe (TyEq ty1 ty2) = do
                                                        (ty1,ty2) <- isTyEq ty
                                                        Just (x,ty1,ty2))
                                       context
-  warn [DS "About to go off and try to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
-                                               (TyEq ty1 ty2))]
-  isTrue <- prove availableEqs (ty1,ty2)
-  unless isTrue $
-    err [DS "I was unable to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
-                                               (TyEq ty1 ty2))]
-  warn [DS "Successfully proved it, too!"]
-  return TrustMe
+  pf <- prove availableEqs (ty1,ty2)
+  case pf of
+    Nothing ->
+      err [DS "I was unable to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+                                                 (TyEq ty1 ty2))]
+    Just p -> return p
 
 ta th InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
 
