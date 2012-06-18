@@ -1,0 +1,57 @@
+subcore
+
+Prog : prog -> { cmd }+ .
+
+Def : cmd -> ID COLON oterm EQ oterm .
+SetFlag : cmd -> SET ID .
+UnsetFlag : cmd -> UNSET ID .
+
+Lam : oterm -> LAM ID COLON oterm DOT oterm .
+Self : oterm -> SELF ID DOT oterm .
+Fix : oterm -> FIX binding { COMMA binding }+ IN oterm .
+Arrow : oterm -> term ARROW oterm .
+Pi : oterm -> PI ID COLON term DOT oterm .
+Check : oterm -> term COLON oterm .
+Term : oterm -> term.
+
+App : term -> LP term { term }+ RP .
+Star : term -> STAR.
+Var  : term -> ID.
+Conv : term -> CONV oterm TO oterm BY (* the following are proofs: *) term COMMA term .
+Trans : term -> LS oterm { SEMI oterm }+ RS .
+Parens : term -> LP oterm RP .
+
+(* these are really proof constructs *)
+Fold : term -> FOLD ID .
+Unfold : term -> UNFOLD .
+Eval : term -> EVAL .
+Refl : term -> REFL .
+
+Binding : binding -> ID COLON oterm EQ oterm .
+
+COLON=":".
+EQ="=".
+SEMI=";".
+STAR="*".
+COMMA=",".
+FOLD="fold".
+UNFOLD="unfold".
+REFL="refl".
+IN="in".
+SET="Set".
+UNSET="Unset".
+LAM="\\".
+PI="!".
+ARROW="->".
+SELF="self".
+FIX="fix".
+TO="to".
+EVAL="eval".
+BY="by".
+CONV="conv".
+LP="(".
+RP=")".
+LS="[".
+RS="]".
+DOT=".".
+ID = {{['a'-'z' 'A'-'Z' '_']['0'-'9' '_' 'a'-'z' 'A'-'Z' '\'']*}} .

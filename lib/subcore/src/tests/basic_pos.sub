@@ -1,0 +1,21 @@
+Set print_commands
+
+foo : * = *
+
+id : * -> * = \ x : * . x 
+
+arrow : * -> * -> * = \ x : * . \ y : * . (x -> y) 
+
+# some Church encodings:
+
+nat : * = ! A : * . (A -> A) -> A -> A
+
+# Set debug_tpof
+# Set debug_eqterm
+# Set debug_morph
+# Set print_hidden
+
+zero : nat = conv \ A : *. \ s : A -> A. \ z : A. z to nat by refl , unfold
+
+pair : * -> * -> * = \ A : * . \ B : * . ! C : * . (A -> B -> C) -> C
+               
