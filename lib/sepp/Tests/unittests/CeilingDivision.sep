@@ -7,20 +7,6 @@ data Nat : Type where
 | S : Nat -> Nat
 
 
--- If S m' terminates, then m' terminates.
-theorem s_term : forall(m:Nat)(m':Nat)(p:S m' = m)(u:m!).m' !
-proof s_term = \(m:Nat)(m':Nat)(p:S m' = m)(u:m!) =>
-               let S_m'_term [wc] = conv u at (~(sym p))! -- (S m') !
-               in termcase m' {u} of
-                      abort -> contraabort (aborts (S ~u)) S_m'_term
-                    | ! -> u
-
--- If n terminates, then S n terminates
-theorem term_s : forall (n : Nat) (p:n!) . ((S n) !)
-proof term_s = \(n:Nat) (p:n !) =>
-  termcase n {u} of
-      abort -> contraabort (aborts ~u) p
-    | ! -> value (S ~u)
 
 
 
@@ -40,12 +26,6 @@ prog rec plus (x:Nat) = \(y:Nat) ->
       Z -> y
     | S x' -> S (plus x' y)
 
-Inductive plus_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(plus x y)! :=
-  case x {x_eq} xterm of
-    Z -> conv (value (tcast y by yterm)) at (~(morejoin { xterm, sym x_eq , yterm } : y = (plus x y))!)
-  | S x' -> let u [u_eq] = (plus_tot x' (ord x_eq) y yterm) in
-             conv (value (S (tcast (plus x' y) by u))) 
-             at (~(morejoin { xterm, sym x_eq, yterm } : (S (plus x' y)) = (plus x y))!)
 
 -- Typical unary subtraction. Z - n = Z
 type minus : (x:Nat) -> (y:Nat) -> Nat
@@ -55,6 +35,54 @@ prog rec minus (x:Nat) = \(y:Nat) ->
       | S x' -> case y {yw} of
                   Z -> x
                 | S y' ->  minus x' y'
+
+type times : Nat -> Nat -> Nat
+prog rec times (x:Nat) = \(y:Nat) ->
+              case x {x_eq} of
+                Z -> Z
+              | S x' -> plus y (times x' y)
+
+
+type lt : (x:Nat) -> (y:Nat) -> Bool
+prog lt = rec lt (x:Nat) . \(y:Nat) ->
+    case x {xw} of
+    | Z -> (case y {yw} of
+                  Z -> False
+                | S y' -> True)
+
+    | S x' ->  case y {yw} of
+                  Z -> False
+                | S y' -> lt x' y'
+
+
+
+
+
+Inductive plus_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(plus x y)! :=
+  case x {x_eq} xterm of
+    Z -> conv (value (tcast y by yterm)) at (~(morejoin { xterm, sym x_eq , yterm } : y = (plus x y))!)
+  | S x' -> let u [u_eq] = (plus_tot x' (ord x_eq) y yterm) in
+             conv (value (S (tcast (plus x' y) by u))) 
+             at (~(morejoin { xterm, sym x_eq, yterm } : (S (plus x' y)) = (plus x y))!)
+
+
+-- -- If S m' terminates, then m' terminates.
+theorem s_term : forall(m:Nat)(m':Nat)(p:S m' = m)(u:m!).m' !
+proof s_term = \(m:Nat)(m':Nat)(p:S m' = m)(u:m!) =>
+               let S_m'_term [wc] = conv u at (~(sym p))! -- (S m') !
+               in termcase m' {u_term} of
+                      abort -> let u1 [u1_eq] = join 10 10 : S (abort Nat) = (abort Nat);
+                                   u2 [u2_eq] = conv u1 at (S ~u_term) = abort Nat;
+                                   u3 [u3_eq] = trans (sym p) u2
+                               in contraabort (sym u3) u
+                    | ! -> u_term
+
+-- If n terminates, then S n terminates
+theorem term_s : forall (n : Nat) (p:n!) . ((S n) !)
+proof term_s = \(n:Nat) (p:n !) =>
+  termcase n {u} of
+      abort -> contraabort (aborts ~u) p
+    | ! -> value (S ~u)
 
 
 theorem minus_term : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(minus m n)!
@@ -76,11 +104,6 @@ proof ind minus_term (m:Nat) {m_term} = \(n:Nat)(n_term:n!) =>
 
 
 
-type times : Nat -> Nat -> Nat
-prog rec times (x:Nat) = \(y:Nat) ->
-              case x {x_eq} of
-                Z -> Z
-              | S x' -> plus y (times x' y)
 
 Inductive times_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(times x y)! :=
   case x {x_eq} xterm of
@@ -90,16 +113,6 @@ Inductive times_tot : forall(x:Nat){xterm}(y:Nat)(yterm:y!).(times x y)! :=
              at (~(morejoin { xterm, sym x_eq, yterm } : (plus y (times x' y)) = (times x y))!)
 
 
-type lt : (x:Nat) -> (y:Nat) -> Bool
-prog lt = rec lt (x:Nat) . \(y:Nat) ->
-    case x {xw} of
-    | Z -> (case y {yw} of
-                  Z -> False
-                | S y' -> True)
-
-    | S x' ->  case y {yw} of
-                  Z -> False
-                | S y' -> lt x' y'
 
 -- If the arguments to lt terminate, then lt terminates
 theorem lt_term : forall(m:Nat)(m_term:m!)(n:Nat)(n_term:n!).(lt m n)!
