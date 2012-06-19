@@ -23,6 +23,7 @@ Parens : term -> LP oterm RP .
 
 (* these are really proof constructs *)
 Fold : term -> FOLD ID .
+Substself : term -> SUBSTSELF .
 Unfold : term -> UNFOLD .
 Eval : term -> EVAL .
 Refl : term -> REFL .
@@ -44,6 +45,7 @@ LAM="\\".
 PI="!".
 ARROW="->".
 SELF="self".
+SUBSTSELF="substself".
 FIX="fix".
 TO="to".
 EVAL="eval".

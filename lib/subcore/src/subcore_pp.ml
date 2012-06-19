@@ -43,6 +43,7 @@ and pp_term (os:string->unit) (to_pretty_print:bool) = function
    |Trans (d , pd1 , oterm2 , trans_term_semi33 , pd4) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "["; os " " ;pp_oterm os to_pretty_print oterm2;pp_trans_term_semi3 os to_pretty_print trans_term_semi33;print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd4); os "]"; os " " ; () 
    |Parens (d , pd1 , oterm2 , pd3) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "("; os " " ;pp_oterm os to_pretty_print oterm2;print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd3); os ")"; os " " ; () 
    |Fold (d , pd1 , str2) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "fold"; os " " ;print_new_line os to_pretty_print (fst d);  pp_terminal os to_pretty_print str2; os " " ; () 
+   |Substself (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "substself"; os " " ; () 
    |Unfold (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "unfold"; os " " ; () 
    |Eval (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "eval"; os " " ; () 
    |Refl (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "refl"; os " " ; () 

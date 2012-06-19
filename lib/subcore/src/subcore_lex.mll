@@ -23,6 +23,7 @@ rule token = parse
 | "!" { PI(Subcore_util.cur_pd()) }
 | "->" { ARROW(Subcore_util.cur_pd()) }
 | "self" { SELF(Subcore_util.cur_pd()) }
+| "substself" { SUBSTSELF(Subcore_util.cur_pd()) }
 | "fix" { FIX(Subcore_util.cur_pd()) }
 | "to" { TO(Subcore_util.cur_pd()) }
 | "eval" { EVAL(Subcore_util.cur_pd()) }
