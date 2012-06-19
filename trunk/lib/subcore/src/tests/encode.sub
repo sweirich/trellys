@@ -3,21 +3,36 @@
 #Set debug_tpof
 #Set suppress_eqterm_stack
 
+#Set print_commands
+
 test : * =
   fix nat : * = 
-          self n . ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C conv n to nat by refl, unfold) ,
+          self n . ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                     (C conv n to nat by refl, unfold) 
+      ,
       zero : nat = 
            conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
            to nat 
            by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
               [ unfold ; substself ]
              
-           ,
+      ,
       succ : nat -> nat = 
            conv \ n : nat . 
                    \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
            to ! n : nat . nat
-           by (! n : nat . ! C : refl . refl -> refl -> (C [ (unfold n) ; eval ])) ,
+           by (! n : nat . ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
               (! n : nat . [ unfold ; substself ] )
   in
+
+  fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
+      mkunit : unit =
+           conv \ C : unit -> * . \ u : (C mkunit) . u 
+           to unit
+           by (! C : refl . (! z : refl . (C unfold))),
+              [ unfold ; substself ]
+  in
+
+#  fix vec : nat -> * = \ n : nat . ! C : (! n : nat. (vec n) -> *) . 
+
      nat
