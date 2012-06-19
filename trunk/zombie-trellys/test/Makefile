@@ -14,7 +14,7 @@ SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
 PASS=Prelude Arithmetic Vectors LetRebind Trees Append2 TypeTest NatElimination \
-     CastShiftTrick ErasedConv Test_Q_Cons StrongNat LessThanNat \
+     CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd

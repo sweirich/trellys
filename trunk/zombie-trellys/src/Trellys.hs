@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Trellys where
+module Main where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax (moduleEntries)
