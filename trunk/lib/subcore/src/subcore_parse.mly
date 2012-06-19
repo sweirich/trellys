@@ -10,19 +10,19 @@ let parse_error s =
 %start main
 
 %token EOF
-%token <Subcore_syntax.__term_not_in_ast__> PI EVAL ARROW CONV DOT IN BY REFL STAR TO LAM SEMI COLON UNFOLD LS RS FOLD SELF LP UNSET RP SET COMMA EQ FIX
+%token <Subcore_syntax.__term_not_in_ast__> EQ DOT SUBSTSELF REFL UNFOLD CONV COLON PI SEMI SET IN UNSET BY ARROW SELF EVAL COMMA TO LAM FIX FOLD LS LP RS RP STAR
 %token <Subcore_syntax.__terminal__> ID
 
 %type <Subcore_syntax.prog option> main
-%type <Subcore_syntax.trans_term_semi3> trans_term_semi3
-%type <Subcore_syntax.app_term_term2> app_term_term2
-%type <Subcore_syntax.binding> binding
-%type <Subcore_syntax.cmd> cmd
-%type <Subcore_syntax.oterm> oterm
-%type <Subcore_syntax.fix_oterm_comma0> fix_oterm_comma0
-%type <Subcore_syntax.term> term
 %type <Subcore_syntax.prog_prog_cmd1> prog_prog_cmd1
+%type <Subcore_syntax.fix_oterm_comma0> fix_oterm_comma0
+%type <Subcore_syntax.binding> binding
+%type <Subcore_syntax.app_term_term2> app_term_term2
 %type <Subcore_syntax.prog> prog
+%type <Subcore_syntax.trans_term_semi3> trans_term_semi3
+%type <Subcore_syntax.term> term
+%type <Subcore_syntax.oterm> oterm
+%type <Subcore_syntax.cmd> cmd
 
 %%
 
@@ -89,6 +89,9 @@ term:
 
 term:
   | FOLD ID { Fold(get_term_pd_not_in_ast $1, $1, $2) }
+
+term:
+  | SUBSTSELF { Substself(get_term_pd_not_in_ast $1, $1) }
 
 term:
   | UNFOLD { Unfold(get_term_pd_not_in_ast $1, $1) }

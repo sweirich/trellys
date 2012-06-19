@@ -47,6 +47,7 @@ and eq_term = function
    |Trans (d , pd1_1 , oterm2_1 , trans_term_semi33_1 , pd4_1),Trans (d' , pd1_2 , oterm2_2 , trans_term_semi33_2 , pd4_2)-> true && eq_oterm(oterm2_1 , oterm2_2) && eq_trans_term_semi3(trans_term_semi33_1 , trans_term_semi33_2)
    |Parens (d , pd1_1 , oterm2_1 , pd3_1),Parens (d' , pd1_2 , oterm2_2 , pd3_2)-> true && eq_oterm(oterm2_1 , oterm2_2)
    |Fold (d , pd1_1 , str2_1),Fold (d' , pd1_2 , str2_2)-> true && snd str2_1 = snd str2_2
+   |Substself (d , pd1_1),Substself (d' , pd1_2)-> true
    |Unfold (d , pd1_1),Unfold (d' , pd1_2)-> true
    |Eval (d , pd1_1),Eval (d' , pd1_2)-> true
    |Refl (d , pd1_1),Refl (d' , pd1_2)-> true
