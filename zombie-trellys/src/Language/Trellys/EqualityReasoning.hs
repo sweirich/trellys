@@ -29,12 +29,6 @@ import Data.Ix
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 
---For testing during development:
-import Language.Trellys.Parser
-import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ as PP
-import Debug.Trace (trace)
-
 instance Eq Term where
   (==) = aeq
 instance Ord Term where
@@ -67,18 +61,6 @@ instance Eq TermLabel where
 instance Ord TermLabel where
   compare = acompare
 
--- for testing during development
-instance Disp (TName,Epsilon) where
-  disp (n,ep) = parens $ disp n <+> text "," <+> disp ep
-instance Disp Constant where
-  disp = text . show
-instance Disp (EqBranchConst TermLabel) where
-  disp (EqBranchConst bnd_xs_f ss t) =
-    let (xs,f) = unsafeUnbind bnd_xs_f in
-      brackets (parens ((hsep (map disp xs)) <+> text "." <+> disp f)  <+> hsep (map disp ss)) <+> text "~=" <+> disp t
-instance Show (EqBranchConst TermLabel) where
-  show q = render $ disp q
-
 -- This data type just records the operations that the congruence closure algorithm 
 -- performs. It is useful to construct this intermediate structure so that we don't have
 -- to traverse the proof multiple times when e.g. pushing in Symm
@@ -97,6 +79,7 @@ instance Proof RawProof where
   trans = RawTrans 
   cong = RawCong 
 
+-- ********** SYMMETRIZATION PHASE
 -- In a first pass we simplify the RawProofs into this datatype, which gets rid of
 -- the Symm constructor by pushing it up to the leaves of the tree.
 
@@ -107,6 +90,7 @@ data Raw1Proof =
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
  | Raw1Cong TermLabel [Raw1Proof]
+  deriving Show
 
 symmetrizeProof :: RawProof -> Raw1Proof
 symmetrizeProof (RawAssumption h) = Raw1Assumption NotSwapped h
@@ -120,6 +104,7 @@ symmetrizeProof (RawSymm (RawTrans p q)) = Raw1Trans (symmetrizeProof (RawSymm q
 symmetrizeProof (RawCong l ps) = Raw1Cong l (map symmetrizeProof ps)
 symmetrizeProof (RawSymm (RawCong l ps)) = Raw1Cong l (map (symmetrizeProof . RawSymm) ps)
 
+-- ********** NORMALIZATION PHASE
 -- The raw1 proof terms are then normalized into this datatype, by
 -- associating transitivity to the right and fusing adjacent Congs. 
 -- A SynthProof lets you infer the lhs of the equality it is proving,
@@ -131,8 +116,8 @@ data SynthProof =
 data CheckProof =
     Synth SynthProof
   | Refl
-  | Cong TermLabel [CheckProof]
-  | CongTrans TermLabel [CheckProof] SynthProof
+  | Cong Term [(TName, Maybe CheckProof)]
+  | CongTrans Term [(TName, Maybe CheckProof)] SynthProof
  deriving Show
 
 transProof :: CheckProof -> CheckProof -> CheckProof
@@ -140,70 +125,140 @@ transProof (Synth (AssumTrans o h p)) q = Synth (AssumTrans o h (transProof p q)
 transProof Refl q = q
 transProof (Cong l ps) (Synth q) = CongTrans l ps q
 transProof (Cong l ps) Refl = Cong l ps
-transProof (Cong l ps) (Cong _ qs) = Cong l (zipWith transProof ps qs)
-transProof (Cong l ps) (CongTrans _ qs r) = CongTrans l (zipWith transProof ps qs) r
+transProof (Cong l ps) (Cong _ qs) = Cong l (zipWith transSubproof ps qs)
+transProof (Cong l ps) (CongTrans _ qs r) = CongTrans l (zipWith transSubproof ps qs) r
 transProof (CongTrans l ps (AssumTrans o h q)) r =  CongTrans l ps (AssumTrans o h (transProof q r))
 
-fuseProof :: Raw1Proof -> CheckProof
-fuseProof (Raw1Assumption o h) = Synth $ AssumTrans o h Refl
-fuseProof (Raw1Refl) = Refl
+transSubproof :: (TName, Maybe CheckProof) -> (TName, Maybe CheckProof) -> (TName, Maybe CheckProof)
+transSubproof (x,Nothing) (_,Nothing) = (x, Nothing)
+transSubproof (x,Just p)  (_,Just q)  = (x, Just $ transProof p q)
+
+fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m CheckProof
+fuseProof (Raw1Assumption o h) = return $ Synth (AssumTrans o h Refl)
+fuseProof (Raw1Refl) = return $ Refl
 fuseProof (Raw1Trans Raw1Refl q) = fuseProof q
-fuseProof (Raw1Trans (Raw1Assumption o h) q) = Synth $ AssumTrans o h (fuseProof q)
+fuseProof (Raw1Trans (Raw1Assumption o h) q) =  Synth . AssumTrans o h <$> (fuseProof q)
 fuseProof (Raw1Trans (Raw1Trans p q) r) = fuseProof (Raw1Trans p (Raw1Trans q r))
-fuseProof (Raw1Trans (Raw1Cong l ps) q) =
-  let ps' = map fuseProof ps in
-  case fuseProof q of
-    Synth q'            -> CongTrans l ps' q'
-    Refl                -> Cong l ps'
-    (Cong _ qs')        -> Cong      l (zipWith transProof ps' qs')
-    (CongTrans _ qs' r) -> CongTrans l (zipWith transProof ps' qs') r
-fuseProof (Raw1Cong l ps) = Cong l (map fuseProof ps)
+fuseProof (Raw1Trans (Raw1Cong bnd ps) q) = do
+  (xs, template) <- unbind bnd
+  ps' <- fuseProofs xs ps
+  q0' <- fuseProof q
+  case q0' of
+    Synth q'            -> return $ CongTrans template ps' q'
+    Refl                -> return $ Cong      template ps'
+    (Cong _ qs')        -> return $ Cong      template (zipWith transSubproof ps' qs')
+    (CongTrans _ qs' r) -> return $ CongTrans template (zipWith transSubproof ps' qs') r
+fuseProof (Raw1Cong bnd ps) = do
+  (xs, template) <- unbind bnd  
+  Cong template <$> fuseProofs xs ps
 
--- [synthProof B p] takes a SynthProof of A=B and returns A and a Trellys Core proof term of
--- the equality.
-synthProof :: (Applicative m, Fresh m) => Term -> SynthProof -> m (Term,Term)
-synthProof tyB (AssumTrans NotSwapped (n,tyA,tyC) p) = do
-  q1 <- return (Var n)
-  q2 <- checkProof tyC tyB p
-  (tyA,) <$> transTerm tyA tyC tyB q1 q2
-synthProof tyB (AssumTrans Swapped    (n,tyA,tyC) p) = do
-  q1 <- symmTerm tyA tyB (Var n)
-  q2 <- checkProof tyA tyB p
-  (tyC,) <$> transTerm tyC tyA tyB  q1 q2
+fuseProofs :: (Applicative m, Fresh m) => [(TName,Epsilon)] -> [Raw1Proof] -> m [(TName,Maybe CheckProof)]
+fuseProofs [] [] = return []
+fuseProofs ((x,Runtime):xs) (p:ps) =  do
+  p' <- fuseProof p
+  ps' <- fuseProofs xs ps
+  return $ (x,Just p'):ps'
+fuseProofs ((x,Erased):xs) ps =  do
+  ps' <- fuseProofs xs ps
+  return $ (x, Nothing):ps'
 
--- [checkProof A B p] takes a CongProof of A=B and returns a Trellys Core proof term of the
--- equality.
-checkProof :: (Applicative m, Fresh m) => Term -> Term -> CheckProof -> m Term
+-- ************ ANNOTATION PHASE
+-- Having normalized the proof, in the next phase we annotate it by all the subterms involved.
+
+data AnnotProof = 
+    AnnAssum Orientation (TName,Term,Term)
+  | AnnRefl Term Term
+  | AnnCong Term [(TName,Term,Term,Maybe AnnotProof)]
+  | AnnTrans Term Term Term AnnotProof AnnotProof
+  
+-- [synthProof B p] takes a SynthProof of A=B and returns A and the corresponding AnnotProof
+synthProof :: (Applicative m, Fresh m) => Term -> SynthProof -> m (Term,AnnotProof)
+synthProof tyB (AssumTrans NotSwapped h@(n,tyA,tyC) p) = do
+  q <- checkProof tyC tyB p
+  return $ (tyA, AnnTrans tyA tyC tyB (AnnAssum NotSwapped h) q)
+synthProof tyB (AssumTrans Swapped    h@(n,tyA,tyC) p) = do
+  q <- checkProof tyA tyB p
+  return $ (tyC, AnnTrans tyC tyA tyB(AnnAssum Swapped h) q)
+
+-- [checkProof A B p] takes a CongProof of A=B and returns a corresponding AnnotProof
+checkProof :: (Applicative m, Fresh m) => Term -> Term -> CheckProof -> m AnnotProof
 checkProof _ tyB (Synth p) = snd <$> synthProof tyB p
-checkProof tyA tyB Refl =
-  return (Ann (Join 0 0) (TyEq tyA tyB))
-checkProof tyA tyB (Cong bnd ps)  =  do
-  (xs, template) <- unbind bnd
-  subAs <- match (map fst xs) template tyA
-  subBs <- match (map fst xs) template tyB
-  subpfs <- zipWith2M (\(x,ep) p -> checkProof (fromJust $ M.lookup x subAs)
-                                               (fromJust $ M.lookup x subBs)
-                                               p)
-                      xs
-                      ps
-  return (Conv (Ann (Join 0 0) (TyEq tyA tyA))
-               (zipWith (\(_,ep) p -> (ep==Erased, p)) xs subpfs)
-               (bind (map fst xs) (TyEq tyA template)))
-checkProof tyA tyC (CongTrans bnd ps q)  = do
+checkProof tyA tyB Refl = return $ AnnRefl tyA tyB
+checkProof tyA tyB (Cong template ps)  =  do
+  subAs <- match (map (\(x,_)->x) ps) template tyA
+  subBs <- match (map (\(x,_)->x) ps) template tyB
+  subpfs <- mapM (\(x,mp) -> let subA = fromJust $ M.lookup x subAs
+                                 subB = fromJust $ M.lookup x subBs
+                             in case mp of 
+                                  Nothing -> return (x,subA,subB,Nothing)
+                                  Just p -> do
+                                              p' <- checkProof subA subB p
+                                              return (x, subA, subB, Just p'))
+                 ps
+  return $ AnnCong template subpfs
+checkProof tyA tyC (CongTrans template ps q)  = do
   (tyB, tq) <- synthProof tyC q
-  (xs, template) <- unbind bnd
-  subAs <- match (map fst xs) template tyA
-  subBs <- match (map fst xs) template tyB
-  subpfs <- zipWith2M (\(x,ep) p -> checkProof (fromJust $ M.lookup x subAs)
-                                               (fromJust $ M.lookup x subBs)
-                                               p)
-                      xs
-                      ps
-  transTerm tyA tyB tyC
-            (Conv (Ann (Join 0 0) (TyEq tyA tyA))
-               (zipWith (\(_,ep) p -> (ep==Erased, p)) xs subpfs)
-               (bind (map fst xs) (TyEq tyA template)))
+  subAs <- match (map (\(x,_)->x) ps) template tyA
+  subBs <- match (map (\(x,_)->x) ps) template tyB
+  subpfs <- mapM (\(x,mp) -> let subA = fromJust $ M.lookup x subAs
+                                 subB = fromJust $ M.lookup x subBs
+                             in case mp of 
+                                  Nothing -> return (x,subA,subB,Nothing)
+                                  Just p -> do
+                                              p' <- checkProof subA subB p
+                                              return (x, subA, subB, Just p'))
+                 ps
+  return $ AnnTrans tyA tyB tyC
+            (AnnCong template subpfs)
             tq
+
+-- generate AnnotProof's for a list of equations [ep,tyA,tyB]
+checkProofs :: (Applicative m, Fresh m) => [(Epsilon, Term, Term)] -> [CheckProof] -> m [(Term,Term,Maybe AnnotProof)]
+checkProofs [] [] = return []
+checkProofs ((Runtime,tyA,tyB):goals) (p:ps) = do
+  pt <- checkProof tyA tyB p
+  ((tyA, tyB, Just pt) :) <$>  (checkProofs goals ps)
+checkProofs ((Erased,tyA,tyB):goals) ps =
+  ((tyA, tyB, Nothing) :) <$> (checkProofs goals ps)
+
+-- ************* SIMPLIFICATION PHASE
+-- We simplify the annotated proof by merging any two adjacent Congs into a single one.
+
+simplProof ::  AnnotProof -> AnnotProof
+simplProof p@(AnnAssum _ _) = p
+simplProof p@(AnnRefl _ _) = p
+simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (simplProof q)
+simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[]) ps 
+                                    in (AnnCong template' ps')
+  where simplCong (t, acc) [] = (t, reverse acc)
+        simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
+           simplCong (subst x tyA t, acc) ps
+        simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs)):ps) =
+           simplCong (subst x subT t, acc) (subPs++ps)
+        simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
+
+
+-- ************* TERM GENERATION PHASE
+-- Final pass: now we can generate the Trellys Core proof terms.
+
+genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m Term
+genProofTerm (AnnAssum NotSwapped (n,_,_)) = return (Var n)
+genProofTerm (AnnAssum Swapped (n,tyA,tyB)) = symmTerm tyA tyB (Var n)
+genProofTerm (AnnRefl tyA tyB) =   return (Ann (Join 0 0) (TyEq tyA tyB))
+genProofTerm (AnnCong template ps) = do
+  let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
+  let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
+  subpfs <- mapM (\(x,subA,subB,p) -> case p of 
+                                      Nothing -> return (True, TyEq subA subB)
+                                      Just p' -> (False,) <$> genProofTerm p')
+                 ps                                            
+  return (Conv (Ann (Join 0 0) (TyEq tyA tyA))
+               subpfs
+               (bind (map (\(x,_,_,_) -> x) ps) (TyEq tyA template)))
+genProofTerm (AnnTrans tyA tyB tyC p q) = do
+  p' <- genProofTerm p
+  q' <- genProofTerm q
+  transTerm tyA tyB tyC p' q'
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
 transTerm :: Fresh m => Term -> Term -> Term -> Term -> Term -> m Term
@@ -227,8 +282,8 @@ orEps Runtime Runtime = Runtime
 -- has been replaced by a fresh variable. The mapping of the
 -- introduced fresh variables is recorded in the writer monad, along with whether
 -- the variable occurs in an unerased position or not.
--- The boolean argument tracks if we are looking at a subterm or at the original term,
--- the epsilon
+-- The boolean argument tracks whether we are looking at a subterm or at the original term,
+-- the epsilon tracks whether we are looking at a subterm in an erased position of the original term.
 decompose :: (Monad m, Applicative m, Fresh m) => 
              Bool -> Epsilon -> Set TName -> Term -> WriterT [(Epsilon,TName,Term)] m Term
 decompose sub e avoid t | sub && S.null (S.intersection avoid (fv t)) = do
@@ -379,14 +434,16 @@ type DestructureT m a = WriterT [(RawProof, Equation TermLabel)] (NamingT Term m
 
 -- Take a term to think about, and name each subterm in it as a seperate constant,
 -- while at the same time recording equations relating terms to their subterms.
+-- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: (Monad m, Applicative m, Fresh m) => Term -> DestructureT m Constant
 genEqs t = do
   a <- lift $ recordName t
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
-  when (not (null ss)) $ do
-    bs <- mapM genEqs (map (\(ep,name,term) -> term) ss)
+  let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
+  when (not (null ssRuntime)) $ do
+    bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
     tell [(RawRefl,
-           Right $ EqBranchConst (bind (map (\(ep,name,term)->(name,ep)) ss) s)  bs a)]
+           Right $ EqBranchConst (bind (map (\(ep,name,term)->(name,ep)) ss) s) bs a)]
   return a
 
 runDestructureT :: (Monad m) => DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap Term Constant, a)
@@ -421,64 +478,6 @@ prove hyps (lhsPar, rhsPar) = do
              isEqual c1 c2 (reprs st)
   case mpf of
     Nothing -> return Nothing
-    Just pf -> Just <$> (checkProof lhs rhs . fuseProof . symmetrizeProof) pf 
-
------------------------------------------------------
--- Some random utility functions
-
-zipWith2M :: Monad m => (a -> b -> m c) -> [a] -> [b] -> m [c]
-zipWith2M f [] _ = return []
-zipWith2M f (x:xs) (y:ys) = liftM (:) (f x y) `ap` (zipWith2M f xs ys)
-
-zipWith3M :: Monad m => (a -> b -> c -> m d) -> [a] -> [b] -> [c] -> m [d]
-zipWith3M f [] _ _ = return []
-zipWith3M f (x:xs) (y:ys) (z:zs) = liftM (:) (f x y z) `ap` (zipWith3M f xs ys zs)
-
----------------------------------------------------------------------------------------------
--- The following functions are for experimentation during development.
-
-tryGenEqs str = case parseExpr str of
-  Left err -> Left err
-  Right t -> Right $ 
-    let (eqs, consts, _) = runFreshM $ runDestructureT $ genEqs t
-    in
-       (eqs, consts)
-
-parseExprOrDie str = 
-  case parseExpr str of
-  Left err -> error (show err)
-  Right t -> t
-
-showNaming :: Bimap Term Constant -> String
-showNaming naming = BM.fold showLine "" naming
-    where showLine t c rest = show c ++ " := " ++ render (disp t) ++ "\n" ++ rest
-    
-showEquation :: Equation TermLabel -> String
-showEquation (Left (EqConstConst c1 c2)) = show c1 ++ " = " ++ show c2
-showEquation (Right (EqBranchConst l cs c)) =  show l ++ " " ++  intercalate " " (map show cs) ++ " = " ++ show c
-
-showEquations = intercalate "\n" . map showEquation
-
-tryProve :: [String] -> String -> IO (Maybe RawProof)
-tryProve assmsStr toshowStr = runFreshMT $ do
-  let assms = map (\ (Just (t1,t2)) -> (string2Name "_", t1,t2)) $ map (isTyEq . parseExprOrDie) assmsStr
-  let Just (lhs,rhs) = isTyEq (parseExprOrDie toshowStr)
-  (eqs, naming , (c1,c2))  <- runDestructureT $ do
-                              mapM_ processHyp assms
-                              c1 <- genEqs lhs
-                              c2 <- genEqs  rhs
-                              return $ (c1,c2)
-  let cmax = maximum (BM.keysR naming)
-  liftIO $ putStrLn ("Mapping is: \n" ++ showNaming naming)
-  liftIO $ putStrLn ("Input equations are: \n" ++ showEquations (map snd eqs))
-  liftIO $ putStrLn ("Goal to prove is: \n" ++ showEquation (Left (EqConstConst c1 c2)))
-  let (res, endstate) = runST $ do
-                                 st <- newState (Constant 0, cmax)
-                                 st <- propagate st  eqs
-                                 endstate <- printState st
-                                 pf <- isEqual c1 c2 (reprs st)
-                                 return (pf, endstate)
-  liftIO $ putStrLn ("\nEnd state is: \n" ++ endstate)
-  return res
+    Just pf -> Just <$> (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof) pf 
 
 
