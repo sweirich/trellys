@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell, DeriveDataTypeable, ScopedTypeVariables,
   FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
   UndecidableInstances, TypeFamilies  #-}
+{-# OPTIONS_GHC -fno-warn-orphans -fno-warn-name-shadowing #-}
 module Language.SepPP.Syntax (
   Decl(..),Module(..),Expr(..),
   Stage(..),Kind(..),Alt,
@@ -19,8 +20,7 @@ import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
 import Unbound.LocallyNameless.Alpha(aeqR1)
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 import Text.Parsec.Pos
-import Control.Monad(mplus)
-import Control.Applicative((<$>), (<*>),Applicative)
+-- import Control.Applicative((<$>), (<*>),Applicative)
 
 
 import Data.Typeable
@@ -159,10 +159,10 @@ $(derive [''Expr, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
 
 
 instance Alpha Expr where
-  aeq' c (Pos _ t1) t2 = t1 `aeq` t2
-  aeq' c t1 (Pos _ t2) = t1 `aeq` t2
-  aeq' c (TCast t1 _) t2 = t1 `aeq` t2
-  aeq' c t1 (TCast t2 _) = t1 `aeq` t2
+  aeq' _ (Pos _ t1) t2 = t1 `aeq` t2
+  aeq' _ t1 (Pos _ t2) = t1 `aeq` t2
+  aeq' _ (TCast t1 _) t2 = t1 `aeq` t2
+  aeq' _ t1 (TCast t2 _) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
 
 instance Alpha Module
@@ -181,7 +181,9 @@ instance Subst Expr SourcePos
 instance Subst Expr Tele
 
 
-
+-- | isStrictContext finds a term in a strict context.  If it finds
+-- one, it returns the term, along with the continuation of the term.
+isStrictContext :: Expr -> Maybe (Expr, Expr -> Expr)
 isStrictContext (Pos _ t) = isStrictContext t
 isStrictContext (Escape e) = Just (e,id)
 isStrictContext (App e1 stage e2) =
@@ -190,21 +192,22 @@ isStrictContext (App e1 stage e2) =
    Nothing ->  case isStrictContext e2 of
                  Just (e,k2) -> Just (e,\v -> App e1 stage (k2 v))
                  Nothing -> Nothing
-isStrictContext (Case e term bs) = case isStrictContext e of
-                               Just (e',k) -> Just (e',\v -> Case (k v) term bs)
+isStrictContext (Case e term bs) =  
+      case isStrictContext e of
+        Just (e',k) -> Just (e',\v -> Case (k v) term bs)
+        Nothing -> Nothing
+
 isStrictContext _ = Nothing
 
--- var s = Var (string2Name s)
--- app f x = App f Dynamic x
 
-
+-- | down removes position information from the top level of an Expr.
+down :: Expr -> Expr
 down (Pos _ t) = down t
 down t = t
 
--- downAll :: Expr -> TCMonad Expr
-downAll t = everywhere (mkT f') t
-  where f' (Pos _ t) = t
-        f' t = t
+-- | downAll removes position information everywhere in an Expr
+downAll :: Rep a => a -> a
+downAll t = everywhere (mkT down) t
 
 
 
@@ -228,8 +231,8 @@ data EExpr = EVar EEName
 $(derive [''EExpr])
 
 instance Alpha EExpr where
-  aeq' c (ETCast t1) t2 = t1 `aeq` t2
-  aeq' c t1 (ETCast t2) = t1 `aeq` t2
+  aeq' _ (ETCast t1) t2 = t1 `aeq` t2
+  aeq' _ t1 (ETCast t2) = t1 `aeq` t2
   aeq' c t1 t2 = aeqR1 rep1 c t1 t2
 
 instance Subst EExpr EExpr where
@@ -239,21 +242,20 @@ instance Subst EExpr EExpr where
 instance Subst EExpr Stage where
   isvar _ = Nothing
 
+teleArrow :: Tele -> Expr -> Expr
 teleArrow Empty end = end
 teleArrow (TCons binding) end = Pi stage (bind (n,ty,inferred) arrRest)
  where ((n,stage,ty,inferred),rest) = unrebind binding
        arrRest = teleArrow rest end
 
 
-teleForall Empty end = end
-teleForall (TCons binding) end = Forall (bind (n,ty,inferred) arrRest)
- where ((n,stage,ty,inferred),rest) = unrebind binding
-       arrRest = teleForall rest end
 
 
-noTCast t = everywhere (mkT f') t
-  where f' (ETCast t) = t
-        f' t = t
+-- | Remove all tcasts from a term.
+noTCast :: Rep a => a -> a
+noTCast t = everywhere (mkT f) t
+  where f (ETCast t) = t
+        f t' = t'
 
 
 
@@ -276,17 +278,21 @@ subTele _ _ _ =
   error "Can't construct a telescope substitution, arg lengths don't match"
 
 -- FIXME: Add in the inferred argument
+teleFromList :: [(Stage, (Bool, EName, Expr))] -> Tele
 teleFromList args =
   foldr (\(st,(inf,n,ty)) r -> TCons (rebind (n,st,Embed ty, inf) r))
         Empty args
 
-fTele f i (TCons rebinding) = let (pat,rest) = unrebind rebinding
-                                      in f pat (fTele f i rest)
-fTele f i Empty = i
+-- | fTele is a foldr over telescopes.
+fTele :: ((EName, Stage, Embed Expr, Bool) -> t -> t) -> t -> Tele -> t
+fTele f i (TCons rebinding) = f pat (fTele f i rest)
+  where (pat,rest) = unrebind rebinding
+fTele _ i Empty = i
 
 
 -- Check to see if an escaped explicit equality appears outside an erased
 -- position. Returns True if the context is okay, false otherwise.
+okCtx :: Expr -> Bool
 okCtx (Pos _ t) = okCtx t
 okCtx (Escape t) = case down t of
                      (Equal _ _) -> False
@@ -294,18 +300,18 @@ okCtx (Escape t) = case down t of
 okCtx (App t Static  _) = okCtx t
 okCtx expr = and $ map okCtx $ children expr
 
--- FIXME: Replace with RepLib...
+-- | Get all of the immediate subexpressions of an expression.
+children :: Expr -> [Expr]
 children (Pi _ binding) = [ty,body]
-  where ((n,Embed ty,_),body) = unsafeUnbind binding
+  where ((_,Embed ty,_),body) = unsafeUnbind binding
 children (Forall binding) = [ty,body]
-  where ((n,Embed ty,_),body) = unsafeUnbind binding
+  where ((_,Embed ty,_),body) = unsafeUnbind binding
 children (App t1 _ t2) = [t1,t2]
 children (Lambda _ _  binding) = [ty,body]
-  where ((n,Embed ty),body) = unsafeUnbind binding
-
-children (Case e q binding) = cons q $ [e] ++ arms
-  where (n,alts) = unsafeUnbind binding
-        arms = [bdy | a <- alts, ((n,_),bdy) <- [unsafeUnbind a]]
+  where ((_,Embed ty),body) = unsafeUnbind binding
+children (Case s q binding) = cons q $ [s] ++ arms
+  where (_,alts) = unsafeUnbind binding
+        arms = [bdy | a <- alts, ((_,_),bdy) <- [unsafeUnbind a]]
         cons (Just e) es = e:es
         cons Nothing es = es
 
@@ -336,41 +342,18 @@ children (MoreJoin es) = es
 children (Ann x y) = [x,y]
 children (Pos _ e) = children e
 children (Exists binding) = [ty,body]
-  where ((n,Embed ty),body) = unsafeUnbind binding
+  where ((_,Embed ty),body) = unsafeUnbind binding
 children (EIntro e1 e2) = [e1,e2]
 children (EElim expr binding) = [expr,body]
   where (_,body) = unsafeUnbind binding
 
 children _ = []
 
+
+childrenTele :: Tele -> [Expr]
 childrenTele Empty = []
 childrenTele (TCons rebinding) = e:(childrenTele rest)
   where ((_,_,Embed e,_),rest) = unrebind rebinding
-
-
-
-
-
-
-
-
-
-
-
-
-
-unrollForall :: Fresh m => Expr -> m ([(EName,Stage,Expr,Bool)], Expr)
-unrollForall (Pos _ t) = unrollForall t
-unrollForall (Forall binding) = do
-  ((nm,Embed ty,inferred),body) <- unbind binding
-  (rest,range) <- unrollForall body
-  return ((nm,Static,ty,inferred):rest,range)
-unrollForall t = return ([],t)
-
-rollForall :: [(EName,Stage,Expr,Bool)] -> Expr -> Expr
-rollForall args ran = foldr quant ran args
-  where quant (arg,_,ty,inf) body = Forall (bind (arg,Embed ty,inf) body)
-
 
 
 
@@ -418,11 +401,11 @@ instance SynFun Expr where
   unrollApp t = go t []
     where go (Pos _ t) accum = go t accum
           go (App t1 stage t2) accum = go t1 ((t2,stage):accum)
-          go t accum = (t,accum)
+          go t' accum = (t',accum)
 
 
   rollApp f args = foldl app f args
-    where app f (arg,stage) = App f stage arg
+    where app f' (arg,stage) = App f' stage arg
 
 
 instance SynFun EExpr where
@@ -436,7 +419,7 @@ instance SynFun EExpr where
     return (arg:args,body)
 
   unrollLam (ERec binding) = do
-    ((f,args),rest) <- unbind binding
+    ((_,args),rest) <- unbind binding
     (args',body) <- unrollLam rest
     return (args ++ args', body)
   unrollLam t = return ([],t)
@@ -449,12 +432,13 @@ instance SynFun EExpr where
     ((arg,Embed ty),rest) <- unbind binding
     (args,body) <- unrollPi rest
     return ((arg,ty,stage):args,body)
+  unrollPi t = return ([],t)
 
   rollPi [] t = t
   rollPi ((n,ty,stage):args) t = EPi stage (bind (n,Embed ty) (rollPi args t))
 
   unrollApp t = go t []
     where go (EApp t1 t2) accum = go t1 (t2:accum)
-          go t accum = (t,accum)
+          go t' accum = (t',accum)
 
   rollApp t args = foldl EApp t args

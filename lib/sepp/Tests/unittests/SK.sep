@@ -513,12 +513,12 @@ Recursive decompose : (t:Term) -> Decomp  :=
 Inductive decompose_terminates : forall(t:Term){t_term}. decompose t ! := 
   case isRedex t {redex_t} isRedex_terminates t t_term of
       True -> let u1 [u1_eq] = morejoin {t_term, sym redex_t} : Dec Box t = decompose t
-              in  conv (valax (Dec Box t)) at ~u1 !
+              in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
     | False -> (case t {e_eq} t_term of
                   K -> let u1 [u1_eq] = morejoin {t_term, sym redex_t, sym e_eq} : Dec Box t = decompose t
-                       in  conv (valax (Dec Box t)) at ~u1 !
+                       in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
                 | S -> let u1 [u1_eq] = morejoin {t_term, sym redex_t, sym e_eq} : Dec Box t = decompose t
-                       in  conv (valax (Dec Box t)) at ~u1 !
+                       in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
                 | App x y -> (case isValue x {x_val} isValue_term x (valax x) of
                                 True -> let u1 [u1_eq] = ord e_eq : y < t
                                         in  (case decompose y {y_eq} decompose_terminates y u1 of
@@ -1110,7 +1110,7 @@ Theorem redex_val_left : forall(t1:Term)(t2:Term)(t3:Term)
     termcase t1 {t1_term} of
       abort -> let u1 = morejoin {sym t1_term} : (abort Term) = (isRedex (abort Term));
                    u2 = conv u1 at (abort Term) = (isRedex ~t1_term);
-                   u3 = conv valax True at ~(sym q) !o
+                   u3 = conv valax True at ~(sym q) !
                in  contraabort u2 u3
     | ! -> let u1 = morejoin {p, t1_term} : isRedex t1 = (isValue t3 && isValue t2);
                u2 = trans (sym q) u1 -- True = isValue t3 && isValue t2 
@@ -1475,7 +1475,6 @@ Inductive plug_preserves_s_free :
                            -- Prove plug c t'' = t''
                            u6 = morejoin {u5,c_term,t''_term,u5} : t'' = plug c t''
                        in conv q2 at s_free ~u6 = True 
-
                 | App x y ->
                       let s_free_t = morejoin {t_term,sym e_eq} : s_free t = (s_free x && s_free y);
                           s_free_true = equiv 2 : ((s_free x && s_free y) = True);
@@ -1498,8 +1497,10 @@ Inductive plug_preserves_s_free :
 
                                                  u4 = morejoin {u3,c_term, t''_term} :
                                                        plug c t'' = App x (plug c' t'');
+                                                 plug_term = 
+                                                    plug_terminates t'' t''_term c' (valax c'): plug c' t'' !;
                                                  u4_term = (conv
-                                                            valax (App x (plug c' (tcast t'' by t''_term)))
+                                                            valax (App x ~(plug_term))
                                                           at ~(sym u4) !) : (plug c t'') !;
 
                                                  u5 = ord (sym u3) : c' < c;

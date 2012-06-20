@@ -45,10 +45,10 @@ Cabal-version:       >=1.10
 
 Library
   -- Modules exported by the library.
+  Default-language:    Haskell2010
   Exposed-modules:
     Language.SepPP.Syntax
     Language.SepPP.Parser
-    Language.SepPP.Layout
     Language.SepPP.PrettyPrint
     Language.SepPP.TypeCheck
     Language.SepPP.TCUtils
@@ -62,21 +62,22 @@ Library
     parsec >= 3.0,mtl,pretty,RepLib >= 0.5.2, containers,
     cmdargs
 
-  -- Modules not exported by this package.
-  Other-modules: Language.SepPP.Match
 
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
   -- Build-tools:
-  Extensions: DeriveDataTypeable, TemplateHaskell, ScopedTypeVariables,
+  Default-Extensions: DeriveDataTypeable, TemplateHaskell, ScopedTypeVariables,
               FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
               UndecidableInstances
 
+  Ghc-options: -Wall -Werror 
+
 
 Executable sep
+  Default-language:    Haskell2010
   Main-is: SepPP.hs
   Build-depends: base, cmdargs, pretty, mtl, unbound >= 0.3.2, RepLib >= 0.5.2, seppp, parsec >= 3.0
   Hs-source-dirs: executables
-  Extensions: DeriveDataTypeable
+  Default-Extensions: DeriveDataTypeable
 
 
 --Test-suite test-parser

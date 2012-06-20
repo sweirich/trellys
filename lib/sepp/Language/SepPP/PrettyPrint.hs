@@ -13,8 +13,6 @@ import Text.Parsec.Error(ParseError,showErrorMessages,errorPos,errorMessages)
 import qualified Data.Set as S
 
 
-import Debug.Trace
-
 class Disp d where
   disp :: d -> Doc
 
@@ -56,7 +54,10 @@ initDI = DI S.empty
 type M = FreshMT (Reader DispInfo)
 
 -- If we set 'barenames' to true, then we don't try to do any clever name stuff with lfresh.
+barenames :: Bool
 barenames = True
+
+
 instance LFresh M where
   lfresh nm = do
     if barenames
@@ -76,7 +77,7 @@ cleverDisp :: (Display d, Alpha d) => d -> Doc
 cleverDisp d =
   runReader (runFreshMT dm) initDI where
     dm = let vars = S.elems (fvAny d)  in
-         lfreshen vars $ \vars'  p ->
+         lfreshen vars $ \_  p ->
            (display (swaps p d))
 
 -- 1. Display is monadic :: a -> M Doc
@@ -126,18 +127,12 @@ termParen level x =
 
 -- Set the precedence to i. If this is < than the current precedence, then wrap
 -- this with parens.
--- withPrec:: Int -> m
-withPrec i m = do
-  dm <- local (const i) m
-  cur <- ask
-  if i < cur
-     then return $ parens dm
-     else return $ dm
 
 instance Rep a => Display (Name a) where
   display = return . text . name2String
 
 instance Display Expr where
+  display WildCard = return $ text "_"
   display (Var n) = return $ text $ name2String n
   display (Con n) = return $ text $ name2String n
   display (Formula 0) = return $ text "Formula"
@@ -152,17 +147,15 @@ instance Display Expr where
                         dran <- display ran
                         let dinf = if inf then text "?" else empty
                         return $ bindingWrap stage (dinf <+> dn <+> colon <+> dty) <+> text "->" <+> dran
-          wrap Dynamic = parens
-          wrap Static =  brackets
 
 
-  display (Forall binding) = do
+  display (Forall binding) = 
     lunbind binding $ \((n,ty,inf),ran) -> do
-    dn <- display n
-    dty <- display ty
-    dran <- display ran
-    let dinf = if inf then text "?" else empty
-    return $ text "forall" <+> parens (dinf <+> dn <+> colon <+> dty) <+> text "." <+> dran
+      dn <- display n
+      dty <- display ty
+      dran <- display ran
+      let dinf = if inf then text "?" else empty
+      return $ text "forall" <+> parens (dinf <+> dn <+> colon <+> dty) <+> text "." <+> dran
 
   display (t@(App t0 stage t1)) = do
     d0 <- dParen (precedence t - 1) t0
@@ -172,18 +165,18 @@ instance Display Expr where
          ann Dynamic = id
 
 
-  display (Lambda kind stage binding) = do
+  display (Lambda kind stage binding) = 
     lunbind binding $ \((n,ty),body) -> do
-    dty <- display ty
-    dn <- display n
-    dbody <- display body
-    return $ text "\\" <+> bindingWrap stage (dn <+> colon <+> dty) <+>
-             absOp kind <+> dbody
+      dty <- display ty
+      dn <- display n
+      dbody <- display body
+      return $ text "\\" <+> bindingWrap stage (dn <+> colon <+> dty) <+>
+               absOp kind <+> dbody
 
     where absOp Form = text "=>"
           absOp Program = text "->"
 
-  display (Case scrutinee termWitness binding) = do
+  display (Case scrutinee termWitness binding) =
    lunbind binding $ \(consEq,alts) -> do
     dScrutinee <- display scrutinee
     dConsEq <- braces <$> display consEq
@@ -194,9 +187,9 @@ instance Display Expr where
 
     where dAlt alt = do
             lunbind alt $ \((con,pvars),body) -> do
-            dPvars <- mapM dPVar pvars
-            dBody <- display body
-            return $ cat [text con <+> hsep dPvars <+> text "-> ",
+             dPvars <- mapM dPVar pvars
+             dBody <- display body
+             return $ cat [text con <+> hsep dPvars <+> text "-> ",
                           nest 2 dBody]
           dPVar (v,Static) = return $ brackets $ disp v
           dPVar (v,Dynamic) = return $ brackets $ disp v
@@ -321,10 +314,10 @@ instance Display Expr where
               nest 2 dBody]
 
 
-  display (t@(Let stage binding)) = do
+  display (t@(Let _ _)) = do
     (ds,body) <- linearizeLet t
-    let f (stage, (x,y,Embed z))= do
-            dx <- case stage of
+    let f (stage', (x,y,Embed z))= do
+            dx <- case stage' of
                Static -> brackets <$> display x
                Dynamic -> display x
             dy <- case y of
@@ -347,19 +340,19 @@ instance Display Expr where
     return $ fsep [d0, colon, nest 2 d1]
 
 
-  display t@(Exists binding) =
+  display (Exists binding) =
     lunbind binding $ \((n,Embed ty),body) -> do
       dn <- display n
       dty <- display ty
       dbody <- display body
       return $ fsep [text "exists", dn, colon, dty, text ".", dbody]
 
-  display t@(EIntro e1 e2) = do
+  display (EIntro e1 e2) = do
     d1 <- display e1
     d2 <- display e2
     return $ parens (d1 <> comma <+> d2)
 
-  display t@(EElim scrutinee binding) =
+  display (EElim scrutinee binding) =
     lunbind binding $ \((l,r),body) -> do
       ds <- display scrutinee
       dl <- display l
@@ -369,11 +362,11 @@ instance Display Expr where
                 parens (dl <> comma <+> dr) <+> text "in" $$
                nest 2 dbody
   display (Pos _ t) = display t
-  display (t@(Sym x)) = do
+  display t@(Sym x) = do
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
 
-  display (t@(Equiv x)) = do
+  display (Equiv x) = do
     return $ text "equiv" <+> integer x
 
   display (t@(Autoconv x)) = do
@@ -381,13 +374,13 @@ instance Display Expr where
     return $ text "autoconv" <+> dx
 
 
-  display (t@Refl) = return $ text "refl"
+  display Refl = return $ text "refl"
   display t@(Trans t1 t2) = do
     d1 <- dParen (precedence t) t1
     d2 <- dParen (precedence t) t2
     return $ text "trans" <+> d1 <+> d2
 
-  display t@(MoreJoin xs) = do
+  display (MoreJoin xs) = do
     ds <- mapM display xs
     return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
 
@@ -420,6 +413,8 @@ instance Display Expr where
   precedence (Pi Static _) = 4
   precedence _ = 0
 
+linearizeLet :: 
+  LFresh m => Expr -> m ([(Stage, (EName, Maybe EName, Embed Expr))], Expr)
 
 linearizeLet (Pos _ t) = linearizeLet t
 linearizeLet (Let stage binding) =
@@ -429,6 +424,7 @@ linearizeLet (Let stage binding) =
 linearizeLet x = return ([],x)
 
 -- bindingWrap adds the correct stage annotation for an abstraction binding.
+bindingWrap :: Stage -> Doc -> Doc
 bindingWrap Dynamic = parens
 bindingWrap Static = brackets
 
@@ -474,6 +470,11 @@ instance Display Decl where
              return $ dtele <+> text "-> Type"
 
 
+  display (FlagDecl n val) =
+    return $ text "flag" <+> text n <+> (if val then text "true" else text "false")
+  display (OperatorDecl fx level op) =
+    return $ text fx <+> int level <+> text op
+    
 
 
 instance Display Module where
@@ -497,44 +498,45 @@ instance Display EExpr where
      d1 <- etermParen (precedence t - 1) t1
      d2 <- etermParen (precedence t) t2
      return $ d1 <+> d2
-  display t@(ERec binding) = do
-    lunbind binding $ \((f,args),body) -> do
-    df <- display f
-    dx <- mapM display args
-    dbody <- etermParen (precedence t) body
+  display (ERec binding) = do
+    lunbind binding $ \((f,_args),_body) -> do
+      df <- display f
+      return df    
+    -- dx <- mapM display args
+    -- dbody <- etermParen (precedence t) body
     -- return $ text "rec" <+> df <+> (hcat dx) <+> text "." <+> dbody
-    return df
 
-  display t@(ELambda binding) =  do
+
+  display t@(ELambda binding) =  
     lunbind binding $ \(x,body) -> do
-    dx <- display x
-    dbody <- etermParen (precedence t) body
-    return $ fsep [text "\\" <+> dx <+> text ".",nest 2 dbody]
+     dx <- display x
+     dbody <- etermParen (precedence t) body
+     return $ fsep [text "\\" <+> dx <+> text ".",nest 2 dbody]
 
-  display t@(ECase s alts) = do
+  display (ECase s alts) = do
     ds <- display s
-    alts <- mapM displayAlt alts
+    dalts <- mapM displayAlt alts
     return $ text "case" <+> ds <+> text "of" $$
-             nest 2 (vcat alts)
-   where displayAlt alt = do
-           lunbind alt $ \((c,pvars),body) -> do
-           dbody <- display body
-           dpvars <- mapM display pvars
-           return $ fsep $ [text c <+> hsep dpvars <+> text "->", nest 2 dbody]
+             nest 2 (vcat dalts)
+   where displayAlt alt = 
+            lunbind alt $ \((c,pvars),body) -> do
+              dbody <- display body
+              dpvars <- mapM display pvars
+              return $ fsep $ [text c <+> hsep dpvars <+> text "->", nest 2 dbody]
 
-  display t@(ELet binding) = do
+  display (ELet binding) = 
      lunbind binding $ \((n,t),body) -> do
-     dn <- display n
-     dt <- display t
-     dbody <- display body
-     return $ text "let" <+> dn <+> text "=" <+> dt $$
-              text "in" <+> dbody
-  display t@(EPi stage binding) = do
+      dn <- display n
+      dt <- display t
+      dbody <- display body
+      return $ text "let" <+> dn <+> text "=" <+> dt $$
+               text "in" <+> dbody
+  display (EPi stage binding) = 
      lunbind binding $ \((n,t),body) -> do
-     dn <- display n
-     dt <- display t
-     dbody <- display body
-     return $ bindingWrap stage (dn <+> colon <+> dt) <+> text "->" <+> dbody
+      dn <- display n
+      dt <- display t
+      dbody <- display body
+      return $ bindingWrap stage (dn <+> colon <+> dt) <+> text "->" <+> dbody
 
 
   display (ETCast t) = do
