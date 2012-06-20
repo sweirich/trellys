@@ -1,0 +1,14 @@
+module Lambdaint where
+
+
+Why doesn't this show up?
+
+
+data String : Type where
+     empStr : String
+    | str0  : String-> String
+    | str1  : String-> String
+
+data Term : Type where
+      Var : String
+     |App : Term -> Term -> Term
