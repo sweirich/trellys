@@ -130,7 +130,8 @@ data Expr = Var EName                                 -- Expr, Proof
           -- proof (or an expression that generates an equality proof).
           | Escape Expr
 
-          | Let (Bind (EName,Maybe EName,Embed Expr) Expr)
+
+          | Let Stage (Bind (EName,Maybe EName,Embed Expr) Expr)
 
           | Aborts Expr
 
@@ -139,6 +140,7 @@ data Expr = Var EName                                 -- Expr, Proof
           | Trans Expr Expr -- Should be a derived form
           | MoreJoin [Expr] -- Should be a derived form
           | Equiv Integer -- Should be a derived form
+          | Autoconv Expr
 
           | WildCard -- For marking arguments that should be inferred.
 
@@ -325,7 +327,7 @@ children (Rec binding) = body:(childrenTele tele)
   where ((_,tele),body) = unsafeUnbind binding
 
 children (Escape x) = [x]
-children (Let binding) = [t,body]
+children (Let _ binding) = [t,body]
   where ((_,_,Embed t),body) = unsafeUnbind binding
 children (Aborts x) = [x]
 children (Sym x) = [x]

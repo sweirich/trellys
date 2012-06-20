@@ -7,7 +7,7 @@ import Language.SepPP.Options
 
 
 import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate, bind, unbind, string2Name)
-
+import Generics.RepLib(mkT,everywhere)
 import Text.PrettyPrint
 import Data.Typeable
 import "mtl" Control.Monad.Reader hiding (join)
@@ -131,6 +131,8 @@ showRewrites :: TCMonad ()
 showRewrites = do
   rs <- asks rewrites
   forM_ rs  (\(l,r) -> emit $ show l <++> "-->" <++> show r)
+  tps <- asks termProofs
+  forM_ tps (\t -> emit $ "TP" <++> t)
 
 
 lookupRewrite :: EExpr -> TCMonad (Maybe EExpr)
@@ -138,19 +140,22 @@ lookupRewrite e = do
   e' <- noTCast <$> substDefsErased e
   rs <- asks rewrites
   -- FIXME: Is alpha-equality is too weak? Do we need actual equality?
-  case find (\(l,r) -> aeq e' l) rs of
+  case find (\(l,r) -> aeq e' l || aeq e l) rs of
     Just (_,r) -> return (Just r)
     Nothing -> return Nothing
 
 
 withTermProofs :: [EExpr] -> TCMonad a -> TCMonad a
 withTermProofs es m = do
-  local (\ctx -> ctx {termProofs = es ++ termProofs ctx}) m
+  es' <- mapM f es
+  local (\ctx -> ctx {termProofs = (es' ++ es ++ termProofs ctx)}) m
+  where f tp = substDefsErased tp
 
 lookupTermProof :: EExpr -> TCMonad (Maybe EExpr)
 lookupTermProof e = do
+  e' <- noTCast <$> substDefsErased e
   tps <- asks termProofs
-  return $ find (aeq e) tps
+  return $ find (\tp -> aeq (noTCast e) tp || aeq e' tp) tps
 
 
 
@@ -211,7 +216,8 @@ actual `sameType` (Just expected) = actual `expectType` expected
 
 actual `expectType` expected = do
   printAST <- getOptPrintAST
-  unless (down actual `aeq` down expected) $
+  -- We erase tcasts when comparing types
+  unless (down (eraseTCast actual) `aeq` down (eraseTCast expected)) $
     typeError "Couldn't match expected type with actual type."
                 ([(text "Expected Type",disp expected)
                , (text "Actual Type", disp actual)] ++ ast printAST)
@@ -219,6 +225,11 @@ actual `expectType` expected = do
                    , (text "Actual AST", text $ show $ downAll actual)
                    ]
        ast False = []
+
+       eraseTCast t = everywhere (mkT f') t
+         where f' (TCast t _) = t
+               f' t = t
+
 
 (<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc
 t1 <++> t2 = disp t1 <+> disp t2
@@ -315,9 +326,9 @@ erase (Case scrutinee _ binding) = do
   (_,alts) <- unbind binding
   ECase <$> erase scrutinee <*> mapM eraseAlt alts
 
-erase (Let binding) = do
+erase (Let stage binding) = do
   ((x,_,Embed t),body) <- unbind binding
-  if isProof t
+  if (isProof t || stage == Static)
     then erase body
     else do
       et <- erase t
@@ -331,8 +342,13 @@ erase (Let binding) = do
         isProof (Sym _) = True
         isProof (Trans _ _) = True
         isProof (ConvCtx s _) = isProof s
+        isProof (TerminationCase _ body) = True -- Wrong. This disallows terminationcase in a program.
         -- FIXME: This should check the syntactic class of the  definiens, not this hacky definition.
         isProof _ = False
+
+erase (EElim s binding) = do
+  ((fst,snd),body) <- unbind binding
+  erase body
 
 erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t

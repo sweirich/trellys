@@ -31,10 +31,20 @@ logReduce t t' = do
     emit $ ("reduced" $$$ t $$$ "to" $$$ t')
     emit $  "===" <++> "==="
 
-reduce :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
-reduce 0 t k = k 0 t
-reduce steps EAbort _ = return EAbort
-reduce steps v@(EVar n) k = do
+reduce,reduce' :: Integer -> EExpr -> (Integer -> EExpr -> TCMonad EExpr) -> TCMonad EExpr
+reduce steps e k = do
+  rewrite <- lookupRewrite e
+  case rewrite of
+    Just rhs -> do
+      -- emit $ "Rewrote" <++> e <++> "to" <++> rhs
+      reduce steps rhs k
+    Nothing -> reduce' steps e k
+
+
+
+reduce' 0 t k = k 0 t
+reduce' steps EAbort _ = return EAbort
+reduce' steps v@(EVar n) k = do
      d <- lookupDef (translate n)
      case d of
        Just def -> do
@@ -45,9 +55,12 @@ reduce steps v@(EVar n) k = do
        Nothing -> do
          -- emit ("Can't reduce variable" <++> v)
          k steps v
-reduce steps t@(ECon _) k = k steps t
+reduce' steps t@(ECon _) k = k steps t
 
-reduce steps tm@(EApp t1 t2) k = do
+
+
+reduce' steps tm@(EApp t1 t2) k = do
+   -- emit $ "Reducing app" <++> tm
    reduce steps t1 k'
   where k' 0 t1' = k 0 (EApp t1' t2)
         k' steps t1'@(ELambda binding) = do
@@ -55,6 +68,7 @@ reduce steps tm@(EApp t1 t2) k = do
           tp <- lookupTermProof t2
           case tp of
             Nothing -> do
+              -- emit $  "No term proof for" <++> t2
               reduce steps t2 (\steps' v -> do
                               case v of
                                 EAbort -> return EAbort
@@ -69,6 +83,7 @@ reduce steps tm@(EApp t1 t2) k = do
                                     logReduce (EApp t1' v) tm'
                                     reduce (steps - 1) tm' k)
             Just pf -> do
+              -- emit $ "Inserting tcast for argument" <++> t2
               let tm' = subst x (ETCast t2) body
               reduce (steps - 1) tm' k
 
@@ -77,12 +92,14 @@ reduce steps tm@(EApp t1 t2) k = do
                     [(text "The term being applied", disp t1'),
                      (text "The application", disp tm)]
 
-        k' steps (ETCast e) = k' steps (ETCast e)
+        -- This *HAS* to be a bug:
+        k' steps (ETCast e) = k' (steps-1) (ETCast e)
         k' steps v1 = do
           ev <- erasedSynValue v1
 
           if isCon v1 && ev
-             then do
+            then do
+               -- emit $ "Looking for term proof for con argument. " <++> t2
                tp <- lookupTermProof t2
                case tp of
                  Nothing ->
@@ -91,7 +108,8 @@ reduce steps tm@(EApp t1 t2) k = do
                        tp <- lookupTermProof v2
                        let v2' = maybe v2 (\_ -> ETCast v2) tp
                        k steps (EApp v1 v2'))
-                 Just pf ->
+                 Just pf -> do
+                   -- emit $ "Got it" <++> t2
                    k steps (EApp v1 (ETCast t2))
              else k steps (EApp v1 t2)
 
@@ -109,7 +127,8 @@ reduce steps tm@(EApp t1 t2) k = do
             Just _ -> return True
 
 
-reduce steps tm@(ECase scrutinee alts) k = do
+reduce' steps tm@(ECase scrutinee alts) k = do
+  -- emit $ "Case scrutinee:" <++> scrutinee
   rw <- lookupRewrite scrutinee'
   case rw of
     Just rhs -> do
@@ -117,7 +136,9 @@ reduce steps tm@(ECase scrutinee alts) k = do
       reduce steps (ECase rhs alts) k
     Nothing -> do
       -- emit $ "Can't find rewrite for" <++> (show scrutinee')
+      -- showRewrites
       reduce steps scrutinee k'
+
   where k' 0 t = k 0 (ECase t alts)
         k' steps v =
           case unrollApp (unTCast v) of
@@ -131,6 +152,8 @@ reduce steps tm@(ECase scrutinee alts) k = do
                 Just rhs -> do
                   reduce steps rhs k'
                 Nothing -> do
+                  -- emit $ "Stuck reduction"
+                  -- showRewrites
                   k steps (ECase v alts)
         substPat c args [] = err $ "Can't find pattern for constructor"  ++ show c
         substPat c args (alt:alts) = do
@@ -148,7 +171,7 @@ reduce steps tm@(ECase scrutinee alts) k = do
         scrutinee' = noTCast scrutinee
 
 
-reduce steps (ELet binding) k = do
+reduce' steps (ELet binding) k = do
   ((x,Embed t), body) <- unbind binding
   let k' steps t' = do
           ev <- erasedSynValue t'
@@ -159,19 +182,19 @@ reduce steps (ELet binding) k = do
   reduce steps t k'
 
 
-reduce steps t@(ERec binding) k = do
+reduce' steps t@(ERec binding) k = do
   ((f,args),body) <- unbind binding
   let t' = foldr (\n bdy -> ELambda (bind n bdy)) (subst f t body)  args
   k steps t'
-reduce steps t@(EPi s binding) k = do
+reduce' steps t@(EPi s binding) k = do
   ((x,Embed tp),body) <- unbind binding
   let k' steps tp' =
         let k'' steps body' = k steps $ EPi s (bind (x,Embed tp') body') in
             reduce steps body k''
   reduce steps tp k'
-reduce steps t@(ELambda _) k = k steps t
-reduce steps EType k = k steps EType
-reduce steps (ETCast t) k = reduce steps t (\steps' val -> k steps' (ETCast val))
+reduce' steps t@(ELambda _) k = k steps t
+reduce' steps EType k = k steps EType
+reduce' steps (ETCast t) k = reduce steps t (\steps' val -> k steps' (ETCast val))
 
 patMatch (c,args) [] = err "No Pattern Match"
 patMatch t@(ECon c,args) (b:bs) = do
