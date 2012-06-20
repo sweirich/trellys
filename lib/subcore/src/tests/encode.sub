@@ -18,12 +18,20 @@ test : * =
              
       ,
       succ : nat -> nat = 
-           conv \ n : nat . 
-                   \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
-           to ! n : nat . nat
-           by (! n : nat . ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
-              (! n : nat . [ unfold ; substself ] )
+           \ n : nat . 
+             conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+             to nat
+             by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+                [ unfold ; substself ]
   in
+
+
+#  fix add : nat -> nat -> nat =
+#      \ n : nat . \ m : nat .
+#        ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+#                by [ unfold ; substelf ] , refl)
+#         # C:
+#         (\ n : nat . nat -> nat) 
 
   fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
       mkunit : unit =
@@ -32,6 +40,24 @@ test : * =
            by (! C : refl . (! z : refl . (C unfold))),
               [ unfold ; substself ]
   in
+
+  fix eq : ! A : *. A -> A -> * = 
+         \ A : * . \ a : A . \ b : A . 
+           self p. ! C : (! A : *. ! a : A. ! b : A. (eq A a b) -> *) .
+           (! A : * . ! a : A . (C A a a (eqrefl A a))) ->
+           (C A a b conv p to (eq A a b) by refl , [ (unfold A a b) ; eval ] )
+      ,
+      eqrefl : ! A : * . ! a : A . (eq A a a) = 
+         \ A : * . \ a : A .
+         conv
+         \ C : (! A : *. ! a : A. ! b : A. (eq A a b) -> *) .
+         \ p : (! A : * . ! a : A . (C A a a (eqrefl A a))). 
+            (p A a)
+         to (eq A a a)
+         by (! C : refl . ! p : refl . (C A a a [ (unfold A a) ; eval ])) , [ (unfold A a a) ; eval ; substself ]
+  in
+      
+        
 
 #  fix vec : nat -> * = \ n : nat . ! C : (! n : nat. (vec n) -> *) . 
 
