@@ -28,7 +28,7 @@ import "mtl" Control.Monad.State hiding (join)
 
 import Control.Applicative
 import Text.Parsec.Pos
-import Data.List(nubBy, find)
+import Data.List(nubBy, find,findIndex)
 import qualified Data.Set as S
 
 typecheck :: Module -> IO (Either TypeError ())
@@ -1026,6 +1026,14 @@ check mode (Tactic (Autoconv tm)) (Just expected) = do
   check mode tm' (Just expected)
 
 
+check _ t@(Tactic (Injective _)) Nothing = do
+  typeError "Can't synthesize a type for the injective tactic. Ascribe a result type."
+     [(disp "The expression", disp t)]
+     
+check mode (Tactic (Injective consEq)) (Just resEq) = do
+  emit $ "Proving injectivity of"  <++> resEq <++> "using" <++> consEq
+  res <- injective consEq resEq
+  check mode res (Just resEq)
 
 
 
@@ -1107,6 +1115,7 @@ synClass (Tactic Refl) = return ProofClass
 synClass (Tactic (Trans _ _)) = return ProofClass
 synClass (Tactic (Autoconv t)) = synClass t
 synClass (Tactic (MoreJoin _)) = return ProofClass
+synClass (Tactic (Injective _)) = return ProofClass
 
 synClass WildCard = fail "Can't take the syntactic class of a wildcard!"
 synClass (Ann e _) = synClass e
@@ -1456,6 +1465,181 @@ same1 (r :+: rs) vars (p1 :*: t1) (p2 :*: t2) = do
 
 
 
+
+-- | Injective tactic
+
+-- This takes an equality between two data constructors: p : (C a0
+-- ... an = C b0 ... bn) and generates a proof of (ai = bi),
+-- identified by the second argument of the `injective` function.  The
+-- general scheme is that it creates a projection function prj_i s.t.
+-- prj_i (C t0 ... tn) = ti. Rather than top-level projection
+-- functions, it creates these on the fly as `case (C t0 ... tn) {_}
+-- of { C p0 ... pn -> pi | _ -> abort T}`, where T is the type of ti.
+-- Using this, it generates `join : ai = prj_i (C a0 .. an)` and `p2:
+-- prj_i (C b0 .. bn) = bi`.  Additionally, `conv refl = prj_i (C a0
+-- .. an) = prj_i (~p)` gives `prj_i (C a0 .. an) = prj_i (C b0
+-- .. bn)`. Transitivity yields `ai = bi`.
+
+-- Injectivity only holds for runtime data constructor
+-- arguments. Additionally, the terms (C a0 .. an) and (C b0 .. bn)
+-- must be values (otherwise join won't step prj_i (C a0 ... an) to
+-- ai).
+
+-- This currently only works for non-dependent types, because the
+-- tactic doesn't insert any of the necessary conversions in the
+-- matching branch to get the branch to be the correct type (since the
+-- type of the projected term will likely have free pattern variables
+-- within it that need to be `conv`ed using proofs that are also
+-- constructor arguments. It's possible this may be automated (e.g. by
+-- adding injectivity itself to the proof methods used by equiv
+-- tactic, which is in turn used by autoconv, and then wrappig the
+-- projected pattern variable with an autoconv.
+injective :: Expr -> Expr -> TCMonad Expr
+injective consEq (Equal l' r') = do
+  form@(Equal l r) <- down <$> check ProofMode consEq Nothing
+
+  -- Check that both sides are the same constructor.
+  let (lcon,lArgs) = unrollApp l
+      (rcon,rArgs) = unrollApp r
+      isCon (Con _) = True
+      isCon _ = False
+  unless (isCon (down lcon)) $
+    typeError
+       "Can't prove injectivity using a proof of an equation with a non-constructor on left-hand side."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)]
+
+  unless (isCon (down rcon)) $
+    typeError
+      "Can't prove injectivity using a proof of an equation with a non-constructor on right-hand side."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)]
+
+  unless (down lcon `aeq` down rcon) $ do
+    typeError "Can't prove injectivity using a proof of an equation with dissimilar constructors."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)]
+
+
+  -- Make sure the subterms occur in matching position. This needs to
+  --  be expanded so that we can find multiple indices for
+  -- repeated occurances of the same subterm.
+  (idxl,idxr) <- case (findIndex (aeq l' . fst) lArgs, findIndex (aeq r' . fst) rArgs) of
+      (Just a,Just b) 
+        | a == b -> return (a,b)
+        | otherwise ->
+          typeError "The target subterms occur in different positions in the provided equality proof."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)
+          ,(disp "Target LHS subterm position", disp a)
+          ,(disp "Target RHS subterm position", disp b)]
+
+      (Just _, Nothing) ->
+        typeError "The target subterm could not be found in the RHS of the provided equality proof."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)
+          ,(disp "Target RHS subterm", disp r')]
+
+      (Nothing, Just _) ->
+        typeError "The target subterm could not be found in the LHS of the provided equality proof."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)
+          ,(disp "Target LHS subterm", disp l')]
+
+
+
+      (Nothing, Nothing) ->
+        typeError "The target subterms could not be found in the provided equality proof."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)
+          ,(disp "Target LHS subterm", disp l')
+          ,(disp "Target RHS subterm", disp r')]
+
+    
+  lhsType <- check ProgMode l Nothing
+  rhsType <- check ProgMode r Nothing
+
+  let (lTc,_) = unrollApp lhsType
+      (rTc,_) = unrollApp rhsType
+
+  unless (lTc `aeq` rTc) $ 
+        typeError "The sides of the supplied equality do not seem to be of the same type constructor."
+          [(disp "The proof", disp consEq)
+          ,(disp "of the formula", disp form)
+          ,(disp "LHS type constructor", disp lTc)
+          ,(disp "RHS type constructor", disp rTc)]
+
+
+
+  lType' <- check ProgMode l' Nothing
+  rType' <- check ProgMode r' Nothing
+  
+  prjLeft <- mkCase (down lTc) lcon lType' idxl l
+  prjRight <- mkCase (down rTc) rcon rType' idxr r
+
+  contextRight <- mkCase (down lTc) lcon lType' idxl (Escape consEq)
+
+
+  let u1 = Ann (Join 0 1000) (Equal l' prjLeft)
+
+      -- l' = prj l
+      u2 = Ann (Join 1000 0) (Equal prjRight r')
+      -- prj r = r'
+      casting = ConvCtx (Join 0 0) (Equal prjLeft contextRight)
+      -- cast refl : prj l = prj l to prj l = prj r using l = r
+      p1 =  (Ann (Tactic (Trans u1 casting)) (Equal l' prjRight))
+      -- l' = prj r
+      p2 = Tactic (Trans p1 u2)
+      -- l' = r'
+  emit $  "Injectivity tactic generated proof" <++> p2
+  return p2
+
+injective _ ty =
+  typeError "The injective tactic can only prove an expected equality."
+    [(disp "The expected type", disp ty)]
+  
+      
+
+
+-- Note that we can only prove injectivity for positions that are not erased.
+
+
+
+mkCase :: Expr -> Expr -> Expr -> Int -> Expr -> TCMonad Expr
+mkCase (Con tc) (Con dc) dt idx scrutinee = do
+  (tcTele,constructors) <- lookupTypeCons tc
+
+  let numTypeParams = length $ fTele (:) [] tcTele
+  
+  alts <- mapM (mkAlt numTypeParams) constructors
+  let expr = Pos tacticPosition $
+       Case scrutinee Nothing  
+                    (bind (s2n "_eq") alts)
+  return expr
+  where
+    mkAlt :: Int -> (EName, (Int,Expr)) -> TCMonad (Bind (String,[(EName,Stage)]) Expr)
+    mkAlt numTypeParams (c,(_,ty)) = do
+        (piArgs,_) <- unrollPi ty
+        let pstages = [stage | (_,stage,_,_) <- piArgs]
+        pnames <- sequence $ [fresh (string2Name ("pvar_" ++ (name2String n))) | (n,_,_,_) <- piArgs]
+        let pvars = zip pnames pstages
+                    
+        if c /= dc
+           then return $ bind (name2String c,pvars) (Abort dt)
+           else do
+               let (prjVar,prjStage) = pvars !! (idx - numTypeParams)
+               when (prjStage == Static) $
+                 typeError
+                    "When calculating a projection for injectivity reasoning, can't project a static argument."
+                    []
+               return $ bind (name2String c,pvars)  (Var prjVar)
+
+mkCase tc dc _ _ _ = do
+  typeError "mkCase in the injective tactic requires that both the type and data representations to be constructors. "
+    [(disp "The type constructor representation", disp tc)
+    ,(disp "The data constructor representation", disp dc)]
+
+  
 
 
 

@@ -416,12 +416,18 @@ instance Display Tactic where
     ds <- mapM display xs
     return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
 
+  display (t@(Injective x)) = do
+    dx <- dParen (precedence t) x
+    return $ text "injective" <+> dx
+    
+
   precedence (Sym _) = 5
   precedence (Trans _ _) = 5
   precedence Refl = 5
   precedence (Equiv _) = 5
   precedence (MoreJoin _) = 5
   precedence (Autoconv _) = 5
+  precedence (Injective _) = 5
   
 
 linearizeLet :: 

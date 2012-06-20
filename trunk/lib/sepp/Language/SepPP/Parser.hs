@@ -250,7 +250,7 @@ sepPPStyle = haskellStyle {
             "LogicalKind","Form", "Type","Pi",
             "ord","ordtrans",
             "let","in",
-            "sym","symm","trans","refl", "tcast",
+            "injective","sym","symm","trans","refl", "tcast",
             "set", -- for flags
             "Theorem", "Program", "Inductive", "Recursive",
             "infix", "infixl", "infixr", "pre", "post",
@@ -549,6 +549,10 @@ autoconvExpr = do
   reserved "autoconv"
   Tactic <$> Autoconv <$> innerExpr
 
+injectiveExpr :: Parser Expr
+injectiveExpr = do
+  reserved "injective"
+  Tactic <$> Injective <$> innerExpr
 
 natExpr :: ParsecT String u Identity Expr
 natExpr = do
@@ -752,6 +756,7 @@ innerExpr = wrapPos $
               ,morejoinExpr
               ,equivExpr
               ,autoconvExpr
+              ,injectiveExpr
 
               ,varOrCon <?> "Identifier"
               ,parens expr <?> "Parenthesized Expression"

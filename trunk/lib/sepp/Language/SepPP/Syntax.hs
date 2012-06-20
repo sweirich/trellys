@@ -152,6 +152,7 @@ data Tactic = Sym Expr
             | Trans Expr Expr 
             | MoreJoin [Expr] 
             | Equiv Integer
+            | Injective Expr 
             | Autoconv Expr deriving (Show,Typeable)
 
 tacticPosition :: SourcePos
@@ -364,7 +365,7 @@ tacticChildren (MoreJoin es) = es
 tacticChildren Refl = []
 tacticChildren (Equiv _) = []
 tacticChildren (Autoconv t) = [t]
-
+tacticChildren (Injective t) = [t]
 
 
 childrenTele :: Tele -> [Expr]
