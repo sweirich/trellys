@@ -362,6 +362,38 @@ instance Display Expr where
                 parens (dl <> comma <+> dr) <+> text "in" $$
                nest 2 dbody
   display (Pos _ t) = display t
+
+
+  display (Tactic t) = display t
+
+  -- display e = error $ "display: " ++ show e
+
+  precedence (Pos _ t) = precedence t
+  precedence (Var _) = 12
+  precedence (Con _) = 12
+  precedence (Type) = 12
+  precedence (Escape _) = 11
+  precedence (App _ _ _) = 10
+  precedence (Equal _ _) = 9
+  precedence (IndLT _ _) = 8
+  precedence (Terminates _) = 7
+  precedence (Ann _ _) = 6
+
+  precedence (Contra _) = 5
+  precedence (Val _ ) = 5
+  precedence (ContraAbort _ _) = 5
+  precedence (Ord _) = 5
+  precedence (OrdTrans _ _) = 5
+  precedence (Aborts _) = 5
+  precedence (Tactic t) = precedence t
+
+  precedence (Pi Dynamic _) = 4
+  precedence (Pi Static _) = 4
+  precedence _ = 0
+
+
+
+instance Display Tactic where
   display t@(Sym x) = do
     dx <- dParen (precedence t) x
     return $ text "sym" <+> dx
@@ -384,34 +416,13 @@ instance Display Expr where
     ds <- mapM display xs
     return $ text "morejoin" <+> braces (hcat (punctuate comma ds))
 
-
-
-  -- display e = error $ "display: " ++ show e
-
-  precedence (Pos _ t) = precedence t
-  precedence (Var _) = 12
-  precedence (Con _) = 12
-  precedence (Type) = 12
-  precedence (Escape _) = 11
-  precedence (App _ _ _) = 10
-  precedence (Equal _ _) = 9
-  precedence (IndLT _ _) = 8
-  precedence (Terminates _) = 7
-  precedence (Ann _ _) = 6
-
-  precedence (Contra _) = 5
-  precedence (Val _ ) = 5
-  precedence (ContraAbort _ _) = 5
-  precedence (Ord _) = 5
-  precedence (OrdTrans _ _) = 5
-  precedence (Aborts _) = 5
   precedence (Sym _) = 5
   precedence (Trans _ _) = 5
   precedence Refl = 5
-
-  precedence (Pi Dynamic _) = 4
-  precedence (Pi Static _) = 4
-  precedence _ = 0
+  precedence (Equiv _) = 5
+  precedence (MoreJoin _) = 5
+  precedence (Autoconv _) = 5
+  
 
 linearizeLet :: 
   LFresh m => Expr -> m ([(Stage, (EName, Maybe EName, Embed Expr))], Expr)

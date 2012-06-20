@@ -355,10 +355,10 @@ erase (Let stage binding) = do
 
   where isProof (Pos _ e)  = isProof e
         isProof (Ann e _) = isProof e
-        isProof (MoreJoin _) = True
+        isProof (Tactic (MoreJoin _)) = True
         isProof (Join _ _) = True
-        isProof (Sym _) = True
-        isProof (Trans _ _) = True
+        isProof (Tactic (Sym _)) = True
+        isProof (Tactic (Trans _ _)) = True
         isProof (ConvCtx s _) = isProof s
         isProof (TerminationCase _ _) = True -- Wrong. This disallows terminationcase in a program.
         -- FIXME: This should check the syntactic class of the  definiens, not this hacky definition.
@@ -372,7 +372,7 @@ erase (Ann t _) = erase t
 erase (Abort _) = return EAbort
 erase (Show t) = erase t
 erase (TCast t _) = ETCast <$> erase t
-erase (Autoconv t) = erase t
+erase (Tactic (Autoconv t)) = erase t
 
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show (downAll t)

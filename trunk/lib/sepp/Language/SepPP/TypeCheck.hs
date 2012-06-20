@@ -377,7 +377,7 @@ check mode t@(Case s pf binding) expected = do
             (consArgs,_) <- unrollPi consTy
             -- Split into a 'telescope' for type constructor args, and
             -- a 'telescope' for type constructor args
-            let (tyArgs,conArgsFormal) = splitAt (length args) consArgs
+            let (_,conArgsFormal) = splitAt (length args) consArgs
 
             -- Check that we have the right # of pattern variables.
             unless (length vars == length conArgsFormal) $ do
@@ -411,7 +411,7 @@ check mode t@(Case s pf binding) expected = do
 
  
             -- Build a typing environment
-            let penv = [(pvar,sub ty)| (pvar,_) <- vars | (n,_,ty,_) <- conArgsFormal]
+            let penv = [(pvar,sub ty)| (pvar,_) <- vars | (_,_,ty,_) <- conArgsFormal]
 
             -- Check the body of the branch
             aty <- foldr (\(v,ty) m -> extendBinding v ty True m) 
@@ -475,7 +475,7 @@ check ProofMode tm@(Join _ _) (Just ty) = do
      ]
 
 -- MoreJoin
-check mode t@(MoreJoin ps) (Just eq@(Equal t0 t1)) = do
+check mode t@(Tactic (MoreJoin ps)) (Just eq@(Equal t0 t1)) = do
   unless (mode `elem` [ProofMode,ProgMode]) $
      typeError "Morejoin is only valid in proof and programming mode."
                [(text "The Term", disp t)
@@ -935,7 +935,7 @@ check ProofMode (Aborts c) expected = withEscapeContext StrictContext $ do
 
 
 -- Sym
-check mode (Sym t) expected = do
+check mode (Tactic (Sym t)) expected = do
   ensure (mode `elem` [ProgMode, ProofMode]) $
          "Can't check sym in mode" <++> show mode
   ty <- check ProofMode t Nothing
@@ -949,7 +949,7 @@ check mode (Sym t) expected = do
         []
 
 -- Refl
-check _ Refl (Just ty) = do
+check _ (Tactic Refl) (Just ty) = do
     case down ty of
       (Equal t0 t1) -> do
         unless (t0 `aeq` t1) $
@@ -964,7 +964,7 @@ check _ Refl (Just ty) = do
 
 
 
-check mode (Trans t1 t2) expected = do
+check mode (Tactic (Trans t1 t2)) expected = do
   ty1@(Equal a b) <- checkEqual mode t1
   ty2@(Equal b' c) <- checkEqual mode t2
   withErrorInfo "" [(text "The first equality", disp ty1),
@@ -1001,7 +1001,7 @@ check mode (Trans t1 t2) expected = do
 
   return (Equal a c)
 
-check mode (Equiv depth) (Just expect@(Equal lhs rhs)) = do
+check mode (Tactic (Equiv depth)) (Just expect@(Equal lhs rhs)) = do
   pfs <- equate depth
   -- ctx <- asks gamma
   -- let eqprfs = [(Var n,downAll t) | (n,(t,_)) <- ctx]
@@ -1017,7 +1017,7 @@ check mode (Equiv depth) (Just expect@(Equal lhs rhs)) = do
                ] ++
                [(disp n, disp ty) | (n,ty) <- pfs])
 
-check mode (Autoconv tm) (Just expected) = do
+check mode (Tactic (Autoconv tm)) (Just expected) = do
   ty <- check mode tm Nothing
   eqprfs <- equate 2
   ctx <- same eqprfs (downAll ty) (downAll expected)
@@ -1025,12 +1025,15 @@ check mode (Autoconv tm) (Just expected) = do
   emit $  "Autoconv works with" <++> tm'
   check mode tm' (Just expected)
 
+
+
+
+
 check mode term expected = 
   typeError  "Unhandled typechecking case."
           [(text "mode", text $ show mode)
           ,(text "term", disp term)
           ,(text "expected",disp expected)]
-
 
 
 checkEqual :: CheckMode -> Expr -> TCMonad Expr
@@ -1098,12 +1101,12 @@ synClass (Ind _) = return ProofClass
 synClass (EIntro _ _) = return ProofClass
 synClass (EElim _ _) = return ProofClass
 synClass (Aborts _) = return ProofClass
-synClass (Sym _) = return ProofClass
-synClass (Equiv _) = return ProofClass
-synClass Refl = return ProofClass
-synClass (Trans _ _) = return ProofClass
-synClass (Autoconv t) = synClass t
-synClass (MoreJoin _) = return ProofClass
+synClass (Tactic (Sym _)) = return ProofClass
+synClass (Tactic (Equiv _)) = return ProofClass
+synClass (Tactic Refl) = return ProofClass
+synClass (Tactic (Trans _ _)) = return ProofClass
+synClass (Tactic (Autoconv t)) = synClass t
+synClass (Tactic (MoreJoin _)) = return ProofClass
 
 synClass WildCard = fail "Can't take the syntactic class of a wildcard!"
 synClass (Ann e _) = synClass e
@@ -1305,17 +1308,17 @@ escCopy f (Let stage binding) = do
 escCopy f (Aborts e) = do
   e' <- escCopy f e
   return $ Aborts e'
-escCopy f (Sym e) = do
+escCopy f (Tactic (Sym e)) = do
   e' <- escCopy f e
-  return $ Sym e'
-escCopy _ Refl = return Refl
-escCopy f (Trans l r) = do
+  return $ Tactic (Sym e')
+escCopy _ (Tactic Refl) = return $ Tactic Refl
+escCopy f (Tactic (Trans l r)) = do
   l' <- escCopy f l
   r' <- escCopy f r
-  return $ Trans l' r'
-escCopy f (MoreJoin ps) = do
+  return $ Tactic $ Trans l' r'
+escCopy f (Tactic (MoreJoin ps)) = do
   ps' <- mapM (escCopy f) ps
-  return $ MoreJoin ps'
+  return $ Tactic $ MoreJoin ps'
 escCopy f (Ann l r) = do
   l' <- escCopy f l
   r' <- escCopy f r
@@ -1368,18 +1371,17 @@ copyEqualInEsc b x = escCopy f x
        
 
 
-
 -- Equational reasoning tactic
 equate ::  Integer -> TCMonad [(Expr, Expr)]
 equate depth = do
   ctx <- asks gamma
   let ctx' = [(Var n,downAll t) | (n,(t,_)) <- ctx]
-      start = concat [[(n,ty),(Sym n, Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- ctx']
+      start = concat [[(n,ty),(Tactic (Sym n), Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- ctx']
       pfs = iterate step start !! (fromIntegral depth)
   return pfs
   where trans (t1,Equal l1 r1) (t2,Equal l2 r2)
           | l1 `aeq` r2 = []
-          | r1 `aeq` l2  = [(Trans t1 t2, (Equal l1 r2))] -- , (Sym (Trans t1 t2), (Equal r2 l1))]
+          | r1 `aeq` l2  = [(Tactic $ Trans t1 t2, (Equal l1 r2))] -- , (Sym (Trans t1 t2), (Equal r2 l1))]
           | otherwise = []
         trans _ _ = []
         step cs = cs ++ concat [trans p1 p2 | p1 <- cs, p2 <- cs]
@@ -1409,7 +1411,9 @@ instance Same EName where
 instance Same a => Same (Maybe a)
 instance (Same a, Same  b) => Same (Rebind a b)
 instance Same Char
+instance Same Tactic
 -- No idea why this is required...
+
 instance (Same t) => Same (R t)
 
 data SameD t =
@@ -1451,3 +1455,9 @@ same1 (r :+: rs) vars (p1 :*: t1) (p2 :*: t2) = do
 
 
 
+
+
+
+
+
+  

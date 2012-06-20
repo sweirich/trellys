@@ -486,7 +486,7 @@ joinExpr = do
 morejoinExpr :: Parser Expr
 morejoinExpr = do
   reserved "morejoin"
-  MoreJoin <$> braces (commaSep1 innerExpr)
+  Tactic <$> MoreJoin <$> braces (commaSep1 innerExpr)
 
 
 valExpr :: Parser Expr
@@ -525,31 +525,29 @@ showExpr = do
 symExpr :: Parser Expr
 symExpr = do
   reserved "sym" <|> reserved "symm"
-  Sym <$> innerExpr
+  Tactic <$> Sym <$> innerExpr
 
 reflExpr :: ParsecT String u Identity Expr
 reflExpr = do
   reserved "refl"
-  return $ Refl
+  return $ Tactic Refl
 
 transExpr :: Parser Expr
 transExpr = do
   reserved "trans"
-  Trans <$> innerExpr <*> innerExpr
+  Tactic <$> (Trans <$> innerExpr <*> innerExpr)
 
 
 equivExpr :: ParsecT String u Identity Expr
 equivExpr = do
   reserved "equiv"
-  Equiv <$> integer
+  Tactic <$> Equiv <$> integer
 
 
 autoconvExpr :: Parser Expr
 autoconvExpr = do
   reserved "autoconv"
-  Autoconv <$> innerExpr
-
-
+  Tactic <$> Autoconv <$> innerExpr
 
 
 natExpr :: ParsecT String u Identity Expr

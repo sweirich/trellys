@@ -3,7 +3,7 @@
   UndecidableInstances, TypeFamilies  #-}
 {-# OPTIONS_GHC -fno-warn-orphans -fno-warn-name-shadowing #-}
 module Language.SepPP.Syntax (
-  Decl(..),Module(..),Expr(..),
+  Decl(..),Module(..),Expr(..),Tactic(..),
   Stage(..),Kind(..),Alt,
   EName, ModName,
   EExpr(..), EEName,
@@ -13,7 +13,8 @@ module Language.SepPP.Syntax (
   dynArrow,
   okCtx,
   SynFun(..),
-  noTCast
+  noTCast,
+  tacticPosition, tacticChildren
   ) where
 
 import Unbound.LocallyNameless hiding (Con,Val,Equal,Refl)
@@ -135,19 +136,26 @@ data Expr = Var EName                                 -- Expr, Proof
 
           | Aborts Expr
 
-          | Sym Expr -- Should be a derived form
-          | Refl -- Should be a derived form
-          | Trans Expr Expr -- Should be a derived form
-          | MoreJoin [Expr] -- Should be a derived form
-          | Equiv Integer -- Should be a derived form
-          | Autoconv Expr
 
           | WildCard -- For marking arguments that should be inferred.
 
           | Ann Expr Expr  -- Predicate, Proof, Expr (sort of meta)
           | Pos SourcePos Expr
+
+
+          | Tactic Tactic
           deriving (Show,Typeable)
 
+
+data Tactic = Sym Expr
+            | Refl
+            | Trans Expr Expr 
+            | MoreJoin [Expr] 
+            | Equiv Integer
+            | Autoconv Expr deriving (Show,Typeable)
+
+tacticPosition :: SourcePos
+tacticPosition = newPos "tactic" 0 0
 
 ---------------------------------------------------------
 
@@ -155,7 +163,7 @@ type Alt = Bind (String, [(EName,Stage)]) Expr
 $(derive_abstract [''SourcePos])
 instance Alpha SourcePos
 
-$(derive [''Expr, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
+$(derive [''Expr, ''Tactic, ''Module, ''Decl, ''Stage, ''Kind,''Tele])
 
 
 instance Alpha Expr where
@@ -170,6 +178,7 @@ instance Alpha Decl
 instance Alpha Stage
 instance Alpha Kind
 instance Alpha Tele
+instance Alpha Tactic
 
 instance Subst Expr Expr where
   isvar (Var x) = Just (SubstName x)
@@ -179,7 +188,7 @@ instance Subst Expr Stage
 instance Subst Expr Kind
 instance Subst Expr SourcePos
 instance Subst Expr Tele
-
+instance Subst Expr Tactic
 
 -- | isStrictContext finds a term in a strict context.  If it finds
 -- one, it returns the term, along with the continuation of the term.
@@ -336,9 +345,6 @@ children (Escape x) = [x]
 children (Let _ binding) = [t,body]
   where ((_,_,Embed t),body) = unsafeUnbind binding
 children (Aborts x) = [x]
-children (Sym x) = [x]
-children (Trans x y) = [x,y]
-children (MoreJoin es) = es
 children (Ann x y) = [x,y]
 children (Pos _ e) = children e
 children (Exists binding) = [ty,body]
@@ -346,8 +352,19 @@ children (Exists binding) = [ty,body]
 children (EIntro e1 e2) = [e1,e2]
 children (EElim expr binding) = [expr,body]
   where (_,body) = unsafeUnbind binding
+children (Tactic t) = tacticChildren t          
 
 children _ = []
+
+-- | Get the children of tactics.
+tacticChildren :: Tactic -> [Expr]
+tacticChildren (Sym x) = [x]
+tacticChildren (Trans x y) = [x,y]
+tacticChildren (MoreJoin es) = es
+tacticChildren Refl = []
+tacticChildren (Equiv _) = []
+tacticChildren (Autoconv t) = [t]
+
 
 
 childrenTele :: Tele -> [Expr]
