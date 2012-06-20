@@ -57,4 +57,3 @@ testcase2 = "Tests/unittests/IndVRDemo.sepp"
 -- less1 = IndLT (var "x") (var "y")
 -- eq1 = Equal (var "x") (var "y")
 
-test p s =  print (disp (parse2 p s))

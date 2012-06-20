@@ -6,7 +6,7 @@ import Language.SepPP.PrettyPrint
 import Language.SepPP.Options
 
 
-import Unbound.LocallyNameless( Embed(..),Name, Fresh,FreshMT,runFreshMT,aeq,substs,subst,embed, unrebind,translate, bind, unbind, string2Name)
+import Unbound.LocallyNameless( Bind, Embed(..),Name, Fresh,FreshMT,aeq,subst, unrebind,translate, bind, unbind)
 import Generics.RepLib(mkT,everywhere)
 import Text.PrettyPrint
 import Data.Typeable
@@ -17,7 +17,7 @@ import Control.Exception(Exception)
 import Control.Applicative hiding (empty)
 import Text.Parsec.Pos
 import Data.List(find)
-import qualified Data.Map as M
+
 
 -- * The typechecking monad
 
@@ -29,6 +29,9 @@ newtype TCMonad a =
 
 -- ** The Environment
 data EscapeContext = LeftContext | RightContext | StrictContext | NoContext
+
+
+withEscapeContext ::  EscapeContext -> TCMonad a -> TCMonad a
 withEscapeContext c = local (\env -> env { escapeContext = c })
 
 -- The typing context contains a mapping from variable names to types, with
@@ -41,8 +44,11 @@ data Env = Env { gamma :: [(EName,(Expr,Bool))]   -- (var, (type,isValue))
                -- rewrites and termproofs are used by morejoin to drive reduction.
                , rewrites :: [(EExpr,EExpr)]
                , termProofs :: [EExpr]}
+
+emptyEnv :: Env
 emptyEnv = Env {gamma = [], sigma = [], delta=[],rewrites=[],termProofs=[],escapeContext = NoContext}
 
+combEnv :: Env -> Env -> Env
 combEnv a b = Env { gamma = gamma a ++ gamma b
                   , sigma = sigma a ++ sigma b
                   , delta = delta a ++ delta b
@@ -59,16 +65,21 @@ instance Disp Env where
 
 
 -- | Add a new binding to an environment
+extendEnv :: EName -> Expr -> Bool -> Env -> Env
 extendEnv n ty isVal  e@(Env {gamma}) = e{gamma = (n,(ty,isVal)):gamma}
+
+extendDef :: EName -> Expr -> Expr -> Bool -> Env -> Env
 extendDef n ty def isVal e@(Env {sigma}) =
   extendEnv n ty isVal e { sigma = (n,def):sigma }
+
+extendTypes :: EName -> Tele -> [(EName, (Int, Expr))] -> Env -> Env
 extendTypes n tele cs e@(Env {delta}) = e{delta=(n,(tele,cs)):delta}
 
 -- Functions for working in the environment
 lookupBinding :: EName -> TCMonad (Expr,Bool)
 lookupBinding n = do
   env <- asks gamma
-  let fmtEnv = vcat [disp n <> colon <+> disp ty | (n,(ty,_)) <- env]
+  let fmtEnv = vcat [disp n' <> colon <+> disp ty | (n',(ty,_)) <- env]
   maybe (die $ "Can't find variable " <++> show n $$$ fmtEnv) return (lookup n env)
 
 extendBinding :: EName -> Expr -> Bool -> TCMonad a -> TCMonad a
@@ -79,7 +90,7 @@ extendBinding n ty isVal m = do
 extendTele :: Tele -> TCMonad a -> TCMonad a
 extendTele Empty m = m
 extendTele (TCons binding) m = extendBinding n ty False $ extendTele rest m
-  where ((n,st,Embed ty,_),rest) = unrebind binding
+  where ((n,_,Embed ty,_),rest) = unrebind binding
 
 extendDefinition :: EName -> Expr -> Expr -> Bool -> TCMonad a -> TCMonad a
 extendDefinition n ty def isVal m = do
@@ -140,7 +151,7 @@ lookupRewrite e = do
   e' <- noTCast <$> substDefsErased e
   rs <- asks rewrites
   -- FIXME: Is alpha-equality is too weak? Do we need actual equality?
-  case find (\(l,r) -> aeq e' l || aeq e l) rs of
+  case find (\(l,_) -> aeq e' l || aeq e l) rs of
     Just (_,r) -> return (Just r)
     Nothing -> return Nothing
 
@@ -181,7 +192,7 @@ instance Disp TypeError where
        hang (pos positions) 2 (summary $$ nest 2 detailed $$  vcat terms)
     where info = reverse rinfo
           positions = [el | el@(ErrLoc _ _) <- info]
-          messages = [ei | ei@(ErrInfo d _) <- info]
+          messages = [ei | ei@(ErrInfo _ _) <- info]
           details = concat [ds | ErrInfo _ ds <- info]
 
           pos ((ErrLoc sp _):_) = disp sp
@@ -192,28 +203,39 @@ instance Disp TypeError where
           terms = [hang (text "In the term") 2 (disp t) | ErrLoc _ t <- take 4 positions]
 
 
+addErrorPos ::  SourcePos -> Expr -> TypeError -> TCMonad a
 addErrorPos p t (ErrMsg ps) = throwError (ErrMsg (ErrLoc p t:ps))
 
-err msg = throwError (strMsg msg)
+-- err msg = throwError (strMsg msg)
 
+ensure :: Disp d => Bool -> d -> TCMonad ()
 ensure p m = do
   unless p $ die m
 
+die :: Disp d => d -> TCMonad a
 die msg = do
   typeError (disp msg) []
 
 
+typeError :: Disp d => d -> [(Doc, Doc)] -> TCMonad a
 typeError summary details = throwError (ErrMsg [ErrInfo (disp summary) details])
 
+addErrorInfo :: Disp d => d -> [(Doc, Doc)] -> TypeError -> TypeError
 addErrorInfo summary details (ErrMsg ms) = ErrMsg (ErrInfo (disp summary) details:ms)
+
+withErrorInfo :: (Disp d) => d -> [(Doc, Doc)] -> TCMonad a -> TCMonad a
 withErrorInfo summary details m = m `catchError` (throwError . addErrorInfo summary details)
 
+
+emit :: (Show a, MonadIO m) => a -> m ()
 emit m = liftIO $ print m
 
-actual `sameType` Nothing = return ()
+sameType :: Expr -> Maybe Expr -> TCMonad ()
+_ `sameType` Nothing = return ()
 actual `sameType` (Just expected) = actual `expectType` expected
 
 
+expectType :: Expr -> Expr -> TCMonad ()
 actual `expectType` expected = do
   printAST <- getOptPrintAST
   -- We erase tcasts when comparing types
@@ -225,14 +247,15 @@ actual `expectType` expected = do
                    , (text "Actual AST", text $ show $ downAll actual)
                    ]
        ast False = []
-
-       eraseTCast t = everywhere (mkT f') t
-         where f' (TCast t _) = t
-               f' t = t
+       eraseTCast = everywhere (mkT unTCast) 
+         where unTCast (TCast t _) = t
+               unTCast t = t
 
 
 (<++>) :: (Show t1, Show t2, Disp t1, Disp t2) => t1 -> t2 -> Doc
 t1 <++> t2 = disp t1 <+> disp t2
+
+($$$) :: (Disp d, Disp d1) => d -> d1 -> Doc
 t1 $$$ t2 =  disp t1 $$ disp t2
 
 
@@ -240,51 +263,46 @@ t1 $$$ t2 =  disp t1 $$ disp t2
 -------------------------------------
 -- syntactic Value
 
-lift2 f c1 c2 = do { x<-c1; y<-c2; return(f x y)}
-lift1 f c1 = do { x<-c1; return(f x)}
-
-
+synValue :: Expr -> TCMonad Bool
 synValue (Var x) =
-  do (term,valuep) <- lookupBinding x
+  do (_,valuep) <- lookupBinding x
      return valuep
-synValue (Con c) = return True
-synValue (Formula n) = return True
+synValue (Con _) = return True
+synValue (Formula _) = return True
 synValue Type = return True
-synValue (Pi stg bdngs) = return True
-synValue (Lambda k stg bndgs) = return True
-synValue (Pos n t) = synValue t
-synValue (Ann t typ) = synValue t
+synValue (Pi _ _) = return True
+synValue (Lambda _ _ _) = return True
+synValue (Pos _ t) = synValue t
+synValue (Ann t _) = synValue t
 synValue (Rec _) = return True
 synValue (TCast _ _) = return True
-synValue (App f stage x) = lift2 (&&) (constrApp f) (argValue stage)
-  where constrApp (Con c) = return True
-        constrApp (App f Static x) = constrApp f
-        constrApp (App f Dynamic x) = lift2 (&&) (constrApp f) (synValue x)
-        constrApp (Pos x t) = constrApp t
+synValue (App f stage x) = liftM2 (&&) (constrApp f) (argValue stage)
+  where constrApp (Con _) = return True
+        constrApp (App f' Static _) = constrApp f'
+        constrApp (App f' Dynamic x') = liftM2 (&&) (constrApp f') (synValue x')
+        constrApp (Pos _ t) = constrApp t
         constrApp _ = return False
-        argVal Dynamic = synValue x
+        argValue Dynamic = synValue x
         argValue _ = return True
-synValue x = return False
+synValue _ = return False
 
 
 -- This is the isValue judgement on erased terms. It allows us to judge
 -- variables marked as 'values' in the type environment to be values.
+erasedSynValue :: EExpr -> TCMonad Bool
 erasedSynValue (EVar x) = do
-  do (term,valuep) <- lookupBinding (translate x)
+  do (_,valuep) <- lookupBinding (translate x)
      return valuep
-erasedSynValue (ETCast t) = return True
-erasedSynValue (ECon c) = return True
+erasedSynValue (ETCast _) = return True
+erasedSynValue (ECon _) = return True
 erasedSynValue EType = return True
--- erasedSynValue (Pi stg bdngs) = return True
-erasedSynValue (ELambda bndgs) = return True
--- erasedSynValue (Pos n t) = synValue t
--- erasedSynValue (Ann t typ) = synValue t
+erasedSynValue (ELambda _) = return True
 erasedSynValue (ERec _) = return True
-erasedSynValue (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
-  where constrApp (ECon c) = return True
-        constrApp (EApp f x) = lift2 (&&) (constrApp f) (erasedSynValue x)
+erasedSynValue (EApp f x) = liftM2 (&&) (constrApp f) (erasedSynValue x)
+  where constrApp (ECon _) = return True
+        constrApp (EApp f' x') = liftM2 (&&) (constrApp f') (erasedSynValue x')
         constrApp _ = return False
-erasedSynValue x = return False
+erasedSynValue _ = return False
 
 
 
@@ -316,7 +334,7 @@ erase (Rec binding) = do
     where eraseTele :: Monad m => Tele -> m [EEName]
           eraseTele Empty = return []
           eraseTele (TCons rebinding) = do
-            let ((n,stage,Embed ty,inf),rest) = unrebind rebinding
+            let ((n,stage,Embed _ty,_inf),rest) = unrebind rebinding
             ns <- eraseTele rest
             case stage of
               Dynamic -> return (translate n:ns)
@@ -342,23 +360,25 @@ erase (Let stage binding) = do
         isProof (Sym _) = True
         isProof (Trans _ _) = True
         isProof (ConvCtx s _) = isProof s
-        isProof (TerminationCase _ body) = True -- Wrong. This disallows terminationcase in a program.
+        isProof (TerminationCase _ _) = True -- Wrong. This disallows terminationcase in a program.
         -- FIXME: This should check the syntactic class of the  definiens, not this hacky definition.
         isProof _ = False
-
-erase (EElim s binding) = do
-  ((fst,snd),body) <- unbind binding
+erase (EElim _ binding) = do
+  ((_,_),body) <- unbind binding
   erase body
 
 erase (ConvCtx v _) = erase v
 erase (Ann t _) = erase t
 erase (Abort _) = return EAbort
 erase (Show t) = erase t
-erase (TCast t p) = ETCast <$> erase t
+erase (TCast t _) = ETCast <$> erase t
+erase (Autoconv t) = erase t
 
 erase t =  do
   fail $  "The erasure function is not defined on: " ++ show (downAll t)
 
+eraseAlt :: (Applicative m, Fresh m) =>
+             Bind (String, [(EName,Stage)]) Expr ->  m (Bind (String, [EEName]) EExpr)
 eraseAlt binding = do
   ((c,vs),body) <- unbind binding
   -- erasePatVars looks at _all_ data constructors, which isn't
