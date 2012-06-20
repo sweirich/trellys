@@ -321,10 +321,12 @@ instance Display Expr where
               nest 2 dBody]
 
 
-  display (t@(Let binding)) = do
+  display (t@(Let stage binding)) = do
     (ds,body) <- linearizeLet t
-    let f (x,y,Embed z) =
-         do dx <- display x
+    let f (stage, (x,y,Embed z))= do
+            dx <- case stage of
+               Static -> brackets <$> display x
+               Dynamic -> display x
             dy <- case y of
                     Just var -> brackets <$> display var
                     Nothing -> return empty
@@ -374,6 +376,11 @@ instance Display Expr where
   display (t@(Equiv x)) = do
     return $ text "equiv" <+> integer x
 
+  display (t@(Autoconv x)) = do
+    dx <- dParen (precedence t) x
+    return $ text "autoconv" <+> dx
+
+
   display (t@Refl) = return $ text "refl"
   display t@(Trans t1 t2) = do
     d1 <- dParen (precedence t) t1
@@ -415,10 +422,10 @@ instance Display Expr where
 
 
 linearizeLet (Pos _ t) = linearizeLet t
-linearizeLet (Let binding) =
+linearizeLet (Let stage binding) =
   lunbind binding $ \(triple,body) -> do
      (ds,b) <- linearizeLet body
-     return(triple:ds,b)
+     return((stage,triple):ds,b)
 linearizeLet x = return ([],x)
 
 -- bindingWrap adds the correct stage annotation for an abstraction binding.

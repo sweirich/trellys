@@ -460,6 +460,11 @@ equivExpr = do
   reserved "equiv"
   Equiv <$> integer
 
+autoconvExpr = do
+  reserved "autoconv"
+  Autoconv <$> innerExpr
+
+
 
 
 natExpr = do
@@ -522,11 +527,18 @@ indExpr = do
 
 
 letdecls =
-  semiSep1 (do x <- string2Name <$> identifier
+  semiSep1 (do (x,stage) <- nm
                y <- option Nothing (Just <$> brackets (string2Name <$> identifier) <?> "name for let-binding equality")
                reservedOp "="
                z <- expr
-               return(x,y,z))
+               return(stage,x,y,z))
+  where nm =
+          do id <- brackets (string2Name <$> identifier)
+             return (id,Static)
+          <|>
+          do id <- string2Name <$> identifier
+             return (id,Dynamic)
+
 
 letExpr = do
   reserved "let"
@@ -538,7 +550,7 @@ letExpr = do
   reserved "in"
   body <- expr
   let letnest [] e = e
-      letnest ((x,y,z):ds) e = Let (bind (x,y,Embed z) (letnest ds e))
+      letnest ((stage,x,y,z):ds) e = Let stage (bind (x,y,Embed z) (letnest ds e))
   return $ letnest ds body -- Let (bind (x,y,Embed z) body)
 
 
@@ -642,6 +654,7 @@ innerExpr = wrapPos $
               ,reflExpr
               ,morejoinExpr
               ,equivExpr
+              ,autoconvExpr
 
 
               ,varOrCon <?> "Identifier"

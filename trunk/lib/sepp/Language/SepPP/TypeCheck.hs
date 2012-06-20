@@ -1,6 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
 NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
-PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables, TemplateHaskell #-}
+PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables,
+TemplateHaskell, RankNTypes, ConstraintKinds, MultiParamTypeClasses #-}
 
 module Language.SepPP.TypeCheck where
 
@@ -68,6 +69,7 @@ checkDef (AxiomDecl nm theorem) = do
 checkDef (ProofDecl nm theorem proof) = do
   emit $ "Checking proof" <++> nm
   lk <- predSynth' theorem
+  emit $ "Resulting logical kind is" <++> lk
   isLK <- lkJudgment lk
   ensure isLK ("Theorem is not a well-formed logical kind " <++> nm)
   proofAnalysis' proof theorem
@@ -152,7 +154,7 @@ lkJudgment (Forall binding) = do
 lkJudgment (Pos _ t) = lkJudgment t
 lkJudgment t = do
   typeError "Could not classify term as a logical kind"
-            [(text "The Expr", disp $ show t)]
+            [(text "The Expr", disp t)]
 
 guardLK t = do
   lk <- lkJudgment t
@@ -175,6 +177,7 @@ check mode (Ann t ty) expected = do
 
 check NoMode t Nothing = do
   mode <- synClass t
+  -- emit $ "Moving to mode" <++> show mode <++> "for" <++> t
   check (toMode mode) t Nothing
 
 check NoMode t (Just expected) = do
@@ -252,10 +255,13 @@ check PredMode (Forall binding) Nothing = do
            form <- extendBinding n t False (predSynth' body)
            (Formula j) <- guardFormula form
            return (Formula (max (i+1) j))
-    (Forall binding') -> do -- Pred_Forall4 rule
-           guardLK t
-           form <- extendBinding n t False (predSynth' body)
-           guardFormula form
+    -- (Forall binding') -> do -- Pred_Forall4 rule
+    --   emit $ "guardLK" <++> t
+    --   sc <- synClass t
+    --   emit  $ "class" <++> (show sc)
+    --   guardLK t
+    --   form <- extendBinding n t False (predSynth' body)
+    --   guardFormula form
 
     dom -> do
       cls <- synClass dom
@@ -272,6 +278,10 @@ check PredMode (Forall binding) Nothing = do
                  ty `expectType` Type
                  form <- extendBinding n t False (predSynth' body)
                  guardFormula form
+        LKClass -> do
+          emit "LKClass"
+          fail "miserably"
+
   where guardFormula t@(Formula i) = return t
         guardFormula _ = err "Not a formula"
 
@@ -403,6 +413,7 @@ check ProofMode (Lambda Form _ pfBinding)
   Just ((proofName,Embed pfTy),pfBody,(predName,Embed predTy,predInf),predBody) <-
     unbind2 pfBinding predBinding
 
+
   pfKind <- check NoMode pfTy Nothing
   -- cls <- getClassification pfTy
   -- -- emit $ disp pfTy <++> text (show cls)
@@ -451,7 +462,6 @@ check mode (Case s pf binding) expected = do
     _ -> typeError "Case expressions can only be checked in proof or prog mode."
          [(disp "The mode", disp $ show mode)]
 
-
   case unrollApp tyS of
     (Con tc, args) -> do
       -- Coverage check.
@@ -469,7 +479,6 @@ check mode (Case s pf binding) expected = do
                           [(disp "The constructor", disp c),
                            (disp "The type", disp tc)]
                          )
-
       -- Typecheck each alternative.
       let chkAlt alt = do
             ((cons,vars),body) <- unbind alt
@@ -499,7 +508,20 @@ check mode (Case s pf binding) expected = do
                    typeError "Pattern does not have the expected number of arguments."
                       [(disp "The constructor", disp cons)]
 
-            subTArgs args cargs (Con (string2Name cons))
+            aty <- subTArgs args cargs (Con (string2Name cons))
+            -- Make sure that the compile-time pattern variables (and the name of the equality proof)
+            -- do not occur free in the erasure.
+            when (mode == ProgMode) $ do
+               bodyVars :: [EEName] <- fv <$> erase body
+               let compileVars :: [EEName] = [translate n | (n,Static) <- vars]
+               let evars :: [EEName] = compileVars `intersect` bodyVars
+               unless (null evars) $ do
+                 typeError "The erased pattern variables appear free in a case alternative."
+                     [(disp "The vars", cat $ punctuate comma (map disp evars)) ]
+               return ()
+            return aty
+
+
       -- Make sure all branches have the same type.
       atys <- mapM chkAlt alts
 
@@ -508,6 +530,8 @@ check mode (Case s pf binding) expected = do
         [l] -> return l
         ls -> err "Types of case alternatives do not match"
 
+    (h,args) -> typeError "Could not unroll an application to a constructor."
+                    [(disp "The head", disp h)]
 
 -- TerminationCase
 check mode t@(TerminationCase s binding) expected = do
@@ -889,15 +913,21 @@ check mode (Escape t) expected = do
 
 
 -- Let
-check mode (Let binding) expected = do
+check mode (Let stage binding) expected = do
     unless (mode `elem` [ProofMode,ProgMode]) $
            die $ "Let expressions cannot be checked in" <++> show mode <++> "mode."
     ((n,pf,Embed t),body) <- unbind binding
 
     ty' <- check NoMode t Nothing
 
-    -- what is the value annotation for this?
-    extendBinding n ty' True $
+    -- In proofs, programmatic abbreviations are not values
+    cls <- synClass ty'
+    let isVal = case mode of
+          ProofMode -> cls /= ProgClass
+          ProgMode -> True
+
+
+    extendBinding n ty' isVal $
      maybe id (\pf -> extendBinding pf (Equal (Var n) t) True) pf $
      check mode body expected
 
@@ -926,6 +956,25 @@ check ProofMode (EElim scrutinee binding) (Just pred) = do
 
     _ -> typeError "Scrutinee of exists elim must be an existential."
          [(text "Inferred type", disp stype)]
+
+
+check ProgMode (EElim scrutinee binding) expected = do
+  stype <- check ProofMode scrutinee Nothing
+  case down stype of
+    (Exists ebinding) -> do
+        ((n,Embed ty),epred) <- unbind ebinding
+
+        -- Is this necessary?
+        check ProgMode ty (Just Type)
+        extendBinding n ty False $ check PredMode epred (Just (Formula 0))
+        ((n',p),body) <- unbind binding
+        extendBinding n' ty False $
+          extendBinding p (subst n (Var n') epred) False $
+            check ProgMode body expected
+    _ -> typeError "Scrutinee of exists elim must be an existential."
+         [(text "Inferred type", disp stype)]
+
+
 
 check ProofMode (EIntro p1 p2) (Just res@(Exists ebinding)) = do
   ((n,Embed ty),epred) <- unbind ebinding
@@ -1011,11 +1060,13 @@ check mode (Trans t1 t2) expected = do
                     (text "The second equality", disp ty2)] $ do
   case fmap down expected of
     Just (Equal ty0 ty1) -> do
-       ensure (a `aeq` ty0) $
-                "When checking a trans, the LHS of first equality" $$$
-                a $$$ "does not match the LHS of the expected type." $$$
-                ty0
-       ensure (c `aeq` ty1) $
+      unless (a `aeq` ty0) $
+         typeError ("When checking a trans, the LHS of first equality does not" ++
+                      "match the LHS of the expected type.")
+            [(disp "LHS of first equality", disp (show a)),
+             (disp "LHS of expected type", disp (show ty0))]
+
+      ensure (c `aeq` ty1) $
                 "When checking a trans, the RHS of second equality" $$$
                 c $$$ "does not match the RHS of the expected type" $$$
                 ty1
@@ -1033,10 +1084,11 @@ check mode (Trans t1 t2) expected = do
   return (Equal a c)
 
 check mode (Equiv depth) (Just expect@(Equal lhs rhs)) = do
-  ctx <- asks gamma
-  let eqprfs = [(Var n,downAll t) | (n,(t,_)) <- ctx]
-      start = concat [[(n,ty),(Sym n, Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- eqprfs]
-      pfs = iterate step start !! (fromIntegral depth)
+  pfs <- equate depth
+  -- ctx <- asks gamma
+  -- let eqprfs = [(Var n,downAll t) | (n,(t,_)) <- ctx]
+  --     start = concat [[(n,ty),(Sym n, Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- eqprfs]
+  --     pfs = iterate step start !! (fromIntegral depth)
   case find (\(_,ty) -> ty `aeq` expect) pfs of
     Just (n,_) -> do
       emit $ "Found  proof of" <++> expect <++> "as" <++> n
@@ -1046,15 +1098,14 @@ check mode (Equiv depth) (Just expect@(Equal lhs rhs)) = do
                ,(disp "RHS", disp rhs)
                ] ++
                [(disp n, disp ty) | (n,ty) <- pfs])
-  where isEq (Pos _ t) = isEq t
-        isEq (Equal _ _) = True
-        isEq _ = False
-        trans (t1,Equal l1 r1) (t2,Equal l2 r2)
-          | l1 `aeq` r2 = []
-          | r1 `aeq` l2  = [(Trans t1 t2, (Equal l1 r2))] -- , (Sym (Trans t1 t2), (Equal r2 l1))]
-          | otherwise = []
-        step cs = cs ++ concat [trans p1 p2 | p1 <- cs, p2 <- cs]
 
+check mode (Autoconv tm) (Just expected) = do
+  ty <- check mode tm Nothing
+  eqprfs <- equate 2
+  ctx <- same eqprfs (downAll ty) (downAll expected)
+  let tm' = ConvCtx tm ctx
+  emit $  "Autoconv works with" <++> tm'
+  check mode tm' (Just expected)
 
 check mode term expected = checkUnhandled mode term expected
 
@@ -1123,7 +1174,9 @@ synClass (Sym _) = return ProofClass
 synClass (Equiv _) = return ProofClass
 synClass Refl = return ProofClass
 synClass (Trans _ _) = return ProofClass
+synClass (Autoconv t) = synClass t
 synClass (MoreJoin _) = return ProofClass
+
 synClass WildCard = fail "Can't take the syntactic class of a wildcard!"
 synClass (Ann e _) = synClass e
 synClass (Pos _ e) = synClass e
@@ -1138,8 +1191,11 @@ synClass (Terminates _) = return PredClass
 synClass (IndLT _ _) = return PredClass
 synClass (Exists _) = return PredClass
 
-synClass (Formula _) = return PredClass -- could be lkclass?
-synClass (Forall _) = return PredClass -- could be lkclass?
+synClass (Formula _) = return LKClass -- could be lkclass?
+synClass (Forall binding) = do
+  ((n,Embed ty,_),body) <- unbind binding
+  synClass body
+--                       return PredClass -- could be lkclass?
 
 synClass (Show e) = synClass e
 synClass (Var v) = do
@@ -1150,6 +1206,10 @@ synClass (Var v) = do
         downOne PredClass = ProofClass
         downOne ProofClass = error $ "Can't classify with a proof"
         downOne ProgClass = ProgClass
+
+
+synClass t = typeError "Can't classify the syntactic category of an expression."
+             [(disp "The expression", disp t)]
 
 
 requireA t = do
@@ -1201,7 +1261,8 @@ join lSteps rSteps t1 t2 = do
   s1 <- substDefsErased t1'
   s2 <- substDefsErased t2'
 
-  unless (s1 `aeq` s2) $
+  unless (s1 `aeq` s2 || t1' `aeq` t2') $ do
+         showRewrites
          typeError "Terms are not joinable."
                    [(text "LHS steps", integer lSteps)
                    ,(text "RHS steps", integer rSteps)
@@ -1209,6 +1270,8 @@ join lSteps rSteps t1 t2 = do
                    ,(text "Original RHS", disp t2)
                    ,(text "Reduced LHS", disp t1')
                    ,(text "Reduced RHS", disp t2')
+                   ,(text "Reduced LHS Raw", disp (show t1'))
+                   ,(text "Reduced RHS Raw", disp ( show t2'))
                    ,(text "Substituted LHS", disp s1)
                    ,(text "Substituted RHS", disp s2)
                    ]
@@ -1368,11 +1431,11 @@ escCopy f (Rec binding) = do
   body' <- escCopy f body
   tele' <- escCopyTele f tele
   return $ Rec (bind (n,tele') body')
-escCopy f (Let binding) = do
+escCopy f (Let stage binding) = do
   ((n,eq,Embed val),body) <- unbind binding
   val' <- escCopy f val
   body' <- escCopy f body
-  return $ Let (bind (n,eq,Embed val') body')
+  return $ Let stage (bind (n,eq,Embed val') body')
 escCopy f (Aborts e) = do
   e' <- escCopy f e
   return $ Aborts e'
@@ -1432,6 +1495,83 @@ copyEqualInEsc b x = escCopy f x
 
 
 
+
+-- Equational reasoning tactic
+equate depth = do
+  ctx <- asks gamma
+  let ctx' = [(Var n,downAll t) | (n,(t,_)) <- ctx]
+      start = concat [[(n,ty),(Sym n, Equal t2 t1)] |  (n,ty@(Equal t1 t2)) <- ctx']
+      pfs = iterate step start !! (fromIntegral depth)
+  return pfs
+  where isEq (Pos _ t) = isEq t
+        isEq (Equal _ _) = True
+        isEq _ = False
+        trans (t1,Equal l1 r1) (t2,Equal l2 r2)
+          | l1 `aeq` r2 = []
+          | r1 `aeq` l2  = [(Trans t1 t2, (Equal l1 r2))] -- , (Sym (Trans t1 t2), (Equal r2 l1))]
+          | otherwise = []
+        step cs = cs ++ concat [trans p1 p2 | p1 <- cs, p2 <- cs]
+
+
+
+class (Rep1 SameD t, Rep t) => Same t where
+  same :: (Monad m) => [(Expr,Expr)] -> t -> t -> m t
+  same  = sameR1 rep1
+
+instance Same t => Sat (SameD t) where
+  dict = SameD same
+
+instance (Same p, Same n) => Same (Bind p n)
+instance (Same l, Same r) => Same (l,r)
+instance (Same x, Same y, Same z) => Same (x,y,z)
+instance (Same w, Same x, Same y, Same z) => Same (w,x,y,z)
+instance Same Bool
+instance Same t => Same (Embed t)
+instance Same SourcePos
+instance Same a => Same [a]
+instance Same Stage
+instance Same Tele
+instance Same Kind
+instance Same Integer
+instance Same EName where
+instance Same a => Same (Maybe a)
+instance (Same a, Same  b) => Same (Rebind a b)
+instance Same Char
+-- No idea why this is required...
+instance (Same t) => Same (R t)
+
+data SameD t =
+  SameD {  sameD :: forall m s. (Monad m) =>
+                    [(Expr,Expr)] -> t -> t -> m t }
+
+instance Same Expr where
+  same pfs t1 t2
+   | t1 `aeq` t2 = return t1
+   | Just (pf,_) <- find rightProof pfs = return (Escape pf)
+   -- TODO: Should also try to synthesize a proof using morejoin.
+   | otherwise = sameR1 rep1 pfs t1 t2
+   where rightProof (_,Equal t1' t2') = t1 `aeq` t1' && t2 `aeq` t2'
+
+sameR1 :: Monad m => R1 SameD t -> [(Expr,Expr)] -> t -> t -> m t
+sameR1 Int1 _  x y  = unless (x == y) ( fail "miserably") >> return x
+sameR1 Integer1 _ x y = unless (x == y) (fail "miserably") >> return x
+sameR1 Char1 _  x y = unless (x == y) (fail "miserably") >> return x
+sameR1 (Data1 _ cons) vars x y = loop cons x y where
+   loop (RL.Con emb reps : rest) x y =
+     case (from emb x, from emb y) of
+       (Just p1, Just p2) -> do
+         args <- same1 reps vars p1 p2
+         return (to emb args)
+       (Nothing, Nothing) -> loop rest x y
+       (_,_)              -> fail "sameR1 Data1"
+sameR1 _ _ _ _ = fail "Could not match values."
+
+same1 ::  Monad m => MTup SameD l -> [(Expr,Expr)] -> l -> l -> m l
+same1 MNil _ Nil Nil = return Nil
+same1 (r :+: rs) vars (p1 :*: t1) (p2 :*: t2) = do
+  s1 <- sameD r vars p1 p2
+  s2 <- same1 rs vars t1 t2
+  return (s1 :*: s2)
 
 
 
