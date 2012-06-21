@@ -1,14 +1,136 @@
 module Lambdaint where
 
 
-Why doesn't this show up?
-
-
 data String : Type where
-     empStr : String
-    | str0  : String-> String
-    | str1  : String-> String
+     Empstr : String
+    | Str0  : String -> String
+    | Str1  : String -> String
+
+data Bool : Type where
+ False : Bool
+| True : Bool
 
 data Term : Type where
-      Var : String
+      Var : String-> Term
      |App : Term -> Term -> Term
+|Lambdabs : String -> Term -> Term
+
+
+data Context : Type where
+      Base : Context
+     | Ct : Context -> Term -> Context
+     | VC : Term -> Context -> Context
+-- restrict term to lamdba abstraction??
+
+
+data Decomp : Type where
+   Deco : Context -> Term -> Decomp
+ | CntDeco : Decomp 
+
+type and : Bool -> Bool-> Bool
+prog and = \(b:Bool)(b2:Bool) ->
+     case b {b_eq} of
+      True -> b2
+    | False -> False
+
+type isLambda : Term -> Bool
+ prog isLambda = \(l:Term) ->
+   case l {l_eq} of 
+     Lambdabs l' t' -> True
+    |App l' t' -> False
+    |Var l' -> False
+
+
+type legalcxt : Context -> Bool
+prog rec legalcxt (t:Context)=
+     case t {t_eq} of
+     Base -> True
+    |Ct p' r' -> legalcxt p'
+    |VC p' r'-> and (isLambda p') 
+                 (legalcxt r')   
+   
+
+type decompose : Term -> Decomp
+prog rec decompose (t:Term) =
+  case t {t_eq} of 
+    Var t' -> CntDeco 
+  | Lambdabs t' r' -> CntDeco 
+  | App t1 t2 -> case (and (isLambda t1)
+                   (isLambda t2)) {lamb_eq} of
+                 True ->Deco Base(App t1 t2)   
+                |False-> case(isLambda t1) {lamb1_eq} of
+                       True -> (case(decompose t2) {decot2} of
+                               CntDeco-> CntDeco
+                              |Deco cxt t2'-> Deco(VC t1 cxt) t2')                                                      |False -> case (decompose t2) {dect2_eq} of
+                                 CntDeco -> CntDeco
+                               |Deco cxt t2' -> Deco(Ct cxt t1) t2'
+
+{-
+type plug : Decomp -> Term
+  prog rec plug (d:Decomp) =
+    Deco c t -> case c {c_eq} of
+                Base-> t
+               |Ct c' t'->  plug Deco(Ct(c' t))t'))               
+               |VC v c' ->  plug Deco(VC (t c') v))
+
+
+type step : Term -> Bool
+  prog step = \(t:Term) ->
+   case t (t_eq} of
+      Var l' -> False
+      Lambdabs l' t' -> False
+      App t1 t2 -> case (decompose t1 ) {decomt1_eq} of
+                     CntDeco -> case (decompose t2) {decomt2} of
+                                  CntDeco -> False
+                                  Deco cxt t ->  
+                    |Deco 
+
+type reduce : Decomp -> Decomp
+ prog rec reduce (t:Decomp) =
+   case decompose t {dec_eq} of
+       Deco c t' ->  
+      |CntDeco
+
+                                              
+ 
+ 
+    
+             
+         
+
+type eq_str : String -> String -> Bool
+prog rec eq_str (t:String)(s:String) =
+  case t {t_eq} of
+    Empstr -> (case s {s_eq} of
+            Empstr -> True
+          | Str0 s' -> False
+          | Str1 s' -> False)
+    | Str0 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s'-> (eq_str t' s') 
+           |Str1 s' -> False)
+    | Str1 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s' -> False 
+           |Str1 s' -> (eq_str t' s'))
+
+
+
+
+
+
+
+Inductive eqstr_refl : forall (s:String) {s_term} . eq_str s s = True :=
+   case s { s_eq } s_term of
+      Empstr -> morejoin { sym s_eq, s_term } : eq_str s s = True
+   | Str0 s' -> let ih = eqstr_refl s' (ord s_eq) : eq_str s' s' = True;
+                    step = morejoin {sym s_eq, s_term} : eq_str s s = eq_str s' s'
+ 
+                in trans step ih
+   | Str1 s' -> let ih = eqstr_refl s' (ord s_eq) : eq_str s' s' = True;
+                      step = morejoin {sym s_eq, s_term} : eq_str s s= eq_str s' s'
+
+                 in trans step ih   
+
+
+-}
