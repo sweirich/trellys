@@ -5,60 +5,76 @@
 
 #Set print_commands
 
-test : * =
-  fix nat : * = 
-          self n . ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> 
-                     (C conv n to nat by refl, unfold) 
-      ,
-      zero : nat = 
-           conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
-           to nat 
-           by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+Fix nat : * = 
+        self n . ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                   (C conv n to nat by refl, unfold) 
+    ,
+    zero : nat = 
+         conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
+         to nat 
+         by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+            [ unfold ; substself ]
+           
+    ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
               [ unfold ; substself ]
-             
-      ,
-      succ : nat -> nat = 
-           \ n : nat . 
-             conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
-             to nat
-             by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
-                [ unfold ; substself ]
-  in
+
+Fix add : nat -> nat -> nat =
+    \ n : nat . \ m : nat .
+      conv 
+        ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+                 by [ unfold ; substself ] , refl)
+         (\ n : nat . nat)
+         (\ p : nat . conv (succ (add p m)) to ((\n:nat.nat) (succ p)) by refl, eval) 
+         conv m to ((\n:nat.nat) zero) by refl,eval)
+      to nat 
+      by eval,refl 
+
+###### uncomment to add 1 and 1
+#Set suppress_lam_types              ### to make the output easier to read
+#Eval (add (succ zero) (succ zero))
+######
+
+Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
+    mkunit : unit =
+         conv \ C : unit -> * . \ u : (C mkunit) . u 
+         to unit
+         by (! C : refl . (! z : refl . (C unfold))),
+            [ unfold ; substself ]
 
 
-#  fix add : nat -> nat -> nat =
-#      \ n : nat . \ m : nat .
-#        ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
-#                by [ unfold ; substelf ] , refl)
-#         # C:
-#         (\ n : nat . nat -> nat) 
+# Equality supports elimination over a predicate C which depends on the RHS of the
+# equality and the equality proof itself (see the type of C in the definitions).
 
-  fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
-      mkunit : unit =
-           conv \ C : unit -> * . \ u : (C mkunit) . u 
-           to unit
-           by (! C : refl . (! z : refl . (C unfold))),
-              [ unfold ; substself ]
-  in
-
-  fix eq : ! A : *. A -> A -> * = 
+Fix eq : ! A : *. A -> A -> * = 
          \ A : * . \ a : A . \ b : A . 
-           self p. ! C : (! A : *. ! a : A. ! b : A. (eq A a b) -> *) .
-           (! A : * . ! a : A . (C A a a (eqrefl A a))) ->
-           (C A a b conv p to (eq A a b) by refl , [ (unfold A a b) ; eval ] )
+           self p. ! C : (! b : A . (eq A a b) -> *) .
+           (C a (eqrefl A a)) ->
+           (C b conv p to (eq A a b) by refl , [ (unfold A a b) ; eval ] )
       ,
       eqrefl : ! A : * . ! a : A . (eq A a a) = 
          \ A : * . \ a : A .
          conv
-         \ C : (! A : *. ! a : A. ! b : A. (eq A a b) -> *) .
-         \ p : (! A : * . ! a : A . (C A a a (eqrefl A a))). 
-            (p A a)
+         \ C : (! b : A. (eq A a b) -> *) .
+         \ p : (C a (eqrefl A a)). p
          to (eq A a a)
-         by (! C : refl . ! p : refl . (C A a a [ (unfold A a) ; eval ])) , [ (unfold A a a) ; eval ; substself ]
-  in
-      
-        
+         by (! C : refl . ! p : refl . (C a [ (unfold A a) ; eval ])) , [ (unfold A a a) ; eval ; substself ]
 
-#  fix vec : nat -> * = \ n : nat . ! C : (! n : nat. (vec n) -> *) . 
+# This eqconv is for the common case where we want to eliminate over a predicate C which
+# depends only on the RHS of the equality, not the equality proof itself.
 
-     nat
+Define eqconv : ! A : *. ! a : A . ! b : A . ! C : (A -> *) . (C a) -> (eq A a b) -> (C b) =
+  \ A : *. \ a : A. \ b : A . \ C : A -> * . \ u : (C a) . \ p : (eq A a b) .
+    conv
+      ((conv p to (! C : (! b : A . (eq A a b) -> *) .
+                  (C a (eqrefl A a)) -> 
+                  (C b p))
+              by [ (unfold A a b) ; eval ; substself ] , refl)
+       (\ x : A . \ u : (eq A a x) . (C x))
+       conv u to ((\ x : A . (\ u : (eq A a x) . (C x))) a (eqrefl A a)) by refl, eval)
+     to (C b)
+     by eval, refl

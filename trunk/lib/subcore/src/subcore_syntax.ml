@@ -8,14 +8,15 @@ type __terminal__ = (pd * string);;
 type __term_not_in_ast__ = pd;;
 type dummy = Dummy 
 and binding = | Binding of pd * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm
-and cmd = | Def of pd * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | SetFlag of pd * __term_not_in_ast__ * __terminal__ | UnsetFlag of pd * __term_not_in_ast__ * __terminal__
-and oterm = | Lam of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | Self of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm | Fix of pd * __term_not_in_ast__ * binding * fix_oterm_comma0 * __term_not_in_ast__ * oterm | Arrow of pd * term * __term_not_in_ast__ * oterm | Pi of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * term * __term_not_in_ast__ * oterm | Check of pd * term * __term_not_in_ast__ * oterm | Term of pd * term
-and prog = | Prog of pd * prog_prog_cmd1
-and term = | App of pd * __term_not_in_ast__ * term * app_term_term2 * __term_not_in_ast__ | Star of pd * __term_not_in_ast__ | Var of pd * __terminal__ | Conv of pd * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm * __term_not_in_ast__ * term * __term_not_in_ast__ * term | Trans of pd * __term_not_in_ast__ * oterm * trans_term_semi3 * __term_not_in_ast__ | Parens of pd * __term_not_in_ast__ * oterm * __term_not_in_ast__ | Fold of pd * __term_not_in_ast__ * __terminal__ | Substself of pd * __term_not_in_ast__ | Unfold of pd * __term_not_in_ast__ | Eval of pd * __term_not_in_ast__ | Refl of pd * __term_not_in_ast__
-and trans_term_semi3 = pd * ( __term_not_in_ast__ * oterm) list
-and app_term_term2 = pd * ( term) list
-and prog_prog_cmd1 = pd * ( cmd) list
-and fix_oterm_comma0 = pd * ( __term_not_in_ast__ * binding) list;;
+and cmd = | Def of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | SetFlag of pd * __term_not_in_ast__ * __terminal__ | UnsetFlag of pd * __term_not_in_ast__ * __terminal__ | EvalCmd of pd * __term_not_in_ast__ * oterm | FixCmd of pd * __term_not_in_ast__ * binding * fixcmd_cmd_comma0
+and oterm = | Lam of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | Self of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm | Fix of pd * __term_not_in_ast__ * binding * fix_oterm_comma1 * __term_not_in_ast__ * oterm | Arrow of pd * term * __term_not_in_ast__ * oterm | Pi of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * term * __term_not_in_ast__ * oterm | Check of pd * term * __term_not_in_ast__ * oterm | Term of pd * term
+and prog = | Prog of pd * prog_prog_cmd2
+and term = | App of pd * __term_not_in_ast__ * term * app_term_term3 * __term_not_in_ast__ | Star of pd * __term_not_in_ast__ | Var of pd * __terminal__ | Conv of pd * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm * __term_not_in_ast__ * term * __term_not_in_ast__ * term | Trans of pd * __term_not_in_ast__ * oterm * trans_term_semi4 * __term_not_in_ast__ | Parens of pd * __term_not_in_ast__ * oterm * __term_not_in_ast__ | Fold of pd * __term_not_in_ast__ * __terminal__ | Substself of pd * __term_not_in_ast__ | Unfold of pd * __term_not_in_ast__ | Eval of pd * __term_not_in_ast__ | Refl of pd * __term_not_in_ast__
+and trans_term_semi4 = pd * ( __term_not_in_ast__ * oterm) list
+and app_term_term3 = pd * ( term) list
+and prog_prog_cmd2 = pd * ( cmd) list
+and fix_oterm_comma1 = pd * ( __term_not_in_ast__ * binding) list
+and fixcmd_cmd_comma0 = pd * ( __term_not_in_ast__ * binding) list;;
 
 (* pd stands for pos (position) *)
 let rec dummy () = () 
@@ -26,9 +27,11 @@ and get_term_pd_not_in_ast = function
 and pd_binding = function 
   | Binding(pd,_,_,_,_,_) -> pd
 and pd_cmd = function 
-  | Def(pd,_,_,_,_,_) -> pd
+  | Def(pd,_,_,_,_,_,_) -> pd
   | SetFlag(pd,_,_) -> pd
   | UnsetFlag(pd,_,_) -> pd
+  | EvalCmd(pd,_,_) -> pd
+  | FixCmd(pd,_,_,_) -> pd
 and pd_oterm = function 
   | Lam(pd,_,_,_,_,_,_) -> pd
   | Self(pd,_,_,_,_) -> pd
@@ -51,16 +54,19 @@ and pd_term = function
   | Unfold(pd,_) -> pd
   | Eval(pd,_) -> pd
   | Refl(pd,_) -> pd
-and pd_trans_term_semi3 = function 
+and pd_trans_term_semi4 = function 
   | (pd,[]) -> pd
   | (pd,(_,_)::___tail___) -> pd
-and pd_app_term_term2 = function 
+and pd_app_term_term3 = function 
   | (pd,[]) -> pd
   | (pd,(_)::___tail___) -> pd
-and pd_prog_prog_cmd1 = function 
+and pd_prog_prog_cmd2 = function 
   | (pd,[]) -> pd
   | (pd,(_)::___tail___) -> pd
-and pd_fix_oterm_comma0 = function 
+and pd_fix_oterm_comma1 = function 
+  | (pd,[]) -> pd
+  | (pd,(_,_)::___tail___) -> pd
+and pd_fixcmd_cmd_comma0 = function 
   | (pd,[]) -> pd
   | (pd,(_,_)::___tail___) -> pd;;
 let pd e = pd_prog e;;
