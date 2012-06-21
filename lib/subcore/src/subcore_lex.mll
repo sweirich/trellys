@@ -16,6 +16,7 @@ rule token = parse
 | "fold" { FOLD(Subcore_util.cur_pd()) }
 | "unfold" { UNFOLD(Subcore_util.cur_pd()) }
 | "refl" { REFL(Subcore_util.cur_pd()) }
+| "Define" { DEFINE(Subcore_util.cur_pd()) }
 | "in" { IN(Subcore_util.cur_pd()) }
 | "Set" { SET(Subcore_util.cur_pd()) }
 | "Unset" { UNSET(Subcore_util.cur_pd()) }
@@ -27,6 +28,8 @@ rule token = parse
 | "fix" { FIX(Subcore_util.cur_pd()) }
 | "to" { TO(Subcore_util.cur_pd()) }
 | "eval" { EVAL(Subcore_util.cur_pd()) }
+| "Fix" { FIXCMD(Subcore_util.cur_pd()) }
+| "Eval" { EVALCMD(Subcore_util.cur_pd()) }
 | "by" { BY(Subcore_util.cur_pd()) }
 | "conv" { CONV(Subcore_util.cur_pd()) }
 | "(" { LP(Subcore_util.cur_pd()) }
@@ -34,6 +37,6 @@ rule token = parse
 | "[" { LS(Subcore_util.cur_pd()) }
 | "]" { RS(Subcore_util.cur_pd()) }
 | "." { DOT(Subcore_util.cur_pd()) }
-| ['a'-'z' 'A'-'Z' '_']['0'-'9' '_' 'a'-'z' 'A'-'Z' '\'']* as str { ID((Subcore_util.cur_pd(),str)) }
+| ['a'-'z' 'A'-'Z' '_']['0'-'9' '\'' '_' 'a'-'z' 'A'-'Z' '\'']* as str { ID((Subcore_util.cur_pd(),str)) }
 | eof { EOF }
 | _ {failwith((Lexing.lexeme lexbuf) ^": lexing error"^(Subcore_util.string_of_pos (Subcore_util.cur_pd())))}{}

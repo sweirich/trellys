@@ -1,0 +1,2 @@
+all:
+	../subcore encode.sub
