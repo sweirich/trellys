@@ -18,7 +18,6 @@ import Parser(parseExpr)
 
 import Data.List(unionBy,union,nub,find,(\\),isInfixOf)
 import Data.Char(toLower)
--- import SCC
 import UniqInteger(nextinteger)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
@@ -31,8 +30,6 @@ data Expected a = Infer (IORef a) | Check a
 instance Show a => Show(Expected a) where
   show (Check x) = show x
   show (Infer r) = "unknown (we are trying to infer it)"
-
-failS ss = fail (unlines ss)
 
 zonkExpRho (Check r) = fmap Check (zonkRho r)
 zonkExpRho (Infer r) = return(Infer r)
@@ -410,10 +407,6 @@ inferPat pos k pat =
      ; rho2 <- zonkRho rho
      ; return (rho2,k2,p2)}
 
-
-             
--- foldM :: Monad m => (a -> b -> m a) -> a -> [b] -> m a             
-
 bindPat :: SourcePos -> Frag -> Scheme -> Pat -> FIO(Frag,Pat)
 bindPat pos k sigma pat =  
   let message = "\nChecking that "++show pat++" has type "++show sigma
@@ -530,134 +523,6 @@ lookupVar (nm@(Nm(_,loc))) frag =
       Nothing -> fail message 
   where message = "\n"++show loc++" unknown term variable: "++show nm
                   -- ++ browseFrag (Just 4) frag++"\n..."
-
-{-
-inferExp :: Frag -> Expr -> FIO (Rho, TExpr)
-inferExp env e = 
-  do { r <- fio(newIORef (Tau (TyVar (Nm("?",noPos)) Star)))
-     ; e' <- typeExp env e (Infer r)
-     ; rho <- fio (readIORef r)
-     ; return(rho,e') }
-
-typeExp :: Frag -> Expr -> Expected Rho -> FIO TExpr
-typeExp env (ELit loc x) expect = 
-     do { (x',_) <- tcLit loc x expect
-        ; return (TELit loc x') }
-        
-typeExp env (e@(EVar _)) expect 
-     | Just(c,f,xs) <- expandExprSyn env e []
-     = do { e2 <- f (loc e) xs
-          ; typeExp env e2 expect}
-typeExp env (e@(EVar (v@(Nm(s,loc))))) expectRho =
-     do { (polyk,exp) <- lookupVar v env
-        ; let mess = "\nChecking the variable:\n   "++show e++": "++show polyk++"\nhas expected type:\n   "++show expectRho
-        ; ts <- morepolySExpectR loc [mess] polyk expectRho
-        ; return (applyTyp exp ts)}  
-typeExp env (e@(EFree nm)) expect 
-   | Just(c,f,xs) <- expandExprSyn env e [] 
-   = do { e2 <- f (loc e) xs
-        ; typeExp env e2 expect }
-typeExp env (e@(EFree nm)) expectRho =
-     do { (polyk,exp) <- lookupVar nm env
-        ; let mess = "\nChecking the variable:\n   "++show e++": "++show polyk++"\nhas expected type:\n   "++show expectRho
-        ; ts <- morepolySExpectR (loc nm) [mess] polyk expectRho
-        ; case lookup nm (values env) of
-            Just(Exp t) -> return t
-            Nothing -> fail("\n"++near nm++"Variable marked as bound in the global environment: "++show nm++" is not n scope.")
-        }        
-typeExp env (e@(ECon c)) expectRho = 
-     do { (polyTyp,TEVar nm sc2) <- lookupVar c env
-        ; (mu,n) <- tyConArity c env
-        ; let mess = "\nChecking the constructor:\n   "++show e++": "++show polyTyp++"\nhas expected type:\n   "++show expectRho
-        ; ts <- morepolySExpectR (loc c) [mess] polyTyp expectRho
-        ; rho <- extract expectRho
-        ; return (TECon mu nm rho n [])}      
-typeExp env (e@(EApp _ _)) expect 
-     | Just(c,f,xs) <- expandExprSyn env e []
-     = do { e2 <- f (loc e) xs
-          ; typeExp env e2 expect}
-typeExp env (e@(EApp (EVar (Nm("checkT",_))) x)) expect = 
-     do { writeln("\nChecking\n   "++show x)
-        ; interAct env expect
-        ; typeExp env x expect }
-typeExp env (e@(EApp fun arg)) expect =
-     do { (fun_ty,f) <- inferExp env fun
-        -- ; writeln ("\ntypExp  f="++show f++": "++show fun_ty)
-        ; (arg_ty, res_ty) <- unifyFun (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
-        ; let message t = [near e++"\nInfering the application: ("++show e++") where\n   "++
-                           show fun++": "++show fun_ty++
-                           "\n   "++show arg++": "++ show t++
-                           "\n   expected type: "++show expect]
-        ; case arg_ty of
-           Sch [] argRho -> do { -- writeln("arg = "++show arg++": "++show argRho);
-                                 x <- handleM (typeExp env arg (Check argRho))
-                                              (unlines (message arg_ty))
-                               ; tt <- zonkRho argRho
-                               ; morepolyRExpectR (expLoc arg) (message arg_ty) res_ty expect
-                               ; smartApp f x }
-           sigma -> do { (ty,x) <- handleM (inferExp env arg) (unlines ("\n":(message sigma)))
-                       ; free <- tvsEnv env
-                       ; (sig,sub) <- generalizeRho free ty
-                       ; sigma2 <- zonkScheme sigma >>= alpha
-                       ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):(message sigma)
-                       ; morepolySS (expLoc arg) m2 sig sigma2
-                       ; morepolyRExpectR (expLoc arg) (message sigma) res_ty expect
-                       -- Do some AppTY and AbsTY stuff here
-                       ; smartApp f x }
-        }    
-
-typeExp env (EAbs elim []) expect = error ("Typing empty abstraction")        
-typeExp env (EAbs elim ms) (Check t) = 
-  do { (elim2,_) <- typeElim env elim
-     -- ; writeln ("\nEntering type lambda (Check "++show t++")")
-     ; pairs <- mapM (typeLamClause env t) ms
-     ; return(TEAbs elim2 pairs)}
-typeExp env (EAbs elim ((pat,exp):ms)) (Infer ref) =
-  do { (elim2,_) <- typeElim env elim
-     -- ; writeln ("\nEntering type lambda (Infer ref)")
-     ; ([dom],env2,[pat2]) <- inferBs (expLoc exp) env [pat]
-     ; (rng,exp2) <- inferExp env2 exp 
-     ; let expected = (Rarr (monoR dom) rng)
-     ; fio(writeIORef ref expected)
-     ; pairs <- mapM (typeLamClause env expected) ms
-     ; return(TEAbs elim2 ((pat2,exp2):pairs)) }
-
-typeExp env (ETuple xs) expect =
-  do { zs <- isTuple (expLoc (head xs)) (length xs) expect
-     ; let f (term,tau) = typeExp env term (Check (Tau tau))
-     ; xs2 <- mapM f (zip xs zs)     
-     ; return(TETuple xs2) }        
-
-typeExp env (ELet d e) expect =
-  do { (env2,d2) <- elab False env d
-     ; e2 <- typeExp env2 e expect
-     ; return(TELet d2 e2)}
-
-typeExp env (term@(EIn k x)) expect =  
-  do { kind <- wfKind (loc x) ["Checking well formedness of kind from term\n   "++show term] env k
-     ; (dom,rng) <- inType kind
-     ; x2 <- typeExp env x (Check (Tau dom))
-     ; let message = [near x++"\nTyping the In term: "++show (EIn kind x)]
-     ; morepolyRExpectR (expLoc x) message (Tau rng) expect
-     ; return (TEIn kind x2)}  
-
-typeExp env (term@(EMend tag elim x ms)) expect =
-  do { (elim2,k) <- wellFormedElim (loc x) env elim
-     -- ; writeln("\nELIM = "++show elim2++" with kind "++show k)
-     ; f <- freshType (Karr k k)
-     ; (Type (r@(TyVar rname _))) <- existTyp (Nm("r",loc x)) (Type k)
-     ; (ops,input,output) <- elimTypes (loc x) tag k f r elim2   
-     -- ; writeln("\nInput "++show input++"\nOutput "++show output++plistf show "\nops\n  " ops "\n  " "")
-     ; x2 <- typeExp env x (Check(Tau input))
-     ; ms2 <- mapM (\ m -> typeOperClause rname env env ops m []) ms 
-     ; morepolyRExpectR (loc x) 
-             ["Checking the return type of the mendler operator:\n"++show term] 
-             (Tau output) expect   
-     ; return(TEMend tag elim2 x2 ms2)} 
-     
--}
-
 
 typeLamClause env t (pat,exp) =
      do { (frag,[pat2],ts,result) <- checkBs (expLoc exp) env [pat] t

@@ -23,17 +23,10 @@ import Debug.Trace
 ----------------------------------------------------------------
 -- Matching a Typ with another, used in Synonyms
 
-
-varClass (s,TyLift _)  = "expession variable "++show s
-varClass (s,_) = "type variable "++show s
-
-
-
-add:: (Name,Typ) -> [(Name,Typ)] -> Maybe [(Name,Typ)] 
+add:: (Name,Typ) -> [(Name,Typ)] -> Maybe [(Name,Typ)]
 add (n,typ) [] = Just[(n,typ)] 
 add (n,typ) (vs@((m,x):more)) | n==m =
    if typ==x then Just vs else Nothing
-add (n,typ) ((m,x):more) | n==m = error ("Class doesn't match, "++varClass (n,typ)++" used as "++varClass (m,x)++".")
 add p (q:more) = do { qs <- add p more; return (q:qs)}
   
 matchT:: [Name] -> (Typ,Typ) -> [(Name,Typ)] -> Maybe [(Name,Typ)] 
@@ -126,25 +119,12 @@ synonymExpand nm xs polyk body = (length xs,f nm xs polyk body)
         toSub t (Kind n) = error ""
         toSub (TyLift (Checked e)) (Exp n) = (n,Exp e)
         toSub t (Type n) = (n,Type t)
-              
-              
-  
 
 orderK [] xs = []
 orderK (nm:names) xs = find xs : orderK names xs
   where find [] = error ("Synonym var not matched: "++show nm)
         find ((m,t):more) | nm==m = (m,t)
         find (m : more) = find more        
-       
-       
-     
-
--------------------------------------------------------    
-
--- tupleTypes (TyApp (TyApp (TyCon _ "(,)" _) x) y) = x : tupleTypes y
-tupleTypes (TyTuple k xs) = xs
-tupleTypes x = [x]
-
 
 -----------------------------------------------
 -- operations on Typ
@@ -277,20 +257,6 @@ unifyExpVar loc message (x@(u1,r1,typ)) term =
      ; fio(writeIORef r1 (Just term))
      ; return ()
      }
-
-firstOrder loc message expect var term rho = 
-    case rho of
-      (Rarr _ _) -> fail (unlines(mR rho:message))
-      (Tau t) ->  do { unify loc message expect t; x <- zonk t; check x }      
-  where check (TyCon _ c k) = return ()
-        check (TyApp f x) = check f
-        check (TyMu k) = return ()
-        check (TyTuple Star xs) = return ()
-        check t = fail (unlines(m t : message))
-        m t = "\n"++show loc++"\nAn expression variable: "++show var++", unifys to a term: "++
-              (show term)++", that is not data: "++show t++"\n"++showT t
-        mR t = "\n"++show loc++"\nAn expression variable: "++show var++", unifys to a term: "++
-               (show term)++", that is not data: "++show t++"\n"++showR t              
 
 unify :: SourcePos -> [String] -> Typ -> Typ -> FIO ()
 unify loc message x y = do { x1 <- prune x; y1 <- prune y
@@ -747,16 +713,6 @@ unionW (xs,ys) (ms,ns) =  liftM2 (,) (unionByM (f h) xs ms) (unionByM (f g) ys n
                                tag1++", near "++show pos1++"\nand as a\n   "++
                                tag2++", near "++show pos2++"\nPerhaps you forgot some braces { }?")
               | otherwise -> return False
-{-  
-  where f (Kind (u1,p1))    (Kind (u2,p2))    = u1==u2
-        f (Type (u1,p1,k1)) (Type (u2,p2,k2)) = u1==u2
-        f (Exp  (u1,p1,t1)) (Exp  (u2,p2,t2)) = u1==u2
-        f _ _ = False
-        g (Kind x) (Kind y) = x==y
-        g (Type x) (Type y) = x==y
-        g (Exp  x) (Exp  y) = x==y
-        g _ _ = False        
--}
 
 accumBy f trip1 x = do { trip2 <- f x; (unionW trip1 trip2)}   
 
@@ -800,16 +756,6 @@ getVarsE t = f t
              ; trip2 <- getVarsE y
              ; (unionW trip1 trip2)}
         f (EAbs e1 cls) = error ("No getVarsE for (EAbs _ _) yet")   
-{-
-        f (TEAbs e1 cls) = do { v1 <- getVarsElim e1 
-                              ; foldM (accumBy free) v1 cls }
-                           
-            where free (pat,exp) = 
-                   do { pair1 <- getVarsElim e1
-                      ; pair2 <- getVarsExpr exp 
-                      ; (ptrs,vars) <- unionW pair1 pair2
-                      ; return (ptrs,remove (Exp 0) vars (patBinds pat [])) }
--}        
         f (ETuple xs) = foldM (accumBy getVarsE) ([],[]) xs
         f (EIn k x) = do { a <- getVarsKind k; b <- getVarsE x; unionW a b}
         f (ELet d e) = error ("No getVarsE for (ELet _ _) yet")    
@@ -1061,10 +1007,6 @@ freshFor:: Name -> SubEnv -> [Name] -> FIO Name
 freshFor name env supply = do { bad <- getNamesSubEnv env; worker name bad supply }
   where worker name bad (n:ns) = if elem name bad then worker n bad ns else return name
 
-
--- widen (Kind (nm,nm2)) (ptrs,names,tycons) = (ptrs,(nm,Kind(Kname nm2)):names,tycons)
-
-
 freshForTyp:: (Typ, Class () Kind Typ) -> SubEnv -> [Name] -> FIO Typ
 freshForTyp (typ,tag) env supply = 
     do { (_,names) <- getVars typ
@@ -1216,12 +1158,7 @@ elimSubb2 pos (env@(ptrs,names,tycons)) (ElimFun (vs,ts) t) =  -- note the vs ar
      ; ts2 <- mapM (\ (t,k) -> liftM2 (,) (tySubb pos env2 t) (kindSubb pos env2 k))  ts
      ; t2 <- tySubb pos env2 t
      ; return(ElimFun (vs2,ts2) t2)}
-  {-
-  do { (vs2,env2) <- freshElimPairs pos (vs,env)
-     ; t2 <- tySubb pos env2 t
-     ; return(ElimFun vs2 t2)}
- -}
- 
+
 expSubb:: SourcePos -> SubEnv -> TExpr -> FIO TExpr
 expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
    where sub x = expSubb pos env x
@@ -1383,32 +1320,6 @@ inType k = help k k []
         help all (Karr k1 k2) ts = 
           do { t <- freshType k1
              ; help all k2 (ts++[t]) }
-              
-{-
------------------------------------------------
--- pure substitution. Does NOT check the kind of things subbed.
--- useful after parsing when parsed things have bad kinds
--- to replace those with well-formed versions
-
-look x xs def =
-  case lookup x xs of
-    Nothing -> def
-    Just t -> t
-
-subTyp :: ([(Pointer Typ,Typ)],[(Name,Typ)],[(Name,Typ)]) -> Typ -> Typ
-subTyp (_,xs,_) (typ@(TyVar s k)) = look s xs typ
-subTyp env (TyApp f x) = TyApp (subTyp env f) (subTyp env x)
-subTyp env (TyTuple k xs) = TyTuple k (map (subTyp env) xs)
-subTyp (_,_,xs) (typ@(TyCon c k)) = look c xs typ
-subTyp (xs,_,_) (typ@(TcTv (uniq,ptr,k))) = look ptr xs typ
- 
-subRho env (Tau x) = Tau (subTyp env x)
-subRho env (Rarr s r) = Rarr(subScheme env s) (subRho env r)
-
-subScheme env (Sch vs r) = Sch vs (subRho env r)
-      
-         
--}
 
 ---------------------------------------------------------------------
 -- Syntax, or macro expansion works over first order terms only.
@@ -1741,18 +1652,3 @@ morepolySST loc mess sigma1 sigma2 =
          [] -> return (tComp p2 (tSym p1))
          zs -> fail (unlines(("\nVars escape in morepolySS: "++show bad_tvs):mess))
      }
-   
-{- Impredicative form
-unifyFun mess x = do { x2 <- pruneTyp x; help mess x2 }
-  where help mess (t@(TyArr dom rng)) = return(dom,rng,TRefl t)
-        help mess (t@(TyAll ds body)) = 
-           do { (p1,body2) <- instanGen t
-              ; (dom,rng,p2) <- unifyFun mess body2
-              ; return(dom,rng,tComp p1 p2)}
-        help mess (t@(TcTv r)) =
-           do { dom <- freshTyp Star
-              ; rng <- freshTyp Star
-              ; p <- unifyT mess Both t (TyArr dom rng)
-              ; return(dom,rng,p)}
-        help mess t = matchErr (("Not a function type: "++show t) : mess)
--}        
