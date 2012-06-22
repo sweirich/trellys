@@ -10,6 +10,10 @@ data Bool : Type where
  False : Bool
 | True : Bool
 
+data MaybeStep : Type where
+CntStep : MaybeStep
+|Step : Term -> MaybeStep
+
 data Term : Type where
       Var : String-> Term
      |App : Term -> Term -> Term
@@ -22,9 +26,12 @@ data Context : Type where
      | VC : Term -> Context -> Context
 -- restrict term to lamdba abstraction??
 
+data RedexT : Type where
+  Redex : Term -> String -> Term -> RedexT
+-- (Redex t1 x t2) represents the redex (App (Lambdabs x t2) t1)
 
 data Decomp : Type where
-   Deco : Context -> Term -> Decomp
+   Deco : Context -> RedexT -> Decomp 
  | CntDeco : Decomp 
 
 type and : Bool -> Bool-> Bool
@@ -46,58 +53,63 @@ prog rec legalcxt (t:Context)=
      case t {t_eq} of
      Base -> True
     |Ct p' r' -> legalcxt p'
-    |VC p' r'-> and (isLambda p') 
-                 (legalcxt r')   
+    |VC p' r'-> and (isLambda p')
+                 (legalcxt r')
    
+data UnitT : Type where
+  Unit : UnitT
 
 type decompose : Term -> Decomp
 prog rec decompose (t:Term) =
   case t {t_eq} of 
     Var t' -> CntDeco 
   | Lambdabs t' r' -> CntDeco 
-  | App t1 t2 -> case (and (isLambda t1)
-                   (isLambda t2)) {lamb_eq} of
-                 True ->Deco Base(App t1 t2)   
-                |False-> case(isLambda t1) {lamb1_eq} of
-                       True -> (case(decompose t2) {decot2} of
-                               CntDeco-> CntDeco
-                              |Deco cxt t2'-> Deco(VC t1 cxt) t2')                                                      |False -> case (decompose t2) {dect2_eq} of
-                                 CntDeco -> CntDeco
-                               |Deco cxt t2' -> Deco(Ct cxt t1) t2'
+  | App t1 t2 -> 
+      case (isLambda t2) { i2 } of
+         True ->
+          (case t1 {i1} of 
+             Var s -> CntDeco
+           | App t1' t1'' -> (decompose t1)
+           | Lambdabs x t1' ->
+               Deco Base (Redex t2 x t1'))
+         |False-> 
+            case(decompose t1) {decot1} of
+                  CntDeco-> 
+                    (case(decompose t2) {decot2} of
+                       CntDeco-> CntDeco
+                      |Deco cxt r -> Deco(VC t1 cxt) r)
+                 |Deco cxt r -> Deco(Ct cxt t2) r
+
+
+
+
+
+
 
 {-
-type plug : Decomp -> Term
-  prog rec plug (d:Decomp) =
-    Deco c t -> case c {c_eq} of
+type testterm : Term 
+prog testterm =
+ (App (Lambdabs Empstr (Var Empstr)) (Lambdabs (Str0 Empstr) (Var (Str0 Empstr))))
+
+theorem decompose_test0 : decompose (Var (Str1 Empstr)) = CntDeco
+proof decompose_test0 = join 20 20
+
+theorem decompose_test1 : decompose testterm = (Deco Base testterm)
+proof decompose_test1 = join 20 20
+
+theorem decompose_test2 : decompose (App testterm (Var (Str1 Empstr))) = 
+                          (Deco (Ct Base (Var (Str1 Empstr))) testterm)
+proof decompose_test2 = join 20 20
+-}
+type plug : Context -> Term -> Term
+  prog rec plug (c: Context) (t:Term) =
+    case c {c_eq} of
                 Base-> t
-               |Ct c' t'->  plug Deco(Ct(c' t))t'))               
-               |VC v c' ->  plug Deco(VC (t c') v))
+               |Ct c' t'->  App (plug c' t) t'               
+               |VC v c' ->   App v (plug  c' t)
 
 
-type step : Term -> Bool
-  prog step = \(t:Term) ->
-   case t (t_eq} of
-      Var l' -> False
-      Lambdabs l' t' -> False
-      App t1 t2 -> case (decompose t1 ) {decomt1_eq} of
-                     CntDeco -> case (decompose t2) {decomt2} of
-                                  CntDeco -> False
-                                  Deco cxt t ->  
-                    |Deco 
-
-type reduce : Decomp -> Decomp
- prog rec reduce (t:Decomp) =
-   case decompose t {dec_eq} of
-       Deco c t' ->  
-      |CntDeco
-
-                                              
  
- 
-    
-             
-         
-
 type eq_str : String -> String -> Bool
 prog rec eq_str (t:String)(s:String) =
   case t {t_eq} of
@@ -116,6 +128,45 @@ prog rec eq_str (t:String)(s:String) =
 
 
 
+type substitute : Term -> String -> Term -> Term
+   prog rec substitute (t :Term) (s:String) (t1: Term)=
+        
+       
+          case t1 {t1_eq} of 
+                   Var x' -> (case eq_str s x' {eqstr_eq} of
+                           True -> t
+                          |False -> t1)
+                 |Lambdabs s' t' ->  (case (eq_str s s') {eqstr_eq} of
+                           True -> t1
+                          |False -> Lambdabs s' (substitute t s t') )
+                 |App t2 t3 -> App (substitute t s t2)
+                                   (substitute t s t3)
+
+{-
+theorem substitute_test1 : substitute (Var(Str1 Empstr)) (Str0 Empstr)  (Lambdabs Empstr (Var (Str0 Empstr)))= (Lambdabs Empstr(Var(Str1 Empstr)))
+proof substitute_test1 = join 20 20
+-}
+      
+type step : Term -> MaybeStep
+  prog step = \(t:Term) ->
+    case (decompose t) {compt_eq} of
+         Deco c t1->( case t1 {t1_eq} of
+                    Redex t2 x t3 -> Step (plug c (substitute t2 x t3)))  
+       | CntDeco-> CntStep  
+
+
+
+type reduce : Term -> Term 
+ prog rec reduce (t:Term) =
+   case step t {stp_eq} of
+     CntStep-> t
+    |Step t1-> reduce t1 
+    
+
+                                              
+ 
+
+
 
 
 
@@ -132,5 +183,3 @@ Inductive eqstr_refl : forall (s:String) {s_term} . eq_str s s = True :=
 
                  in trans step ih   
 
-
--}
