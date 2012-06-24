@@ -44,11 +44,25 @@ isValue (ERec b) = return True
 
 isValue (ETCast t) = return True
 
-isValue (EApp (ETermVar x) t') = do
-  v1 <- isValue (ETermVar x)
-  v2 <- isValue t'
-  return (v1 && v2)
+-- isValue (EApp (ETermVar x) t') = do
+--   v1 <- isValue (ETermVar x)
+--   v2 <- isValue t'
+--   return (v1 && v2)
+
+isValue (EApp t t') = do
+  v1 <- isValue t
+  if v1 then case t of
+               EApp t1 t2 -> do
+                        v2 <- isValue t'
+                        return (v1 && v2)
+               ETermVar x -> do                
+                        v2 <- isValue t'
+                        return (v1 && v2)
+               ERec b -> return False
+               ELambda b -> return False
+               _ -> return True  else return False
   
+
 isValue _ = return False
 
 
