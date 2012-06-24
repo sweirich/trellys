@@ -238,6 +238,7 @@ TermArgs : { [] }
 TermBranches : TermVar "->" Term                    {[($1, (bind [] $3))]}
              | TermVar Scheme "->" Term                    {[($1, (bind $2 $4))]}
              | TermBranches '|' TermVar Scheme "->" Term       {$1 ++ [($3,(bind $4 $6))]}
+             | TermBranches '|' TermVar "->" Term       {$1 ++ [($3,(bind [] $5))]}
 
 Scheme : TermVar                               {[(ArgNameTerm (string2Name $1), Plus)]}
        | ProofVar                              {[(ArgNameProof (string2Name $1),Minus )]}
