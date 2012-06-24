@@ -174,7 +174,7 @@ Fix len : !A:* . (list A) -> nat =
            (conv zero 
                to ((\ b : * . (\ wc : (list b) . nat)) A (nil A))   #  nilCase
                by refl, eval)
-           (\dx:A . \xs : (list A) . 
+           (\ x:A . \xs : (list A) . 
                (conv
                  (succ (len A xs))
                to ((\ b : * . (\ wc : (list b) . nat)) A (cons A x xs))

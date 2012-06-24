@@ -660,17 +660,27 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 		     report_error "domain" t1 c1)
 	| Conv(t1,t2,pf1,pf2) -> 
 	    let c1 = tpof g p t1 in
-	    let e1 = morph g (trie_new()) p (Some(t1)) c1 pf1 in
-	    let e2 = morph g (trie_new()) p (Some(t1)) t2 pf2 in
-	      if (eqterm (trie_new()) e1 e2) then
-		t2
-	      else
-		err_pos p ("A conv-term changed the type of a term, but not to the desired type.\n"^
-			     "\n1. the computed type:  "^(string_of_term c1)^
-			     "\n2. the desired type:   "^(string_of_term t2)^
-			     "\n3. converted computed: "^(string_of_term e1)^
-			     "\n4. converted desired:  "^(string_of_term e2)^
-			     "\n\n5. the eqterm stack:\n"^(string_of_eqterm_stack()))
+
+	    let c2 = tpof g p t2 in
+
+	      (match strip_pos c2 with
+		  Star -> ()
+		| _ -> 
+		    err_pos p ("The classifier we are trying to convert to in a conv-term is not a type.\n\n"^
+					  "1. the classifier (the to-part of the conv-term): "^(string_of_term t2)^
+					  "\n2. its classifier: "^(string_of_term c2)));
+
+	      let e1 = morph g (trie_new()) p (Some(t1)) c1 pf1 in
+	      let e2 = morph g (trie_new()) p (Some(t1)) t2 pf2 in
+		if (eqterm (trie_new()) e1 e2) then
+		  t2
+		else
+		  err_pos p ("A conv-term changed the type of a term, but not to the desired type.\n"^
+			       "\n1. the computed type:  "^(string_of_term c1)^
+			       "\n2. the desired type:   "^(string_of_term t2)^
+			       "\n3. converted computed: "^(string_of_term e1)^
+			       "\n4. converted desired:  "^(string_of_term e2)^
+			       "\n\n5. the eqterm stack:\n"^(string_of_eqterm_stack()))
 	| Eval | Fold(_) | Unfold | Refl | Trans(_,_) | Substself -> 
 	    err_pos p ("A proof construct is being used in a term-only part of the expression.\n\n"
 		       ^"1. the subterm which is a proof: "^(string_of_term t))

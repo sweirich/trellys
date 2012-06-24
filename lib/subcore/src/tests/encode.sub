@@ -25,14 +25,14 @@ Fix nat : * =
 
 Fix add : nat -> nat -> nat =
     \ n : nat . \ m : nat .
-      conv 
-        ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+       (conv
+          ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
                  by [ unfold ; substself ] , refl)
-         (\ n : nat . nat)
-         (\ p : nat . conv (succ (add p m)) to ((\n:nat.nat) (succ p)) by refl, eval) 
-         conv m to ((\n:nat.nat) zero) by refl,eval)
-      to nat 
-      by eval,refl 
+            (\ n : nat . nat))
+         to ((nat -> nat) -> nat -> nat)
+         by ((refl -> eval) -> eval -> eval), refl
+         (\ p : nat . (succ (add p m))) 
+         m)
 
 ###### uncomment to add 1 and 1
 #Set suppress_lam_types              ### to make the output easier to read
@@ -78,3 +78,26 @@ Define eqconv : ! A : *. ! a : A . ! b : A . ! C : (A -> *) . (C a) -> (eq A a b
        conv u to ((\ x : A . (\ u : (eq A a x) . (C x))) a (eqrefl A a)) by refl, eval)
      to (C b)
      by eval, refl
+
+Fix addZ : ! n:nat . (eq nat (add n zero) n) =
+  \ n : nat .
+    conv
+    ((conv n to ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+       (\ n:nat. (eq nat (add n zero) n))
+       (\ n:nat. 
+          conv
+          (eqconv nat (add n zero) n
+            (\x:nat . (eq nat (add (succ n) zero) (succ x)))
+            (conv (eqrefl nat (add (succ n) zero))
+             to ((\ x : nat . (eq nat (add (succ n) zero) (succ x))) (add n zero))
+             by [ (eq nat refl (unfold (unfold n) zero)) ; eval ] ,
+                eval )
+            (addZ n))
+          to ((\ n : nat . (eq nat (add n zero) n)) (succ n))
+          by eval , eval )
+       conv (eqrefl nat (add zero zero))
+       to ((\x:nat.(eq nat (add x zero) x)) zero)
+       by (eq refl refl [ (unfold unfold refl) ; eval]) , eval)
+      to (eq nat (add n zero) n)
+      by eval , refl
