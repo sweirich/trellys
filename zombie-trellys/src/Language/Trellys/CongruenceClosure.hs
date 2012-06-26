@@ -14,7 +14,8 @@ module Language.Trellys.CongruenceClosure(
     - The terms have n-ary branches instead of being just binary trees. This probably ruins the
       asymptotical running time of the algorithm, but it makes it more convenient to use.
     - the associated equality proofs are stored directly on the Union-Find edges, instead of
-      in an associated "proof forest".
+      in an associated "proof forest". (The algoritm will run faster, but the proof terms will
+      be bigger than optimal).
  -}
 
 import Control.Monad
@@ -300,7 +301,6 @@ forAll2M gen p = do
   a1 <- pick gen
   a2 <- pick gen
   p a1 a2
-
 
 congTest :: [Equation TermLabel] -> Term -> Term -> Bool
 congTest eqs a b = isJust (congTestExplain eqs a b)

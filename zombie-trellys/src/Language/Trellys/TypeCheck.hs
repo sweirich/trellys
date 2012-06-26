@@ -398,12 +398,34 @@ ta th InferMe ty  = err [DS "I only know how to prove equalities, this goal has 
 -- rule T_chk
 ta th a tyB = do
   (ea,tyA) <- ts th a
-  subtype th tyA tyB
-    `catchError`
-       \e -> err $ [DS "When checking term", DD a, DS "against type",
-                    DD tyB, DS "the distinct type", DD tyA,
-                    DS "was inferred, and it isn't a subtype:\n", DD e]
-  return ea
+  isSubtype <- subtype th tyA tyB
+  if isSubtype
+    then return ea
+    else do 
+      isElaborating <- getFlag Elaborate
+      if isElaborating
+       then do
+         context <- getTys
+         let availableEqs = catMaybes $ map (\(x,th,ty) -> do guard (th==Logic)
+                                                              (ty1,ty2) <- isTyEq ty
+                                                              Just (x,ty1,ty2))
+                                            context
+         pf <- prove availableEqs (tyA,tyB)
+         case pf of 
+           Nothing ->
+             err [DS "When checking term", DD a, DS "against type",
+                  DD tyB, DS "the distinct type", DD tyA,
+                  DS "was inferred instead.",
+                  DS "I was unable to prove:", DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+                                                  (TyEq tyA tyB))]
+           Just p -> do
+                       x <- fresh (string2Name "x")
+                       return $ Conv ea [(False,p)] (bind [x] (Var x))         
+       else err [DS "When checking term", DD a, DS "against type",
+                 DD tyB, DS "the distinct type", DD tyA,
+                 DS "was inferred instead.",
+                 DS "(Not in elaboration mode, so no automatic coersion was attempted.)"]
+
 
 -- | Checks a list of terms against a telescope of types
 -- Returns list of elaborated terms.
@@ -791,17 +813,10 @@ duplicateTypeBindingCheck n ty = do
 -----------------------
 ------ subtyping
 -----------------------
-subtype :: Theta -> Term -> Term -> TcMonad ()
-subtype Program (Type _) (Type _) = return ()
-subtype Logic (Type l1) (Type l2) =
-  unless (l1 <= l2) $
-    err [DS "In the logical fragment,", DD (Type l1),
-         DS "is not a subtype of", DD (Type l2)]
-subtype _ a b =
-  unless (a' `aeqSimple` b') $
-    err [DD a, DS "is not a subtype of", DD b]
-  where a' = delPosParenDeep a
-        b' = delPosParenDeep b
+subtype :: Theta -> Term -> Term -> TcMonad Bool
+subtype Program (Type _) (Type _) = return True
+subtype Logic (Type l1) (Type l2) = return (l1 <= l2)
+subtype _ a b = return $ (delPosParenDeep a) `aeq` (delPosParenDeep b)
 
 
 isFirstOrder :: Term -> TcMonad Bool

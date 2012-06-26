@@ -532,7 +532,9 @@ letExpr =
   do reserved "let"
      th <- option Logic $ theta
      (ep,x) <- impOrExpBind
-     y <- brackets variableOrWild
+     defaultName <- fresh (string2Name "_")
+     y <- option defaultName (brackets variableOrWild)
+     --y <- brackets variableOrWild
      reservedOp "="
      boundExp <- expr
      reserved "in"
