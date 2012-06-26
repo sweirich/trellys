@@ -220,6 +220,32 @@ Fix vec :  * -> nat -> * =  \ A : * . \n : nat . self l . ! C : (! b : * . (! m:
         (! A : refl . (! n : refl . (! x: refl . (! xs:refl . [(unfold refl refl); eval; substself]))))
 
 
+Fix list2 : * -> * = \ A : * . self l . ! C : ((list2 A) -> *) .  
+                       ! nilCase : (C (nil2 A)) .
+                       ! consCase : (! x : A . ! xs : (list2 A).  (C (cons2 A x xs))) .
+                        (C (conv l to (list2 A) by refl , [(unfold refl); eval])),
+    nil2 : ! A : * . (list2 A) = 
+      conv                      
+         \ A : * . \C : ((list2 A) -> *) . 
+            \ nilCase : (C (nil2 A)) . 
+            \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
+            nilCase
+      to ! A : * . (list2 A)
+      by (! A : refl . ! C : refl . ! nilCase : refl . ! consCase : refl . (C ([(unfold refl); eval]))),
+         (! A : refl . [(unfold refl); eval; substself]),
+
+    cons2: ! A : * . A -> (list2 A) -> (list2 A) =  
+     conv 
+       \ A : * . \x:A  . \xs:(list2 A) . 
+          \C : ((list2 A) -> *) .
+          \nilCase : (C (nil2 A)) .
+            \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
+               (consCase x xs)
+     to 
+        ! A : * . (! x:A . (! xs:(list2 A) . (list2 A)))
+     by 
+       (! A : refl . (! x:A . (! xs:(list2 A) . (! C : refl . (! nilCase:refl . (!consCase:refl. (C [(unfold refl refl refl);eval]))))))),
+       (! A : refl . (! x:A . (! xs:(list2 A) . [(unfold refl); eval; substself])))
 
   
 
