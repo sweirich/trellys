@@ -1,0 +1,92 @@
+module CKMachine where
+
+
+data String : Type where
+     Empstr : String
+    | Str0  : String -> String
+    | Str1  : String -> String
+
+data Term : Type where
+      Var : String-> Term
+     |App : Term -> Term -> Term
+|Lambdabs : String -> Term -> Term
+
+
+data Bool : Type where
+ False : Bool
+| True : Bool
+
+data StateT : Type where
+    State: Term -> Cont ->StateT
+   |Done : StateT
+
+data Cont  : Type where
+    MT: Cont
+   |Fn: String-> Term->Cont-> Cont
+   |Ar: Cont -> Term -> Cont
+
+--do I need this or stateT acts as a term and a list/ cont- Fn- Ar acts as constructor for list
+data ContList : Type where
+   Cons: Cont -> ContList
+   |Nil : ContList 
+----------------------------
+type isLambda : Term -> Bool
+ prog isLambda = \(l:Term) ->
+   case l {l_eq} of 
+     Lambdabs l' t' -> True
+    |App l' t' -> False
+    |Var l' -> False
+
+ 
+type eq_str : String -> String -> Bool
+prog rec eq_str (t:String)(s:String) =
+  case t {t_eq} of
+    Empstr -> (case s {s_eq} of
+            Empstr -> True
+          | Str0 s' -> False
+          | Str1 s' -> False)
+    | Str0 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s'-> (eq_str t' s') 
+           |Str1 s' -> False)
+    | Str1 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s' -> False 
+           |Str1 s' -> (eq_str t' s'))
+
+
+
+type substitute : Term -> String -> Term -> Term
+    prog rec substitute (t :Term) (s:String) (t1: Term)=
+        
+       
+          case t1 {t1_eq} of 
+                   Var x' -> (case eq_str s x' {eqstr_eq} of
+                           True -> t
+                          |False -> t1)
+                 |Lambdabs s' t' ->  (case (eq_str s s') {eqstr_eq} of
+                           True -> t1
+                          |False -> Lambdabs s' (substitute t s t') )
+                 |App t2 t3 -> App (substitute t s t2)
+                                   (substitute t s t3)
+
+type step : StateT -> StateT
+prog  step = \(s: StateT) ->
+  ( case s {s_eq} of
+       Done -> Done
+      |StateT t k->  case t {t_eq} of
+                  App t1 t2 -> State t1 ( Ar k  t2)
+-- seperate function ???
+                 |Lambdabs s' t' -> (case k {k_eq} of
+                              MT-> Done
+                             |Fn s'' t'' c' -> State( substitute t s'' t'') c'
+                             |Ar  c' t' -> State t' (Fn s' t'  c')) 
+                 |Var -> Done) 
+------------------------
+
+
+
+                                     
+ 
+
+
