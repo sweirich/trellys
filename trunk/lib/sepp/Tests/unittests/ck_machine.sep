@@ -25,11 +25,6 @@ data Cont  : Type where
    |Fn: String-> Term->Cont-> Cont
    |Ar: Cont -> Term -> Cont
 
---do I need this or stateT acts as a term and a list/ cont- Fn- Ar acts as constructor for list
-data ContList : Type where
-   Cons: Cont -> ContList
-   |Nil : ContList 
-----------------------------
 type isLambda : Term -> Bool
  prog isLambda = \(l:Term) ->
    case l {l_eq} of 
@@ -61,7 +56,7 @@ type substitute : Term -> String -> Term -> Term
         
        
           case t1 {t1_eq} of 
-                   Var x' -> (case eq_str s x' {eqstr_eq} of
+                 Var x' -> (case eq_str s x' {eqstr_eq} of
                            True -> t
                           |False -> t1)
                  |Lambdabs s' t' ->  (case (eq_str s s') {eqstr_eq} of
@@ -72,17 +67,23 @@ type substitute : Term -> String -> Term -> Term
 
 type step : StateT -> StateT
 prog  step = \(s: StateT) ->
-  ( case s {s_eq} of
+   (case s {s_eq} of
        Done -> Done
-      |StateT t k->  case t {t_eq} of
-                  App t1 t2 -> State t1 ( Ar k  t2)
--- seperate function ???
-                 |Lambdabs s' t' -> (case k {k_eq} of
-                              MT-> Done
+      |State t k-> (case t {t_eq} of
+                    App t1 t2 -> State t1 ( Ar k  t2)
+
+                    |Lambdabs s' t' -> (case k {k_eq} of
+                              MT-> Done 
                              |Fn s'' t'' c' -> State( substitute t s'' t'') c'
                              |Ar  c' t' -> State t' (Fn s' t'  c')) 
-                 |Var -> Done) 
-------------------------
+                    |Var x' -> Done)) 
+
+type reduce : Term -> Term
+prog rec reduce (t: Term) =
+    case (step (State t( MT))) {st_eq} of
+              Done-> t
+             |State t' k-> reduce t'
+              
 
 
 
