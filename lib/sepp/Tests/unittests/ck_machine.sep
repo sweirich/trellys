@@ -18,7 +18,7 @@ data Bool : Type where
 
 data StateT : Type where
     State: Term -> Cont ->StateT
-   |Done : StateT
+  
 
 data Cont  : Type where
     MT: Cont
@@ -68,21 +68,34 @@ type substitute : Term -> String -> Term -> Term
 type step : StateT -> StateT
 prog  step = \(s: StateT) ->
    (case s {s_eq} of
-       Done -> Done
-      |State t k-> (case t {t_eq} of
+      State t k-> (case t {t_eq} of
                     App t1 t2 -> State t1 ( Ar k  t2)
 
                     |Lambdabs s' t' -> (case k {k_eq} of
-                              MT-> Done 
+                              MT-> State t k  
                              |Fn s'' t'' c' -> State( substitute t s'' t'') c'
                              |Ar  c' t' -> State t' (Fn s' t'  c')) 
-                    |Var x' -> Done)) 
+                    |Var x' ->State t k  )) 
 
-type reduce : Term -> Term
-prog rec reduce (t: Term) =
-    case (step (State t( MT))) {st_eq} of
-              Done-> t
-             |State t' k-> reduce t'
+
+type reduce : StateT -> Term
+prog rec reduce (s: StateT) =
+    (case  s {st_eq} of
+
+              State t k -> (case k {k_eq} of
+                            MT-> (case t {t_eq} of
+                                   Lambdabs s' t' -> t
+                                   |Var x -> t
+                                   |App t1 t2->  reduce (step( State t k)))
+                           |Fn s'' t'' c'' -> reduce (step (State t (Fn s'' t'' c'')))
+                           |Ar c''' t''' -> reduce (step (State t (Ar c''' t'''))))) 
+
+                            
+            
+theorem reduce_test1 : reduce (State (App (Lambdabs( Str0 Empstr)
+(App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT)= (Lambdabs( Str1 Empstr)( Var (Str1 Empstr)))
+proof reduce_test1 = join 10000 10000
+           
               
 
 
