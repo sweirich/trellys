@@ -1,7 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
 NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
 PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables,
-TemplateHaskell, RankNTypes, ConstraintKinds, MultiParamTypeClasses #-}
+TemplateHaskell, RankNTypes #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
 module Language.SepPP.TypeCheck(typecheck) where
