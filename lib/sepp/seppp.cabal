@@ -58,8 +58,8 @@ Library
   -- Packages needed in order to build this package.
   Build-depends:
     base,
-    unbound >= 0.3.2,
-    parsec >= 3.0,mtl,pretty,RepLib >= 0.5.2, containers,
+    unbound >= 0.4.1,
+    parsec >= 3.0,mtl,pretty,RepLib >= 0.5.3, containers,
     cmdargs
 
 
