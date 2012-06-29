@@ -68,7 +68,8 @@ sepDecl :: Parser Decl
 sepDecl = sepDataDecl <|> sepProgDecl <|> sepProofDecl <|> sepAxiomDecl <|>
           sepTheoremDecl <|> sepProgramDecl <|>
           sepInductiveDecl <|> sepRecursiveDecl <|>
-          sepFlag <|> sepOperator
+          sepFlag <|> sepOperator <|>
+          sepEval
 
 sepProgDecl :: Parser Decl
 sepProgDecl = do
@@ -230,6 +231,11 @@ sepFlag = do
 
 
 
+sepEval :: Parser Decl
+sepEval = do
+  reserved "Eval"
+  EvalStmt <$> expr
+  
 
 -- Tokenizer definition
 sepPPStyle :: GenLanguageDef String u Identity
@@ -252,7 +258,7 @@ sepPPStyle = haskellStyle {
             "let","in",
             "injective","sym","symm","trans","refl", "tcast",
             "set", -- for flags
-            "Theorem", "Program", "Inductive", "Recursive",
+            "Theorem", "Program", "Inductive", "Recursive", "Eval",
             "infix", "infixl", "infixr", "pre", "post",
             "exists","as","pack","unpack"
            ],

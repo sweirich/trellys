@@ -128,6 +128,13 @@ checkDef (DataDecl expr _) = do
              [(disp "The name", disp expr)]
 
 
+checkDef (EvalStmt expr) = do
+  ty <- check ProgMode expr Nothing
+  res <- eval 10000 expr
+  emit $ ">" $$$ expr <++> ":" <++> ty $$$ "> reduces to" $$$ res
+
+  return emptyEnv
+  
 
 -- * Judgements on proof fragment
 
