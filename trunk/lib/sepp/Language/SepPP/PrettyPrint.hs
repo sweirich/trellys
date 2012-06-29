@@ -71,6 +71,7 @@ instance LFresh M where
   avoid names = local upd where
      upd di = di { dispAvoid = (S.fromList names) `S.union` (dispAvoid di) }
 
+  getAvoids = asks dispAvoid
 
 
 cleverDisp :: (Display d, Alpha d) => d -> Doc
