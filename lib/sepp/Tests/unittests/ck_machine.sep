@@ -131,13 +131,20 @@ prog rec reduce (s: StateT) =
                            |Ar c''' t''' -> reduce (step (State t (Ar c''' t'''))))) 
 
                             
+
+Eval (State (App (Lambdabs( Str0 Empstr)
+      (App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT)
             
 theorem reduce_test1 : reduce (State (App (Lambdabs( Str0 Empstr)
 (App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT)= (Lambdabs( Str1 Empstr)( Var (Str1 Empstr)))
 proof reduce_test1 = join 10000 10000
 
+Eval reduce (State (App (Var (Str0 Empstr)) (Var (Str1 Empstr))) MT)
+
 theorem reduce_test2 : reduce (State (App (Var (Str0 Empstr)) (Var (Str1 Empstr))) MT)= App (Var(Str0 Empstr))(Var(Str1 Empstr))
 proof reduce_test2 = join 1000 1000             
+
+
               
 
 

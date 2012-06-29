@@ -491,7 +491,10 @@ instance Display Decl where
     return $ text "flag" <+> text n <+> (if val then text "true" else text "false")
   display (OperatorDecl fx level op) =
     return $ text fx <+> int level <+> text op
-    
+
+  display (EvalStmt expr) = do
+    de <- display expr
+    return $ text "Eval" <+> de
 
 
 instance Display Module where

@@ -43,6 +43,7 @@ data Decl = ProgDecl EName Expr Expr
           | DataDecl Expr (Bind Tele [(EName,Expr)])
           | AxiomDecl EName Expr
           | FlagDecl String Bool
+          | EvalStmt Expr
           | OperatorDecl String Int String
      deriving Show
 
