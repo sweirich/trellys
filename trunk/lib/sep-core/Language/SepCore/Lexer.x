@@ -1,8 +1,7 @@
 
 {
 module Language.SepCore.Lexer where
-import Language.SepCore.PrettyPrint
-import Text.PrettyPrint
+
 }
 
 %wrapper "monad"
@@ -134,104 +133,24 @@ data Token =
 data Lexeme = L AlexPosn Token String
 
 
-instance Disp Token where
-	disp TokenType = text "Type"
-
-        disp TokenDef = text ":="
-
-        disp (TokenInt i) = integer i
-
-        disp TokenFm = text "formula"
-
-        disp TokenForall = text "forall"
- 
-        disp (TokenProofVar s) = text s
-
-        disp (TokenPredVar s) = text s
-        disp TokenData = text "data"
-
-        disp TokenWhere = text "where"
-
-        disp (TokenTermVar s) = text s
-
-        disp TokenPi = text "Pi"
-
-        disp TokenEq = text "Eq"
-
-        disp TokenBot = text "bottom"
-
-        disp TokenLamb = text "\\"
-
-        disp TokenJoin = text "join"
-
-        disp TokenContr = text "contra"
-
-        disp TokenValax = text "valax"
-
-        disp TokenEx = text "!"
-
-        disp TokenBL = text "("
-
-        disp TokenBR = text ")"
-
-        disp TokenDC = text "::"
-
-        disp TokenPlus = text "+"
-
-        disp TokenMinus = text "-"
-
-        disp TokenCL = text ":"
-
-        disp TokenDot = text "."
-
-        disp TokenAb = text "abort"
- 
-        disp TokenCBL = text "{"
-
-        disp TokenCBR = text "}"
-
-  
-        disp TokenBar = text "|"
-
-        disp TokenEOF = text "EOF"
-
-        disp TokenOf = text "of"
-
-        disp TokenCase = text "case"
-
-        disp TokenArrow = text "->"
-
-        disp TokenLet = text "let"
-
-        disp TokenIn = text "in"
-
-        disp TokenEquiv = text "="
-
-        disp TokenRec = text "rec"
-        disp TokenSQL = text "["
-        disp TokenSQR = text "]"
-        disp TokenComma = text ","
-        disp TokenAp = text "@"
-        disp TokenConv = text "conv"
-        disp TokenBy = text "by"
 
 mkL :: Token -> AlexInput -> Int -> Alex Lexeme
-mkL t (p,_,str) len = return (L p t (take len str))
+mkL t (p,_,_,str) len = return (L p t (take len str))
 
 lexNum :: AlexInput -> Int -> Alex Lexeme
-lexNum a@(_,_,input) len = mkL (TokenInt (read (take len input))) a len
+lexNum a@(_,_,_,input) len = mkL (TokenInt (read (take len input))) a len
 
 lexProofVar :: AlexInput -> Int -> Alex Lexeme
-lexProofVar a@(_,_,input) len = mkL (TokenProofVar (take len input)) a len
+lexProofVar a@(_,_,_,input) len = mkL (TokenProofVar (take len input)) a len
 
 lexTermVar :: AlexInput -> Int -> Alex Lexeme
-lexTermVar a@(_,_,input) len = mkL (TokenTermVar (take len input)) a len
+lexTermVar a@(_,_,_,input) len = mkL (TokenTermVar (take len input)) a len
 
 lexPredVar :: AlexInput -> Int -> Alex Lexeme
-lexPredVar a@(_,_,input) len = mkL (TokenPredVar (take len input)) a len
+lexPredVar a@(_,_,_,input) len = mkL (TokenPredVar (take len input)) a len
 
 lexReservedW :: AlexInput -> Int -> Alex Lexeme
-lexReservedW a@(_,_,input) len = case take len input of
+lexReservedW a@(_,_,_,input) len = case take len input of
                                     "data" -> mkL TokenData a len 
                                     "Data" -> mkL TokenData a len
                                     "where" -> mkL TokenWhere a len
@@ -275,7 +194,7 @@ lexReservedW a@(_,_,input) len = case take len input of
 --                  | "." | "|"
 
 lexReservedS :: AlexInput -> Int -> Alex Lexeme
-lexReservedS a@(_,_,input) len = case take len input of
+lexReservedS a@(_,_,_,input) len = case take len input of
                                     "\\" -> mkL TokenLamb a len 
                                     "!" -> mkL TokenEx a len
                                     "(" -> mkL TokenBL a len
@@ -308,7 +227,7 @@ alexMonadScan2 = do
   sc <- alexGetStartCode
   case alexScan inp sc of
     AlexEOF -> alexEOF
-    AlexError inp'@(p,_,s) -> alexError $ show (getLineNum p) ++ ":" ++ show ((getColumnNum p)-1) ++ ": Lexical error."
+    AlexError inp'@(p,_,_,s) -> alexError $ show (getLineNum p) ++ ":" ++ show ((getColumnNum p)-1) ++ ": Lexical error."
     AlexSkip  inp' len -> do
         alexSetInput inp'
         alexMonadScan2
