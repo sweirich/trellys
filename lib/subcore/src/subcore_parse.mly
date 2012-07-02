@@ -10,20 +10,20 @@ let parse_error s =
 %start main
 
 %token EOF
-%token <Subcore_syntax.__term_not_in_ast__> STAR TO ARROW COMMA FIXCMD FOLD REFL DOT LS LP DEFINE EQ RS RP SET FIX UNSET CONV UNFOLD COLON SEMI EVAL BY EVALCMD IN PI SELF LAM SUBSTSELF
+%token <Subcore_syntax.__term_not_in_ast__> RP UNFOLD UNSET DOT EVALCMD COLON LAM FIX SET ARROW CONV SUBSTSELF PI BY IN EVAL REFL SEMI FIXCMD DEFINE COMMA SELF TO LS LP STAR EQ RS
 %token <Subcore_syntax.__terminal__> ID
 
 %type <Subcore_syntax.prog option> main
-%type <Subcore_syntax.fix_oterm_comma1> fix_oterm_comma1
-%type <Subcore_syntax.app_term_term3> app_term_term3
-%type <Subcore_syntax.prog_prog_cmd2> prog_prog_cmd2
-%type <Subcore_syntax.term> term
-%type <Subcore_syntax.fixcmd_cmd_comma0> fixcmd_cmd_comma0
-%type <Subcore_syntax.prog> prog
-%type <Subcore_syntax.oterm> oterm
-%type <Subcore_syntax.cmd> cmd
-%type <Subcore_syntax.trans_term_semi4> trans_term_semi4
 %type <Subcore_syntax.binding> binding
+%type <Subcore_syntax.trans_term_semi4> trans_term_semi4
+%type <Subcore_syntax.prog> prog
+%type <Subcore_syntax.app_term_term3> app_term_term3
+%type <Subcore_syntax.fixcmd_cmd_comma0> fixcmd_cmd_comma0
+%type <Subcore_syntax.prog_prog_cmd2> prog_prog_cmd2
+%type <Subcore_syntax.cmd> cmd
+%type <Subcore_syntax.oterm> oterm
+%type <Subcore_syntax.term> term
+%type <Subcore_syntax.fix_oterm_comma1> fix_oterm_comma1
 %type <Subcore_util.pd> cur_position
 
 %%
@@ -98,9 +98,6 @@ term:
 
 term:
   | LP oterm RP { Parens(get_term_pd_not_in_ast $1, $1, $2, $3) }
-
-term:
-  | FOLD ID { Fold(get_term_pd_not_in_ast $1, $1, $2) }
 
 term:
   | SUBSTSELF { Substself(get_term_pd_not_in_ast $1, $1) }
