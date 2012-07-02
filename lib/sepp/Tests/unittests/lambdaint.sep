@@ -154,7 +154,23 @@ type step : Term -> MaybeStep
                     Redex t2 x t3 -> Step (plug c (substitute t2 x t3)))  
        | CntDeco-> CntStep  
 
+data StepSpec : (t1:Term) (t2:Term) -> Type where
+  CtxtBetaV : (c:Context) -> (x:String) -> (t:Term) -> 
+              (xa:String) -> (ta:Term) ->
+              [u1:t1 = (plug c (App (Lambdabs x t) (Lambdabs xa ta)))] ->
+              [u2:t2 = (plug c (substitute (Lambdabs xa ta) x t))] ->
+              StepSpec t1 t2
 
+-- need correct definition of term_of_redex; this is just a dummy
+type term_of_redex : RedexT -> Term
+prog term_of_redex = \(r:RedexT) -> (Var Empstr)
+
+theorem decompose_plug : forall(t1:Term)(c:Context)(r:RedexT)(v:decompose t1 = (Deco c r)).
+                           plug c (term_of_redex r) = t1
+proof decompose_plug = join 20 20                                                      
+
+theorem step_sound : forall(t1:Term)(t2:Term)(u:step t1 = (Step t2)).exists(v:StepSpec t1 t2). v!
+proof step_sound = join 20 20
 
 type reduce : Term -> Term 
  prog rec reduce (t:Term) =
@@ -162,14 +178,6 @@ type reduce : Term -> Term
      CntStep-> t
     |Step t1-> reduce t1 
     
-
-                                              
- 
-
-
-
-
-
 
 Inductive eqstr_refl : forall (s:String) {s_term} . eq_str s s = True :=
    case s { s_eq } s_term of
