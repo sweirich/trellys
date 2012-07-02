@@ -13,7 +13,6 @@ rule token = parse
 | ";" { SEMI(Subcore_util.cur_pd()) }
 | "*" { STAR(Subcore_util.cur_pd()) }
 | "," { COMMA(Subcore_util.cur_pd()) }
-| "fold" { FOLD(Subcore_util.cur_pd()) }
 | "unfold" { UNFOLD(Subcore_util.cur_pd()) }
 | "refl" { REFL(Subcore_util.cur_pd()) }
 | "Define" { DEFINE(Subcore_util.cur_pd()) }

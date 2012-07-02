@@ -17,7 +17,6 @@ type term =
   | Check of term * term
   | Conv of term * term * term * term (* Conv(t,t1,p,p') is for conv t to t1 by p , p' *)
   | Trans of term * term
-  | Fold of string
   | Unfold
   | Eval
   | Refl
@@ -102,7 +101,6 @@ let rec string_of_term (t:term) : string =
     | Conv(t1,t2,p1,p2) -> 
 	"(conv "^(string_of_term t1)^" to "^(string_of_term t2)^" by "^(string_of_term p1) ^ " , " ^ (string_of_term p2)^")"
     | Arrow(t1,t2) -> "("^(string_of_term t1) ^ " -> " ^ (string_of_term t2)  ^")"
-    | Fold(s) -> "fold "^s
     | Unfold -> "unfold"
     | Substself -> "substself"
     | Eval -> "eval"
@@ -163,8 +161,6 @@ and conv_term (t:Subcore_syntax.term) : term =
     | Subcore_syntax.Parens(p,_,t,_) -> Pos(p,conv_oterm t)
     | Subcore_syntax.Var(p,s) ->
 	Pos(p,Var(snd s))
-    | Subcore_syntax.Fold(p,_,s) -> 
-	Pos(p,Fold(snd s))
     | Subcore_syntax.Substself(p,_) -> 
 	Pos(p,Substself)
     | Subcore_syntax.Unfold(p,_) -> 
@@ -234,7 +230,7 @@ let rec add_fvs (m:term trie) (t:term) : unit =
 	  add_fvs m t2;
 	  add_fvs m p1;
 	  add_fvs m p2;
-      | Fold(_) | Unfold | Eval | Refl | Substself -> ()
+      | Unfold | Eval | Refl | Substself -> ()
       | Pos(_,t) -> add_fvs m t
 ;;
 
@@ -319,7 +315,7 @@ let subst (t:term) (x:string) (t':term) : term =
 		let (x',t') = rename_away_and_subst x t in
 		  Self(x',t')
 	    | Conv(t1,t2,p1,p2) -> Conv(subst t1, subst t2, subst p1, subst p2)
-	    | Fold(_) | Unfold | Eval | Refl | Substself -> t'
+	    | Unfold | Eval | Refl | Substself -> t'
 	    | Pos(p,t) -> Pos(p,subst t) in
 	  if dbg then
 	    (print_string ") subst returns ";
@@ -681,7 +677,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 			       "\n3. converted computed: "^(string_of_term e1)^
 			       "\n4. converted desired:  "^(string_of_term e2)^
 			       "\n\n5. the eqterm stack:\n"^(string_of_eqterm_stack()))
-	| Eval | Fold(_) | Unfold | Refl | Trans(_,_) | Substself -> 
+	| Eval | Unfold | Refl | Trans(_,_) | Substself -> 
 	    err_pos p ("A proof construct is being used in a term-only part of the expression.\n\n"
 		       ^"1. the subterm which is a proof: "^(string_of_term t))
 	| Pos(p,t) -> tpof g p t
@@ -714,20 +710,6 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 		   "\n2. the "^s^"-proof: "^(string_of_term pf)) in
     let ret = 
       match pf with
-	  Fold(f) ->
-	    (match trie_lookup g f with
-		 Some(_,Some(d)) -> 
-		   if eqterm r t d then
-		     Var(f)
-		   else
-		     err_pos p ("A fold-proof is being applied to morph a term which does not match the definition being folded.\n\n"^
-				  "1. the defined symbol: "^f^
-				  "\n2. the term being converted: "^(string_of_term t)^
-				  "\n3. the eqterm stack:\n"^(string_of_eqterm_stack()))
-	       | _ ->
-		   err_pos p ("A fold-proof is being applied, but there is no definition for the symbol to be folded.\n\n"^
-				"1. the symbol: "^f^
-				"\n2. the term being converted: "^(string_of_term t)))
 	| Unfold ->
 	    let report_err() =
 	      err_pos p ("An unfold-proof is being used to morph a term which is not a defined symbol.\n\n"^

@@ -24,7 +24,6 @@ Trans : term -> LS oterm { SEMI oterm }+ RS .
 Parens : term -> LP oterm RP .
 
 (* these are really proof constructs *)
-Fold : term -> FOLD ID .
 Substself : term -> SUBSTSELF .
 Unfold : term -> UNFOLD .
 Eval : term -> EVAL .
@@ -37,7 +36,6 @@ EQ="=".
 SEMI=";".
 STAR="*".
 COMMA=",".
-FOLD="fold".
 UNFOLD="unfold".
 REFL="refl".
 DEFINE="Define".

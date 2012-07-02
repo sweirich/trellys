@@ -48,7 +48,6 @@ and eq_term = function
    |Conv (d , pd1_1 , oterm2_1 , pd3_1 , oterm4_1 , pd5_1 , term6_1 , pd7_1 , term8_1),Conv (d' , pd1_2 , oterm2_2 , pd3_2 , oterm4_2 , pd5_2 , term6_2 , pd7_2 , term8_2)-> true && eq_oterm(oterm2_1 , oterm2_2) && eq_oterm(oterm4_1 , oterm4_2) && eq_term(term6_1 , term6_2) && eq_term(term8_1 , term8_2)
    |Trans (d , pd1_1 , oterm2_1 , trans_term_semi43_1 , pd4_1),Trans (d' , pd1_2 , oterm2_2 , trans_term_semi43_2 , pd4_2)-> true && eq_oterm(oterm2_1 , oterm2_2) && eq_trans_term_semi4(trans_term_semi43_1 , trans_term_semi43_2)
    |Parens (d , pd1_1 , oterm2_1 , pd3_1),Parens (d' , pd1_2 , oterm2_2 , pd3_2)-> true && eq_oterm(oterm2_1 , oterm2_2)
-   |Fold (d , pd1_1 , str2_1),Fold (d' , pd1_2 , str2_2)-> true && snd str2_1 = snd str2_2
    |Substself (d , pd1_1),Substself (d' , pd1_2)-> true
    |Unfold (d , pd1_1),Unfold (d' , pd1_2)-> true
    |Eval (d , pd1_1),Eval (d' , pd1_2)-> true
