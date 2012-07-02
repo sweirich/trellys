@@ -27,12 +27,19 @@ and eq_cmd = function
    | _ -> false
 
 
+and eq_colon = function
+   |Colon (d , pd1_1),Colon (d' , pd1_2)-> true
+   |Dcolon (d , pd1_1),Dcolon (d' , pd1_2)-> true
+   | _ -> false
+
+
 and eq_oterm = function
-   |Lam (d , pd1_1 , str2_1 , pd3_1 , oterm4_1 , pd5_1 , oterm6_1),Lam (d' , pd1_2 , str2_2 , pd3_2 , oterm4_2 , pd5_2 , oterm6_2)-> true && snd str2_1 = snd str2_2 && eq_oterm(oterm4_1 , oterm4_2) && eq_oterm(oterm6_1 , oterm6_2)
+   |Lam (d , pd1_1 , str2_1 , colon3_1 , oterm4_1 , pd5_1 , oterm6_1),Lam (d' , pd1_2 , str2_2 , colon3_2 , oterm4_2 , pd5_2 , oterm6_2)-> true && snd str2_1 = snd str2_2 && eq_colon(colon3_1 , colon3_2) && eq_oterm(oterm4_1 , oterm4_2) && eq_oterm(oterm6_1 , oterm6_2)
    |Self (d , pd1_1 , str2_1 , pd3_1 , oterm4_1),Self (d' , pd1_2 , str2_2 , pd3_2 , oterm4_2)-> true && snd str2_1 = snd str2_2 && eq_oterm(oterm4_1 , oterm4_2)
    |Fix (d , pd1_1 , binding2_1 , fix_oterm_comma13_1 , pd4_1 , oterm5_1),Fix (d' , pd1_2 , binding2_2 , fix_oterm_comma13_2 , pd4_2 , oterm5_2)-> true && eq_binding(binding2_1 , binding2_2) && eq_fix_oterm_comma1(fix_oterm_comma13_1 , fix_oterm_comma13_2) && eq_oterm(oterm5_1 , oterm5_2)
-   |Arrow (d , term1_1 , pd2_1 , oterm3_1),Arrow (d' , term1_2 , pd2_2 , oterm3_2)-> true && eq_term(term1_1 , term1_2) && eq_oterm(oterm3_1 , oterm3_2)
-   |Pi (d , pd1_1 , str2_1 , pd3_1 , term4_1 , pd5_1 , oterm6_1),Pi (d' , pd1_2 , str2_2 , pd3_2 , term4_2 , pd5_2 , oterm6_2)-> true && snd str2_1 = snd str2_2 && eq_term(term4_1 , term4_2) && eq_oterm(oterm6_1 , oterm6_2)
+   |CbvArrow (d , term1_1 , pd2_1 , oterm3_1),CbvArrow (d' , term1_2 , pd2_2 , oterm3_2)-> true && eq_term(term1_1 , term1_2) && eq_oterm(oterm3_1 , oterm3_2)
+   |CbnArrow (d , term1_1 , pd2_1 , oterm3_1),CbnArrow (d' , term1_2 , pd2_2 , oterm3_2)-> true && eq_term(term1_1 , term1_2) && eq_oterm(oterm3_1 , oterm3_2)
+   |Pi (d , pd1_1 , str2_1 , colon3_1 , term4_1 , pd5_1 , oterm6_1),Pi (d' , pd1_2 , str2_2 , colon3_2 , term4_2 , pd5_2 , oterm6_2)-> true && snd str2_1 = snd str2_2 && eq_colon(colon3_1 , colon3_2) && eq_term(term4_1 , term4_2) && eq_oterm(oterm6_1 , oterm6_2)
    |Check (d , term1_1 , pd2_1 , oterm3_1),Check (d' , term1_2 , pd2_2 , oterm3_2)-> true && eq_term(term1_1 , term1_2) && eq_oterm(oterm3_1 , oterm3_2)
    |Term (d , term1_1),Term (d' , term1_2)-> true && eq_term(term1_1 , term1_2)
    | _ -> false
