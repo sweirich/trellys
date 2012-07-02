@@ -65,22 +65,17 @@ prog rec decompose (t:Term) =
     Var t' -> CntDeco 
   | Lambdabs t' r' -> CntDeco 
   | App t1 t2 -> 
-      case (isLambda t2) { i2 } of
-         True ->
-          (case t1 {i1} of 
-             Var s -> CntDeco
-           | App t1' t1'' -> (decompose t1)
-           | Lambdabs x t1' ->
-               Deco Base (Redex t2 x t1'))
-         |False-> 
             case(decompose t1) {decot1} of
                   CntDeco-> 
                     (case(decompose t2) {decot2} of
-                       CntDeco-> CntDeco
+                       CntDeco-> 
+                         (case t1 {t1_eq} of
+                            Var nm -> CntDeco
+                          | App u v -> CntDeco
+                          -- FIXME: We should guard this to insure that t2 is a lambda...
+                          | Lambdabs x t1' -> Deco Base (Redex t2 x t1'))
                       |Deco cxt r -> Deco(VC t1 cxt) r)
                  |Deco cxt r -> Deco(Ct cxt t2) r
-
-
 
 
 
@@ -165,9 +160,25 @@ data StepSpec : (t1:Term) (t2:Term) -> Type where
 type term_of_redex : RedexT -> Term
 prog term_of_redex = \(r:RedexT) -> (Var Empstr)
 
-theorem decompose_plug : forall(t1:Term)(c:Context)(r:RedexT)(v:decompose t1 = (Deco c r)).
-                           plug c (term_of_redex r) = t1
-proof decompose_plug = join 20 20                                                      
+axiom decomp_term : forall (t:Term). decompose t !
+
+Inductive decompose_plug : forall(t1:Term){t1_term}(c:Context)(r:RedexT)(v:decompose t1 = (Deco c r)).
+                           (plug c (term_of_redex r) = t1) :=
+   case t1 {t1_eq} t1_term of
+     Var nm -> let u1 = join 100 100 : CntDeco = decompose (Var nm);
+                   u2 = conv u1 at (CntDeco = (decompose ~t1_eq)); 
+                   u3 = trans u2 v : CntDeco = Deco c r
+               in contra u3
+    | Lambdabs s t ->   let u1 = morejoin { t1_term,sym t1_eq}:  CntDeco = decompose t1;
+                            u3 = trans u1 v : CntDeco =Deco c r
+                           in contra u3 
+    | App t2 t3 -> 
+         case decompose t2 {t2_eq} decomp_term t2 of
+             Deco c' r' -> 
+                let ih = decompose_plug t2 (ord t1_eq) c' r' (sym t2_eq)
+                in ih
+            | CntDeco -> False
+           
 
 theorem step_sound : forall(t1:Term)(t2:Term)(u:step t1 = (Step t2)).exists(v:StepSpec t1 t2). v!
 proof step_sound = join 20 20
