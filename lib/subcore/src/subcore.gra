@@ -8,13 +8,17 @@ UnsetFlag : cmd -> UNSET ID .
 EvalCmd : cmd -> EVALCMD oterm.
 FixCmd : cmd -> FIXCMD binding { COMMA binding }* .
 
-Lam : oterm -> LAM ID COLON oterm DOT oterm .
+Lam : oterm -> LAM ID colon oterm DOT oterm .
 Self : oterm -> SELF ID DOT oterm .
 Fix : oterm -> FIX binding { COMMA binding }* IN oterm .
-Arrow : oterm -> term ARROW oterm .
-Pi : oterm -> PI ID COLON term DOT oterm .
+CbvArrow : oterm -> term ARROW oterm .
+CbnArrow : oterm -> term FATARROW oterm .
+Pi : oterm -> PI ID colon term DOT oterm .
 Check : oterm -> term COLON oterm .
 Term : oterm -> term.
+
+Colon : colon -> COLON.
+Dcolon : colon -> DCOLON.
 
 App : term -> LP term { term }+ RP .
 Star : term -> STAR.
@@ -32,6 +36,7 @@ Refl : term -> REFL .
 Binding : binding -> ID COLON oterm EQ oterm .
 
 COLON=":".
+DCOLON="::".
 EQ="=".
 SEMI=";".
 STAR="*".
@@ -45,6 +50,7 @@ UNSET="Unset".
 LAM="\\".
 PI="!".
 ARROW="->".
+FATARROW="=>".
 SELF="self".
 SUBSTSELF="substself".
 FIX="fix".

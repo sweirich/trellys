@@ -9,6 +9,7 @@ rule token = parse
 | ['\t' ' ' '\n' '\r']+ as str { let i = ref 0 in String.iter(fun s -> if s <> ' ' && s <> '\t' then incr i) str; Subcore_util.line := !Subcore_util.line + !i; token lexbuf }
 | '#'  (_ # ['\n' '\r'])* { token lexbuf }
 | ":" { COLON(Subcore_util.cur_pd()) }
+| "::" { DCOLON(Subcore_util.cur_pd()) }
 | "=" { EQ(Subcore_util.cur_pd()) }
 | ";" { SEMI(Subcore_util.cur_pd()) }
 | "*" { STAR(Subcore_util.cur_pd()) }
@@ -22,6 +23,7 @@ rule token = parse
 | "\\" { LAM(Subcore_util.cur_pd()) }
 | "!" { PI(Subcore_util.cur_pd()) }
 | "->" { ARROW(Subcore_util.cur_pd()) }
+| "=>" { FATARROW(Subcore_util.cur_pd()) }
 | "self" { SELF(Subcore_util.cur_pd()) }
 | "substself" { SUBSTSELF(Subcore_util.cur_pd()) }
 | "fix" { FIX(Subcore_util.cur_pd()) }

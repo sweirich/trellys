@@ -6,11 +6,13 @@ open Trie;;
 
 type binder = Pi | Lam
 
+type strategy = Cbv | Cbn
+
 type term = 
     App of term * term
-  | Binder of binder * string * term * term
+  | Binder of binder * string * strategy * term * term
   | Fix of binding list * term
-  | Arrow of term * term
+  | Arrow of term * strategy * term
   | Var of string
   | Self of string * term
   | Star
@@ -88,10 +90,11 @@ let rec string_of_term (t:term) : string =
 	string_of_app (app_flatten t)
     | Trans(_,_) ->
 	string_of_trans (trans_flatten t)
-    | Binder(b,x,t1,t2) -> 
+    | Binder(b,x,s,t1,t2) -> 
 	let suppress = (b = Lam && Flags.get "suppress_lam_types") in
 	  "("^(string_of_binder b) ^ " " ^ x ^ 
-	    (if suppress then "" else " : " ^ (string_of_term t1)) ^ " . " ^ (string_of_term t2)^")"
+	    (if suppress then "" else ((match s with Cbv -> " : " | Cbn -> " :: ") ^ (string_of_term t1))) ^ 
+	    " . " ^ (string_of_term t2)^")"
     | Fix(bs,t) ->
 	"fix "^(string_of_bindings bs)^" in "^(string_of_term t)
     | Var(x) -> x
@@ -100,7 +103,7 @@ let rec string_of_term (t:term) : string =
     | Check(t1,t2) -> (string_of_term t1)^" : "^(string_of_term t2)
     | Conv(t1,t2,p1,p2) -> 
 	"(conv "^(string_of_term t1)^" to "^(string_of_term t2)^" by "^(string_of_term p1) ^ " , " ^ (string_of_term p2)^")"
-    | Arrow(t1,t2) -> "("^(string_of_term t1) ^ " -> " ^ (string_of_term t2)  ^")"
+    | Arrow(t1,s,t2) -> "("^(string_of_term t1) ^ (match s with Cbv -> " -> " | Cbn -> " => ") ^ (string_of_term t2)  ^")"
     | Unfold -> "unfold"
     | Substself -> "substself"
     | Eval -> "eval"
@@ -133,15 +136,21 @@ and string_of_binding(b:binding) : string =
 (***********************************************************************)
 (* converting from concrete to abstract syntax *)
 
+let conv_colon (c:Subcore_syntax.colon) : strategy =
+  match c with
+      Subcore_syntax.Colon(_,_) -> Cbv
+    | Subcore_syntax.Dcolon(_,_) -> Cbn;;
+
 let rec conv_oterm (t:Subcore_syntax.oterm) : term =
   match t with
-    | Subcore_syntax.Arrow(p,t1,_,t2) -> Pos(p,Arrow(conv_term t1, conv_oterm t2))
-    | Subcore_syntax.Pi(p,_,x,_,t1,_,t2) ->
-	Pos(p,Binder(Pi,snd x, conv_term t1, conv_oterm t2))
+    | Subcore_syntax.CbvArrow(p,t1,_,t2) -> Pos(p,Arrow(conv_term t1, Cbv, conv_oterm t2))
+    | Subcore_syntax.CbnArrow(p,t1,_,t2) -> Pos(p,Arrow(conv_term t1, Cbn, conv_oterm t2))
+    | Subcore_syntax.Pi(p,_,x,c,t1,_,t2) ->
+	Pos(p,Binder(Pi,snd x, conv_colon c, conv_term t1, conv_oterm t2))
     | Subcore_syntax.Term(p,t) -> Pos(p,conv_term t)
     | Subcore_syntax.Check(p,t1,_,t2) -> Pos(p,Check(conv_term t1,conv_oterm t2))
-    | Subcore_syntax.Lam(p,_,x,_,t1,_,t2) ->
-	Pos(p,Binder(Lam,snd x, conv_oterm t1, conv_oterm t2))
+    | Subcore_syntax.Lam(p,_,x,c,t1,_,t2) ->
+	Pos(p,Binder(Lam,snd x, conv_colon c, conv_oterm t1, conv_oterm t2))
     | Subcore_syntax.Fix(p,_,b,(_,bs),_,t2) ->
 	Pos(p,Fix(conv_bindings b bs, conv_oterm t2))
     | Subcore_syntax.Self(p,_,x,_,t) ->
@@ -214,9 +223,9 @@ let rec add_fvs (m:term trie) (t:term) : unit =
     match t with
 	Var(x) -> 
 	  trie_insert m x t
-      | App(t1,t2) | Arrow(t1,t2) ->
+      | App(t1,t2) | Arrow(t1,_,t2) ->
 	  add_fvs m t1; add_fvs m t2
-      | Binder(b,x,t1,t2) ->
+      | Binder(b,x,_,t1,t2) ->
 	  add_fvs m t1;
 	  nonadd [x] t2
       | Fix(bs,t) ->
@@ -283,14 +292,14 @@ let subst (t:term) (x:string) (t':term) : term =
 	let ret = 
 	  match t' with
 	      App(t1,t2) -> App(subst t1, subst t2)
-	    | Arrow(t1,t2) -> Arrow(subst t1, subst t2)
+	    | Arrow(t1,s,t2) -> Arrow(subst t1, s, subst t2)
 	    | Check(t1,t2) -> Check(subst t1, subst t2)
 	    | Trans(t1,t2) -> Trans(subst t1, subst t2)
 	    | Star -> Star
-	    | Binder(b,x,t1,t2) ->
+	    | Binder(b,x,s,t1,t2) ->
 		let t1' = subst t1 in
 		let (x',t2') = rename_away_and_subst x t2 in
-		  Binder(b,x',t1',t2')
+		  Binder(b,x',s,t1',t2')
 	    | Fix(bs,t) ->
 		(* return a list of pairs of the vars in xs with their old values (from m) *)
 		let rec rename_away_list xs =
@@ -329,17 +338,24 @@ let subst (t:term) (x:string) (t':term) : term =
 (***********************************************************************)
 (* testing types for equality, and substitution *)
 
-(* map names of variables to the type of the variable and optionally
-   what that variable is defined to equal *)
-type ctxt = (term * term option) trie;;
+(* map names of variables to (T,b,ot):
+
+   -- T is the type of the variable
+   -- b tells whether or not that variable can be treated as a value
+   -- ot optionally tells what that variable is defined to equal *)
+type ctxt = (term * bool * term option) trie;;
 
 Flags.register "debug_context" "Dump the typing context while type checking." false;;
 
 let dump_ctxt (os:string -> unit) (g:ctxt) : unit =
   os "The typing context is:(\n";
-  trie_iter (fun x (t,ot) ->
+  trie_iter (fun x (t,b,ot) ->
 	       os x;
-	       os " :: ";
+	       os " ::";
+	       if b then
+		 os "val "
+	       else
+		 os " ";
 	       os (string_of_term t);
 	       (match ot with
 		    None -> ()
@@ -350,8 +366,26 @@ let dump_ctxt (os:string -> unit) (g:ctxt) : unit =
   os ")\n"
 ;;
 			
+(* drop top-level Pos and Conv *)
+let rec drop_top_conv (t:term) : term =
+  match t with
+      Pos(_,t') -> drop_top_conv t'
+    | Conv(t,t',p1,p2) -> drop_top_conv t
+    | _ -> t;;
+
+let is_val (g:ctxt) (t:term) : bool =
+  match (drop_top_conv t) with
+      Binder(_,_,_,_,_) -> true
+    | Star -> true
+    | Self(_,_) -> true
+    | Var(s) ->
+	(match trie_lookup g s with
+	     None -> false
+	   | Some(t,b,ot) -> b)
+    | _ -> false;;
+
 let add_bindings (g:ctxt) (bs:binding list) : unit =
-  List.iter (fun(x,ta,tb) -> trie_insert g x (ta,Some(tb))) bs;;
+  List.iter (fun(x,ta,tb) -> trie_insert g x (ta,(is_val g tb),Some(tb))) bs;;
 
 Flags.register "debug_eqterm" "Print debugging information recursively from eqterm." false;;
 Flags.register "suppress_eqterm_stack" "Do not print the eqterm stack in type error messages." false;;
@@ -404,21 +438,23 @@ let rec eqterm (r:string trie) (t1:term) (t2:term) : bool =
 	    let x' = lookup x in
 	    let y' = lookup y in
 	      x' = y'
-	| Binder(b1,x,t1a,t1b), Binder(b2,y,t2a,t2b) ->
-	    if b1 = b2 && eqterm r t1a t2a then
+	| Binder(b1,x,s1,t1a,t1b), Binder(b2,y,s2,t2a,t2b) ->
+	    if b1 = b2 && s1 = s2 && eqterm r t1a t2a then
 	      identify_names_and_check x y t1b t2b
 	    else
 	      false
-	| Arrow(t1a,t1b) , Binder(b,y,t2a, t2b) | Binder(b,y,t2a, t2b), Arrow(t1a,t1b) ->
-	    if eqterm r t1a t2a then
+	| Arrow(t1a,s1,t1b) , Binder(b,y,s2,t2a, t2b) | Binder(b,y,s2,t2a, t2b), Arrow(t1a,s1,t1b) ->
+	    if s1 = s2 && eqterm r t1a t2a then
 	      (* choose a fresh name for y away from the free variables of t1b,
 		 just in case t1b contains y free.  Then check if t1b equals the renamed version of t2b. *)
 	      let y' = rename_away_term y t1b in
 		identify_names_and_check y y' t1b t2b
 	    else
 	      false
-	| App(t1a,t1b), App(t2a,t2b) | Arrow(t1a,t1b), Arrow(t2a,t2b) ->
+	| App(t1a,t1b), App(t2a,t2b) ->
 	    eqterm r t1a t2a && eqterm r t1b t2b
+	| Arrow(t1a,s1,t1b), Arrow(t2a,s2,t2b) ->
+	    s1 = s2 && eqterm r t1a t2a && eqterm r t1b t2b
 	| Star, Star -> true
 	| Self(x,t1a), Self(y,t2a) ->
 	    identify_names_and_check x y t1a t2a
@@ -444,15 +480,8 @@ let rec eqterm (r:string trie) (t1:term) (t2:term) : bool =
 
 Flags.register "debug_eval" "Print debugging information recursively from eval" false;;
 
-(* drop top-level Pos and Conv *)
-let rec drop_top_conv (t:term) : term =
-  match t with
-      Pos(_,t') -> drop_top_conv t'
-    | Conv(t,t',p1,p2) -> drop_top_conv t
-    | _ -> t;;
-
-(* if a context is supplied, we will unfold variables we encounter automatically *)
-let rec eval (og:ctxt option) (t:term) : term =
+(* if unf is true, we will unfold variables we encounter automatically *)
+let rec eval (g:ctxt) (unf:bool) (t:term) : term =
   let dbg = Flags.get "debug_eval" in
     if dbg then
       (print_string "(eval ";
@@ -462,19 +491,30 @@ let rec eval (og:ctxt option) (t:term) : term =
     let ret = 
       match t with
 	  App(t1,t2) ->
-	    let e1 = eval og t1 in
-	    let e2 = eval og t2 in
+	    let e1 = eval g unf t1 in
 	      (match drop_top_conv e1 with
-		   Binder(Lam,x,ta,tb) ->
-		     eval og (subst e2 x tb)
-		 | _ -> App(e1,e2))
+		   Binder(Lam,x,s,ta,tb) ->
+		     (match s with
+			  Cbv ->
+			    let e2 = eval g unf t2 in
+			      if is_val g e2 then
+				eval g unf (subst e2 x tb)
+			      else
+				(if dbg then
+				   (print_string "is_val returns false for ";
+				    print_string (string_of_term e2);
+				    print_string "\n");
+				 App(e1,e2))
+			| Cbn ->
+			    eval g unf (subst t2 x tb))
+		 | _ -> App(e1,t2))
 	| Var(x) -> 
-	    (match og with
-		 None -> t
-	       | Some(g) ->
-		   (match trie_lookup g x with
-			Some(_,Some(v)) -> eval og v
-		      | _ -> t))
+	    if unf then
+	       (match trie_lookup g x with
+		    Some(_,_,Some(v)) -> eval g unf v
+		  | _ -> t)
+	    else
+	      t
 	| _ -> t
     in
       if dbg then 
@@ -491,9 +531,9 @@ Flags.register "debug_tpof" "Dump information recursively while type checking." 
 Flags.register "debug_morph" "Dump information recursively from morph." false;;
 
 let rec tpof (g:ctxt) (p:pd) (t:term) : term =
-  let bind_and_tpof (x:string) (t1:term) (t2:term) : term =
+  let bind_and_tpof (x:string) (t1:term) (s:strategy) (t2:term) : term =
     let old = trie_lookup g x in
-      trie_insert g x (t1,None);
+      trie_insert g x (t1,(match s with Cbv -> true | Cbn -> false),None);
       let c2 = tpof g p t2 in
 	trie_update g x old;
 	c2
@@ -516,7 +556,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 	    (match trie_lookup g x with
 		 None -> 
 		   err_pos p ("No declaration for variable "^x^" is currently in scope.\n")
-	       | Some(t1,_) -> t1)
+	       | Some(t1,_,_) -> t1)
 	| App(t1,t2) ->
 	    let c1 = tpof g p t1 in
 	    let c2 = tpof g p t2 in
@@ -528,12 +568,19 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 			   "\n4. the eqterm stack:\n"^(string_of_eqterm_stack()))
 	    in
 	      (match (strip_pos c1) with
-		   Binder(Pi,x,c1a,c1b) -> 
+		   Binder(Pi,x,s,c1a,c1b) -> 
 		     if eqterm (trie_new()) c1a c2 then
-		       subst t2 x c1b
+		       (match s with
+			    Cbv ->
+			      if is_val g t2 then
+				subst t2 x c1b
+			      else
+				App(Binder(Lam,x,Cbv,c1a,c1b),t2)
+			  | Cbn -> 
+			      subst t2 x c1b)
 		     else
 		       report_mismatch c1a
-		 | Arrow(c1a,c1b) ->
+		 | Arrow(c1a,s,c1b) ->
 		     if eqterm (trie_new()) c1a c2 then
 		       c1b
 		     else
@@ -542,7 +589,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 		     err_pos p ("The functional part of an application has a type which is not a Pi type.\n\n"^
 				  "1. the functional part: "^(string_of_term t1)^
 				  "\n2. its type: "^(string_of_term c1)))
-	| Binder(Lam,x,t1,t2) ->
+	| Binder(Lam,x,s,t1,t2) ->
 	    let c1 = tpof g p t1 in
 	      (match strip_pos c1 with
 		   Star -> ()
@@ -550,8 +597,8 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 		     err_pos p ("The classifier of the domain type of a lambda abstraction is not *.\n\n"^
 				  "1. the domain type: "^(string_of_term t1)^
 				  "\n2. its classifier: "^(string_of_term c1)));
-	      Binder(Pi,x,t1,bind_and_tpof x t1 t2)
-	| Binder(Pi,x,t1,t2) ->
+	      Binder(Pi,x,s,t1,bind_and_tpof x t1 s t2)
+	| Binder(Pi,x,s,t1,t2) ->
 	    let err_if_not_star s t c = 
 	      match strip_pos c with
 		  Star -> ()
@@ -562,7 +609,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 	    in
 	    let c1 = tpof g p t1 in
 	      err_if_not_star "domain" t1 c1;
-	      let c2 = bind_and_tpof x t1 t2 in
+	      let c2 = bind_and_tpof x t1 s t2 in
 		err_if_not_star "range" t2 c2;
 		Star 
 	| Check(t1,t2) ->
@@ -582,7 +629,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 	    let rec check_tps bs =
 	      match bs with 
 		  [] -> restore() (* we will re-add the bindings in later step with their defining terms *)
-		| (x,ta,_)::bs' ->
+		| (x,ta,tb)::bs' ->
 		    let ca = tpof g p ta in
 		      
 		      (* check that ta is indeed a type *)
@@ -593,7 +640,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 					  "1. the recursively defined symbol: "^x^
 					  "\n2. its classifier: "^(string_of_term ta)^
 					  "\n3. the classifier of its classifier (should be *): "^(string_of_term ca)));
-		      trie_insert g x (ta,None);
+		      trie_insert g x (ta,(is_val g tb),None);
 		      check_tps bs'
 	    in
 
@@ -639,8 +686,8 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 		
 		c1
 	| Self(x,t') ->
-	    bind_and_tpof x t t'
-	| Arrow(t1,t2) -> 
+	    bind_and_tpof x t Cbn t'
+	| Arrow(t1,s,t2) -> 
 	    let c1 = tpof g p t1 in
 	    let c2 = tpof g p t2 in
 	    let report_error s t c =
@@ -718,32 +765,38 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 	      (match strip_pos t with
 		   Var(x) ->
 		     (match trie_lookup g x with
-			  Some(_,Some(t')) -> t'
+			  Some(_,_,Some(t')) -> t'
 			| _ ->
 			    report_err())
 		 | _ -> report_err())
-	| Eval -> eval None t (* None means we will NOT unfold definitions automatically *)
+	| Eval -> eval g false t
 	| Refl -> t
 	| Trans(pf1,pf2) -> 
 	    morph g r p subj (morph g r p subj t pf1) pf2
-	| Arrow(pf1,pf2) ->
+	| Arrow(pf1,s,pf2) ->
 	    let y = rename_away_term "q" (App(pf2,t)) in
-	      morph g r p subj t (Binder(Pi,y,pf1,pf2))
+	      morph g r p subj t (Binder(Pi,y,s,pf1,pf2))
 	| App(pf1,pf2) ->
 	    (match strip_pos t with
 		 App(t1,t2) ->
 		   App(morph g r p None t1 pf1, morph g r p None t2 pf2)
 	       | _ -> cong_err "application")
 		   
-	| Binder(b,x,pf1,pf2) ->
+	| Binder(b,x,s1,pf1,pf2) ->
 	    (match strip_pos t with
-		 Binder(b',x',t1,t2) ->
-		   if b <> b' then
+		 Binder(b',x',s2,t1,t2) ->
+		   if b <> b' || s1 <> s2 then
 		     cong_err "Pi"
 		   else
+		     
+		     (* we will map x to x' *)
+
 		     let t1' = morph g r p None t1 pf1 in
 		     let old = trie_lookup r x in
+		     let old2 = trie_lookup g x' in
 		       trie_insert r x x';
+		       (* we need to record the fact that x' is a value *)
+		       trie_insert g x' (t1,(match s1 with Cbv -> true | Cbn -> false) ,None);
 
 		       (* break down the subject if it is a lambda and we are morphing with a Pi-proof *)
 		       let (o,subj') = 
@@ -754,26 +807,32 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 			       None -> (None,None)
 			     | Some(s) ->
 				 match strip_pos s with
-				     Binder(Lam,x'',s1,s2) ->
+				     Binder(Lam,x'',s3,_,q2) ->
+				       if s1 <> s3 then
+					 (err_pos p ("A Pi-proof is being used to morph a lambda-term, but the strategies (Cbv vs. Cbn)"^
+						     "do not match.\n\n"^
+						     "1. the term being morphed: "^(string_of_term t)^
+						     "\n2. the Pi-proof: "^(string_of_term pf)));
 				       let old1 = trie_lookup r x'' in
 					 trie_insert r x'' x';
-					 (Some(x'',old1),Some(s2))
+					 (Some(x'',old1),Some(q2))
 				   | _ -> (None,None)
 		       in
 			 
 			 (* now proceed recursively *)
 		       let t2' = morph g r p subj' t2 pf2 in
 			 trie_update r x old;
+			 trie_update g x' old2;
 			 
 			 (* restore the variable lambda-bound by the subject, if the subject is a lambda *)
 			 (match o with
 			      None -> ()
 			    | Some(x'',old1) -> trie_update r x'' old1);
 
-			 Binder(b,x',t1',t2')
-	       | Arrow(t1,t2) ->
+			 Binder(b,x',s1,t1',t2')
+	       | Arrow(t1,s,t2) ->
 		   let y = rename_away_term "q" (App(pf,t2)) in
-		     morph g r p subj (Binder(Pi,y,t1,t2)) pf 
+		     morph g r p subj (Binder(Pi,y,s,t1,t2)) pf 
 	       | _ -> cong_err "Pi")
 	| Var(x) ->
 	    let report_err() = 
@@ -828,7 +887,7 @@ let rec proc_cmd (g:ctxt) (c:cmd) : unit =
     | Def(pos,x,t1,t2) ->
 	let c2 = tpof g pos t2 in
 	  if eqterm (trie_new()) t1 c2 then
-	    trie_insert g x (t1,Some(t2))
+	    trie_insert g x (t1,(is_val g t2),Some(t2))
 	  else
 	    err (string_of_pos pos ^ ": in a top-level definition, the declared type does not match the computed type.\n\n"^
 		   "1. the defined symbol: "^x^
@@ -836,7 +895,7 @@ let rec proc_cmd (g:ctxt) (c:cmd) : unit =
 		   "\n3. the computed type: "^(string_of_term c2)^
 		   "\n4. the eqterm stack:\n"^(string_of_eqterm_stack()))
     | EvalCmd(t) ->
-	let e = eval (Some(g)) t in
+	let e = eval g true t in
 	  print_string (string_of_term t);
 	  print_string " evals to ";
 	  print_string (string_of_term e);
