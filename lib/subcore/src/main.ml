@@ -390,6 +390,8 @@ let add_bindings (g:ctxt) (bs:binding list) : unit =
 Flags.register "debug_eqterm" "Print debugging information recursively from eqterm." false;;
 Flags.register "suppress_eqterm_stack" "Do not print the eqterm stack in type error messages." false;;
 
+Flags.register "respect_strategies" "Respect the annotations for strategies on lambda- and Pi-abstractions." false;;
+
 let eqterm_stack = Stack.create();;
 
 let rec string_of_eqterm_stack() : string =
@@ -439,12 +441,12 @@ let rec eqterm (r:string trie) (t1:term) (t2:term) : bool =
 	    let y' = lookup y in
 	      x' = y'
 	| Binder(b1,x,s1,t1a,t1b), Binder(b2,y,s2,t2a,t2b) ->
-	    if b1 = b2 && s1 = s2 && eqterm r t1a t2a then
+	    if b1 = b2 && (not (Flags.get "respect_strategies") || s1 = s2) && eqterm r t1a t2a then
 	      identify_names_and_check x y t1b t2b
 	    else
 	      false
 	| Arrow(t1a,s1,t1b) , Binder(b,y,s2,t2a, t2b) | Binder(b,y,s2,t2a, t2b), Arrow(t1a,s1,t1b) ->
-	    if s1 = s2 && eqterm r t1a t2a then
+	    if (not (Flags.get "respect_strategies") || s1 = s2) && eqterm r t1a t2a then
 	      (* choose a fresh name for y away from the free variables of t1b,
 		 just in case t1b contains y free.  Then check if t1b equals the renamed version of t2b. *)
 	      let y' = rename_away_term y t1b in
@@ -454,7 +456,7 @@ let rec eqterm (r:string trie) (t1:term) (t2:term) : bool =
 	| App(t1a,t1b), App(t2a,t2b) ->
 	    eqterm r t1a t2a && eqterm r t1b t2b
 	| Arrow(t1a,s1,t1b), Arrow(t2a,s2,t2b) ->
-	    s1 = s2 && eqterm r t1a t2a && eqterm r t1b t2b
+	    (not (Flags.get "respect_strategies") || s1 = s2) && eqterm r t1a t2a && eqterm r t1b t2b
 	| Star, Star -> true
 	| Self(x,t1a), Self(y,t2a) ->
 	    identify_names_and_check x y t1a t2a
@@ -497,7 +499,7 @@ let rec eval (g:ctxt) (unf:bool) (t:term) : term =
 		     (match s with
 			  Cbv ->
 			    let e2 = eval g unf t2 in
-			      if is_val g e2 then
+			      if not (Flags.get "respect_strategies") || is_val g e2 then
 				eval g unf (subst e2 x tb)
 			      else
 				(if dbg then
@@ -572,7 +574,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 		     if eqterm (trie_new()) c1a c2 then
 		       (match s with
 			    Cbv ->
-			      if is_val g t2 then
+			      if not (Flags.get "respect_strategies") || is_val g t2 then
 				subst t2 x c1b
 			      else
 				App(Binder(Lam,x,Cbv,c1a,c1b),t2)
@@ -785,7 +787,7 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 	| Binder(b,x,s1,pf1,pf2) ->
 	    (match strip_pos t with
 		 Binder(b',x',s2,t1,t2) ->
-		   if b <> b' || s1 <> s2 then
+		   if b <> b' || (Flags.get "respect_strategies" && s1 <> s2) then
 		     cong_err "Pi"
 		   else
 		     
@@ -808,7 +810,7 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 			     | Some(s) ->
 				 match strip_pos s with
 				     Binder(Lam,x'',s3,_,q2) ->
-				       if s1 <> s3 then
+				       if (Flags.get "respect_strategies" && s1 <> s3) then
 					 (err_pos p ("A Pi-proof is being used to morph a lambda-term, but the strategies (Cbv vs. Cbn)"^
 						     "do not match.\n\n"^
 						     "1. the term being morphed: "^(string_of_term t)^
