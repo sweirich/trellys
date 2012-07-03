@@ -8,7 +8,7 @@ type __terminal__ = (pd * string);;
 type __term_not_in_ast__ = pd;;
 type dummy = Dummy 
 and binding = | Binding of pd * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm
-and cmd = | Def of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | SetFlag of pd * __term_not_in_ast__ * __terminal__ | UnsetFlag of pd * __term_not_in_ast__ * __terminal__ | EvalCmd of pd * __term_not_in_ast__ * oterm | FixCmd of pd * __term_not_in_ast__ * binding * fixcmd_cmd_comma0
+and cmd = | Def of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm * __term_not_in_ast__ * oterm | SetFlag of pd * __term_not_in_ast__ * __terminal__ | UnsetFlag of pd * __term_not_in_ast__ * __terminal__ | ListFlags of pd * __term_not_in_ast__ | EvalCmd of pd * __term_not_in_ast__ * oterm | FixCmd of pd * __term_not_in_ast__ * binding * fixcmd_cmd_comma0
 and colon = | Colon of pd * __term_not_in_ast__ | Dcolon of pd * __term_not_in_ast__
 and oterm = | Lam of pd * __term_not_in_ast__ * __terminal__ * colon * oterm * __term_not_in_ast__ * oterm | Self of pd * __term_not_in_ast__ * __terminal__ * __term_not_in_ast__ * oterm | Fix of pd * __term_not_in_ast__ * binding * fix_oterm_comma1 * __term_not_in_ast__ * oterm | CbvArrow of pd * term * __term_not_in_ast__ * oterm | CbnArrow of pd * term * __term_not_in_ast__ * oterm | Pi of pd * __term_not_in_ast__ * __terminal__ * colon * term * __term_not_in_ast__ * oterm | Check of pd * term * __term_not_in_ast__ * oterm | Term of pd * term
 and prog = | Prog of pd * prog_prog_cmd2
@@ -31,6 +31,7 @@ and pd_cmd = function
   | Def(pd,_,_,_,_,_,_) -> pd
   | SetFlag(pd,_,_) -> pd
   | UnsetFlag(pd,_,_) -> pd
+  | ListFlags(pd,_) -> pd
   | EvalCmd(pd,_,_) -> pd
   | FixCmd(pd,_,_,_) -> pd
 and pd_colon = function 

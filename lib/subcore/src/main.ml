@@ -31,7 +31,8 @@ type cmd =
     Def of pd * string * term * term
   | SetFlag of string
   | UnsetFlag of string
-  | EvalCmd of term
+  | ListFlags
+  | EvalCmd of pd * term
   | FixCmd of pd * (binding list)
 ;;
 type prog = cmd list;;
@@ -200,8 +201,10 @@ let conv_cmd (d:Subcore_syntax.cmd) : cmd =
 	SetFlag(snd x)
     | Subcore_syntax.UnsetFlag(p,_,x) ->
 	UnsetFlag(snd x)
+    | Subcore_syntax.ListFlags(p,_) ->
+	ListFlags
     | Subcore_syntax.EvalCmd(p,_,t) ->
-	EvalCmd(conv_oterm t)
+	EvalCmd(p,conv_oterm t)
     | Subcore_syntax.FixCmd(p,_,b,(_,bs)) ->
 	FixCmd(p,conv_bindings b bs)
 ;;
@@ -876,7 +879,8 @@ let string_of_cmd (c:cmd) : string =
        SetFlag(s) -> "Set "^s
      | UnsetFlag(s) -> "Unset "^s
      | Def(_,x,t1,t2) -> ("Define "^x^" : "^(string_of_term t1)^" = "^(string_of_term t2))
-     | EvalCmd(t) -> "Eval "^(string_of_term t)
+     | EvalCmd(_,t) -> "Eval "^(string_of_term t)
+     | ListFlags -> "ListFlags"
      | FixCmd(_,bs) -> "Fix "^(string_of_bindings bs)
   )^"\n"
 
@@ -886,6 +890,7 @@ let rec proc_cmd (g:ctxt) (c:cmd) : unit =
   (match c with
       SetFlag(s) -> Flags.set s true
     | UnsetFlag(s) -> Flags.set s false
+    | ListFlags -> print_string (Flags.flag_descriptions())
     | Def(pos,x,t1,t2) ->
 	let c2 = tpof g pos t2 in
 	  if eqterm (trie_new()) t1 c2 then
@@ -896,10 +901,11 @@ let rec proc_cmd (g:ctxt) (c:cmd) : unit =
 		   "\n2. the declared type: "^(string_of_term t1)^
 		   "\n3. the computed type: "^(string_of_term c2)^
 		   "\n4. the eqterm stack:\n"^(string_of_eqterm_stack()))
-    | EvalCmd(t) ->
+    | EvalCmd(pos,t) ->
+	let _ = tpof g pos t in
 	let e = eval g true t in
 	  print_string (string_of_term t);
-	  print_string " evals to ";
+	  print_string "\nevals to\n";
 	  print_string (string_of_term e);
 	  print_string "\n"
     | FixCmd(p,bs) ->

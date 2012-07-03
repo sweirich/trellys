@@ -20,6 +20,7 @@ rule token = parse
 | "in" { IN(Subcore_util.cur_pd()) }
 | "Set" { SET(Subcore_util.cur_pd()) }
 | "Unset" { UNSET(Subcore_util.cur_pd()) }
+| "ListFlags" { LISTFLAGS(Subcore_util.cur_pd()) }
 | "\\" { LAM(Subcore_util.cur_pd()) }
 | "!" { PI(Subcore_util.cur_pd()) }
 | "->" { ARROW(Subcore_util.cur_pd()) }

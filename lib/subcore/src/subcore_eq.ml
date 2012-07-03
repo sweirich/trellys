@@ -22,6 +22,7 @@ and eq_cmd = function
    |Def (d , pd1_1 , str2_1 , pd3_1 , oterm4_1 , pd5_1 , oterm6_1),Def (d' , pd1_2 , str2_2 , pd3_2 , oterm4_2 , pd5_2 , oterm6_2)-> true && snd str2_1 = snd str2_2 && eq_oterm(oterm4_1 , oterm4_2) && eq_oterm(oterm6_1 , oterm6_2)
    |SetFlag (d , pd1_1 , str2_1),SetFlag (d' , pd1_2 , str2_2)-> true && snd str2_1 = snd str2_2
    |UnsetFlag (d , pd1_1 , str2_1),UnsetFlag (d' , pd1_2 , str2_2)-> true && snd str2_1 = snd str2_2
+   |ListFlags (d , pd1_1),ListFlags (d' , pd1_2)-> true
    |EvalCmd (d , pd1_1 , oterm2_1),EvalCmd (d' , pd1_2 , oterm2_2)-> true && eq_oterm(oterm2_1 , oterm2_2)
    |FixCmd (d , pd1_1 , binding2_1 , fixcmd_cmd_comma03_1),FixCmd (d' , pd1_2 , binding2_2 , fixcmd_cmd_comma03_2)-> true && eq_binding(binding2_1 , binding2_2) && eq_fixcmd_cmd_comma0(fixcmd_cmd_comma03_1 , fixcmd_cmd_comma03_2)
    | _ -> false

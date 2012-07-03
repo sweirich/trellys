@@ -29,6 +29,6 @@ let flag_descriptions () =
   String.concat "\n"
     (List.map (fun f ->
                  f ^ " : " ^ (Hashtbl.find flagdtbl f)
-                 ^ " (Default: "
+                 ^ " (Value: "
                  ^ (string_of_bool (Hashtbl.find flagtbl f)) ^ ")")
        !flags);;
