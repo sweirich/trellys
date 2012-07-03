@@ -6,6 +6,9 @@
 #Set print_commands
 
 #Set debug_eval
+
+#Set respect_strategies
+
 Fix nat : * = 
         self n . ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> 
                    (C conv n to nat by refl, unfold) 
