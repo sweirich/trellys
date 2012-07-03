@@ -1,14 +1,3 @@
-#Set debug_morph
-#Set debug_subst
-#Set debug_tpof
-#Set suppress_eqterm_stack
-
-#Set print_commands
-
-#Set debug_eval
-
-#ListFlags
-
 Set respect_strategies
 
 Fix nat : * = 
@@ -29,7 +18,6 @@ Fix nat : * =
            by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
               [ unfold ; substself ]
 
-# this just allows us to eliminate a nat in other code, without doing an explicit conv there.
 Define nat_elim : ! n : nat . 
                   ! C : (nat => *) . 
                   (! n : nat. (C (succ n))) -> 
@@ -48,24 +36,6 @@ Fix add : nat -> nat -> nat =
          by ((refl -> [ (refl (unfold refl)); eval]) -> eval -> eval), refl
          (\ p : nat . (succ (add p m))) 
          m)
-
-###### uncomment to add 1 and 1
-#Set suppress_lam_types              ### to make the output easier to read
-#Eval (add (succ zero) (succ zero))
-######
-
-Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
-    mkunit : unit =
-         conv \ C : unit -> * . \ u : (C mkunit) . u 
-         to unit
-         by (! C : refl . (! z : refl . (C unfold))),
-            [ unfold ; substself ]
-
-
-Fix void : * = self u. ! C : (void -> *). (C conv u to void by refl, unfold)
-
-# Equality supports elimination over a predicate C which depends on the RHS of the
-# equality and the equality proof itself (see the type of C in the definitions).
 
 Fix eq : ! A : *. A => A => * = 
          \ A : * . \ a :: A . \ b :: A . 
@@ -98,26 +68,16 @@ Define eqconv : ! A : *. ! a :: A . ! b :: A . ! C : (A => *) . (C a) -> (eq A a
      to (C b)
      by eval, refl
 
-# Set debug_morph
+Define terminates : ! A : *. A => * =
+    \ A : *. \ a :: A .
+     ! C : (A  => *). 
+       (! a :: A. ! v : A . (eq A a v) -> (C a)) -> 
+       (C a)
 
-Fix addZ : ! n:nat . (eq nat (add n zero) n) =
-  \ n : nat .
-    conv
-    (nat_elim n
-       (\ n::nat. (eq nat (add n zero) n))
-       (\ n:nat. 
-          conv
-          (eqconv nat (add n zero)
-            n
-            (\x::nat . (eq nat (add (succ n) zero) (succ x)))
-            (conv (eqrefl nat (add (succ n) zero))
-             to ((\ x :: nat . (eq nat (add (succ n) zero) (succ x))) (add n zero))
-             by (eq nat refl [ (unfold (unfold n) zero) ; eval ; (unfold refl refl refl refl); eval ])  , eval )
-            (addZ n))
-          to ((\ n :: nat . (eq nat (add n zero) n)) (succ n))
-          by eval , eval )
-       conv (eqrefl nat (add zero zero))
-       to ((\x::nat.(eq nat (add x zero) x)) zero)
-       by (eq refl refl [ (unfold unfold refl) ; eval ; (unfold refl refl refl refl) ; eval ]) , eval)
-      to (eq nat (add n zero) n)
-      by eval , refl
+Define valax : ! A : *. ! a : A . (terminates A a) =
+  \ A : * . \ a : A .
+  conv \ C : (A => *).
+       \ u : (! a :: A. ! v : A . (eq A a v) -> (C a)). (u a a (eqrefl A a))
+  to (terminates A a)
+  by refl , [ (unfold A a) ; eval ]
+

@@ -5,6 +5,7 @@ Prog : prog -> { cmd }+ .
 Def : cmd -> DEFINE ID COLON oterm EQ oterm .
 SetFlag : cmd -> SET ID .
 UnsetFlag : cmd -> UNSET ID .
+ListFlags : cmd -> LISTFLAGS.
 EvalCmd : cmd -> EVALCMD oterm.
 FixCmd : cmd -> FIXCMD binding { COMMA binding }* .
 
@@ -47,6 +48,7 @@ DEFINE="Define".
 IN="in".
 SET="Set".
 UNSET="Unset".
+LISTFLAGS="ListFlags".
 LAM="\\".
 PI="!".
 ARROW="->".
