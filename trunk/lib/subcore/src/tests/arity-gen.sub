@@ -75,7 +75,8 @@ Fix chomp_n : ! n : nat . (atype n)  =
           conv 
            (\pred : nat . \ m : nat . (chomp_n pred))
           to (! pred : nat . ((\ n' :: nat . (atype n')) (succ pred)))
-          by refl, (! pred : nat . [eval; (unfold refl); eval; eval])
+          by refl, (! pred : nat . [eval; (unfold refl); eval; (refl (unfold refl)); 
+                                    eval; (unfold refl refl refl refl) ; eval ])
  
           # (conv  
           #     (\pred : nat . \ m : nat . (chomp_n pred))
