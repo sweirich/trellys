@@ -72,25 +72,23 @@ Fix chomp_n : ! n : nat . (atype n)  =
    \n : nat . 
       (nat_elim n
         (\ n' :: nat . (atype n'))
+          # Succ branch
           conv 
            (\pred : nat . \ m : nat . (chomp_n pred))
           to (! pred : nat . ((\ n' :: nat . (atype n')) (succ pred)))
           by refl, (! pred : nat . [eval; (unfold refl); eval; (refl (unfold refl)); 
                                     eval; (unfold refl refl refl refl) ; eval ])
- 
-          # (conv  
-          #     (\pred : nat . \ m : nat . (chomp_n pred))
-          #  to (! pred : nat . (atype (succ pred)))
-          #  by refl, (! pred : nat . [(unfold refl); eval]))
-
-        # (conv 
-        # (\ pred : nat . \ m : nat . (chomp_n pred))
-        # to (! n' : nat . ((\ n' : nat . (atype n')) (succ n')))
-        # by refl, (! n : nat . [eval; (unfold refl); eval; (unfold refl refl refl refl); eval]))
-        # conv zero to ((\ n' : nat . (atype n')) zero) by refl, [eval; (unfold unfold); eval]
+          # Zero branch
+          conv zero 
+            to ((\ n' :: nat . (atype n')) zero) 
+            by refl, [eval; (unfold refl); (refl unfold);  eval; (unfold refl refl refl refl); eval]
         )
    to (! n : nat . (atype n))
    by (! n : nat . eval), refl
 
 Eval zero
-Eval (chomp_n (succ zero) zero) 
+Eval ((conv (chomp_n (succ zero))
+        to nat -> (atype zero)
+        by [(refl (unfold unfold)) ; eval; (unfold refl); eval; (unfold refl refl refl refl); eval] , 
+            (refl -> (refl unfold)))
+       zero)
