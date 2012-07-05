@@ -1,0 +1,77 @@
+Set respect_strategies
+Set suppress_eqterm_stack
+Set suppress_lam_types
+
+
+Fix nat : * = 
+        self n . ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                   (C conv n to nat by refl, unfold) 
+    ,
+    zero : nat = 
+         conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
+         to nat 
+         by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+            [ unfold ; substself ]
+           
+    ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]
+
+
+Fix colist : * -> * =
+  \A : * . self p . 
+    !C : ((colist A) => *) . 
+      # Here's where the cases go
+       ! nilCase: (C (conil A)) .
+       ! consCase: (! hd:A . ! tl:: (colist A) . (C (cocons A hd tl))).
+        (C (conv p to (colist A) by refl, [(unfold refl); eval])),
+
+   conil : ! A:* . (colist A) =
+    conv
+     \A:* . \C : ((colist A) => *) . 
+        # Here's where the cases go
+        \ nilCase: (C (conil A)) .
+        \ consCase: (! hd:A . ! tl:: (colist A) . (C (cocons A hd tl))). nilCase
+     to ! A:* . (colist A)
+     by (! A : refl . (! C : refl . (! nilCase : refl . (! consCase : refl . (refl [(unfold refl); eval]))))),
+        (!A:refl. [(unfold refl); eval; substself]),
+
+
+
+   cocons : ! A:* . A -> (colist A) => (colist A) =
+    conv 
+     \A:* .  
+       \x:A . \xs::(colist A) . 
+         \C : ((colist A) => *) . 
+          # Here's where the cases go
+        \ nilCase: (C (conil A)) .
+        \ consCase: (! hd:A . ! tl :: (colist A) . (C (cocons A hd tl))). (consCase  x xs)
+     to ! A:* . A -> (colist A) => (colist A)
+     by 
+       (! A : refl . (! x : refl . (! xs :: refl . (! C : refl . (! nilCase : refl . (! consCase : refl . (C [(unfold refl refl refl); eval]))))))),
+       (! A : refl . (! x : refl . ! xs :: refl . [(unfold refl); eval; substself]))
+       # (! A : refl . (refl -> (refl => [(unfold refl); eval; substself])))
+
+
+
+Fix nats : (colist nat) = (gen zero),
+    gen : nat -> (colist nat) = \n : nat . (cocons nat n (gen (succ n)))
+
+
+Define nat_elim : ! n : nat . 
+                  ! C : (nat => *) . 
+                  (! n : nat. (C (succ n))) -> 
+                  (C zero) -> 
+                  (C n) =
+  \ n : nat .
+  (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+
+# Define take : nat -> (colist nat) => (colist nat) =
+#    \n : nat . \xs :: (colist nat) . (nat_elim n (\n'::nat . (colist nat))) 
+
+      
