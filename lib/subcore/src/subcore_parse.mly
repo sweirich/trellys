@@ -10,21 +10,22 @@ let parse_error s =
 %start main
 
 %token EOF
-%token <Subcore_syntax.__term_not_in_ast__> EQ LS DEFINE LP FIX EVALCMD ARROW UNFOLD LISTFLAGS RS RP DCOLON LAM STAR EVAL UNSET FIXCMD BY IN SUBSTSELF PI REFL DOT FATARROW COMMA CONV SEMI SET SELF TO COLON
+%token <Subcore_syntax.__term_not_in_ast__> DOT DEFINE IN CONV PI REFL EVALCMD LAM COMMA TO EQ LS SEMI LP SUBSTSELF COLON FIX EVAL LA STAR SELF RS FATARROW RP ARROW UNFOLD LISTFLAGS DCOLON FIXCMD BY RA SET UNSET
 %token <Subcore_syntax.__terminal__> ID
 
 %type <Subcore_syntax.prog option> main
-%type <Subcore_syntax.app_term_term3> app_term_term3
-%type <Subcore_syntax.trans_term_semi4> trans_term_semi4
-%type <Subcore_syntax.cmd> cmd
-%type <Subcore_syntax.prog_prog_cmd2> prog_prog_cmd2
-%type <Subcore_syntax.fixcmd_cmd_comma0> fixcmd_cmd_comma0
-%type <Subcore_syntax.prog> prog
-%type <Subcore_syntax.colon> colon
-%type <Subcore_syntax.term> term
-%type <Subcore_syntax.oterm> oterm
 %type <Subcore_syntax.binding> binding
+%type <Subcore_syntax.cmd> cmd
+%type <Subcore_syntax.colon> colon
+%type <Subcore_syntax.prog> prog
+%type <Subcore_syntax.oterm> oterm
+%type <Subcore_syntax.trans_term_semi4> trans_term_semi4
+%type <Subcore_syntax.term> term
+%type <Subcore_syntax.prog_prog_cmd2> prog_prog_cmd2
+%type <Subcore_syntax.eval_term_la5> eval_term_la5
+%type <Subcore_syntax.app_term_term3> app_term_term3
 %type <Subcore_syntax.fix_oterm_comma1> fix_oterm_comma1
+%type <Subcore_syntax.fixcmd_cmd_comma0> fixcmd_cmd_comma0
 %type <Subcore_util.pd> cur_position
 
 %%
@@ -119,10 +120,16 @@ term:
   | UNFOLD { Unfold(get_term_pd_not_in_ast $1, $1) }
 
 term:
-  | EVAL { Eval(get_term_pd_not_in_ast $1, $1) }
+  | EVAL eval_term_la5 { Eval(get_term_pd_not_in_ast $1, $1, $2) }
 
 term:
   | REFL { Refl(get_term_pd_not_in_ast $1, $1) }
+
+eval_term_la5:
+  | cur_position { ($1, None) }
+
+eval_term_la5:
+  | LA UNFOLD RA { (get_term_pd_not_in_ast $1, Some( $1 , $2, $3)) }
 
 trans_term_semi4:
   | SEMI oterm { (get_term_pd_not_in_ast $1, ($1, $2)::[]) }

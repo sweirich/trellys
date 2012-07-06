@@ -52,8 +52,12 @@ and ppast_term (os:string->unit) (to_pretty_print:bool) = function
    |Parens (d , pd1 , oterm2 , pd3) ->  os "Parens"; os "(";print_new_line os to_pretty_print (fst pd1); os "LP("; os "\""; os "("; os "\")"; os "";os ","; ppast_oterm os to_pretty_print oterm2; os "";os ","; print_new_line os to_pretty_print (fst pd3); os "RP("; os "\""; os ")"; os "\")"; os "";os ")";  () 
    |Substself (d , pd1) ->  os "Substself"; os "(";print_new_line os to_pretty_print (fst pd1); os "SUBSTSELF("; os "\""; os "substself"; os "\")"; os "";os ")";  () 
    |Unfold (d , pd1) ->  os "Unfold"; os "(";print_new_line os to_pretty_print (fst pd1); os "UNFOLD("; os "\""; os "unfold"; os "\")"; os "";os ")";  () 
-   |Eval (d , pd1) ->  os "Eval"; os "(";print_new_line os to_pretty_print (fst pd1); os "EVAL("; os "\""; os "eval"; os "\")"; os "";os ")";  () 
+   |Eval (d , pd1 , eval_term_la52) ->  os "Eval"; os "(";print_new_line os to_pretty_print (fst pd1); os "EVAL("; os "\""; os "eval"; os "\")"; os "";os ","; ppast_eval_term_la5 os to_pretty_print eval_term_la52; os "";os ")";  () 
    |Refl (d , pd1) ->  os "Refl"; os "(";print_new_line os to_pretty_print (fst pd1); os "REFL("; os "\""; os "refl"; os "\")"; os "";os ")";  () 
+
+and ppast_eval_term_la5 (os:string->unit) (to_pretty_print:bool) = function 
+   | (d,None) ->  os "None";  () 
+   | (d , Some(pd1 , pd2 , pd3)) ->  os "Some("; print_new_line os to_pretty_print (fst pd1); os "LA("; os "\""; os "<"; os "\")"; os "";os ","; print_new_line os to_pretty_print (fst pd2); os "UNFOLD("; os "\""; os "unfold"; os "\")"; os "";os ","; print_new_line os to_pretty_print (fst pd3); os "RA("; os "\""; os ">"; os "\")"; os "";os ")";  () 
 
 and ppast_trans_term_semi4 (os:string->unit) (to_pretty_print:bool) = function 
    | (d,[]) ->  os "[";  os "]"; os ")";  () 

@@ -58,8 +58,14 @@ and eq_term = function
    |Parens (d , pd1_1 , oterm2_1 , pd3_1),Parens (d' , pd1_2 , oterm2_2 , pd3_2)-> true && eq_oterm(oterm2_1 , oterm2_2)
    |Substself (d , pd1_1),Substself (d' , pd1_2)-> true
    |Unfold (d , pd1_1),Unfold (d' , pd1_2)-> true
-   |Eval (d , pd1_1),Eval (d' , pd1_2)-> true
+   |Eval (d , pd1_1 , eval_term_la52_1),Eval (d' , pd1_2 , eval_term_la52_2)-> true && eq_eval_term_la5(eval_term_la52_1 , eval_term_la52_2)
    |Refl (d , pd1_1),Refl (d' , pd1_2)-> true
+   | _ -> false
+
+
+and eq_eval_term_la5 = function
+   | (_,None), (_,None)-> true
+   | (d , Some(pd1_1 , pd2_1 , pd3_1)), (d' , Some(pd1_2 , pd2_2 , pd3_2))-> true
    | _ -> false
 
 

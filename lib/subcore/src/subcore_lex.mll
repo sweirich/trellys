@@ -38,6 +38,8 @@ rule token = parse
 | ")" { RP(Subcore_util.cur_pd()) }
 | "[" { LS(Subcore_util.cur_pd()) }
 | "]" { RS(Subcore_util.cur_pd()) }
+| "<" { LA(Subcore_util.cur_pd()) }
+| ">" { RA(Subcore_util.cur_pd()) }
 | "." { DOT(Subcore_util.cur_pd()) }
 | ['a'-'z' 'A'-'Z' '_']['0'-'9' '\'' '_' 'a'-'z' 'A'-'Z' '\'']* as str { ID((Subcore_util.cur_pd(),str)) }
 | eof { EOF }
