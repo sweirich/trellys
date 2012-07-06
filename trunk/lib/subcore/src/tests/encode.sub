@@ -39,6 +39,26 @@ Define nat_elim : ! n : nat .
   (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
              by [ unfold ; substself ] , refl)
 
+Define nat_elim_simple : 
+  ! n :: nat . 
+  ! C : *.
+  (! n : nat. C) -> 
+  C -> 
+  C =
+  \ n :: nat .
+  \ C : *.
+  \ s : (! n : nat. C).
+  \ z : C.
+  conv
+  ((conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+     (\x::nat.C)
+     conv s to (! n : nat. ((\x::nat.C) (succ n))) by refl , (! n : refl . eval)
+     conv z to ((\x::nat.C) zero) by refl, eval)
+  to C
+  by eval , refl
+
+
 Fix add : nat -> nat -> nat =
     \ n : nat . \ m : nat .
        (conv
@@ -122,3 +142,14 @@ Fix addZ : ! n:nat . (eq nat (add n zero) n) =
       to (eq nat (add n zero) n)
       by eval , refl
 
+Define not_zero_eq_one : (eq nat zero (succ zero)) -> void =
+  \ x : (eq nat zero (succ zero)) .
+    fix et : nat => * = (\x::nat. (nat_elim_simple x * (\p:nat.void) unit)) in
+    conv
+    (eqconv nat zero (succ zero)  
+       et
+       conv mkunit to (et zero) by refl, [ (unfold unfold) ; eval; (unfold refl refl refl refl); eval ]
+       x)
+    to void
+    by [(unfold (unfold refl));eval; (unfold refl refl refl refl); eval] , refl
+       

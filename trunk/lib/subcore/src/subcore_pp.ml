@@ -52,8 +52,12 @@ and pp_term (os:string->unit) (to_pretty_print:bool) = function
    |Parens (d , pd1 , oterm2 , pd3) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "("; os " " ;pp_oterm os to_pretty_print oterm2;print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd3); os ")"; os " " ; () 
    |Substself (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "substself"; os " " ; () 
    |Unfold (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "unfold"; os " " ; () 
-   |Eval (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "eval"; os " " ; () 
+   |Eval (d , pd1 , eval_term_la52) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "eval"; os " " ;pp_eval_term_la5 os to_pretty_print eval_term_la52; () 
    |Refl (d , pd1) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "refl"; os " " ; () 
+
+and pp_eval_term_la5 (os:string->unit) (to_pretty_print:bool) = function 
+   | (d,None) ->  () 
+   | (d , Some(pd1 , pd2 , pd3)) -> print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd1); os "<"; os " " ;print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd2); os "unfold"; os " " ;print_new_line os to_pretty_print (fst d); print_new_line os to_pretty_print (fst pd3); os ">"; os " " ; () 
 
 and pp_trans_term_semi4 (os:string->unit) (to_pretty_print:bool) = function 
    | (d,[]) ->  () 

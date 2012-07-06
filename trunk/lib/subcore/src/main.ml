@@ -20,7 +20,7 @@ type term =
   | Conv of term * term * term * term (* Conv(t,t1,p,p') is for conv t to t1 by p , p' *)
   | Trans of term * term
   | Unfold
-  | Eval
+  | Eval of bool (* true iff we are to unfold defined symbols as we go *)
   | Refl
   | Substself
   | Pos of pd * term
@@ -107,7 +107,7 @@ let rec string_of_term (t:term) : string =
     | Arrow(t1,s,t2) -> "("^(string_of_term t1) ^ (match s with Cbv -> " -> " | Cbn -> " => ") ^ (string_of_term t2)  ^")"
     | Unfold -> "unfold"
     | Substself -> "substself"
-    | Eval -> "eval"
+    | Eval(b) -> "eval"^(if b then "< unfold >" else "")
     | Refl -> "refl"
     | Pos(p,t) -> 
 	let b = Flags.get "print_hidden" in
@@ -150,6 +150,8 @@ let rec conv_oterm (t:Subcore_syntax.oterm) : term =
 	Pos(p,Binder(Pi,snd x, conv_colon c, conv_term t1, conv_oterm t2))
     | Subcore_syntax.Term(p,t) -> Pos(p,conv_term t)
     | Subcore_syntax.Check(p,t1,_,t2) -> Pos(p,Check(conv_term t1,conv_oterm t2))
+(*    | Subcore_syntax.Let(p,_,x,_,t1,_,t2,_,t3) ->
+	Pos(p,App(Binder(Lam,snd x,Cbv,conv_term t1, conv_oterm t3),conv_term t2)) *)
     | Subcore_syntax.Lam(p,_,x,c,t1,_,t2) ->
 	Pos(p,Binder(Lam,snd x, conv_colon c, conv_oterm t1, conv_oterm t2))
     | Subcore_syntax.Fix(p,_,b,(_,bs),_,t2) ->
@@ -175,8 +177,8 @@ and conv_term (t:Subcore_syntax.term) : term =
 	Pos(p,Substself)
     | Subcore_syntax.Unfold(p,_) -> 
 	Pos(p,Unfold)
-    | Subcore_syntax.Eval(p,_) -> 
-	Pos(p,Eval)
+    | Subcore_syntax.Eval(p,_,(_,o)) -> 
+	Pos(p,Eval(match o with None -> false | Some(_) -> true))
     | Subcore_syntax.Refl(p,_) -> 
 	Pos(p,Refl)
     | Subcore_syntax.Trans(p,_,t,(_,ts),_) ->
@@ -242,7 +244,7 @@ let rec add_fvs (m:term trie) (t:term) : unit =
 	  add_fvs m t2;
 	  add_fvs m p1;
 	  add_fvs m p2;
-      | Unfold | Eval | Refl | Substself -> ()
+      | Unfold | Eval(_) | Refl | Substself -> ()
       | Pos(_,t) -> add_fvs m t
 ;;
 
@@ -327,7 +329,7 @@ let subst (t:term) (x:string) (t':term) : term =
 		let (x',t') = rename_away_and_subst x t in
 		  Self(x',t')
 	    | Conv(t1,t2,p1,p2) -> Conv(subst t1, subst t2, subst p1, subst p2)
-	    | Unfold | Eval | Refl | Substself -> t'
+	    | Unfold | Eval(_) | Refl | Substself -> t'
 	    | Pos(p,t) -> Pos(p,subst t) in
 	  if dbg then
 	    (print_string ") subst returns ";
@@ -729,7 +731,7 @@ let rec tpof (g:ctxt) (p:pd) (t:term) : term =
 			       "\n3. converted computed: "^(string_of_term e1)^
 			       "\n4. converted desired:  "^(string_of_term e2)^
 			       "\n\n5. the eqterm stack:\n"^(string_of_eqterm_stack()))
-	| Eval | Unfold | Refl | Trans(_,_) | Substself -> 
+	| Eval(_) | Unfold | Refl | Trans(_,_) | Substself -> 
 	    err_pos p ("A proof construct is being used in a term-only part of the expression.\n\n"
 		       ^"1. the subterm which is a proof: "^(string_of_term t))
 	| Pos(p,t) -> tpof g p t
@@ -774,7 +776,7 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
 			| _ ->
 			    report_err())
 		 | _ -> report_err())
-	| Eval -> eval g false t
+	| Eval(b) -> eval g b t
 	| Refl -> t
 	| Trans(pf1,pf2) -> 
 	    morph g r p subj (morph g r p subj t pf1) pf2

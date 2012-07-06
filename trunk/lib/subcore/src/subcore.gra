@@ -31,7 +31,7 @@ Parens : term -> LP oterm RP .
 (* these are really proof constructs *)
 Substself : term -> SUBSTSELF .
 Unfold : term -> UNFOLD .
-Eval : term -> EVAL .
+Eval : term -> EVAL [ LA UNFOLD RA ].
 Refl : term -> REFL .
 
 Binding : binding -> ID COLON oterm EQ oterm .
@@ -66,5 +66,7 @@ LP="(".
 RP=")".
 LS="[".
 RS="]".
+LA="<".
+RA=">".
 DOT=".".
 ID = {{['a'-'z' 'A'-'Z' '_']['0'-'9' '\'' '_' 'a'-'z' 'A'-'Z' '\'']*}} .
