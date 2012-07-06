@@ -71,7 +71,70 @@ Define nat_elim : ! n : nat .
   (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
              by [ unfold ; substself ] , refl)
 
-# Define take : nat -> (colist nat) => (colist nat) =
-#    \n : nat . \xs :: (colist nat) . (nat_elim n (\n'::nat . (colist nat))) 
+
+
+Define colist_elim : ! A:* . 
+                     ! l :: (colist A) .
+                     ! C : ((colist A) => *) .
+                     ! nilCase : (C (conil A)) .
+                     ! consCase : (! hd:A . ! tl:: (colist A) . (C (cocons A hd tl))) .
+                     (C l) = 
+   \A : * . \ l :: (colist A) .  
+                        (conv l
+                           to (! C : ((colist A) => *) . 
+                             ! nilCase : (C (conil A)) .
+                             ! consCase : (! hd:A . ! tl:: (colist A) . (C (cocons A hd tl))) .
+                             (C l))
+                         by [(unfold refl); eval; substself], refl)
+
+
+Define colist_elim_nondep : 
+    ! A:* . 
+      ! l :: (colist A) .
+      ! B :: * .
+      ! nilCase : B .
+      ! consCase : (! hd:A . ! tl:: (colist A) . B) .
+      B =
+   \A : * . \ l :: (colist A) .  \B :: * .
+                      conv 
+                        ((conv l
+                           to (! C : ((colist A) => *) . 
+                             ! nilCase : (C (conil A)) .
+                             ! consCase : (! hd:A . ! tl:: (colist A) . (C (cocons A hd tl))) .
+                             (C l))
+                         by [(unfold refl); eval; substself], refl)
+                         (\dummy :: (colist A) . B))
+                       to (! nilCase : B    . ! consCase : (! hd : A . ! tl :: (colist A) . B) . B)
+                       by (! nilCase : eval . ! consCase : (! hd : A . ! tl :: (colist A) . eval) . eval), 
+                          refl
+
+Fix take : nat -> (colist nat) => (colist nat) =
+  conv
+    \n : nat . \xs :: (colist nat) . 
+        (nat_elim n (\n'::nat . (colist nat))
+           # Succ Case
+            conv
+             (\pred : nat . 
+                # case xs of conil -> conil; cocons y ys -> cocons y (take pred ys)
+                (conv
+                 (colist_elim_nondep nat xs (colist nat)
+                   # Nil Case
+                   (conil nat))
+                  to (! consCase : (! hd : nat . (! tl :: (colist nat) . (colist nat))) . (colist nat))
+                  by [(refl (unfold unfold)); eval], refl
+                  (\y : nat . \ys :: (colist nat) . (cocons nat y (take pred ys))))
+                )
+             to (! pred : nat . ((\ n' :: nat . (colist nat)) (succ pred)))
+             by refl, (! pred : nat . eval)
+
+           # Zero Case
+           (conv (conil nat) 
+             to ((\ n':: nat . (colist nat)) zero)
+             by refl, [(refl unfold); eval])
+        )
+  to nat -> (colist nat) => (colist nat) 
+  by (! n : nat . (! xs :: (colist nat) . eval)), refl
 
       
+Eval (take zero nats)
+Eval (take (succ zero) nats)
