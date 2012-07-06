@@ -121,3 +121,4 @@ Fix addZ : ! n:nat . (eq nat (add n zero) n) =
        by (eq refl refl [ (unfold unfold refl) ; eval ; (unfold refl refl refl refl) ; eval ]) , eval)
       to (eq nat (add n zero) n)
       by eval , refl
+
