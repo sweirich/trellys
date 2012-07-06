@@ -150,8 +150,8 @@ let rec conv_oterm (t:Subcore_syntax.oterm) : term =
         Pos(p,Binder(Pi,snd x, conv_colon c, conv_term t1, conv_oterm t2))
     | Subcore_syntax.Term(p,t) -> Pos(p,conv_term t)
     | Subcore_syntax.Check(p,t1,_,t2) -> Pos(p,Check(conv_term t1,conv_oterm t2))
-(*    | Subcore_syntax.Let(p,_,x,_,t1,_,t2,_,t3) ->
-        Pos(p,App(Binder(Lam,snd x,Cbv,conv_term t1, conv_oterm t3),conv_term t2)) *)
+    | Subcore_syntax.Let(p,_,x,_,t1,_,t2,_,t3) ->
+	Pos(p,App(Binder(Lam,snd x,Cbv,conv_term t1, conv_oterm t3),conv_term t2))
     | Subcore_syntax.Lam(p,_,x,c,t1,_,t2) ->
         Pos(p,Binder(Lam,snd x, conv_colon c, conv_oterm t1, conv_oterm t2))
     | Subcore_syntax.Fix(p,_,b,(_,bs),_,t2) ->

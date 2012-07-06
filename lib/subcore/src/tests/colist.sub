@@ -71,8 +71,6 @@ Define nat_elim : ! n : nat .
   (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
              by [ unfold ; substself ] , refl)
 
-
-
 Define colist_elim : ! A:* . 
                      ! l :: (colist A) .
                      ! C : ((colist A) => *) .
