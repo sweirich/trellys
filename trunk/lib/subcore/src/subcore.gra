@@ -12,6 +12,7 @@ FixCmd : cmd -> FIXCMD binding { COMMA binding }* .
 Lam : oterm -> LAM ID colon oterm DOT oterm .
 Self : oterm -> SELF ID DOT oterm .
 Fix : oterm -> FIX binding { COMMA binding }* IN oterm .
+Let : oterm -> LET ID COLON term EQ term IN oterm .
 CbvArrow : oterm -> term ARROW oterm .
 CbnArrow : oterm -> term FATARROW oterm .
 Pi : oterm -> PI ID colon term DOT oterm .
@@ -41,6 +42,7 @@ DCOLON="::".
 EQ="=".
 SEMI=";".
 STAR="*".
+LET="let".
 COMMA=",".
 UNFOLD="unfold".
 REFL="refl".
