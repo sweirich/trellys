@@ -1,6 +1,6 @@
 
 
-import Text.PrettyPrint hiding (parens)
+import Text.PrettyPrint hiding (parens,braces)
 import qualified Text.PrettyPrint as PP
 import Text.ParserCombinators.ReadP
 -- import GHC.Read	 hiding (list)
@@ -26,6 +26,8 @@ data Proof = Refl
            | Trans [Proof]
            | Ctx Term
 
+
+
 instance Show Term where
   show t = render $ prTerm t
 
@@ -33,15 +35,24 @@ instance Read Term where
   readsPrec i = readP_to_S exprParser
 
 
+data Sigs = Sigs [Signature] deriving Show
 
+
+instance Read Sigs where
+  readsPrec i = readP_to_S sigsParser
+  
 data Signature =
    Sig Name [(Name,Term)] [(Name,Term)] [Constructor]
+   deriving Show
 
-data Constructor = Cons Name [(Name,Term)] Term
+instance Read Signature where
+  readsPrec i = readP_to_S sigParser
+
+data Constructor = Cons Name [(Name,Term)] Term deriving Show
 
 data Group = FixGroup [(Name,Term,Term)]
 
-
+-- From a signature, emit a selfstar datatype declaration.
 outSig (Sig name params indices constructors) =
   prGroup (FixGroup (ty:cs))
   where ty = (name,tySig Star,tyDef)
@@ -159,6 +170,13 @@ genTests = writeFile "genTests.sub" $ render $ vcat (map outSig testCases)
   where testCases = [nat,list,vec,eq]
             
 
+testGen :: String -> IO ()
+testGen iname = do
+  cnts <- readFile (iname ++ ".data")
+  let Sigs s = read cnts
+  let output = render $ vcat (map outSig s)
+  writeFile (iname ++ ".sub") output
+  putStrLn output
 
 
 -- * Parsing
@@ -229,13 +247,46 @@ termParser = (skipSpaces >> string "*" >> return Star) <++
 proofParser = (string "refl" >> return Refl) <++
               (string "unfold" >> return Unfold)
 
-reserved = ["conv", "by", "at", "refl", "self","unfold"]
+reserved = ["conv", "by", "at", "refl", "self","unfold", "data", "where"]
 
 delimit l r p = between (skipSpaces >> string l) (skipSpaces >> string r) p
 parens = delimit "(" ")"
 braces = delimit "{" "}"
 
+keyword s = skipSpaces >> string s
+identifier = skipSpaces >> munch1 isAlpha
 
+sigParser = do
+  keyword "data"
+  id <- identifier
+  params <- many arg
+  keyword ":"
+  indices <- many arg
+  keyword "where"
+  cs <- braces (sepBy  consParser (keyword ";"))
+  return $ Sig id params indices cs
+  
+
+arg = skipSpaces >>
+      (parens $ do
+        i <- identifier
+        skipSpaces
+        keyword ":"
+        ty <- termParser
+        return (i,ty))
+  
+consParser = do
+  id <- identifier
+  keyword ":"
+  args <- many arg
+  keyword "->"
+  ret <- termParser
+  return $ Cons id args ret
+
+sigsParser = do
+  sigs <- many1 sigParser
+  return $ Sigs sigs
+  
 
 
 -- * Pretty printing
@@ -273,6 +324,9 @@ prProof (Ctx t) = prTerm t
 
 prGroup (FixGroup defs) = text "Fix" <+>
    cat (punctuate comma [text n <+> colon <+> cat [prTerm ty <+> text "= ", prTerm def] | (n,ty,def) <- defs])
+
+
+
 
 
    
