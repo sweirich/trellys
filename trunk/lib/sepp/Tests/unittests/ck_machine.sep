@@ -116,33 +116,86 @@ prog  step = \(s: StateT) ->
                     |Var x' -> abort StateT
 
 
+{- for the proof about step:
+
+   if s1 and s2 are states, and step s1 = s2, then
+   we want to prove that the term t1 (let's call it) which s1 represents
+   can transition to the term t2 which s2 represents.
+
+   What do we mean by "represents"?  We know the continuation in a state is
+   encoding a context (in a way that enables more efficient interpreting).
+
+   For example, the term 
+
+   (*)    ((\x.x) (\y.y)) (\z.z)
+
+   can be represented by several states actually:
+
+   1.  < ((\x.x) (\y.y)) (\z.z) ,  mt >
+   2.  < (\x.x) (\y.y) , <ar , (\z.z),  mt > >
+   3.  < \x.x , < ar, (\y.y), <ar , (\z.z), mt>>>
+   4.  < \y.y , < fn, (\x.x), <ar , (\z.z), mt>>>
+
+
+
+   When this is defined, it should interpret all the example
+   states (1) through (4) above as the example term (*).
+
+   Then define
+
+
+ 
+   just by calling kplug with the continuation and term which are 
+   in the state.
+
+   So then the final theorem to prove would be:
+
+   forall(s1:State)(u1:s1!)(s2:State)(u2:s2!)(u:step s1 = s2).
+   exists(v:StepSpec0 (interpstate s1) (interpstate s2)).v!
+
+where we need also this definition, to handle the case
+where the CK machine does not do a beta-reduction:
+
+data StepSpec0 : (t1:Term) (t2:Term) -> Type where
+  DidStep : StepSpec t1 t2 -> StepSpec0 t1 t2
+| DntStep : [u:t1=t2] -> StepSpec0 t1 t2
+  
+
+-}
+
+ type kplug : Cont -> Term -> Term
+   prog rec kplug (c: Cont)(t:Term) = 
+    case c {c_eq} of
+         MT -> t 
+        |Fn x t' k -> kplug (Ar k t) (Lambdabs x t') 
+        |Ar k t' -> (kplug k (App t t'))
+
+type interpstate : StateT -> Term
+prog interpstate = \(s:StateT)->
+  case s {s_eq} of
+    State t' k'-> kplug k' t'
+
 type reduce : StateT -> Term
 prog rec reduce (s: StateT) =
-    (case  s {st_eq} of
-
-              State t k -> (case k {k_eq} of
-                            MT-> (case t {t_eq} of
-                                   Lambdabs s' t' -> t
-                                   |Var x -> t
-                                   |App t1 t2->(case (isHeadNorm t) {isT_eq} of
-                                             True -> t
-                                            |False -> reduce  (step( State t k))))
-                           |Fn s'' t'' c'' -> reduce (step (State t (Fn s'' t'' c'')))
-                           |Ar c''' t''' -> reduce (step (State t (Ar c''' t'''))))) 
+    (case s {st_eq} of
+      State t k -> (case k {k_eq} of
+                    MT-> (case t {t_eq} of
+                           Lambdabs s' t' -> t
+                          |Var x -> t
+                          |App t1 t2->reduce (step(State t1 (Ar k t2))))
+                   |Fn s'' t'' c'' -> reduce (step (State t (Fn s'' t'' c'')))
+                   |Ar c''' t''' -> reduce (step (State t (Ar c''' t'''))))) 
 
                             
 
-Eval (State (App (Lambdabs( Str0 Empstr)
-      (App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT)
+Eval (reduce (State (App (Lambdabs( Str0 Empstr)
+      (App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT))
             
 theorem reduce_test1 : reduce (State (App (Lambdabs( Str0 Empstr)
 (App(Var (Str0 Empstr))(Var(Str0 Empstr)))) (Lambdabs (Str1 Empstr)(Var (Str1 Empstr))) )MT)= (Lambdabs( Str1 Empstr)( Var (Str1 Empstr)))
 proof reduce_test1 = join 10000 10000
 
-Eval reduce (State (App (Var (Str0 Empstr)) (Var (Str1 Empstr))) MT)
-
-theorem reduce_test2 : reduce (State (App (Var (Str0 Empstr)) (Var (Str1 Empstr))) MT)= App (Var(Str0 Empstr))(Var(Str1 Empstr))
-proof reduce_test2 = join 1000 1000             
+           
 
 
               
