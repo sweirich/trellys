@@ -12,21 +12,21 @@ plusSucc = \[n] [m] . join 42
 
 -- there is a much nicer looking append in Lists that existentially
 -- quantifies the length of the returned list. NC
-append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append : [a: Type 0@log] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n @log) -> (ys:Vector a m @log) -> Vector a (plus n m)
 append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] -> 
       let [neq'] [p] = (sym Nat Nat n 0 neq) in -- evidence of backwards equality. NC
       conv (conv ys by (plus0 [m]) at x.Vector a x) by neq' at h.Vector a (plus h m)
     VCons [n'] [neq] x xs' -> 
-      let xs'ys [p] = app [n'] [neq] [m] xs' ys in
+      let xs'ys [p] = app [n'] [ord neq] [m] xs' ys in
       let xsys [p] = VCons [a] [Succ (plus n' m)] [plus n' m] [join 42] x xs'ys in
       let xsys' [p] = conv xsys by (plusSucc [n'] [m]) at h.Vector a h in
       let [neq'] [p] = (sym Nat Nat n (Succ n') neq) in -- evidence of backwards equality. NC
       conv xsys' by neq' at h.Vector a (plus h m)
 
-appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat] 
-                   -> [xs:Vector a i] -> [ys:Vector a j] -> [zs:Vector a k] 
+appendAssociates : [a: Type 0@log] -> [i:Nat] -> [j:Nat] -> [k:Nat] 
+                   -> [xs:Vector a i @log] -> [ys:Vector a j @log] -> [zs:Vector a k @log]
                    -> append [a] [plus i j] [k] (append [a] [i] [j] xs ys) zs 
                     = append [a] [i] [plus j k] xs (append [a] [j] [k] ys zs)
 appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
@@ -85,7 +85,7 @@ a2 = y2.  This case is simpler:
 
 -}
     VCons [i'] [ieq] x xs' -> 
-        let ih [p] = aa [i'] [ieq] [j] [k] [xs'] [ys] [zs]
+        let ih [p] = aa [i'] [ord ieq] [j] [k] [xs'] [ys] [zs]
         in let i'jk [p] = plus (plus i' j) k -- need to rewrite `ih` to with `i'jk` to use `i'jk` below :P
         in let eq [p] = conv (join 0) by ih at h . VCons [a] [Succ (plus (plus i' j) k)] [(plus (plus i' j) k)] [(join 0)] x 
                                                          (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)

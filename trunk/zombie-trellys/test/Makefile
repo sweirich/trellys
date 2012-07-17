@@ -16,15 +16,15 @@ SHELL=/bin/bash
 PASS=Prelude Arithmetic Arithmetic-old Vectors LetRebind Trees Append2 \
      Append2-old TypeTest NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
-     LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
+     LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
-     BasicOrd
+     BasicOrd DeepMatch
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
 TODO_PASS=ProgList
 # stale?
-UNKNOWN= case_bug divtest jointest langlibbug recursion-examples
+UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys
 # typecheck *quietly*
@@ -39,10 +39,6 @@ clean:
 
 pass: $(foreach p,$(PASS),$(p).pass)
 
-# FAIL are tests that *should* always fail.
-FAIL=Append \
-     Test_T_RN2_FV
-
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"
 	@./expect_error DuplicateDefinition "Multiple definitions of"
@@ -56,6 +52,13 @@ fail:
 	@./expect_error Test_T_Rec2_FV "variable n appears free in body"
 	@./expect_error Bug_T_Case_FV "should not appear in the erasure"
 	@./expect_error Test_T_RN2_FV "variable n appears free in body"
+	@./expect_error jointest "The erasures of terms h n and p are not joinable."
+	@./expect_error DeepMatchError1 "must be a member of a datatype, but is not."
+	@./expect_error DeepMatchError2 "is a member of an abstract datatype"
+	@./expect_error DeepMatchError3 "should take 1 constructors,"
+	@./expect_error DeepMatchError4 "wrong epsilons on arguments in pattern"
+	@./expect_error DeepMatchError5 "Each branch should have 2 patterns, but"
+	@./expect_error DeepMatchError6 "Patterns not exhaustive."
 
 todo_pass: $(foreach f,$(TODO_PASS),$(f).pass)
 todo_fail: $(foreach f,$(TODO_FAIL),$(f).fail)

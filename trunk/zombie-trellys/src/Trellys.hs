@@ -28,8 +28,7 @@ main = do
       (mainFilePrefix, name) = splitFileName pathToMainFile
       currentDir = ""
   putStrLn "Trellys main"
-  res <- getModules prefixes name
-  -- ast <- parseModuleFile rest
+  res <- getModules flags prefixes name
   case res of
     Left parseError -> do
              putStrLn $ render $ disp $ errorPos parseError

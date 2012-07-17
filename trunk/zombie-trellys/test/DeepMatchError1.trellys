@@ -1,0 +1,12 @@
+--It is an error to match something which is not an element of a data type.
+module DeepMatchError1 where
+
+import Prelude
+
+log data C : Type 0 where
+  MkC of (f : Nat -> Nat)
+
+log match_c : (C @log) -> Nat 
+match_c = \ x .
+  case x [_] of
+    MkC (Foo f) -> 3

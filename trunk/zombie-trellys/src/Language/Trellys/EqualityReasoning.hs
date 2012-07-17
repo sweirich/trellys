@@ -13,7 +13,7 @@ import Language.Trellys.GenericBind
 import Language.Trellys.Syntax
 import Language.Trellys.CongruenceClosure
 
-import Control.Arrow (second, Kleisli(..), runKleisli)
+import Control.Arrow (first, second, Kleisli(..), runKleisli)
 import Control.Applicative 
 import Control.Monad.Writer.Lazy
 import Control.Monad.ST
@@ -249,8 +249,8 @@ genProofTerm (AnnCong template ps) = do
   let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
   let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
   subpfs <- mapM (\(x,subA,subB,p) -> case p of 
-                                      Nothing -> return (True, TyEq subA subB)
-                                      Just p' -> (False,) <$> genProofTerm p')
+                                      Nothing -> return (TyEq subA subB, Erased)
+                                      Just p' -> (,Runtime) <$> genProofTerm p')
                  ps                                            
   return (Conv (Ann (Join 0 0) (TyEq tyA tyA))
                subpfs
@@ -264,13 +264,13 @@ genProofTerm (AnnTrans tyA tyB tyC p q) = do
 transTerm :: Fresh m => Term -> Term -> Term -> Term -> Term -> m Term
 transTerm tyA tyB tyC p q = do
   x <- fresh (string2Name "x")
-  return $ Conv p [(False,q)] (bind [x] (TyEq tyA (Var x)))
+  return $ Conv p [(q,Runtime)] (bind [x] (TyEq tyA (Var x)))
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symmTerm :: Fresh m => Term -> Term -> Term -> m Term
 symmTerm tyA tyB p = do
   x <- fresh (string2Name "x")
-  return $ Conv (Ann (Join 0 0) (TyEq tyA tyA)) [(False,p)] (bind [x] (TyEq (Var x) tyA))
+  return $ Conv (Ann (Join 0 0) (TyEq tyA tyA)) [(p,Runtime)] (bind [x] (TyEq (Var x) tyA))
 
 orEps :: Epsilon -> Epsilon -> Epsilon
 orEps Erased _ = Erased
@@ -330,7 +330,7 @@ decompose _ _ avoid t@(Join _ _) = return t
 decompose _ e avoid (Conv t1 ts b) =  do
   (xs, t2) <- unbind b
   r1 <- decompose True e avoid t1
-  rs <- mapM (runKleisli . second . Kleisli $ decompose True Erased avoid) ts
+  rs <- mapM (runKleisli . first . Kleisli $ decompose True Erased avoid) ts
   r2 <- decompose True Erased (S.union (S.fromList xs) avoid) t2
   return (Conv r1 rs (bind xs r2))
 decompose _ e avoid (Contra t) = 
@@ -355,13 +355,14 @@ decompose sub e avoid (At t th) =
 decompose _ _ _ t@TrustMe = return t
 decompose _ _ _ InferMe = error "internal error: decompose called on InferMe" 
   -- ^^^ we should only try to infer equations between terms that have already been elaborated.
+decompose _ _ _ t = error ("internal error: decompose called on " ++ show t)
 
 decomposeMatch :: (Monad m, Applicative m, Fresh m) => 
                   Epsilon -> Set TName -> Match -> WriterT [(Epsilon,TName,Term)] m Match
-decomposeMatch e avoid (c,cbnd) = do
+decomposeMatch e avoid (Match c cbnd) = do
   (args, t) <- unbind cbnd
   r <- (decompose True e (S.union (S.fromList (map fst args)) avoid) t)
-  return (c, bind args r)
+  return $ Match c (bind args r)
 
 -- | match is kind of the opposite of decompose: 
 --   [match vars template t] returns the substitution s of terms for the variables in var,
@@ -399,7 +400,7 @@ match vars (Join _ _) (Join _ _) = return M.empty
 match vars (Conv t1 t2s bnd) (Conv t1' t2s' bnd') = do
   Just (_, t3, _, t3') <- unbind2 bnd bnd'
   match vars t1 t1'
-   `mUnion` (foldr M.union M.empty <$> zipWithM (match vars `on` snd) t2s t2s')
+   `mUnion` (foldr M.union M.empty <$> zipWithM (match vars `on` fst) t2s t2s')
    `mUnion` match vars t3 t3'
 match vars (Contra t) (Contra t') = match vars t t'
 match vars Abort Abort = return M.empty
@@ -421,7 +422,7 @@ match _ t t' = error $ "internal error: match called on non-matching terms "
 
 matchMatch :: (Applicative m, Monad m, Fresh m) =>
               [TName] -> Match -> Match -> m (Map TName Term)
-matchMatch vars (_, bnd) (_, bnd') = do
+matchMatch vars (Match _ bnd) (Match _ bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'
   match vars t t'
 

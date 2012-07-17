@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeSynonymInstances, ExistentialQuantification, NamedFieldPuns, ParallelListComp, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns, TypeSynonymInstances, ExistentialQuantification, NamedFieldPuns, 
+             ParallelListComp, FlexibleContexts, ScopedTypeVariables, TupleSections #-}
 -- | The Trellys core typechecker, using a bi-directional typechecking algorithm
 -- to reduce annotations.
 module Language.Trellys.TypeCheck
@@ -23,13 +24,12 @@ import Text.PrettyPrint.HughesPJ
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error hiding (join)
+import Control.Arrow (first)
 
 import Data.Maybe
 import Data.List
 import Data.Set (Set)
 import qualified Data.Set as S
-
--- import System.IO.Unsafe (unsafePerformIO)
 
 {-
   We rely on two mutually recursive judgements:
@@ -38,24 +38,30 @@ import qualified Data.Set as S
 
   * ts is a synthesis that takes a term and synthesizes a type
 
-  Both functions also return an annotated term which is a (possibly)
-  elaborated version of the input term.
+  Both functions also return an annotated term which is an
+  elaborated version of the input term. The invariants for this is:
+   - ta takes a source term and elaborated type, returns elaborated term
+   - ts takes a source term, returns elaborated term and elaborated type.
 
   In both functions, we assume that the context (gamma) is an implicit argument,
-encapsulated in the TcMonad.
-
+ encapsulated in the TcMonad.
  -}
 
 
 -- | kind check, for check = synthesis ?
 
--- Check that tm is a wellformed type at some level
-kc :: Theta -> Term -> TcMonad ()
-kc th tm = do
-  (_,ty) <- ts th tm
+-- Elaborate tm, and check that it is a well-formed type
+-- at some level.
+kcElab :: Theta -> Term -> TcMonad Term
+kcElab th tm = do
+  (etm,ty) <- ts th tm
   when (isNothing $ isType ty) $
     err [DD tm, DS "is not a well-formed type at", DD th]
---         ,DS "it should have type Type but has type", DD ty]
+  return etm
+
+-- Check that tm is a wellformed type at some level
+kc :: Theta -> Term -> TcMonad ()
+kc th tm = void (kcElab th tm)
 
 -- Apply kc to an entire telescope
 kcTele :: Theta -> Telescope -> TcMonad ()
@@ -67,25 +73,26 @@ kcTele th ((x,ty,_):tele') = do
 -- | Type analysis
 ta :: Theta -> Term -> Term -> TcMonad Term
 -- Position terms wrap up an error handler
-ta th (Pos p t) ty = do
+ta th (Pos p t) ty =
   extendSourceLocation p t $
     ta th t ty
 ta th tm (Pos _ ty) = ta th tm ty
 
 ta th (Paren a) ty = Paren <$> ta th a ty
 ta th tm (Paren ty) = ta th tm ty
+ta th tm (SubstitutedFor ty x) = ta th tm ty
 
 -- rule T_join
 ta th (Join s1 s2) (TyEq a b) =
   do kc th (TyEq a b)
-     (_,k1) <- ts Program a
-     (_,k2) <- ts Program b
+     (ea,k1) <- ts Program a
+     (eb,k2) <- ts Program b
      picky <- getFlag PickyEq
      when (picky && not (k1 `aeqSimple` k2)) $
          err [DS "Cannot join terms of different types:", DD a,
          DS "has type", DD k1, DS "and", DD b, DS "has type", DD k2]
-     t1E <- erase =<< substDefs a  --fixme, maybe we should actually compare elaborated types?
-     t2E <- erase =<< substDefs b
+     t1E <- erase =<< substDefs ea
+     t2E <- erase =<< substDefs eb
      joinable <- join s1 s2 t1E t2E
      unless joinable $
        err [DS "The erasures of terms", DD a, DS "and", DD b,
@@ -251,74 +258,62 @@ ta Program (Rec ep binding) fty@(Arrow aep abnd) = do
 ta th (Case b bnd) tyA = do
   -- premises 1, 3 and 4: we check that the scrutinee is the element of some
   -- datatype defined in the context
-  -- SCW: can relax and check this at P even with th is v if b is "valuable"
   (eb,bty) <- ts th b
-  (d,bbar,delta,cons) <-
-    case bty of
-      (Con d apps) -> do
-         ent <- lookupCon d
-         case ent of
-           (Left (delta,th',_,Just cons)) ->
-             do unless (th' <= th) $
-                   err [DS "Attempted to pattern match on an element of the",
-                        DS "datatype", DD d, DS "in the Logical fragment, but",
-                        DS "it is programmatic."]
-                unless (length apps == length delta) $
-                   err [DS "Attempted to match against", DD b,
-                        DS "with type", DD bty, DS "where", DD d,
-                        DS "is applied to the wrong number of arguments."]
-                return (d,map (\(a,_) -> (a,Erased)) apps, delta, cons)
-           (Left (_,_,_,Nothing)) ->
-              err [DS "Scrutinee ", DD b,
-                   DS "is a member of an abstract datatype - you may not",
-                   DS "pattern match on it."]
-           _ ->
-              err [DS "Scrutinee ", DD b,
-                   DS "must be a member of a datatype, but is not. It has type", DD bty]
-      _ -> err [DS "Scrutinee ", DD b,
-                DS "must be a member of a datatype, but is not. It has type", DD bty]
+  (d,bbar,delta,cons) <- lookupDType th b bty
 
   -- premise 2: the return type must be well kinded
   kc th tyA
+  (y,mtchs) <- unbind bnd
 
   -- premises 4 and 5: we define a function to map over the
   -- branches that checks each is OK (and elaborates it)
-  (y,mtchs) <- unbind bnd
   unless (length mtchs == length cons) $
-     err [DS "Wrong number of pattern match branches for datatype", DD d]
-  let
-    checkBranch :: Match -> TcMonad Match
-    checkBranch (c, cbnd) =
-      case find (\(ConstructorDef  _ c' _) -> c'==c) cons of
-        Nothing -> err [DD c, DS "is not a constructor of type", DD d]
-        Just (ConstructorDef _  _ dumbdeltai)  ->
-          do (deltai',ai) <- unbind cbnd
-             unless (length deltai' == length dumbdeltai) $
-                err [DS "wrong number of argument variables for constructor",
-                     DD c, DS "in pattern match."]
-             unless (   (map snd deltai')
-                     == map (\(_,_,e) -> e) dumbdeltai) $
-                err [DS "wrong epsilons on argument variables for constructor",
-                     DD c, DS "in pattern match."]
-             let deltai = swapTeleVars dumbdeltai (map fst deltai')
-                 subdeltai = substs (zip (domTele delta) (map fst bbar)) deltai
-                 eqtype = TyEq b (Con c (bbar ++ map (\(x,_,ep) -> (Var x, ep)) deltai))
-             -- premise 5
-             eai <- extendCtx (Sig y Logic eqtype) $
-                      extendCtxTele subdeltai th $ ta th ai tyA
-             -- premise 6
-             aE <- erase eai
-             let yEs = map translate $ y : domTeleMinus deltai
-             let shouldBeNull = S.fromList yEs `S.intersection` fv aE
-             unless (S.null shouldBeNull) $
-               err [DS "The constructor argument(s) and/or scrutinee equality proof",
-                    DD . S.toList $ shouldBeNull,
-                    DS "should not appear in the erasure", DD aE,
-                    DS "of the term", DD ai,
-                    DS "because they bind compiletime variables."]
-             return (c, bind deltai' eai)
-  emtchs <- mapM checkBranch mtchs
+    err [DS "Wrong number of pattern match branches for datatype", DD d]
+  let taMatch :: Match -> TcMonad Match
+      taMatch (Match c cbnd) = do
+        dumbdeltai <- lookupDCon d c
+        (deltai',ai) <- unbind cbnd
+        unless (length deltai' == length dumbdeltai) $
+          err [DS "wrong number of argument variables for constructor",
+               DD c, DS "in pattern match."]
+        unless (   (map snd deltai')
+                == map (\(_,_,e) -> e) dumbdeltai) $
+           err [DS "wrong epsilons on argument variables for constructor",
+                DD c, DS "in pattern match."]
+        let deltai = swapTeleVars dumbdeltai (map fst deltai')
+            subdeltai = substs (zip (domTele delta) (map fst bbar)) deltai
+            eqtype = TyEq b (Con c (bbar ++ map (\(x,_,ep) -> (Var x, ep)) deltai))
+         -- premise 5
+        eai <- extendCtx (Sig y Logic eqtype) $
+                           extendCtxTele subdeltai th $ ta th ai tyA
+        -- premise 6
+        aE <- erase eai
+        let yEs = map translate $ y : domTeleMinus deltai
+        let shouldBeNull = S.fromList yEs `S.intersection` fv aE
+        unless (S.null shouldBeNull) $
+          err [DS "The constructor argument(s) and/or scrutinee equality proof",
+               DD . S.toList $ shouldBeNull,
+               DS "should not appear in the erasure", DD aE,
+               DS "of the term", DD ai,
+               DS "because they bind compiletime variables."]
+        return $ Match c (bind deltai' eai)         
+  emtchs <- mapM taMatch mtchs
   return (Case eb (bind y emtchs))
+
+ta th (ComplexCase bnd) tyB = do
+   isElaborating <- getFlag Elaborate
+   unless isElaborating $
+     err [DS "Trying to elaborate a complex case statement when not in elaboration mode."]
+   (scruts, alts) <- unbind bnd
+   let checkNumPats (ComplexMatch bnd1) = do
+         (pats, body) <- unbind bnd1
+         unless (length pats == length scruts) $
+           err [ DS $"Each branch should have " ++ show (length scruts) ++ " patterns, but",
+                 DD (ComplexMatch bnd1), DS $ "has " ++ show (length pats) ++  "."]
+   mapM_ checkNumPats alts
+   scrutTys <- mapM (fmap snd . ts th . unembed . fst) scruts
+   b <- buildCase th scruts scrutTys alts
+   ta th b tyB
 
 -- implements the checking version of T_let1 and T_let2
 ta th (Let th' ep bnd) tyB =
@@ -381,11 +376,16 @@ ta th (TerminationCase s binding) ty = do
 ta th TrustMe ty = return TrustMe
 
 ta th InferMe (TyEq ty1 ty2) = do
+  isElaborating <- getFlag Elaborate
+  unless isElaborating $
+    err [DS "Trying to typecheck an InferMe when not in elabortion mode"]
   context <- getTys
   let availableEqs = catMaybes $ map (\(x,th,ty) -> do guard (th==Logic)
                                                        (ty1,ty2) <- isTyEq ty
                                                        Just (x,ty1,ty2))
                                       context
+--  warn [DS "About to try to prove:",  DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+--                                                 (TyEq ty1 ty2))]
   pf <- prove availableEqs (ty1,ty2)
   case pf of
     Nothing ->
@@ -394,6 +394,11 @@ ta th InferMe (TyEq ty1 ty2) = do
     Just p -> return p
 
 ta th InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
+
+-- pass through SubstitutedFor
+ta th (SubstitutedFor a x) tyA = do
+  ea <- ta th a tyA
+  return (SubstitutedFor ea x)
 
 -- rule T_chk
 ta th a tyB = do
@@ -410,6 +415,8 @@ ta th a tyB = do
                                                               (ty1,ty2) <- isTyEq ty
                                                               Just (x,ty1,ty2))
                                             context
+--         warn [DS "About to try to prove:",  DD (Goal (map (\(x,ty1,ty2) -> Sig x Logic (TyEq ty1 ty2)) availableEqs) 
+--                                                 (TyEq tyA tyB))]
          pf <- prove availableEqs (tyA,tyB)
          case pf of 
            Nothing ->
@@ -420,7 +427,7 @@ ta th a tyB = do
                                                   (TyEq tyA tyB))]
            Just p -> do
                        x <- fresh (string2Name "x")
-                       return $ Conv ea [(False,p)] (bind [x] (Var x))         
+                       return $ Conv ea [(p,Runtime)] (bind [x] (Var x))         
        else err [DS "When checking term", DD a, DS "against type",
                  DD tyB, DS "the distinct type", DD tyA,
                  DS "was inferred instead.",
@@ -439,6 +446,7 @@ taTele th ((t,ep1):ts) ((x,ty,ep2):tele')  = do
   ets <- taTele th ts (subst x t tele')
   return $ (et,ep1) : ets
 taTele _ _ _ = error "Internal error: taTele called with unequal-length arguments"    
+
 
 ------------------------------
 ------------------------------
@@ -581,30 +589,14 @@ ts tsTh tsTm =
     -- rule T_conv
     ts' th (Conv b as bnd) =
       do (xs,c) <- unbind bnd
-
-         erasedTerm <- erase c   --fixme, maybe this check needs to be on an elaborated something or other.
-         let runtimeVars = fv erasedTerm
-
-         let chkTy (False,pf) _ = do
-               (e,t) <- ts Logic pf
-               return ((False,e),t)
-             chkTy (True,pf) var = do
-               --XX (e,_) <- ts Logic pf
-               when (translate var `S.member` runtimeVars) $
-                   err [DS "Equality proof", DD pf, DS "is marked erased",
-                        DS "but the corresponding variable", DD var,
-                        DS "appears free in the erased term", DD erasedTerm]
---               return ((True,e),
-               return ((True,pf),pf) --fixme, the first pf should really be elaborated,
-                                     -- but we probably need the context from the template to do that...
-
-         (eas,atys) <- unzip <$> zipWithM chkTy as xs
+         let chkTy (pf,Runtime) = do
+               (epf,t) <- ts Logic pf
+               return ((epf,Runtime),t)
+             chkTy (pf,Erased) = do
+               return ((pf,Erased),pf) --fixme: pf should be elaborated, but that needs the context from the template...
+         (eas,atys) <- unzip <$> mapM chkTy as
 
          picky <- getFlag PickyEq
-         let errMsg aty =
-               err $ [DS "The second arguments to conv must be equality proofs,",
-                      DS "but here has type", DD aty]
-
 
          (tyA1s,tyA2s, ks) <- unzip3 <$> mapM (\ aty ->
               case isTyEq aty of
@@ -618,26 +610,49 @@ ts tsTh tsTm =
                     DS "respectively."]
 
                  return (tyA1, tyA2, k1)
-                _ -> errMsg aty
+                _ -> err $ [DS "The second arguments to conv must be equality proofs,",
+                            DS "but here has type", DD aty]
+
               ) atys
 
-         let cA1 = substs (zip xs tyA1s) c
-         let cA2 = substs (zip xs tyA2s) c
+         -- One annoying twist is that we need to elaborate the pattern c also,
+         -- or else surface-language stuff will leak through into the elaborated program.
+         -- I wonder if there is a better way of doing this...
+
+         let cA1 = substs (zip xs (zipWith SubstitutedFor tyA1s xs)) c
+         let cA2 = substs (zip xs (zipWith SubstitutedFor tyA2s xs)) c
          eb <- ta th b cA1
-         if picky then
-            -- check c with extended environment
-            -- Don't know whether these should be logical or programmatic
-            let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
-              extendCtxs decls $ kc th c
-           else
-            -- check c after substitution
-            kc th cA2
-         return (Conv eb eas (bind xs c), cA2)
+         ecS <- if picky then
+                  -- check c with extended environment
+                  -- Don't know whether these should be logical or programmatic
+                  let decls = zipWith (\ x t -> Sig x Logic t) xs ks in
+                    extendCtxs decls $ kcElab th c
+                else
+                  -- check c after substitution
+                  kcElab th cA2
+         let ec = unsubstitute ecS
+
+         erasedEc <- erase ec
+         let chkErased (pf,Runtime) _ = return ()
+             chkErased (pf,Erased) var = do
+               when (translate var `S.member` fv erasedEc) $
+                   err [DS "Equality proof", DD pf, DS "is marked erased",
+                        DS "but the corresponding variable", DD var,
+                        DS "appears free in the erased term", DD erasedEc]
+         zipWithM_ chkErased as xs
+
+         return (Conv eb eas (bind xs ec), ecS)
 
     -- rule T_annot
     ts' th (Ann a tyA) =
-      do ea <- ta th a tyA
-         return (Ann ea tyA, tyA)
+      do etyA <- kcElab th tyA
+         ea <- ta th a etyA
+         return (Ann ea etyA, etyA)
+
+    -- pass through SubstitutedFor
+    ts' th (SubstitutedFor a x) =
+     do (ea,tyA) <- ts' th a
+        return (SubstitutedFor ea x, tyA)
 
     -- the synthesis version of rules T_let1 and T_let2
     ts' th (Let th' ep bnd) =
@@ -774,6 +789,7 @@ tcEntry dt@(Data t delta th lev cs) =
      unless (length cnames == length (nub cnames)) $
        err [DS "Datatype definition", DD t, DS"contains duplicated constructors" ]
      -- finally, add the datatype to the env and perform action m
+     -- fixme, we should really add an elaborated version of the declaration.
      return $ AddCtx [dt]
      where cnames = map (\(ConstructorDef _ c _) -> c) cs
 
@@ -781,15 +797,15 @@ tcEntry dt@(AbsData _ delta th lev) =
   do kc th (telePi delta (Type lev))
      return $ AddCtx [dt]
 
-tcEntry s@(Sig n th ty) = do
+tcEntry (Sig n th ty) = do
   duplicateTypeBindingCheck n ty
-  kc th ty
-  return $ AddHint s
+  ety <- kcElab th ty
+  return $ AddHint (Sig n th ety)
 
-tcEntry s@(Axiom n th ty) = do
+tcEntry (Axiom n th ty) = do
   duplicateTypeBindingCheck n ty
-  kc th ty
-  return $ AddCtx [s]
+  ety <- kcElab th ty
+  return $ AddCtx [Axiom n th ety]
 
 duplicateTypeBindingCheck :: TName -> Term -> TcMonad ()
 duplicateTypeBindingCheck n ty = do
@@ -802,11 +818,9 @@ duplicateTypeBindingCheck n ty = do
     -- We already have a type in the environment so fail.
     (_,ty'):_ ->
       let (Pos p  _) = ty
-          (Pos p' _) = ty'
           msg = [DS "Duplicate type signature ", DD ty,
                  DS "for name ", DD n,
-                 DS "Previous typing at", DD p',
-                 DS "was", DD ty']
+                 DS "Previous typing was", DD ty']
        in
          extendSourceLocation p ty $ err msg
 
@@ -845,9 +859,6 @@ isFirstOrder ty = isFirstOrder' S.empty ty
     isFirstOrder' _ (At _ _) = return True
     isFirstOrder' _ _ = return False
     
-allM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
-allM p = liftM and . mapM p
-
 -- Positivity Check
 
 -- | Determine if a data type only occurs in strictly positive positions in a
@@ -880,8 +891,155 @@ occursPositive tName ty = do
 
 
 -- Alpha equality, dropping parens and source positions.
+
 aeqSimple :: Alpha t => t -> t -> Bool
 aeqSimple x y = delPosParenDeep x `aeq` delPosParenDeep y
 
-uncurry3 :: (a->b->c->d) -> (a,b,c) -> d
-uncurry3 f (x,y,z) = f x y z
+
+---------------------------------------------------------------------------
+-- Looking up datatypes in the context, when typechecking case-expressions.
+---------------------------------------------------------------------------
+
+-- | If ty is a datatype, then return its definition, otherwise signal an error.
+
+--  (d,bbar,delta,cons) <- lookupDType bty
+
+lookupDType :: Theta -> Term -> Term -> TcMonad (TName, [(Term, Epsilon)], Telescope, [ConstructorDef])
+lookupDType th b bty@(isCon -> Just (d, apps)) = do
+         ent <- lookupCon d
+         case ent of
+           (Left (delta,th',_,Just cons)) ->
+             do unless (th' <= th) $
+                   err [DS "Attempted to pattern match on an element of the",
+                        DS "datatype", DD d, DS "in the Logical fragment, but",
+                        DS "it is programmatic."]
+                unless (length apps == length delta) $
+                   err [DS "Attempted to match against", DD b,
+                        DS "with type", DD bty, DS "where", DD d,
+                        DS "is applied to the wrong number of arguments."]
+                return (d,map (\(a,_) -> (a,Erased)) apps, delta, cons)
+           (Left (_,_,_,Nothing)) ->
+              err [DS "Scrutinee ", DD b,
+                   DS "is a member of an abstract datatype - you may not",
+                   DS "pattern match on it."]
+           _ ->
+              err [DS "Scrutinee ", DD b,
+                   DS "must be a member of a datatype, but is not. It has type", DD bty]
+lookupDType _ b bty = err [DS "Scrutinee ", DD b,
+                           DS "must be a member of a datatype, but is not. It has type", DD bty]
+
+-- | (lookupDCon d c) finds the arguments of constructor c, which should be one of the constructors of d.
+lookupDCon :: TName -> TName -> TcMonad Telescope
+lookupDCon d c = do
+  dDef <- lookupCon d
+  case dDef of 
+    (Left (_,_,_,Just cons)) -> 
+       case find (\(ConstructorDef  _ c' _) -> c'==c) cons of
+         Nothing -> err [DD c, DS "is not a constructor of type", DD d]
+         Just (ConstructorDef _  _ deltai)  -> return deltai
+    _ -> err [DD c, DS "is not a constructor of type", DD d]
+
+---------------------------------------
+-- Some random utility functions
+---------------------------------------
+
+allM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+allM p = liftM and . mapM p
+
+freshTele :: (Functor m, Fresh m) => Telescope -> m Telescope
+freshTele = mapM (\(x,ty,ep) -> (,ty,ep) <$> fresh x)
+
+-------------------------------------
+-- Elaborating complex pattern matches
+--
+-- This is mostly the same as the algorithm described in 
+--     Philip Wadler, "Efficient Compilation of Pattern-Matching",
+--     a chapter in Simon Peyton-Jones, _The Implementation of Functional Programming Languages_.
+--
+--  Consider each scrutinee in turn from left to right, adding
+--  new case statements.
+-- 
+--  One twist which is different from, e.g., Coq, is that if we have
+--    case e of x -> b
+--  where e is not a variable, we must add a let statement to the
+--  elaborated program. We can not just substitute e for x, because of value restriction. 
+--
+--  Also, unlike haskell, we want to signal an error for non-exhaustive matches.
+-----------------------------------------
+
+{- Problems to be fixed:
+    * The treatment of equations for the scrutinees is dubious. 
+      The named equation should actually equate the scrutinee with the full nested pattern.
+    * Need to think/test the logic for empty case statements a bit more, probably.
+ -}
+
+-- (buildCase th scrutinees scrutineeTys alts) builds a case tree that
+-- evaluates to the first alternative that matches, or 'fallback' if
+-- none of them do. The argument scrutineeTys is a list of the types of the scrutinees.
+--
+-- precondition: scrutineeTys has the same length as scrutinees, and all the pattern lists have the same length 
+-- as scrutinees.
+buildCase ::Theta ->  [(Embed Term, TName)] -> [Term] -> [ComplexMatch] -> TcMonad Term
+buildCase _  [] _ [] = err [DS "Patterns in caes-expression not exhaustive."]
+buildCase _  [] _ (alt:_) = matchBody alt
+buildCase th ((unembed->s,y):scruts) (ty:scrutTys) alts | not (null alts) && all isVarMatch alts = do
+  alts' <- mapM (expandMatch th s [] <=< matchPat) alts
+  buildCase th scruts scrutTys alts'
+buildCase th ((unembed->s,y):scruts) (sTy:scrutTys) alts = do
+  (d, bbar, delta, cons) <- lookupDType th s sTy
+  let buildMatch :: ConstructorDef -> TcMonad Match
+      buildMatch (ConstructorDef _ c args) = do
+        args <- freshTele args --This may look silly, but we don't get it fresh for free.
+        relevantAlts <- filter (\(p,_) -> case p of 
+                                           (PatCon (unembed -> c') _) -> c'==c
+                                           (PatVar _) -> True)
+                           <$> mapM matchPat alts
+        newScruts <- mapM (\(x,_,_) -> (embed (Var x), ) <$> (fresh $ string2Name "_")) args
+        let newScrutTys = map (\(_,ty,_) -> ty) $ substs (zip (domTele delta) (map fst bbar)) args
+        newAlts <- mapM (expandMatch th s args) relevantAlts
+        Match c <$> (bind (map (\(x,_,ep) -> (x,ep)) args) 
+                      <$> buildCase th (newScruts++scruts) (newScrutTys++scrutTys) newAlts)
+  Case s <$> (bind y <$> mapM buildMatch cons)
+
+-- | expandMatch th scrut args (pat, alt) 
+-- adjusts the ComplexMatch 'alt' for the fact that 'scrut' (which belongs to the 'th' sublanguage)
+-- has just been sucessfully tested against pattern pat.
+-- It adds the new variables args to the list of patterns for alt, and substitutes scrut into the body of alt 
+-- if 'pat' was a variable pattern.
+expandMatch :: Theta -> Term -> Telescope -> (Pattern, ComplexMatch) -> TcMonad ComplexMatch
+expandMatch th s args (PatCon (unembed -> c) newPats, ComplexMatch alt) = do
+  unless (length newPats == length args) $ 
+    err [DS "constructor", DD c, DS $ "should take " ++ show (length args) ++ " constructors,",
+         DS "but the pattern", DD (PatCon (embed c) newPats), DS $ "has " ++ show (length newPats) ++ "."]
+  unless (map (\(_,_,ep)->ep) args == map snd newPats) $
+    err [DS "wrong epsilons on arguments in pattern", DD (PatCon (embed c) newPats)]
+  (pats, body) <- unbind alt
+  return $ ComplexMatch (bind (map fst newPats++pats) body)
+expandMatch th s args (PatVar z, ComplexMatch alt) = do
+  newPats <- mapM (\(_,_,ep) -> do x <- fresh (string2Name  "_"); return (PatVar x, ep)) args
+  (pats, body) <- unbind alt
+  case isVar s of 
+    Just x -> return $ ComplexMatch (bind (map fst newPats++pats) (subst z (Var x) body))
+    Nothing -> do
+      x    <- fresh (string2Name "x")
+      x_eq <- fresh (string2Name "x_eq")
+      return $ ComplexMatch (bind (map fst newPats++pats)
+                                  (Let th Runtime (bind (x, x_eq, embed s) 
+                                                        (subst z (Var x) body))))
+
+isVarMatch :: ComplexMatch -> Bool
+isVarMatch (ComplexMatch bnd) = 
+ --unsafeUnbind is ok since we never look at the names, only the top constructor.
+ let (pats, _) = unsafeUnbind bnd in
+ case pats of
+   (PatVar _ : _) -> True
+   _ -> False
+
+matchBody :: (Functor m, Fresh m) => ComplexMatch -> m Term
+matchBody (ComplexMatch bnd) = snd <$> unbind bnd
+
+-- Precondition: the match has at least one pattern.
+matchPat :: (Functor m, Fresh m) => ComplexMatch -> m (Pattern, ComplexMatch)
+matchPat (ComplexMatch bnd) = do
+  ((pat:pats), body) <- unbind bnd
+  return (pat, ComplexMatch $ bind pats body)

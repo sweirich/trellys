@@ -89,10 +89,11 @@ erase (TerminationCase a bnd)  = do
       return $ (ETerminationCase ea (bind (translate w)
          (eabort, (bind (translate v) eterm))))
 erase TrustMe = return ETrustMe
-erase InferMe = error "erase called on InferMe"
+erase (SubstitutedFor a x) = erase a
+erase t = error ("internal error: erase called on " ++ show t)
 
 eraseMatch :: Match -> TcMonad EMatch
-eraseMatch (c,bnd) =
+eraseMatch (Match c bnd) =
   do (xs,body) <- unbind bnd
      let xs' = map (translate . fst) $ filter (((==) Runtime) . snd) xs
      body' <- erase body
