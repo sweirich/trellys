@@ -4,19 +4,19 @@
 module Language.Trellys.Parser
   (
    parseModuleFile,
-   parseModule,
    parseExpr
   )
   where
 
+import Language.Trellys.Options
 import Language.Trellys.Syntax
-
 import Language.Trellys.GenericBind
 
 import Text.Parsec hiding (State)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
+import Control.Monad.Reader hiding (join)
 import Control.Applicative ( (<$>), (<*>))
 import Control.Monad.Error hiding (join)
 
@@ -44,6 +44,7 @@ import Data.List
     | let th x [y] = a in b    Runtime let, explicitly prog or log
     | let [x] [y] = a in b     Erased let, default to log
     | let th [x] [y] = a in b  Erased let, default to log
+    | let th x = a in b        Let statement with the name of the equation supressed.
     | (x : A) -> B             Runtime pi
     | [x : A] -> B             Erased pi
     | case a [y] of            Case expressions, roughly
@@ -126,19 +127,14 @@ import Data.List
 -}
 
 -- | Parse a module declaration from the given filepath.
-parseModuleFile :: String -> IO (Either ParseError Module)
-parseModuleFile name = do
+parseModuleFile :: [Flag] -> String -> IO (Either ParseError Module)
+parseModuleFile flags name = do
   putStrLn $ "Parsing File " ++ show name
   -- FIXME: Check to see if file exists. Resolve module names. Etc.
   contents <- readFile name
-  return $ runFreshM (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents)
+  return $ runFreshM $ flip runReaderT flags $ (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents)
 
   --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
-
--- | Parse a module from the given string.
-parseModule :: String -> IO ()
-parseModule input = do
-  putStrLn $ "Parsing " ++ show input
 
 -- | Test an 'LParser' on a String.
 --
@@ -148,7 +144,7 @@ parseModule input = do
 --
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
-testParser parser str = runFreshM $ runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
+testParser parser str = runFreshM $ flip runReaderT [] $ runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
@@ -156,13 +152,13 @@ parseExpr = testParser expr
 
 -- * Lexer definitions
 type LParser a = ParsecT
-                    String      -- The input is a sequence of Char
-                    [Column]    -- The internal state for Layout tabs
-                    FreshM      -- The internal state for generating fresh names.
-                    a           -- the type of the object being parsed
+                    String                    -- The input is a sequence of Char
+                    [Column]                  -- The internal state for Layout tabs
+                    (ReaderT [Flag] FreshM)   -- The internal state for generating fresh names, and for flags.
+                    a                         -- the type of the object being parsed
 
-instance Fresh (ParsecT s u FreshM)  where
-  fresh = lift . fresh
+instance Fresh (ParsecT s u (ReaderT a FreshM))  where
+  fresh = lift . lift . fresh
 
 -- Based on Parsec's haskellStyle (which we can not use directly since
 -- Parsec gives it a too specific type).
@@ -174,8 +170,8 @@ trellysStyle = Token.LanguageDef
                 , Token.nestedComments = True
                 , Token.identStart     = letter
                 , Token.identLetter    = alphaNum <|> oneOf "_'"
-                , Token.opStart	       = oneOf ":!#$%&*+./<=>?@\\^|-~"
-                , Token.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.opStart	       = oneOf ":!#$%&*+.,/<=>?@\\^|-"
+                , Token.opLetter       = oneOf ":!#$%&*+.,/<=>?@\\^|-"
                 , Token.caseSensitive  = True
                 , Token.reservedNames =
                   ["ord"
@@ -200,10 +196,10 @@ trellysStyle = Token.LanguageDef
                   ,"TRUSTME"
                   ]
                , Token.reservedOpNames =
-                 ["!","?","\\",":",".", "<", "=", "+", "-", "^", "()", "_", "@"]
+                 ["!","?","\\",":",".",",","<", "=", "+", "-", "^", "()", "_", "@"]
                 }
 
-tokenizer :: Token.GenTokenParser String [Column] FreshM
+--tokenizer :: Token.GenTokenParser String [Column] m
 --layout:: LParser item -> LParser stop -> LParser [item]
 (tokenizer,Token.LayFun layout) = Token.makeTokenParser trellysStyle "{" ";" "}"
 
@@ -247,8 +243,6 @@ varOrCon = do i <- identifier
                 [] -> fail "Internal error: empty identifier"
                 (c:_) -> if isUpper c then return (Con n [])
                                       else return (Var n)
-
-
 
 colon, dot :: LParser ()
 colon = Token.colon tokenizer >> return ()
@@ -456,9 +450,9 @@ funapp :: LParser Term
 funapp = do 
   f <- factor
   foldl' app f <$> many bfactor
-  where bfactor = ((Erased,)  <$> brackets expr) <|>
-                  ((Runtime,) <$> factor)
-        app e1 (ep,e2)  =  App ep e1 e2
+  where bfactor = ((,Erased)  <$> brackets expr) <|>
+                  ((,Runtime) <$> factor)
+        app e1 (e2,ep)  =  App ep e1 e2
 
 factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                 , typen   <?> "Type n"
@@ -482,11 +476,11 @@ factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
                     <?> "an explicit function type or annotated expression"
                 ]
 
-impBind,expBind :: LParser (Epsilon,TName)
-impBind = brackets ((Erased,)  <$> variableOrWild)
-expBind =           (Runtime,) <$> variableOrWild
+impBind,expBind :: LParser (TName,Epsilon)
+impBind = brackets ((,Erased)  <$> variableOrWild)
+expBind =           (,Runtime) <$> variableOrWild
 
-impOrExpBind :: LParser (Epsilon,TName)
+impOrExpBind :: LParser (TName,Epsilon)
 impOrExpBind = impBind <|> expBind
 
 
@@ -504,34 +498,34 @@ lambda = do reservedOp "\\"
             binds <- many1 impOrExpBind
             dot
             body <- expr
-            return $ foldr (\(ep,nm) m -> Lam ep (bind nm m))
+            return $ foldr (\(x,ep) m -> Lam ep (bind x m))
                            body binds
 
 -- recursive abstractions, with the syntax 'ind f x = e', no type annotation.
 ind :: LParser Term
 ind = do
   reserved "ind"
-  n <- variable
-  (stage,var) <- impOrExpBind
+  f <- variable
+  (x,ep) <- impOrExpBind
   reservedOp "="
   body <- expr
-  return $ (Ind stage (bind (n,var) body))
+  return $ (Ind ep (bind (f,x) body))
 
 -- recursive abstractions, with the syntax 'rec f x = e', no type annotation.
 rec :: LParser Term
 rec = do
   reserved "rec"
-  n <- variable
-  (stage,var) <- impOrExpBind
+  f <- variable
+  (x,ep) <- impOrExpBind
   reservedOp "="
   body <- expr
-  return $ (Rec stage (bind (n,var) body))
+  return $ (Rec ep (bind (f,x) body))
 
 letExpr :: LParser Term
 letExpr =
   do reserved "let"
      th <- option Logic $ theta
-     (ep,x) <- impOrExpBind
+     (x,ep) <- impOrExpBind
      defaultName <- fresh (string2Name "_")
      y <- option defaultName (brackets variableOrWild)
      --y <- brackets variableOrWild
@@ -583,23 +577,59 @@ expProdOrAnnotOrParens =
          Left (a,b) -> return $ Ann a b
          Right a    -> return $ Paren a
 
-caseExpr :: LParser Term
-caseExpr = do
+pattern :: LParser Pattern 
+-- Note that 'construtor' and 'variable' overlaps, annoyingly.
+pattern =      try (PatCon <$> (embed <$> constructor) <*> many arg_pattern)
+           <|> atomic_pattern
+  where arg_pattern    =    ((,Erased) <$> brackets pattern) 
+                        <|> ((,Runtime) <$> atomic_pattern)
+        atomic_pattern =    (parens pattern)
+                        <|> (PatVar <$> wildcard)
+                        <|> do t <- varOrCon
+                               case t of
+                                 (Var x) -> return $ PatVar x
+                                 (Con c []) -> return $ PatCon (embed c) []
+                                 _ -> error "internal error in atomic_pattern"
+
+simpleMatch :: LParser Match
+simpleMatch  =
+  do c <- constructor
+     bds <- many impOrExpBind
+     reservedOp "->"
+     body <- term
+     return $ Match c (bind bds body)
+
+simpleCaseExpr :: LParser Term
+simpleCaseExpr = do
     reserved "case"
     e <- factor
     y <- brackets variableOrWild
     reserved "of"
-    alts <- layout alt (return ())
+    alts <- layout simpleMatch (return ())
     return $ Case e (bind y alts)
-  where
-    alt :: LParser (TName, Bind [(TName, Epsilon)] Term)
-    alt =
-      do c <- constructor
-         bds <- many impOrExpBind
-         let vs = map (\(a,b) -> (b, a)) bds
-         reservedOp "->"
-         body <- term
-         return (c, bind vs body)
+
+complexMatch :: LParser ComplexMatch
+complexMatch = 
+  do pats <- sepBy1 pattern (reservedOp ",")
+     reservedOp "->"
+     body <- term
+     return $ ComplexMatch (bind pats body)
+
+complexCaseExpr :: LParser Term
+complexCaseExpr = do
+    reserved "case"
+    scruts <- sepBy1 ((,) <$> (embed <$> factor) <*> (brackets variableOrWild))
+                     (reservedOp ",")
+    reserved "of"
+    alts <- layout complexMatch (return ())
+    return $ ComplexCase (bind scruts alts)
+
+caseExpr :: LParser Term
+caseExpr = do
+  flags <- ask
+  if Elaborate `elem` flags
+   then complexCaseExpr
+   else simpleCaseExpr
 
 -- conv e0 to [x.t] with e1
 -- XXX needs to be redone for contexts
@@ -615,10 +645,10 @@ convExpr = do
   c <- expr
   return $ Conv a bs (bind xs c)
   where erasedProof = do tm <- brackets expr
-                         return (True,tm)
+                         return (tm,Erased)
                       <|>
                       do tm <- expr
-                         return (False,tm)
+                         return (tm,Runtime)
 
 contra :: LParser Term
 contra = do

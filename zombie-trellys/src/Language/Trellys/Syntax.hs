@@ -13,8 +13,11 @@ import qualified Generics.RepLib as RL
 
 import Language.Trellys.GenericBind
 
+import Control.Monad.Writer
 import Text.ParserCombinators.Parsec.Pos
 import Data.Maybe (fromMaybe)
+import Data.Map (Map)
+import qualified Data.Map as M
 
 type TName = Name Term
 type EName = Name ETerm
@@ -44,9 +47,6 @@ instance Ord Theta where
   _ <= Program = True
   _ <= _ = False
 
--- (<:>) :: TName -> a -> (TName, Annot a)
--- x <:> t = (x, Annot t)
-
 
 ------------------------------
 ------------------------------
@@ -56,11 +56,13 @@ instance Ord Theta where
 
 deriving instance Show Term
 
--- | The 'Term' representation is derived from the Ott language definition. In
--- the Trellys core, there is no distinction between types and terms. Moreover, in contrast to the langauge definition, we do not draw a distinction between
--- names of datatypes and constructors introduced via datatype definitions (and
--- eliminated by case expressions) and variables introduced by lambda
--- abstractions and dependent products).
+-- | The 'Term' representation is derived from the Ott language
+-- definition. In the Trellys core, there is no distinction between
+-- types and terms. Moreover, in contrast to the langauge definition,
+-- we do not draw a distinction between names of datatypes and
+-- constructors introduced via datatype definitions (and eliminated by
+-- case expressions) and variables introduced by lambda abstractions
+-- and dependent products).
 data Term = Var TName    -- | variables
           | Con TName [(Term,Epsilon)]   -- | term and type constructors (fully applied)
           | Type Integer   -- | The 'Type' terminal
@@ -75,6 +77,9 @@ data Term = Var TName    -- | variables
           | Arrow  Epsilon (Bind (TName, Embed Term) Term)
           -- | A case expression. The first 'Term' is the case scrutinee.
           | Case Term (Bind TName [Match])
+          -- | A complex case expression (only present in the surface language, not the core).
+          --   The (Embed Term)s are scrutinees, the TNames are the scrutinee-pattern equations.
+          | ComplexCase (Bind [(Embed Term, TName)] [ComplexMatch])
           -- | The heterogenous structural order type, @a < b@
           | Smaller Term Term
           -- | Constructor for the structural order, @ord a@
@@ -87,7 +92,7 @@ data Term = Var TName    -- | variables
           -- bidirectionally infer the terms
           | Join Int Int
           -- | @conv a by b at C@
-          | Conv Term [(Bool,Term)] (Bind [TName] Term)
+          | Conv Term [(Term,Epsilon)] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- | The @abort@ expression.
@@ -111,19 +116,32 @@ data Term = Var TName    -- | variables
           -- | The TRUSTME form.
           | InferMe
           -- | Concrete syntax is an underscore.
-
+          | SubstitutedFor Term TName
+          -- Marks where a term was substituted for a variable; used in elaborating
+          --  conv-expressions.
           
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables
-type Match = (TName, Bind [(TName, Epsilon)] Term)
+deriving instance Show Match
+data Match = Match TName (Bind [(TName, Epsilon)] Term)  --the name is the constructor name.
 
--- | This just deletes any top level Pos or Paren constructors from a term
+-- | In the surface language, there is also ComplexMatch, which does several levels of 
+-- pattern matching at once. These get elaborated into nested simple matches.
+deriving instance Show ComplexMatch
+data ComplexMatch = ComplexMatch (Bind [Pattern] Term)
+
+deriving instance Show Pattern
+data Pattern = PatCon (Embed TName) [(Pattern, Epsilon)]
+             | PatVar TName
+
+-- | This just deletes any top level Pos or Paren (or, hrm, SubstitutedFor)  from a term
 delPosParen :: Term -> Term
-delPosParen (Pos _ tm) = tm
-delPosParen (Paren tm) = tm
-delPosParen tm         = tm
+delPosParen (Pos _ tm)            = tm
+delPosParen (Paren tm)            = tm
+delPosParen (SubstitutedFor tm _) = tm
+delPosParen tm                    = tm
 
--- delPosParenDeep :: Term -> Term
+-- Really: Term -> Term
 delPosParenDeep :: Rep a => a -> a
 delPosParenDeep = everywhere (mkT delPosParen)
 
@@ -139,6 +157,17 @@ unPosDeep = something (mkQ Nothing unPos)
 -- | Tries to find a Pos inside a term, otherwise just gives up.
 unPosFlaky :: Term -> SourcePos
 unPosFlaky t = fromMaybe (newPos "unknown location" 0 0) (unPosDeep t)
+
+-- | replace all the (SubstitutedFor a x) with just x
+unsubstitute :: Term -> Term
+unsubstitute = everywhere (mkT unsubstituteHere)
+  where unsubstituteHere (SubstitutedFor _ x) = (Var x)
+        unsubstituteHere e = e
+
+extractSubstitution :: Term -> Map TName Term
+extractSubstitution = everything M.union (mkQ M.empty mapping) 
+  where mapping (SubstitutedFor a x) = M.singleton x a
+        mapping _ = M.empty
 
 -- | A Module has a name, a list of imports, and a list of declarations
 data Module = Module { moduleName :: MName,
@@ -206,38 +235,60 @@ setTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 isVar :: Term -> Maybe TName
 isVar (Pos _ t) = isVar t
 isVar (Paren t) = isVar t
+isVar (SubstitutedFor t x) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
 isType :: Term -> Maybe Integer
 isType (Pos _ t)  = isType t
 isType (Paren t)  = isType t
+isType (SubstitutedFor t x) = isType t
 isType (Type n)   = Just n
 isType _          = Nothing
 
 isTyEq :: Term -> Maybe (Term, Term)
 isTyEq (Pos _ t) = isTyEq t
 isTyEq (Paren t) = isTyEq  t
+isTyEq (SubstitutedFor t x) = isTyEq t
 isTyEq (TyEq ty0 ty1) = Just (delPosParenDeep ty0, delPosParenDeep ty1)
 isTyEq _ = Nothing
 
 isSmaller :: Term -> Maybe (Term, Term)
 isSmaller (Pos _ t) = isSmaller t
 isSmaller (Paren t) = isSmaller t
+isSmaller (SubstitutedFor t x) = isSmaller t
 isSmaller (Smaller a b) = Just (delPosParenDeep a, delPosParenDeep b)
 isSmaller _ = Nothing 
 
 isArrow :: Term -> Maybe (Epsilon, Bind (TName, Embed Term) Term)
 isArrow (Pos _ t)      = isArrow t
 isArrow (Paren t)      = isArrow t
+isArrow (SubstitutedFor t x) = isArrow t
 isArrow (Arrow ep bnd) = Just (ep,bnd)
 isArrow _              = Nothing
 
 isAt :: Term -> Maybe (Term, Theta)
 isAt (Pos _ t) = isAt t
 isAt (Paren t) = isAt t
+isAt (SubstitutedFor t x) = isAt t
 isAt (At t th) = Just (t, th)
 isAt _         = Nothing
+
+isCon :: Term -> Maybe (TName, [(Term,Epsilon)])
+isCon (Pos _ t) = isCon t
+isCon (Paren t) = isCon t
+isCon (SubstitutedFor t x) = isCon t
+isCon (Con c args) = Just (c, args)
+isCon _ = Nothing
+
+isNumeral :: Term -> Maybe Int
+isNumeral (Pos _ t) = isNumeral t
+isNumeral (Paren t) = isNumeral t
+isNumeral (SubstitutedFor t x) = isNumeral t
+isNumeral (Con c []) | c==string2Name "Zero" = Just 0
+isNumeral (Con c [(t,Runtime)]) | c==string2Name "Succ" =
+  do n <- isNumeral t ; return (n+1)
+isNumeral _ = Nothing
 
 -- splitApp makes sure a term is an application and returns the
 -- two pieces
@@ -408,11 +459,13 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Term, ''ETerm, ''ATerm, ''AMatch, ''EMatch])
+$(derive [''Epsilon, ''Theta, ''Term, ''Match, ''ComplexMatch, ''ETerm, ''Pattern, ''EMatch, ''ATerm, ''AMatch])
 
 
 instance Alpha Term
-
+instance Alpha Match
+instance Alpha ComplexMatch
+instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
 
@@ -422,6 +475,9 @@ instance Subst Term Term where
 
 instance Subst Term Epsilon
 instance Subst Term Theta
+instance Subst Term Match
+instance Subst Term ComplexMatch
+instance Subst Term Pattern
 
 instance Alpha ATerm
 instance Alpha AMatch

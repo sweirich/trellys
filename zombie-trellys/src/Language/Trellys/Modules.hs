@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Language.Trellys.Modules(getModules, writeModules) where
 
+import Language.Trellys.Options
 import Language.Trellys.Syntax
 import Language.Trellys.Parser(parseModuleFile)
 
@@ -20,18 +21,18 @@ import Data.List(nub,(\\))
 -- transitive dependency. It returns the list of parsed modules, with all
 -- modules appearing after its dependencies.
 getModules
-  :: (MonadIO m) => [FilePath] -> String -> m (Either ParseError [Module])
-getModules prefixes top = runErrorT $ gatherModules prefixes [string2Name top]
+  :: (MonadIO m) => [Flag] -> [FilePath] -> String -> m (Either ParseError [Module])
+getModules flags prefixes top = runErrorT $ gatherModules flags prefixes [string2Name top]
 
 -- | Build the module dependency graph, with parsed modules.
 gatherModules
   :: (MonadError ParseError m, MonadIO m) =>
-     [FilePath] -> [MName] -> m [Module]
-gatherModules prefixes ms = gatherModules' ms [] where
+     [Flag] -> [FilePath] -> [MName] -> m [Module]
+gatherModules flags prefixes ms = gatherModules' ms [] where
   gatherModules' [] accum = return $ topSort accum
   gatherModules' (m:ms) accum = do
     modFileName <- getModuleFileName prefixes m
-    parsedMod <- parseModule modFileName
+    parsedMod <- parseModule flags modFileName
     let accum' = parsedMod:accum
     let oldMods = map moduleName accum'
     let newMods = [mn | ModuleImport mn <- moduleImports parsedMod]
@@ -68,9 +69,9 @@ getModuleFileName prefixes mod = do
      else return $ head files
 
 parseModule
-  :: (MonadError ParseError m, MonadIO m) => String -> m Module
-parseModule fname = do
-  res <- liftIO $ parseModuleFile fname
+  :: (MonadError ParseError m, MonadIO m) => [Flag] -> String -> m Module
+parseModule flags fname = do
+  res <- liftIO $ parseModuleFile flags fname
   case res of
     Left err -> throwError err
     Right v -> return v

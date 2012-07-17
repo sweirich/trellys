@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances,
+             ViewPatterns
+ #-}
 
 -- | A Pretty Printer for the core trellys. The 'Disp' class and
 -- 'D' type should
@@ -14,6 +16,7 @@ import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.List (intersperse)
 import Control.Applicative ((<$>), (<*>))
 
 -- | The 'Disp' class governs types which can be turned into 'Doc's
@@ -41,6 +44,10 @@ instance Disp ETerm where
 instance Rep a => Disp (Name a) where
   disp = cleverDisp
 instance Disp Telescope where
+  disp = cleverDisp
+instance Disp Pattern where 
+  disp = cleverDisp
+instance Disp ComplexMatch where
   disp = cleverDisp
 
 -------------------------------------------------------------------------
@@ -198,15 +205,11 @@ instance Disp Decl where
   disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
-  disp (Sig n ep ty) =
-        disp n
-    <+> (case ep of {Logic -> text ":"; Program -> text ":c"})
-    <+> disp ty
-  disp (Axiom n ep ty) =
+  disp (Sig n th ty) =
+        disp th <+> disp n <+> text ":" <+> disp ty
+  disp (Axiom n th ty) =
         text "axiom"
-    <+> disp n
-    <+> (case ep of {Logic -> text ":"; Program -> text ":c"})
-    <+> disp ty
+    <+> disp th <+> disp n <+> text ":" <+> disp ty
 
   disp (Data n params th lev constructors) =
     hang (disp th <+> text "data" <+> disp n <+> disp params
@@ -238,6 +241,9 @@ instance Disp ModuleImport where
 
 instance Display Term where
   display (Var n) = display n
+
+  display (isNumeral -> Just i) = display i
+
   display (Con n args) = do
     dn <- display n
     dargs <- mapM displayArg args
@@ -306,32 +312,30 @@ instance Display Term where
     lunbind bnd $ \ (y, alts) -> do
      dd <- display d
      dy <- display y
-     dalts <- mapM displayAlt alts
+     dalts <- mapM display alts
      return $ text "case" <+> dd <+> (brackets dy) <+> text "of" $$
-          (nest 2 $ vcat $  dalts)
-    where
-      displaybnd (v, ep) = do
-        dv <- display v
-        return $ bindParens ep dv
+          (nest 2 $ vcat $  dalts)              
 
-      displayAlt (c, bd) =
-        lunbind bd $ \ (vs, ubd) -> do
-              dc <- display c
-              dvs <- mapM displaybnd vs
-              dubd <- display ubd
-              return $ (hsep (dc : dvs)) <+> text "->" <+> dubd
-
+  display (ComplexCase bnd) =
+    lunbind bnd $ \ (scruts,  alts) -> do
+     let displayScrutinee (s,y) = do
+           ds <- display (unembed s)
+           dy <- display y
+           return $ ds <+> brackets dy
+     dscruts <-  (hsep . intersperse (text ",")) <$> mapM displayScrutinee scruts
+     dalts <- mapM display alts
+     return $ text "case" <+> dscruts <+> text "of" $$
+          (nest 2 $ vcat $  dalts)              
+         
   display (Conv a bs bnd) =
     lunbind bnd $ \(xs,c) -> do
       da <- display a
-      dbs <- mapM displayErased bs
+      dbs <- mapM display bs
       dxs <- mapM display xs
       dc <- display c
       return $ fsep [text "conv" <+> da,
                     text "by" <+> sep (punctuate comma dbs),
                     text "at" <+> hsep dxs  <+> text "." <+> dc]
-      where displayErased (True,pf) = brackets <$> display pf
-            displayErased (False, pf) = display pf
 
   display (Smaller a b) = do
       da <- display a
@@ -350,7 +354,7 @@ instance Display Term where
   display (TyEq a b)   = do
       da <- display a
       db <- display b
-      return $ da  <+> text "=" <+> db
+      return $ wraparg a da <+> text "=" <+> wraparg b db
   display (Join s1 s2) =
     return $ text "join" <+> text (if s1 == s2
                             then if s1 == 100
@@ -386,6 +390,27 @@ instance Display Term where
   display InferMe = return $ text "_"
 
 
+instance Display Match where
+  display (Match c bd) =
+    lunbind bd $ \ (vs, ubd) -> do
+      dc <- display c
+      dvs <- mapM display vs
+      dubd <- display ubd
+      return $ (hsep (dc : dvs)) <+> text "->" <+> dubd
+
+instance Display ComplexMatch where
+  display (ComplexMatch bnd) =
+    lunbind bnd $ \ (pats, body) -> do
+      dpats <- mapM display pats
+      dbody <- display body
+      return $ (hsep $ intersperse (text ",") dpats) <+> text "->" <+> dbody
+
+instance Display Pattern where
+  display (PatCon ec args) = 
+    let c = unembed ec in
+      parens <$> ((<+>) <$> (display c) <*> (hsep <$> (mapM display args)))
+  display (PatVar x) = display x
+
 -- NC copied this wrapper code from display EApp below without
 -- much thought or testing ... it works pretty well down there
 wraparg :: Term -> (Doc -> Doc)
@@ -415,8 +440,6 @@ instance Display ETerm where
     dn <- display n
     dargs <- mapM display args
     return $ dn <+> hsep dargs
-      where displayArg (t, ep) = do dt <- display t
-                                    return $ bindParens ep dt
   display (EType level) = return $ text "Type" <+> integer level
   display (EArrow ep a bnd) = do
      da <- display a
@@ -505,6 +528,9 @@ instance Display EMatch where
 instance Disp Epsilon where
   disp Erased = text "-"
   disp Runtime = text "+"
+
+instance Display a => Display (a, Epsilon) where
+  display (t, ep) = bindParens ep <$> display t
 
 instance Display Telescope where
   display ts = do

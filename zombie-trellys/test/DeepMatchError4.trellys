@@ -1,0 +1,11 @@
+-- The subpatterns in a constructor pattern must have the same
+-- epsilons as the arguments for that constructor.
+
+module DeepMatchError4 where
+import Prelude
+
+prog f : Nat -> Nat
+f = \n .
+  case n [_] of
+    Zero -> Zero
+    Succ [n] -> Zero

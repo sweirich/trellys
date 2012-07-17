@@ -1,0 +1,7 @@
+--It is an error to match against an abstract datatype.
+module DeepMatchError1 where
+import Prelude
+
+log data C : Type 0 where
+  MkC of (x : C) (y : (case x [_] of MkC _ _ -> Nat : Type 0))
+
