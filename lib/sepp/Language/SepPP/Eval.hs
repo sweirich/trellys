@@ -7,9 +7,10 @@ import Language.SepPP.TCUtils
 import Language.SepPP.Options
 
 
-import Unbound.LocallyNameless hiding (Con(..),Equal,Refl)
 import Control.Monad
+
 import Text.PrettyPrint(text)
+import Unbound.LocallyNameless hiding (Con(..),Equal,Refl)
 
 -- compile-time configuration: should reduction steps be logged
 debugReductions :: Bool
@@ -39,7 +40,6 @@ reduce steps e k = do
       -- emit $ "Rewrote" <++> e <++> "to" <++> rhs
       reduce steps rhs k
     Nothing -> reduce' steps e k
-
 
 
 reduce' 0 t k = k 0 t

@@ -1,7 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, DeriveDataTypeable, GeneralizedNewtypeDeriving,
-NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
-PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables,
-TemplateHaskell, RankNTypes #-}
+    NamedFieldPuns, TypeSynonymInstances, FlexibleInstances, UndecidableInstances,
+    PackageImports,ParallelListComp, FlexibleContexts, GADTs, RankNTypes, ScopedTypeVariables,
+    TemplateHaskell, RankNTypes #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
 module Language.SepPP.TypeCheck(typecheck) where
@@ -30,6 +30,7 @@ import Control.Applicative
 import Text.Parsec.Pos
 import Data.List(nubBy, find,findIndex)
 import qualified Data.Set as S
+
 
 typecheck :: Module -> IO (Either TypeError ())
 typecheck modul = do

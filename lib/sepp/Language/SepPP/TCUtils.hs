@@ -1,22 +1,29 @@
-{-# LANGUAGE NamedFieldPuns, FlexibleInstances, TypeSynonymInstances, DeriveDataTypeable, GeneralizedNewtypeDeriving, ParallelListComp, PackageImports #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PackageImports             #-}
+{-# LANGUAGE ParallelListComp           #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 module Language.SepPP.TCUtils where
 
-import Language.SepPP.Syntax
-import Language.SepPP.PrettyPrint
-import Language.SepPP.Options
+import           Language.SepPP.Options
+import           Language.SepPP.PrettyPrint
+import           Language.SepPP.Syntax
 
 
-import Unbound.LocallyNameless( Bind, Embed(..),Name, Fresh,FreshMT,aeq,subst, unrebind,translate, bind, unbind)
-import Generics.RepLib(mkT,everywhere)
-import Text.PrettyPrint
-import Data.Typeable
-import "mtl" Control.Monad.Reader hiding (join)
-import "mtl" Control.Monad.Error hiding (join)
-import "mtl" Control.Monad.State hiding (join)
-import Control.Exception(Exception)
-import Control.Applicative hiding (empty)
-import Text.Parsec.Pos
-import Data.List(find)
+import           Control.Applicative        hiding (empty)
+import           Control.Exception          (Exception)
+import           Control.Monad.Error        hiding (join)
+import           Control.Monad.Reader       hiding (join)
+import           Control.Monad.State        hiding (join)
+import           Data.List                  (find)
+import           Data.Typeable
+import           Generics.RepLib            (everywhere, mkT)
+import           Text.Parsec.Pos
+import           Text.PrettyPrint
+import           Unbound.LocallyNameless    (Bind, Embed(..), Fresh, FreshMT, Name, aeq, bind, subst,
+ translate, unbind, unrebind)
 
 
 -- * The typechecking monad
@@ -247,7 +254,7 @@ actual `expectType` expected = do
                    , (text "Actual AST", text $ show $ downAll actual)
                    ]
        ast False = []
-       eraseTCast = everywhere (mkT unTCast) 
+       eraseTCast = everywhere (mkT unTCast)
          where unTCast (TCast t _) = t
                unTCast t = t
 
@@ -276,6 +283,7 @@ synValue (Pos _ t) = synValue t
 synValue (Ann t _) = synValue t
 synValue (Rec _) = return True
 synValue (TCast _ _) = return True
+synValue (ConvCtx t _) = synValue t
 synValue (App f stage x) = liftM2 (&&) (constrApp f) (argValue stage)
   where constrApp (Con _) = return True
         constrApp (App f' Static _) = constrApp f'
