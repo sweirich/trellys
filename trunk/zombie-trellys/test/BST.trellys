@@ -32,7 +32,7 @@ ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
     OrdDict lt [refl] [antisymm] [trans] -> 
       let _ = (join : ordLt [a] (OrdDict [a] lt [refl] [antisymm] [trans]) = lt) in
       let [_] = antisymm x y h1 h2 in
-      (join : x = x) 
+      _
 
 ordLtTrans : [a:Type 0@log] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@log) ->
                   ordLt [a] order x y = True -> ordLt [a] order y z = True -> ordLt [a] order x z = True
@@ -41,7 +41,7 @@ ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
     OrdDict lt [refl] [antisymm] [trans] -> 
       let _ = (join : ordLt [a] (OrdDict [a] lt [refl] [antisymm] [trans]) = lt) in
       let [_] = trans x y z h1 h2 in
-      (join : True = True) 
+      _
 
 data Tree (a:Type 0 @log) : Type 0 where
   EmptyTree
@@ -82,12 +82,12 @@ member_In1 = \a.\order.\x. ind member_In1 t = \in_t.
   case in_t [_] of 
     InHere  t1 t2 t_eq -> 
       let _ = (ordLtRefl [a] order x) in
-      let _ = (join : member [a] order x (BranchTree [a] t1 x t2) = 
+{-      let _ = (join : member [a] order x (BranchTree [a] t1 x t2) = 
                       ((case (ordLt [a] order x x) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order x x) [_] of
                                      True -> member [a] order x t2
-                                     False -> True) : Bool)) in
+                                     False -> True) : Bool)) in -}
           TRUSTME
     InLeft  t1 y t2 in_t1 t_eq -> TRUSTME
     InRight t1 y t2 in_t2 t_eq -> TRUSTME

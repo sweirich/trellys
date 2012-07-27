@@ -242,7 +242,7 @@ simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[
 -- Final pass: now we can generate the Trellys Core proof terms.
 
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m Term
-genProofTerm (AnnAssum NotSwapped (n,_,_)) = return (Var n)
+genProofTerm (AnnAssum NotSwapped (n,tyA,tyB)) =  uneraseTerm tyA tyB (Var n)
 genProofTerm (AnnAssum Swapped (n,tyA,tyB)) = symmTerm tyA tyB (Var n)
 genProofTerm (AnnRefl tyA tyB) =   return (Ann (Join 0 0) (TyEq tyA tyB))
 genProofTerm (AnnCong template ps) = do
@@ -265,6 +265,13 @@ transTerm :: Fresh m => Term -> Term -> Term -> Term -> Term -> m Term
 transTerm tyA tyB tyC p q = do
   x <- fresh (string2Name "x")
   return $ Conv p [(q,Runtime)] (bind [x] (TyEq tyA (Var x)))
+
+-- From (tyA=tyB) conclude (tyA=tyB), but in a way that only uses the
+-- hypothesis in an erased position.
+uneraseTerm :: Fresh m => Term -> Term -> Term -> m Term
+uneraseTerm tyA tyB p = do
+  x <- fresh (string2Name "x")
+  return $ Conv (Ann (Join 0 0) (TyEq tyA tyA)) [(p,Runtime)] (bind [x] (TyEq tyA (Var x)))
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symmTerm :: Fresh m => Term -> Term -> Term -> m Term
