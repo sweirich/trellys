@@ -12,6 +12,12 @@ data Term : Type where
 |Lambdabs : String -> Term -> Term
 
 
+data Context : Type where
+      Base : Context
+     | Ct : Context -> Term -> Context
+     | VC : String -> Term -> Context -> Context
+
+
 data Bool : Type where
  False : Bool
 | True : Bool
@@ -33,7 +39,12 @@ type isLambda : Term -> Bool
     |App l' t' -> False
     |Var l' -> False
 
- 
+type and : Bool -> Bool-> Bool
+prog and = \(b:Bool)(b2:Bool) ->
+     case b {b_eq} of
+      True -> b2
+    | False -> False
+
 type eq_str : String -> String -> Bool
 prog rec eq_str (t:String)(s:String) =
   case t {t_eq} of
@@ -109,10 +120,10 @@ prog  step = \(s: StateT) ->
       State t k-> case t {t_eq} of
                     App t1 t2 -> State t1 ( Ar k  t2)
 
-                    |Lambdabs s' t' -> (case k {k_eq} of
+                    |Lambdabs s' t'' -> (case k {k_eq} of
                               MT-> State t k  
-                             |Fn s'' t'' c' -> State( substitute t s'' t'') c'
-                             |Ar  c' t' -> State t' (Fn s' t'  c')) 
+                             |Fn s'' t''' c' -> State( substitute t s'' t''') c'
+                             |Ar  c' t' -> State t' (Fn s' t'' c')) 
                     |Var x' -> abort StateT
 
 
@@ -150,7 +161,7 @@ prog  step = \(s: StateT) ->
 
    So then the final theorem to prove would be:
 
-   forall(s1:State)(u1:s1!)(s2:State)(u2:s2!)(u:step s1 = s2).
+   forall(s1:StateT)(u1:s1!)(s2:StateT)(u2:s2!)(u:step s1 = s2).
    exists(v:StepSpec0 (interpstate s1) (interpstate s2)).v!
 
 where we need also this definition, to handle the case
@@ -163,6 +174,7 @@ data StepSpec0 : (t1:Term) (t2:Term) -> Type where
 
 -}
 
+
  type kplug : Cont -> Term -> Term
    prog rec kplug (c: Cont)(t:Term) = 
     case c {c_eq} of
@@ -174,6 +186,163 @@ type interpstate : StateT -> Term
 prog interpstate = \(s:StateT)->
   case s {s_eq} of
     State t' k'-> kplug k' t'
+{-
+type compare : Term->Term-> Bool
+prog rec compare (t1:Term)(t2:Term) =
+        case t1 {t1_eq} of
+           Var x -> (case t2 {t2_eq} of
+                     Var x'-> eq_str x x'
+                    |Lambdabs s' t'-> False
+                    |App t3' t4' -> False)
+          |Lambdabs x t->(case t2 {t2_eq} of
+                     Var x'-> False
+                    |Lambdabs s' t'->(and (eq_str x s')(compare t t')) 
+                    |App t3' t4' -> False)
+          |App t3 t4 ->(case t2 {t2_eq} of
+                     Var x'-> False
+                    |Lambdabs s' t'-> False
+                    |App t3' t4' -> and (compare t3 t3')(compare t4 t4'))
+-}
+
+type plug : Context -> Term -> Term
+  prog rec plug (c: Context) (t:Term) =
+    case c {c_eq} of
+                Base-> t
+               |Ct c' t'->  App (plug c' t) t'               
+               |VC s t' c' ->   App (Lambdabs s t') (plug  c' t)
+
+
+type substitute : Term -> String -> Term -> Term
+    prog rec substitute (t :Term) (s:String) (t1: Term)=
+        
+       
+          case t1 {t1_eq} of 
+                   Var x' -> (case eq_str s x' {eqstr_eq} of
+                           True -> t
+                          |False -> t1)
+                 |Lambdabs s' t' ->  (case (eq_str s s') {eqstr_eq} of
+                           True -> t1
+                          |False -> Lambdabs s' (substitute t s t') )
+                 |App t2 t3 -> App (substitute t s t2)
+                                   (substitute t s t3)
+
+
+
+
+data StepSpec : (t1:Term) (t2:Term) -> Type where
+  CtxtBetaV : (c:Context) -> (x:String) -> (t:Term) -> 
+              (ta:Term) ->
+              [u0:isLambda ta = True] -> 
+              [u1:t1 = (plug c (App (Lambdabs x t) ta))] ->
+              [u2:t2 = (plug c (substitute ta x t))] ->
+              StepSpec t1 t2
+
+
+data StepSpec0 : (t1:Term) (t2:Term) -> Type where
+  DidStep : StepSpec t1 t2 -> StepSpec0 t1 t2
+| DntStep : [u:t1=t2] -> StepSpec0 t1 t2
+
+-- axiom step_term : forall (t:StateT)(u:t!). step t ! 
+axiom interp_term : forall (t:StateT)(p:t!). interpstate t ! 
+
+
+
+type cont2ctxt : Cont -> Context -> Context
+prog rec cont2ctxt (k:Cont) (c:Context) = 
+      case k {k_eq} of 
+            MT -> c
+           |Ar k' t-> (cont2ctxt k' (Ct c t))
+           |Fn s' t' k'->(cont2ctxt k' (VC s' t' c))
+
+
+axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !
+
+Inductive kplug_plug : forall(k:Cont){k_term}(c:Context)(c_term:c!)(t:Term)(t_term:t!).
+                       kplug k (plug c t) = plug (cont2ctxt k c) t :=
+                case k {k_eq} (k_term) of
+                       MT-> let p1 = morejoin{sym k_eq, k_term,(plug_term c c_term t t_term)}
+                                     : (kplug k (plug c t)) = (plug c t);
+                                p2= morejoin {sym k_eq, k_term, c_term}
+                                  : cont2ctxt k c= c;
+                                 
+                                p3= refl
+                                  : plug (cont2ctxt k c) t =  plug (cont2ctxt k c) t; 
+                                 p4 = conv p3 at 
+                                      plug (cont2ctxt k c) t =  plug (~p2) t;
+                                 p5 = trans  p4 (sym p1)
+                                    :  plug (cont2ctxt k c) t = kplug k (plug c t)  
+                                in (sym p5)
+                      |Ar k' t'-> 
+                   let ih = kplug_plug k'(ord k_eq) c c_term  t' (valax t')
+                                         
+                 -- p1=  morejoin{sym k_eq,(valax k'),(plug_term c c_term t'(valax t')),t_term, sym ih}
+                   --  : (kplug k' (plug c t')) = (kplug k'(App t (plug c t') ))
+                     in ih
+                      |Fn s' t' k'->join 20 20
+{-
+Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 = s2).exists(v:StepSpec0 (interpstate s1) (interpstate s2)).v! :=
+            (case s1 {s1_eq}(s1_term) of
+               State t k -> (case t {t_eq}(valax t) of
+                            App t1 t2 ->  let p1 = morejoin{sym s1_eq, sym t_eq}
+                                              : step s1= State t1 (Ar k t2); 
+                                            p2 =  trans(sym p1)  u 
+                                              :   State t1 (Ar k t2) =s2;
+                                           p3= morejoin{sym s1_eq, sym p2, u2, sym t_eq }
+                                             :interpstate s2 = kplug k (App t1 t2);
+                                           p4 = morejoin {sym s1_eq, s1_term, sym t_eq}
+                                              : interpstate s1 = kplug k(App t1 t2);
+                                           p5 = trans p4 sym p3
+                                               :interpstate s1=interpstate s2
+                                      in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                                       valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5])                                   
+                                                   
+                           |Var x' ->
+                                     let p1 = morejoin{sym s1_eq, sym t_eq}
+                                            : step s1 = abort StateT;  
+                                         p2 = trans  (sym  p1)  u 
+                                            :(abort StateT) = s2 
+                                           in contraabort p2 u2
+                                    
+                           |Lambdabs s' t'' -> (case k {k_eq} valax k of
+                                               MT -> 
+                                                    let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                                                           : step s1 = State t k;
+                                                        p2 = trans sym p1 u
+                                                           : State t k = s2;
+                                                            
+                                                      p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
+                                                         :interpstate s2 = t;
+                                                      p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
+                                                         : interpstate s1 = t;  
+                                                     p5 = trans p4 (sym p3)
+                                                        : interpstate s1 = interpstate s2
+                                                        
+                                                    in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                                       valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
+                                                                     
+                                             |Ar c' t' -> let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                                                           : step s1 = State t'(Fn s' t'' c') ;
+                                                        p2 = trans (sym p1) u
+                                                           : State t'(Fn s' t'' c') = s2;
+                                                            
+                                                     p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
+                                                        :interpstate s2 = kplug (Ar c' t')(Lambdabs s' t'');
+                                                        
+                                                     p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
+                                                        : interpstate s1 =  kplug (Ar c' t')(Lambdabs s' t'');
+                                                           
+                                                     p5 = trans p4 (sym p3)
+                                                        : interpstate s1 = interpstate s2
+                                                        
+                                                   in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                                         valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
+                                             
+                                                |Fn s' t' c' -> join 20 20
+                                                                        )))
+                           
+
+ -}                       
+
 
 type reduce : StateT -> Term
 prog rec reduce (s: StateT) =
@@ -197,10 +366,10 @@ proof reduce_test1 = join 10000 10000
 
            
 
+theorem interpstate_test1 : interpstate (State(Lambdabs( Str0 Empstr)(Var (Str0 Empstr))) (Ar MT (Lambdabs( Str1(Str0 Empstr))(Var (Str1(Str0 Empstr))))))=  
+(App(Lambdabs( Str0 Empstr)(Var (Str0 Empstr)))(Lambdabs( Str1(Str0 Empstr))(Var (Str1(Str0 Empstr)))))
 
-              
-
-
+proof interpstate_test1 = join 1000 1000
 
                                      
  
