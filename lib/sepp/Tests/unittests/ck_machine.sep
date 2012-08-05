@@ -198,7 +198,7 @@ prog rec compare (t1:Term)(t2:Term) =
                      Var x'-> False
                     |Lambdabs s' t'->(and (eq_str x s')(compare t t')) 
                     |App t3' t4' -> False)
-          |App t3 t4 ->(case t2 {t2_eq} of
+y          |App t3 t4 ->(case t2 {t2_eq} of
                      Var x'-> False
                     |Lambdabs s' t'-> False
                     |App t3' t4' -> and (compare t3 t3')(compare t4 t4'))
@@ -259,89 +259,177 @@ axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !
 
 Inductive kplug_plug : forall(k:Cont){k_term}(c:Context)(c_term:c!)(t:Term)(t_term:t!).
                        kplug k (plug c t) = plug (cont2ctxt k c) t :=
-                case k {k_eq} (k_term) of
-                       MT-> let p1 = morejoin{sym k_eq, k_term,(plug_term c c_term t t_term)}
+               
+         ( case k {k_eq} (k_term) of
+              MT-> 
+                   let p1 = morejoin{sym k_eq, k_term,(plug_term c c_term t t_term)}
                                      : (kplug k (plug c t)) = (plug c t);
-                                p2= morejoin {sym k_eq, k_term, c_term}
-                                  : cont2ctxt k c= c;
+                       p2= morejoin {sym k_eq, k_term, c_term}
+                         : cont2ctxt k c= c;
                                  
-                                p3= refl
-                                  : plug (cont2ctxt k c) t =  plug (cont2ctxt k c) t; 
-                                 p4 = conv p3 at 
-                                      plug (cont2ctxt k c) t =  plug (~p2) t;
-                                 p5 = trans  p4 (sym p1)
-                                    :  plug (cont2ctxt k c) t = kplug k (plug c t)  
-                                in (sym p5)
-                      |Ar k' t'-> 
-                   let ih = kplug_plug k'(ord k_eq) c c_term  t' (valax t')
-                                         
-                 -- p1=  morejoin{sym k_eq,(valax k'),(plug_term c c_term t'(valax t')),t_term, sym ih}
-                   --  : (kplug k' (plug c t')) = (kplug k'(App t (plug c t') ))
-                     in ih
-                      |Fn s' t' k'->join 20 20
-{-
+                       p3= refl
+                         : plug (cont2ctxt k c) t =  plug (cont2ctxt k c) t; 
+                       p4 = conv p3 at 
+                          plug (cont2ctxt k c) t =  plug (~p2) t;
+                       p5 = trans  p4 (sym p1)
+                          :  plug (cont2ctxt k c) t = kplug k (plug c t)  
+                          in (sym p5)
+            |Ar k' t'->
+                        
+                 let ih = kplug_plug k'(ord k_eq) (Ct c t')valax (Ct tcast c by c_term t') t t_term;
+               p1=  morejoin { c_term } 
+                 : cont2ctxt (Ar k' t') c = cont2ctxt k'  (Ct c t');
+               
+                p2 = conv p1 at
+                  cont2ctxt ~k_eq c = cont2ctxt k'  (Ct c t');
+               p3 = trans p1 (sym p2)   
+                  : cont2ctxt (Ar k' t') c = cont2ctxt k c ;
+               
+               p4 = morejoin {sym k_eq, k_term,(plug_term c c_term t t_term)}
+                 : kplug k (plug c t)= kplug k'(App (plug c t )t');
+               
+               p5 = morejoin{(valax (Ct tcast c by c_term t')), t_term}
+                  :plug (Ct c t') t = App(plug c t)t';
+           
+                p6 = conv p4 at
+                     kplug k (plug c t)= kplug k'~(sym p5);
+                 --  : kplug k (plug c t) = kplug k' (plug (Ct c t') t)
+                
+                 p7 = trans (sym ih) (sym p6)                     
+                   :  plug( cont2ctxt k' (Ct c t'))t= kplug k (plug c t );
+                 
+               p8 = trans (sym p1) p3 
+                  :  cont2ctxt k' (Ct c t')=  cont2ctxt k c;
+                      
+               p9 = conv p7 at
+                   ( plug ~p8 t)= kplug k (plug c t )
+                in (sym p9)
+                 
+
+             |Fn s' t' k'->
+                let ih = kplug_plug k'(ord k_eq) (VC s' t' c)valax (VC s' t'  tcast c by c_term ) t t_term;
+                 p1=  morejoin { c_term } 
+                 : cont2ctxt (Fn s' t' k') c = cont2ctxt k'(VC s' t' c);
+
+                 p2 = conv p1 at
+                  cont2ctxt ~k_eq c = cont2ctxt k'(VC s' t' c);
+                
+                 p3 = trans p1 (sym p2)   
+                  : cont2ctxt  (Fn s' t' k') c = cont2ctxt k c; 
+                 
+                p34= (plug_term c c_term t t_term);
+
+                 p4 = morejoin {sym k_eq, k_term, p34}
+                 : kplug k (plug c t)= (kplug (Ar k' (plug c t))(Lambdabs s' t'));
+                 
+                
+              
+                p5 = morejoin{p34}
+                   :  kplug (Ar k' (plug c t ))(Lambdabs s' t')= kplug k'(App (Lambdabs s' t')(plug c t )); 
+                 
+                p6 = morejoin{(valax (VC s' t' tcast c by c_term )), t_term}
+                  :plug (VC s' t' c) t = App (Lambdabs s' t')(plug c t);    
+                
+                p7 = trans p4 p5
+                   :    kplug k (plug c t)= kplug k'(App (Lambdabs s' t')(plug c t ));    
+                 
+                p8 = conv p7 at
+                      kplug k (plug c t)= kplug k' ~(sym  p6);
+                
+                 p9= trans  p8 ih
+                   :   kplug k (plug c t) = plug (cont2ctxt k' (VC s' t' c)) t; 
+                
+                 p10 = conv p9 at
+                       kplug k (plug c t) = plug ~(sym p2) t  
+                   in p10) 
+
+
 Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 = s2).exists(v:StepSpec0 (interpstate s1) (interpstate s2)).v! :=
-            (case s1 {s1_eq}(s1_term) of
-               State t k -> (case t {t_eq}(valax t) of
-                            App t1 t2 ->  let p1 = morejoin{sym s1_eq, sym t_eq}
-                                              : step s1= State t1 (Ar k t2); 
-                                            p2 =  trans(sym p1)  u 
-                                              :   State t1 (Ar k t2) =s2;
-                                           p3= morejoin{sym s1_eq, sym p2, u2, sym t_eq }
-                                             :interpstate s2 = kplug k (App t1 t2);
-                                           p4 = morejoin {sym s1_eq, s1_term, sym t_eq}
-                                              : interpstate s1 = kplug k(App t1 t2);
-                                           p5 = trans p4 sym p3
-                                               :interpstate s1=interpstate s2
-                                      in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
-                                       valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5])                                   
+     (case s1 {s1_eq}(s1_term) of
+       State t k -> (case t {t_eq}(valax t) of
+                    App t1 t2 ->  let p1 = morejoin{sym s1_eq, sym t_eq}
+                                         : step s1= State t1 (Ar k t2); 
+                                      p2 =  trans(sym p1)  u 
+                                         :   State t1 (Ar k t2) =s2;
+                                      p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq }
+                                         :interpstate s2 = kplug k (App t1 t2);
+                                      p4 = morejoin {sym s1_eq, s1_term, sym t_eq}
+                                         : interpstate s1 = kplug k(App t1 t2);
+                                      p5 = trans p4 sym p3
+                                         :interpstate s1=interpstate s2
+                       in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                            valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5])                                   
                                                    
-                           |Var x' ->
-                                     let p1 = morejoin{sym s1_eq, sym t_eq}
-                                            : step s1 = abort StateT;  
-                                         p2 = trans  (sym  p1)  u 
-                                            :(abort StateT) = s2 
-                                           in contraabort p2 u2
+                   |Var x' ->
+                             let p1 = morejoin{sym s1_eq, sym t_eq}
+                                    : step s1 = abort StateT;  
+                                 p2 = trans  (sym  p1)  u 
+                                    :(abort StateT) = s2 
+                                 in contraabort p2 u2
                                     
-                           |Lambdabs s' t'' -> (case k {k_eq} valax k of
-                                               MT -> 
-                                                    let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
-                                                           : step s1 = State t k;
-                                                        p2 = trans sym p1 u
-                                                           : State t k = s2;
-                                                            
-                                                      p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
-                                                         :interpstate s2 = t;
-                                                      p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
-                                                         : interpstate s1 = t;  
-                                                     p5 = trans p4 (sym p3)
-                                                        : interpstate s1 = interpstate s2
+                   |Lambdabs s' t'' -> (case k {k_eq} valax k of
+                      MT -> 
+                            let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                                   : step s1 = State t k;
+                                p2 = trans sym p1 u
+                                   : State t k = s2;
+                                                                                                                             p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
+                                   :interpstate s2 = t;
+                                p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
+                                   : interpstate s1 = t;  
+                                p5 = trans p4 (sym p3)
+                                   : interpstate s1 = interpstate s2
                                                         
-                                                    in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                            in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
                                        valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
                                                                      
-                                             |Ar c' t' -> let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
-                                                           : step s1 = State t'(Fn s' t'' c') ;
-                                                        p2 = trans (sym p1) u
-                                                           : State t'(Fn s' t'' c') = s2;
+                     |Ar c' t' -> 
+                              let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                                     : step s1 = State t'(Fn s' t'' c') ;
+                                  p2 = trans (sym p1) u
+                                     : State t'(Fn s' t'' c') = s2;
                                                             
-                                                     p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
-                                                        :interpstate s2 = kplug (Ar c' t')(Lambdabs s' t'');
+                                  p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
+                                     : interpstate s2 = kplug (Ar c' t')(Lambdabs s' t'');
                                                         
-                                                     p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
-                                                        : interpstate s1 =  kplug (Ar c' t')(Lambdabs s' t'');
+                                  p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
+                                     : interpstate s1 =  kplug (Ar c' t')(Lambdabs s' t'');
                                                            
-                                                     p5 = trans p4 (sym p3)
-                                                        : interpstate s1 = interpstate s2
+                                  p5 = trans p4 (sym p3)
+                                     : interpstate s1 = interpstate s2
                                                         
-                                                   in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
+                                 in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
                                          valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
                                              
-                                                |Fn s' t' c' -> join 20 20
-                                                                        )))
+                      |Fn s' t' c' -> 
+                         let p1 =  morejoin{sym t_eq, sym k_eq}
+                                : interpstate(State (Lambdabs s' t'')(Fn s' t' c'))=kplug (Fn s' t' c') (Lambdabs s' t'');
+                             p2 = morejoin{valax(Fn s' t' c'), valax (Lambdabs s' t'') }
+                                :kplug (Fn s' t' c') (Lambdabs s' t'')=kplug (Ar c' (Lambdabs s' t''))(Lambdabs s' t');   
+                            
+                             p3 = morejoin{valax (Lambdabs s' t'')  }
+                                :kplug (Ar c' (Lambdabs s' t''))(Lambdabs s' t')= kplug c' (App (Lambdabs s' t') (Lambdabs s' t''));
+
+                             p4 = morejoin{valax (Lambdabs s' t'')}
+                                :kplug c'  (App (Lambdabs s' t') (Lambdabs s' t''))= kplug c' (plug Base  (App (Lambdabs s' t') (Lambdabs s' t''))   );
+--left---------------------------------------------------------------------------------------
+                            
+
+                            p45= valax  (Lambdabs s' t'') ;
+                            p46=valax  s';
+                            p47= valax t'; 
+                            p5 = morejoin{ valax( State (substitute( tcast (Lambdabs s' t'') by p45)s' t'))}
+                               : interpstate (State(substitute (Lambdabs s' t'')  s' t') c') = kplug c' (substitute (Lambdabs s' t'')  s' t')
+
+
+-- = morejoin{sym t_eq, valax (Lambdabs s' t''),  }
+  --                             : kplug c' (substitute (Lambdabs s' t'') s' t')= kplug c' (plug Base (substitute (Lambdabs s' t'') s' t'))                                    
+                            in p5
+
+  )))
                            
 
- -}                       
+                      
 
 
 type reduce : StateT -> Term
