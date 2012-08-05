@@ -403,28 +403,30 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                                              
                       |Fn s' t' c' -> 
                          let p1 =  morejoin{sym t_eq, sym k_eq}
-                                : interpstate(State (Lambdabs s' t'')(Fn s' t' c'))=kplug (Fn s' t' c') (Lambdabs s' t'');
-                             p2 = morejoin{valax(Fn s' t' c'), valax (Lambdabs s' t'') }
-                                :kplug (Fn s' t' c') (Lambdabs s' t'')=kplug (Ar c' (Lambdabs s' t''))(Lambdabs s' t');   
+                                : interpstate(State t (Fn s' t' c'))=kplug (Fn s' t' c') t ;
+                             p2 = morejoin{valax(Fn s' t' c'),sym t_eq }
+                                :kplug (Fn s' t' c') t =kplug (Ar c' t )(Lambdabs s' t');   
                             
-                             p3 = morejoin{valax (Lambdabs s' t'')  }
-                                :kplug (Ar c' (Lambdabs s' t''))(Lambdabs s' t')= kplug c' (App (Lambdabs s' t') (Lambdabs s' t''));
-
-                             p4 = morejoin{valax (Lambdabs s' t'')}
-                                :kplug c'  (App (Lambdabs s' t') (Lambdabs s' t''))= kplug c' (plug Base  (App (Lambdabs s' t') (Lambdabs s' t''))   );
+                             p3 = morejoin{t_eq  }
+                                :kplug (Ar c' t)(Lambdabs s' t')= kplug c' (App (Lambdabs s' t') t);
+                             
+                             p4 = morejoin{sym t_eq}
+                                :kplug c'  (App (Lambdabs s' t') t)= kplug c' (plug Base  (App (Lambdabs s' t') t)   );
+                    
 --left---------------------------------------------------------------------------------------
                             
 
-                            p45= valax  (Lambdabs s' t'') ;
-                            p46=valax  s';
-                            p47= valax t'; 
-                            p5 = morejoin{ valax( State (substitute( tcast (Lambdabs s' t'') by p45)s' t'))}
-                               : interpstate (State(substitute (Lambdabs s' t'')  s' t') c') = kplug c' (substitute (Lambdabs s' t'')  s' t')
+                           
+                            p5 = morejoin{sym t_eq }
+                               : step (State t( Fn s' t' c')) = State  (substitute t s' t') c';
+                           p6 = morejoin{sym t_eq   }
+                              :( interpstate (State (substitute t s' t') c'))=(kplug c'(substitute t  s' t'))
+                         
 
 
 -- = morejoin{sym t_eq, valax (Lambdabs s' t''),  }
   --                             : kplug c' (substitute (Lambdabs s' t'') s' t')= kplug c' (plug Base (substitute (Lambdabs s' t'') s' t'))                                    
-                            in p5
+                            in p6
 
   )))
                            
