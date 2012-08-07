@@ -347,21 +347,23 @@ Inductive kplug_plug : forall(k:Cont){k_term}(c:Context)(c_term:c!)(t:Term)(t_te
 Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 = s2).exists(v:StepSpec0 (interpstate s1) (interpstate s2)).v! :=
      (case s1 {s1_eq}(s1_term) of
        State t k -> (case t {t_eq}(valax t) of
-                    App t1 t2 ->  let p1 = morejoin{sym s1_eq, sym t_eq}
+                    App t1 t2 ->  let p1 = morejoin{sym s1_eq, s1_term, sym t_eq}
                                          : step s1= State t1 (Ar k t2); 
                                       p2 =  trans(sym p1)  u 
                                          :   State t1 (Ar k t2) =s2;
                                       p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq }
                                          :interpstate s2 = kplug k (App t1 t2);
-                                      p4 = morejoin {sym s1_eq, s1_term, sym t_eq}
-                                         : interpstate s1 = kplug k(App t1 t2);
+                                      p4a = morejoin {sym s1_eq, s1_term}
+                                         : interpstate s1 = kplug k t;
+				      p4 = (conv p4a at interpstate s1 = kplug k ~(sym t_eq))
+                                         : interpstate s1 = kplug k (App t1 t2);
                                       p5 = trans p4 sym p3
                                          :interpstate s1=interpstate s2
                        in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
                             valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5])                                   
                                                    
                    |Var x' ->
-                             let p1 = morejoin{sym s1_eq, sym t_eq}
+                             let p1 = morejoin{sym s1_eq, s1_term, sym t_eq}
                                     : step s1 = abort StateT;  
                                  p2 = trans  (sym  p1)  u 
                                     :(abort StateT) = s2 
@@ -369,7 +371,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                                     
                    |Lambdabs s' t'' -> (case k {k_eq} valax k of
                       MT -> 
-                            let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                            let p1 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
                                    : step s1 = State t k;
                                 p2 = trans sym p1 u
                                    : State t k = s2;
@@ -384,7 +386,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                                        valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
                                                                      
                      |Ar c' t' -> 
-                              let p1 = morejoin {sym s1_eq, sym t_eq, sym k_eq}
+                              let p1 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
                                      : step s1 = State t'(Fn s' t'' c') ;
                                   p2 = trans (sym p1) u
                                      : State t'(Fn s' t'' c') = s2;
