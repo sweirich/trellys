@@ -256,6 +256,7 @@ prog rec cont2ctxt (k:Cont) (c:Context) =
 
 
 axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !
+axiom substitute_term : forall (t:Term)(t_term:t!)(x:String)(x_term:x!)(t':Term)(t'_term:t'!). (substitute t x t') !
 
 Inductive kplug_plug : forall(k:Cont){k_term}(c:Context)(c_term:c!)(t:Term)(t_term:t!).
                        kplug k (plug c t) = plug (cont2ctxt k c) t :=
@@ -394,16 +395,18 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                                   p3 = morejoin{sym s1_eq, sym p2, u2, sym t_eq, sym k_eq }
                                      : interpstate s2 = kplug (Ar c' t')(Lambdabs s' t'');
                                                         
-                                  p4 = morejoin {sym s1_eq, s1_term, sym t_eq, sym k_eq}
-                                     : interpstate s1 =  kplug (Ar c' t')(Lambdabs s' t'');
+                                  p4a = morejoin {sym s1_eq, s1_term, sym k_eq}
+                                     : interpstate s1 =  kplug (Ar c' t') t;
+                                  p4 = (conv p4a at interpstate s1 = kplug (Ar c' t') ~(sym t_eq))
+                                     : interpstate s1 =  kplug (Ar c' t') (Lambdabs s' t'');
                                                            
                                   p5 = trans p4 (sym p3)
                                      : interpstate s1 = interpstate s2
                                                         
                                  in   pack (DntStep (interpstate s1) (interpstate s2)[p5]) , 
                                          valax (DntStep (tcast (interpstate s1) by (interp_term s1 s1_term)) (tcast (interpstate s2) by (interp_term s2 u2)) [p5]) 
-                                             
-                      |Fn s' t' c' -> 
+
+                     | Fn s' t' c' -> 
                          let p1 =  morejoin{sym t_eq, sym k_eq}
                                 : interpstate(State t (Fn s' t' c'))=kplug (Fn s' t' c') t ;
                              p2 = morejoin{valax(Fn s' t' c'),sym t_eq }
@@ -421,7 +424,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                            
                             p5 = morejoin{sym t_eq }
                                : step (State t( Fn s' t' c')) = State  (substitute t s' t') c';
-                           p6 = morejoin{sym t_eq   }
+                           p6 = morejoin{sym t_eq , (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
                               :( interpstate (State (substitute t s' t') c'))=(kplug c'(substitute t  s' t'))
                          
 
@@ -429,6 +432,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
 -- = morejoin{sym t_eq, valax (Lambdabs s' t''),  }
   --                             : kplug c' (substitute (Lambdabs s' t'') s' t')= kplug c' (plug Base (substitute (Lambdabs s' t'') s' t'))                                    
                             in p6
+                                             
 
   )))
                            
