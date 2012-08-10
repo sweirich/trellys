@@ -428,8 +428,12 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                            p6 = morejoin{sym t_eq , (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
                               :( interpstate (State (substitute t s' t') c'))=(kplug c'(substitute t  s' t'));
                          
-                            p7 = morejoin{sym t_eq,  (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
-                              :( kplug c'(substitute t s' t'))=(kplug c'(plug Base (substitute t s' t')))
+                            p7a = morejoin{ (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
+                              :(substitute t s' t')= (plug Base (substitute t s' t'));
+
+                            p7b = refl : kplug c' (substitute t s' t') = kplug c' (substitute t s' t');
+                            p7 = (conv p7b at kplug c' (substitute t s' t') = kplug c' ~p7a)
+                                 : kplug c' (substitute t s' t') = kplug c' (plug Base (substitute t s' t'))
                             
                        in p7
                                     
