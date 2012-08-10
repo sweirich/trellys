@@ -198,7 +198,7 @@ prog rec compare (t1:Term)(t2:Term) =
                      Var x'-> False
                     |Lambdabs s' t'->(and (eq_str x s')(compare t t')) 
                     |App t3' t4' -> False)
-y          |App t3 t4 ->(case t2 {t2_eq} of
+          |App t3 t4 ->(case t2 {t2_eq} of
                      Var x'-> False
                     |Lambdabs s' t'-> False
                     |App t3' t4' -> and (compare t3 t3')(compare t4 t4'))
@@ -424,14 +424,16 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                            
                             p5 = morejoin{sym t_eq }
                                : step (State t( Fn s' t' c')) = State  (substitute t s' t') c';
+
                            p6 = morejoin{sym t_eq , (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
-                              :( interpstate (State (substitute t s' t') c'))=(kplug c'(substitute t  s' t'))
+                              :( interpstate (State (substitute t s' t') c'))=(kplug c'(substitute t  s' t'));
                          
-
-
--- = morejoin{sym t_eq, valax (Lambdabs s' t''),  }
-  --                             : kplug c' (substitute (Lambdabs s' t'') s' t')= kplug c' (plug Base (substitute (Lambdabs s' t'') s' t'))                                    
-                            in p6
+                            p7 = morejoin{sym t_eq,  (substitute_term t (valax t) s' (valax s') t' (valax t'))  }
+                              :( kplug c'(substitute t s' t'))=(kplug c'(plug Base (substitute t s' t')))
+                            
+                       in p7
+                                    
+                       
                                              
 
   )))
