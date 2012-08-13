@@ -418,7 +418,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                              p4 = morejoin{sym t_eq}
                                 :kplug c'  (App (Lambdabs s' t') t)= kplug c' (plug Base  (App (Lambdabs s' t') t)   );
                           
---left---------------------------------------------------------------------------------------
+--left end------------------------------------------------------------------------------------
                             
 
                            
@@ -439,44 +439,78 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                          
                           
 
- --right--------------------------------------------------------------------------------------------------------------  
-                            
-                            p5a=( kplug_plug  c' (valax c') Base (valax Base)  (App (Lambdabs s' t') t) (valax (App (Lambdabs s' t') t)))
-                               :kplug c' (plug Base (App (Lambdabs s' t') t)) =
+ --right end-----------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------
+--to get interpstate s1 to equal ideal expression
+--------------------------------------------------------------------------------------
+-- axiom interp_term : forall (t:StateT)(p:t!). interpstate t ! 
+                        p10= morejoin {(interp_term s1 s1_term), sym s1_eq}
+                           : interpstate s1 = (kplug k t );
+                        p11= (conv p10 at   
+                              interpstate s1 = (kplug ~(sym k_eq) t ));
+                         --  : interpstate s1 = kplug (Fn s' t' c') t
+      
+                         p12= trans p11 p2
+                            : interpstate s1=kplug (Ar c' t )(Lambdabs s' t');
+                         p13=trans p12 p3
+                            :interpstate s1=  kplug c' (App (Lambdabs s' t') t);
+                  
+                         p14= trans p13 p4
+                            :interpstate s1= kplug c' (plug Base  (App (Lambdabs s' t') t)); 
+--------------------------------------------------------------------------------------
+---to get interpstate s2 to equal ideal expression
+--------------------------------------------------------------------------------------                          
+                         p15 = morejoin{sym t_eq, sym s1_eq, sym k_eq }
+                             : step s1 = State  (substitute t s' t') c';
+  
+                      p16= (conv p6 at
+                         interpstate ~(sym p15)=(kplug c'(substitute t  s' t')))
+                         :interpstate (step s1) = kplug c' (substitute t s' t');
+                      
+                      p17=( conv p16 at
+                         interpstate (step s1) = kplug c' ~p7a)
+                         : interpstate (step s1) =
+                     kplug c' (plug Base (substitute t s' t'));
+                     p18 = (conv p17 at
+                          interpstate (~u) = kplug c' (plug Base (substitute t s' t')))
+                         : interpstate s2 =
+                     kplug c' (plug Base (substitute t s' t'));  
+                         
+--------------------------------------------------------------------------------------------
+          p19=( kplug_plug  c' (valax c') Base (valax Base)  (App (Lambdabs s' t') t) (valax (App (Lambdabs s' t') t)))
+                :kplug c' (plug Base (App (Lambdabs s' t') t)) =
                      plug (cont2ctxt c' Base) (App (Lambdabs s' t') t);
      
 
                         
-                            p8= (kplug_plug  c' (valax c') Base (valax Base)  (substitute t s' t') (substitute_term t (valax t) s' (valax s') t' (valax t')))
+                            p20= (kplug_plug  c' (valax c') Base (valax Base)  (substitute t s' t') (substitute_term t (valax t) s' (valax s') t' (valax t')))
                               :  kplug c' (plug Base (substitute t s' t')) =
                      plug (cont2ctxt c' Base) (substitute t s' t');
+  
+ 
                          
-                         p9= morejoin{sym t_eq}
-                           : isLambda t = True
-                           
-                    
-                        
-                        in pack (CtxtBetaV (kplug c' (plug Base (App (Lambdabs s' t') t)))
-                                 (kplug c' (plug Base (substitute t s' t'))) Base s' t' t [p9] [p5a] [p8]), 
-(valax (CtxtBetaV(tcast (kplug c' (plug Base (App (Lambdabs s' t') t))) by (plug_term Base  (valax Base)(App (Lambdabs s' t') t) (valax (App (Lambdabs s' t') t))))
-    (tcast (kplug c' (plug Base (substitute t s' t'))) by  (substitute_term t (valax t) s' (valax s') t' (valax t'))) 
-       (tcast Base by (valax Base))
+                         p21= morejoin{sym t_eq}
+                           : isLambda t = True; 
+                p22= conv p19 at
+                    ~(sym p14) =
+                     plug (cont2ctxt c' Base) (App (Lambdabs s' t') t); 
+                 
+                p23= conv p20 at 
+                  ~(sym p18)  =
+                     plug (cont2ctxt c' Base) (substitute t s' t') 
+                             
+                             
+                       
+                       in  pack (CtxtBetaV (interpstate s1)
+                                ( interpstate s2) (cont2ctxt c' Base)  s' t' t [p21] [p22] [p23]),
+(valax (CtxtBetaV(tcast (interpstate s1) by (interp_term s1 s1_term))
+    (tcast (interpstate s2) by (interp_term s2 u2 )  ) 
+       (tcast (cont2ctxt c' Base)  by (valax (cont2ctxt c' Base)))
         (tcast s' by (valax s'))
           (tcast t' by (valax t'))
-             (tcast t by (valax t )) [p9] [sym p2] [p11]))
-              
-  --  axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !                   
---data StepSpec : (t1:Term) (t2:Term) -> Type where
- -- CtxtBetaV : (c:Context) -> (x:String) -> (t:Term) -> 
-   --           (ta:Term) ->
-     --         [u0:isLambda ta = True] -> 
-       --       [u1:t1 = (plug c (App (Lambdabs x t) ta))] ->
-         --     [u2:t2 = (plug c (substitute ta x t))] ->
-           --   StepSpec t1 t2
-                                    
-                       
+             (tcast t by (valax t )) [p21] [sym p22] [p23]))
+                                                        
                                              
-
   )))
                            
 
