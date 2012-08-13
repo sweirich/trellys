@@ -449,16 +449,21 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                         
                             p8= (kplug_plug  c' (valax c') Base (valax Base)  (substitute t s' t') (substitute_term t (valax t) s' (valax s') t' (valax t')))
                               :  kplug c' (plug Base (substitute t s' t')) =
-                     plug (cont2ctxt c' Base) (substitute t s' t')
-
+                     plug (cont2ctxt c' Base) (substitute t s' t');
+                         
+                         p9= morejoin{sym t_eq}
+                           : isLambda t = True
+                           
+                    
+                        
                         in pack (CtxtBetaV (kplug c' (plug Base (App (Lambdabs s' t') t)))
-                                 (kplug c' (plug Base (substitute t s' t'))) Base s' t' t [p] [p5a] [p8]), 
+                                 (kplug c' (plug Base (substitute t s' t'))) Base s' t' t [p9] [p5a] [p8]), 
 (valax (CtxtBetaV(tcast (kplug c' (plug Base (App (Lambdabs s' t') t))) by (plug_term Base  (valax Base)(App (Lambdabs s' t') t) (valax (App (Lambdabs s' t') t))))
     (tcast (kplug c' (plug Base (substitute t s' t'))) by  (substitute_term t (valax t) s' (valax s') t' (valax t'))) 
        (tcast Base by (valax Base))
         (tcast s' by (valax s'))
           (tcast t' by (valax t'))
-             (tcast t by (valax t )) [p] [sym p2] [p11]))
+             (tcast t by (valax t )) [p9] [sym p2] [p11]))
               
   --  axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !                   
 --data StepSpec : (t1:Term) (t2:Term) -> Type where
