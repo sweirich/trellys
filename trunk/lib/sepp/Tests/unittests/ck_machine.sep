@@ -257,6 +257,7 @@ prog rec cont2ctxt (k:Cont) (c:Context) =
 
 axiom plug_term : forall (c:Context)(y:c!)(t:Term)(u:t!). (plug c t) !
 axiom substitute_term : forall (t:Term)(t_term:t!)(x:String)(x_term:x!)(t':Term)(t'_term:t'!). (substitute t x t') !
+axiom cont2ctxt_term : forall(k:Cont)(k_term:k!)(c:Context)(c_term:c!). (cont2ctxt k c) !
 
 Inductive kplug_plug : forall(k:Cont){k_term}(c:Context)(c_term:c!)(t:Term)(t_term:t!).
                        kplug k (plug c t) = plug (cont2ctxt k c) t :=
@@ -444,7 +445,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
 --to get interpstate s1 to equal ideal expression
 --------------------------------------------------------------------------------------
 -- axiom interp_term : forall (t:StateT)(p:t!). interpstate t ! 
-                        p10= morejoin {(interp_term s1 s1_term), sym s1_eq}
+                        p10= morejoin { s1_term , sym s1_eq}
                            : interpstate s1 = (kplug k t );
                         p11= (conv p10 at   
                               interpstate s1 = (kplug ~(sym k_eq) t ));
@@ -460,7 +461,7 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
 --------------------------------------------------------------------------------------
 ---to get interpstate s2 to equal ideal expression
 --------------------------------------------------------------------------------------                          
-                         p15 = morejoin{sym t_eq, sym s1_eq, sym k_eq }
+                         p15 = morejoin{sym t_eq, s1_term, sym s1_eq, sym k_eq }
                              : step s1 = State  (substitute t s' t') c';
   
                       p16= (conv p6 at
@@ -503,12 +504,13 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                        
                        in  pack (CtxtBetaV (interpstate s1)
                                 ( interpstate s2) (cont2ctxt c' Base)  s' t' t [p21] [p22] [p23]),
-(valax (CtxtBetaV(tcast (interpstate s1) by (interp_term s1 s1_term))
+(valax 
+       (CtxtBetaV(tcast (interpstate s1) by (interp_term s1 s1_term))
     (tcast (interpstate s2) by (interp_term s2 u2 )  ) 
-       (tcast (cont2ctxt c' Base)  by (valax (cont2ctxt c' Base)))
+       (tcast (cont2ctxt c' Base)  by (cont2ctxt_term c' (valax c') Base (valax Base)))
         (tcast s' by (valax s'))
           (tcast t' by (valax t'))
-             (tcast t by (valax t )) [p21] [sym p22] [p23]))
+             (tcast t by (valax t )) [p21] [p22] [p23]))
                                                         
                                              
   )))
