@@ -502,16 +502,17 @@ Inductive step_sound : forall (s1:StateT){s1_term}(s2:StateT)(u2:s2!)(u:step s1 
                              
                              
                        
-                       in  pack (CtxtBetaV (interpstate s1)
-                                ( interpstate s2) (cont2ctxt c' Base)  s' t' t [p21] [p22] [p23]),
-(valax 
-       (CtxtBetaV(tcast (interpstate s1) by (interp_term s1 s1_term))
+                      in pack(DidStep  (interpstate s1) (interpstate s2)   (CtxtBetaV (interpstate s1)
+                                ( interpstate s2) (cont2ctxt c' Base)  s' t' t [p21] [p22] [p23])),
+(valax  
+       (DidStep (tcast (interpstate s1) by (interp_term s1 s1_term))
+ (tcast (interpstate s2) by (interp_term s2 u2 )  ) 
+ (CtxtBetaV(tcast (interpstate s1) by (interp_term s1 s1_term))
     (tcast (interpstate s2) by (interp_term s2 u2 )  ) 
        (tcast (cont2ctxt c' Base)  by (cont2ctxt_term c' (valax c') Base (valax Base)))
         (tcast s' by (valax s'))
           (tcast t' by (valax t'))
-             (tcast t by (valax t )) [p21] [p22] [p23]))
-                                                        
+             (tcast t by (valax t )) [p21] [p22] [p23])))
                                              
   )))
                            
