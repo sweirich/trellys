@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module FwExample where
 
 import Fw
@@ -9,23 +10,17 @@ import Data.List
 -- Example terms
 ------------------------------------------------------
 
-x :: Name Tm
-y :: Name Tm
-z :: Name Tm
-x = string2Name "x"
-y = string2Name "y"
-z = string2Name "z"
+x,y,z :: Name Tm
+x = "x" 
+y = "y"
+z = "z"
 
-a :: Name Ty
-b :: Name Ty
-c :: Name Ty
-r :: Name Ty
-f :: Name Ty
-a = string2Name "a"
-b = string2Name "b"
-c = string2Name "c"
-r = string2Name "r"
-f = string2Name "f"
+a,b,c,r,f :: Name Ty
+a = "a"
+b = "b"
+c = "c"
+r = "r"
+f = "f"
 
 _All :: TyName -> Ki -> Ty -> Ty
 _All _a _k = All . bind (_a,Embed _k)
@@ -148,3 +143,7 @@ _In k = _TLam f (KArr k k) $
   f_mu_k_f = TyVar f `TyApp` mu_k_f
   f_mu_k_f_is = foldl TyApp f_mu_k_f (map TyVar is)
 
+{-
+> runM $ let k = KArr Star Star in (_InTy k =~) =<< ti emptyCtx (_In k)
+True
+ -}

@@ -10,11 +10,13 @@
 module Fw where
 
 import Unbound.LocallyNameless
+import Unbound.LocallyNameless.Ops (unsafeUnbind)
 
 import Control.Monad
 import Control.Monad.Trans.Error
 -- import Data.List as List
 import Data.Set as S
+import GHC.Exts( IsString(..) )
 
 -- System Fw with type and term variables
 
@@ -57,10 +59,39 @@ instance Subst Ty Ty where
   isvar (TyVar x) = Just (SubstName x)
   isvar _ = Nothing
 
+-- names as string literals
+instance Rep a => IsString (Name a) where
+  fromString = string2Name
+
 -- wrapper for unless over monadic conditions
 
 unlessM mb x = do b <- mb
                   unless b x
+
+
+-- simple dumb serializer using unsafeUnbind
+printKi :: Ki -> String
+printKi Star         = "*"
+printKi (KArr k1 k2) = "("++printKi k1++" -> "++printKi k2++")"
+
+printTy :: Ty -> String
+printTy (TyVar x) = show x
+printTy (Arr t1 t2) = "("++printTy t1++" -> "++printTy t2++")"
+printTy (All b) = "(\\forall "++show nm++":"++printKi k++"."++printTy t++")"
+                where ((nm,Embed k),t) = unsafeUnbind b
+printTy (TyLam b) = "(\\lambda "++show nm++":"++printKi k++"."++printTy t++")"
+                  where ((nm,Embed k),t) = unsafeUnbind b
+printTy (TyApp t1 t2) = "("++printTy t1++" "++printTy t2++")"
+
+printTm :: Tm -> String
+printTm (TmVar x) = show x
+printTm (Lam b) = "(\\lambda "++show nm++":"++printTy ty++"."++printTm t++")"
+  where ((nm, Embed ty),t) = unsafeUnbind b
+printTm (TLam b) = "(\\Lambda "++show nm++":"++printKi k++"."++printTm t++")"
+  where ((nm, Embed k),t) = unsafeUnbind b
+printTm (App t1 t2) = "("++printTm t1 ++" "++ printTm t2++")"
+printTm (TApp t ty) = "("++printTm t ++"["++ printTy ty++"])"
+
 
 -----------------------------------------------------------------
 -- beta-eta equivalance/reduction for types
