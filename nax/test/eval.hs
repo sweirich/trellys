@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs, DataKinds, PolyKinds, KindSignatures, TypeOperators,
 	RankNTypes, FlexibleInstances
   #-}
-data Type = NatT | Type :-> Type
 
 data V a = Vfun (V a -> V a) | Vinv a -- user should never use Vinv
 
@@ -39,3 +38,4 @@ ext env x (FS n) = env n
 
 empty :: f Z -> V a
 empty _ = error "empty"
+
