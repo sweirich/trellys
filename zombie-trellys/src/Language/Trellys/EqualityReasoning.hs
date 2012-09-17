@@ -298,9 +298,12 @@ decompose sub e avoid t | sub && S.null (S.intersection avoid (fv t)) = do
   tell [(e, x, t)]
   return $ Var x
 decompose _ _ avoid t@(Var _) = return t
-decompose sub e avoid (Con c args) = do
+decompose sub e avoid (TCon c args) = do
   args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ Con c args'
+  return $ TCon c args'
+decompose sub e avoid (DCon c args) = do
+  args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
+  return $ DCon c args'
 decompose _ _ avoid t@(Type _) = return t
 decompose _ e avoid (Lam ep b) = do
   (x, body) <- unbind b
@@ -380,7 +383,8 @@ match :: (Applicative m, Monad m, Fresh m) =>
          [TName] -> Term -> Term -> m (Map TName Term)
 match vars (Var x) t | x `elem` vars = return $ M.singleton x t
                      | otherwise     = return M.empty
-match vars (Con c ts) (Con _ ts') = foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
+match vars (TCon c ts) (TCon _ ts') = foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
+match vars (DCon c ts) (DCon _ ts') = foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
 match vars (Type _) _ = return M.empty
 match vars (Lam ep bnd) (Lam ep' bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'

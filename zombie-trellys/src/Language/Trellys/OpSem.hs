@@ -25,7 +25,11 @@ import Data.List (find)
 -- | erasure function
 erase :: Term -> TcMonad ETerm
 erase (Var x)               = return $ EVar (translate x)
-erase (Con c args)          = 
+erase (TCon c args)          = 
+  do args' <- mapM (erase . fst)
+                   (filter ((==Runtime) . snd) args)
+     return $ ECon (translate c) args'
+erase (DCon c args)          = 
   do args' <- mapM (erase . fst)
                    (filter ((==Runtime) . snd) args)
      return $ ECon (translate c) args'
@@ -224,7 +228,8 @@ cbvNSteps n tm =
 -- | isValue checks to see if a term is a value
 isValue :: Term -> Bool
 isValue (Var _)            = True
-isValue (Con _ args)       = all (isValue . fst) args -- fixme: this is broken, params vs args.
+isValue (TCon _ args)      = True
+isValue (DCon _ args)      = all (isValue . fst) args -- fixme: this is broken, params vs args.
 isValue (Type _)           = True
 isValue (Arrow _ _)        = True
 isValue (Lam _ _)          = True

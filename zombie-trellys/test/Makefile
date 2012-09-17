@@ -58,7 +58,7 @@ fail:
 	@./expect_error DeepMatchError3 "should take 1 constructors,"
 	@./expect_error DeepMatchError4 "wrong epsilons on arguments in pattern"
 	@./expect_error DeepMatchError5 "Each branch should have 2 patterns, but"
-	@./expect_error DeepMatchError6 "Patterns not exhaustive."
+	@./expect_error DeepMatchError6 "Patterns in case-expression not exhaustive."
 
 todo_pass: $(foreach f,$(TODO_PASS),$(f).pass)
 todo_fail: $(foreach f,$(TODO_FAIL),$(f).fail)

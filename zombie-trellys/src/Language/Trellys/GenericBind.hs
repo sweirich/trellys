@@ -19,6 +19,8 @@ module Language.Trellys.GenericBind
   ,lunbind, lfreshen
   ,unsafeUnbind
 
+  ,Rep
+
 --  ,subst,substs -- only for Nominal
   ,rSourcePos
 )  where

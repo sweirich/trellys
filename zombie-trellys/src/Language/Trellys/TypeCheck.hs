@@ -105,7 +105,7 @@ ta _ (OrdAx a) (Smaller b1 b2) = do
      case isTyEq tyA of
        Just (a1, cvs) ->
          case cvs of 
-           (Con _ vs) -> do
+           (DCon _ vs) -> do
              unless (a1 `aeqSimple` b2) $
                err [DS "The left side of the equality supplied to ord ",
                     DS "should be", DD b2, 
@@ -129,7 +129,7 @@ ta th (Contra a) b =
      case isTyEq tyA of
        Just (cvs1, cvs2) ->
          case (cvs1, cvs2) of
-           ((Con c1 vs1), (Con c2 vs2)) ->
+           ((DCon c1 vs1), (DCon c2 vs2)) ->
               do when (c1 == c2) $
                    err [DS "The equality proof", DD tyA,
                         DS "isn't necessarily contradictory because the",
@@ -271,7 +271,7 @@ ta th (Case b bnd) tyA = do
     err [DS "Wrong number of pattern match branches for datatype", DD d]
   let taMatch :: Match -> TcMonad Match
       taMatch (Match c cbnd) = do
-        dumbdeltai <- lookupDCon d c
+        dumbdeltai <- lookupDCon' d c
         (deltai',ai) <- unbind cbnd
         unless (length deltai' == length dumbdeltai) $
           err [DS "wrong number of argument variables for constructor",
@@ -282,7 +282,7 @@ ta th (Case b bnd) tyA = do
                 DD c, DS "in pattern match."]
         let deltai = swapTeleVars dumbdeltai (map fst deltai')
             subdeltai = substs (zip (domTele delta) (map fst bbar)) deltai
-            eqtype = TyEq b (Con c (bbar ++ map (\(x,_,ep) -> (Var x, ep)) deltai))
+            eqtype = TyEq b (DCon c (bbar ++ map (\(x,_,ep) -> (Var x, ep)) deltai))
          -- premise 5
         eai <- extendCtx (Sig y Logic eqtype) $
                            extendCtxTele subdeltai th $ ta th ai tyA
@@ -514,31 +514,32 @@ ts tsTh tsTm =
            (Just _, _)      -> err [DD tyB, DS "is not a type."]
            (_,_)            -> err [DD (unembed tyA), DS "is not a type.", DS "inferred", DD tytyA, DS "at", DD th]
 
-    -- Rules T_tcon, T_acon and T_dcon
-    ts' th (Con c args) =
-      do typC <- lookupCon c
-         case typC of
-           (Left (delta, th', lev, _)) ->
-             do unless (th' <= th) $
-                  err [DS "Datatype constructor", DD c,
-                       DS "is programmatic, but it was checked logically."]
-                unless (length args == length delta) $
-                  err [DS "Datatype constructor", DD c, 
-                       DS $ "should have " ++ show (length delta) ++
-                       "parameters, but was given", DD (length args)]
-                eargs <- taTele th args delta
-                return (Con c eargs, (Type lev))
-           (Right (tname, delta, th', ConstructorDef _ _ deltai)) ->
-             do unless (th' <= th) $
-                  err [DS "Data constructor", DD c,
-                       DS "is programmatic, but it was checked logically."]
-                unless (length args == length delta + length deltai) $
-                  err [DS "Constructor", DD c,
-                       DS $ "should have " ++ show (length delta) ++ " parameters and " ++ show (length deltai)
-                       ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
-                eargs <- taTele th args (setTeleEps Erased delta ++ deltai)
-                let eindices = map (\(t,_)->(t,Runtime)) (take (length delta) eargs)
-                return $ (Con c eargs, Con tname eindices)
+    -- Rules T_tcon and T_acon 
+    ts' th (TCon c args) =
+      do (delta, th', lev, _) <- lookupTCon c
+         unless (th' <= th) $
+           err [DS "Datatype constructor", DD c,
+                DS "is programmatic, but it was checked logically."]
+         unless (length args == length delta) $
+           err [DS "Datatype constructor", DD c, 
+                DS $ "should have " ++ show (length delta) ++
+                    "parameters, but was given", DD (length args)]
+         eargs <- taTele th args delta
+         return (TCon c eargs, (Type lev))
+
+    -- Rule T_dcon
+    ts' th (DCon c args) =
+      do (tname, delta, th', ConstructorDef _ _ deltai) <- lookupDCon c
+         unless (th' <= th) $
+           err [DS "Data constructor", DD c,
+                DS "is programmatic, but it was checked logically."]
+         unless (length args == length delta + length deltai) $
+           err [DS "Constructor", DD c,
+                DS $ "should have " ++ show (length delta) ++ " parameters and " ++ show (length deltai)
+                 ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
+         eargs <- taTele th args (setTeleEps Erased delta ++ deltai)
+         let eindices = map (\(t,_)->(t,Runtime)) (take (length delta) eargs)
+         return $ (DCon c eargs, TCon tname eindices)
 
     -- rule T_app
     ts' th tm@(App ep a b) =
@@ -841,21 +842,18 @@ isFirstOrder ty = isFirstOrder' S.empty ty
     isFirstOrder' _ (Smaller _ _) = return True
     isFirstOrder' s (Pos _ ty) = isFirstOrder' s ty
     isFirstOrder' s (Paren ty) = isFirstOrder' s ty
-    isFirstOrder' s (Con d _) | d `S.member` s = return True
-    isFirstOrder' s (Con d _) = do
-      ent <- lookupCon d
+    isFirstOrder' s (TCon d _) | d `S.member` s = return True
+    isFirstOrder' s (TCon d _) = do
+      ent <- lookupTCon d
       case ent of
-        (Left (_,_,_,Nothing))  -> 
+        (_,_,_,Nothing)  -> 
           --An abstract datatype constructor. Maybe this is too conservative?
           return False
-        (Left (_,_,_,Just cons)) ->
+        (_,_,_,Just cons) ->
           -- Datatypes are FO if all components are. But in order to not get caught in an
           -- infinite loop, we should probably give the constructor d the "benefit of the
           -- doubt"  while doing so...
           allM (\(ConstructorDef _ _ args) -> allM (\(_,ty,_) -> isFirstOrder' (S.insert d s) ty) args) cons 
-        (Right _) -> 
-          -- Data constructors are never first-order.
-          return False
     isFirstOrder' _ (At _ _) = return True
     isFirstOrder' _ _ = return False
     
@@ -901,14 +899,11 @@ aeqSimple x y = delPosParenDeep x `aeq` delPosParenDeep y
 ---------------------------------------------------------------------------
 
 -- | If ty is a datatype, then return its definition, otherwise signal an error.
-
---  (d,bbar,delta,cons) <- lookupDType bty
-
 lookupDType :: Theta -> Term -> Term -> TcMonad (TName, [(Term, Epsilon)], Telescope, [ConstructorDef])
-lookupDType th b bty@(isCon -> Just (d, apps)) = do
-         ent <- lookupCon d
+lookupDType th b bty@(isTCon -> Just (d, apps)) = do
+         ent <- lookupTCon d
          case ent of
-           (Left (delta,th',_,Just cons)) ->
+           (delta,th',_,Just cons) ->
              do unless (th' <= th) $
                    err [DS "Attempted to pattern match on an element of the",
                         DS "datatype", DD d, DS "in the Logical fragment, but",
@@ -918,22 +913,19 @@ lookupDType th b bty@(isCon -> Just (d, apps)) = do
                         DS "with type", DD bty, DS "where", DD d,
                         DS "is applied to the wrong number of arguments."]
                 return (d,map (\(a,_) -> (a,Erased)) apps, delta, cons)
-           (Left (_,_,_,Nothing)) ->
+           (_,_,_,Nothing) ->
               err [DS "Scrutinee ", DD b,
                    DS "is a member of an abstract datatype - you may not",
                    DS "pattern match on it."]
-           _ ->
-              err [DS "Scrutinee ", DD b,
-                   DS "must be a member of a datatype, but is not. It has type", DD bty]
 lookupDType _ b bty = err [DS "Scrutinee ", DD b,
                            DS "must be a member of a datatype, but is not. It has type", DD bty]
 
--- | (lookupDCon d c) finds the arguments of constructor c, which should be one of the constructors of d.
-lookupDCon :: TName -> TName -> TcMonad Telescope
-lookupDCon d c = do
-  dDef <- lookupCon d
+-- | (lookupDCon' d c) finds the arguments of constructor c, which should be one of the constructors of d.
+lookupDCon' :: TName -> TName -> TcMonad Telescope
+lookupDCon' d c = do
+  dDef <- lookupTCon d
   case dDef of 
-    (Left (_,_,_,Just cons)) -> 
+    (_,_,_,Just cons) -> 
        case find (\(ConstructorDef  _ c' _) -> c'==c) cons of
          Nothing -> err [DD c, DS "is not a constructor of type", DD d]
          Just (ConstructorDef _  _ deltai)  -> return deltai
@@ -980,7 +972,7 @@ freshTele = mapM (\(x,ty,ep) -> (,ty,ep) <$> fresh x)
 -- precondition: scrutineeTys has the same length as scrutinees, and all the pattern lists have the same length 
 -- as scrutinees.
 buildCase ::Theta ->  [(Embed Term, TName)] -> [Term] -> [ComplexMatch] -> TcMonad Term
-buildCase _  [] _ [] = err [DS "Patterns in caes-expression not exhaustive."]
+buildCase _  [] _ [] = err [DS "Patterns in case-expression not exhaustive."]
 buildCase _  [] _ (alt:_) = matchBody alt
 buildCase th ((unembed->s,y):scruts) (ty:scrutTys) alts | not (null alts) && all isVarMatch alts = do
   alts' <- mapM (expandMatch th s [] <=< matchPat) alts

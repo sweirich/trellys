@@ -17,6 +17,7 @@ import System.Console.GetOpt
 import System.Exit
 import System.FilePath (splitFileName)
 
+import Control.Monad.Error (runErrorT)
 import Data.List (delete)
 
 main :: IO ()
@@ -28,7 +29,7 @@ main = do
       (mainFilePrefix, name) = splitFileName pathToMainFile
       currentDir = ""
   putStrLn "Trellys main"
-  res <- getModules flags prefixes name
+  res <- runErrorT $ getModules flags prefixes name
   case res of
     Left parseError -> do
              putStrLn $ render $ disp $ errorPos parseError

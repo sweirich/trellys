@@ -6,7 +6,10 @@ import Prelude
 log data C : Type 0 where
   MkC of (f : Nat -> Nat)
 
+log data Foo : Type 0 where
+  MkFoo of
+
 log match_c : (C @log) -> Nat 
 match_c = \ x .
   case x [_] of
-    MkC (Foo f) -> 3
+    MkC MkFoo -> 3

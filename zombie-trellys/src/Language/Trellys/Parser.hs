@@ -3,25 +3,29 @@
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
   (
-   parseModuleFile,
+   parseModuleFile, 
+   parseModuleImports,
    parseExpr
   )
   where
 
 import Language.Trellys.Options
-import Language.Trellys.Syntax
+import Language.Trellys.Syntax hiding (moduleImports)
 import Language.Trellys.GenericBind
 
 import Text.Parsec hiding (State)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
+import Control.Monad.State.Lazy hiding (join)
 import Control.Monad.Reader hiding (join)
 import Control.Applicative ( (<$>), (<*>))
 import Control.Monad.Error hiding (join)
 
 import Data.Char
 import Data.List
+import Data.Set (Set)
+import qualified Data.Set as S
 
 {- current concrete syntax for the annotated language:
 
@@ -126,15 +130,26 @@ import Data.List
 
 -}
 
--- | Parse a module declaration from the given filepath.
-parseModuleFile :: [Flag] -> String -> IO (Either ParseError Module)
-parseModuleFile flags name = do
-  putStrLn $ "Parsing File " ++ show name
-  -- FIXME: Check to see if file exists. Resolve module names. Etc.
-  contents <- readFile name
-  return $ runFreshM $ flip runReaderT flags $ (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents)
+liftError :: (MonadError e m) => Either e a -> m a
+liftError (Left e) = throwError e
+liftError (Right a) = return a
 
-  --parseFromFile (moduleDef >>= (\v -> eof >> return v)) name
+-- | Parse a module declaration from the given filepath.
+parseModuleFile :: (MonadError ParseError m, MonadIO m) => [Flag] -> ConstructorNames -> String -> m Module
+parseModuleFile flags cnames name = do
+  liftIO $ putStrLn $ "Parsing File " ++ show name
+  contents <- liftIO $ readFile name
+  liftError $ runFreshM $ flip runReaderT flags $ 
+    flip evalStateT cnames $
+     (runParserT (do { whiteSpace; v <- moduleDef;eof; return v}) [] name contents)
+
+-- | Parse only the imports part of a module from the given filepath.
+parseModuleImports :: (MonadError ParseError m, MonadIO m) => [Flag] -> String -> m Module
+parseModuleImports flags name = do
+  contents <- liftIO $ readFile name
+  liftError $ runFreshM $ flip runReaderT flags $ 
+    flip evalStateT emptyConstructorNames $
+     (runParserT (do { whiteSpace; moduleImports }) [] name contents)
 
 -- | Test an 'LParser' on a String.
 --
@@ -144,7 +159,9 @@ parseModuleFile flags name = do
 --
 -- to parse an axiom declaration of a logical fixpoint combinator.
 testParser :: (LParser t) -> String -> Either ParseError t
-testParser parser str = runFreshM $ flip runReaderT [] $ runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
+testParser parser str = runFreshM $ flip runReaderT [] $ 
+   flip evalStateT emptyConstructorNames $
+     runParserT (do { whiteSpace; v <- parser; eof; return v}) [] "<interactive>" str
 
 -- | Parse an expression.
 parseExpr :: String -> Either ParseError Term
@@ -152,13 +169,15 @@ parseExpr = testParser expr
 
 -- * Lexer definitions
 type LParser a = ParsecT
-                    String                    -- The input is a sequence of Char
-                    [Column]                  -- The internal state for Layout tabs
-                    (ReaderT [Flag] FreshM)   -- The internal state for generating fresh names, and for flags.
-                    a                         -- the type of the object being parsed
+                    String                      -- The input is a sequence of Char
+                    [Column]                    -- The internal state for Layout tabs
+                    (StateT ConstructorNames
+                       (ReaderT [Flag] FreshM)) -- The internal state for generating fresh names, for flags,
+                                                -- and for remembering which names are constructors.
+                    a                           -- the type of the object being parsed
 
-instance Fresh (ParsecT s u (ReaderT a FreshM))  where
-  fresh = lift . lift . fresh
+instance Fresh (ParsecT s u (StateT ConstructorNames (ReaderT a FreshM)))  where
+  fresh = lift . lift . lift . fresh
 
 -- Based on Parsec's haskellStyle (which we can not use directly since
 -- Parsec gives it a too specific type).
@@ -203,8 +222,8 @@ trellysStyle = Token.LanguageDef
 --layout:: LParser item -> LParser stop -> LParser [item]
 (tokenizer,Token.LayFun layout) = Token.makeTokenParser trellysStyle "{" ";" "}"
 
-identifier :: LParser String
-identifier = Token.identifier tokenizer
+identifier :: (Rep a) => LParser (Name a)
+identifier = string2Name <$> Token.identifier tokenizer
 
 whiteSpace :: LParser ()
 whiteSpace = Token.whiteSpace tokenizer
@@ -212,12 +231,10 @@ whiteSpace = Token.whiteSpace tokenizer
 variable :: LParser TName
 variable =
   do i <- identifier
-     case i of
-       [] -> fail "Internal Error: empty identifier"
-       (c : _) ->
-         if isUpper c
-           then fail "Expected a variable, but a constructor was found"
-           else return $ string2Name i
+     cnames <- get
+     if (i `S.member` (tconNames cnames `S.union` dconNames cnames))
+       then fail "Expected a variable, but a constructor was found"
+       else return i
 
 wildcard :: LParser TName
 wildcard = reservedOp "_" >> fresh (string2Name "_")
@@ -225,24 +242,45 @@ wildcard = reservedOp "_" >> fresh (string2Name "_")
 variableOrWild :: LParser TName
 variableOrWild = try wildcard <|> variable
 
-constructor :: LParser TName
-constructor =
+constructor :: LParser ([(Term,Epsilon)] -> Term)
+constructor = 
   do i <- identifier
-     case i of
-       [] -> fail "Internal Error: empty identifier"
-       (c : _) ->
-         if isLower c
-           then fail "Expected a constructor, but a variable was found"
-           else return $ string2Name i
+     cnames <- get
+     if (i `S.member` tconNames cnames)
+       then return $ TCon i
+       else if (i `S.member` dconNames cnames)
+             then return $ DCon i
+             else fail "Expected a constructor, but a variable was found"
+
+tconstructor :: LParser TName
+tconstructor =
+  do i <- identifier
+     cnames <- get
+     if (i `S.member` tconNames cnames)
+       then return i
+       else if (i `S.member` dconNames cnames)
+             then fail "Expected a type constructor, but a data constructor was found."
+             else fail "Expected a constructor, but a variable was found"
+
+dconstructor :: LParser TName
+dconstructor =
+  do i <- identifier
+     cnames <- get
+     if (i `S.member` dconNames cnames)
+       then return i
+       else if (i `S.member` tconNames cnames)
+             then fail "Expected a data constructor, but a type constructor was found."
+             else fail "Expected a constructor, but a variable was found"
 
 -- variables or zero-argument constructors
 varOrCon :: LParser Term
 varOrCon = do i <- identifier
-              let n = string2Name i
-              case i of
-                [] -> fail "Internal error: empty identifier"
-                (c:_) -> if isUpper c then return (Con n [])
-                                      else return (Var n)
+              cnames <- get
+              if (i `S.member` (dconNames cnames))
+                then return (DCon i [])
+                else if (i `S.member` tconNames cnames)
+                       then return (TCon i [])
+                       else return (Var i)
 
 colon, dot :: LParser ()
 colon = Token.colon tokenizer >> return ()
@@ -267,21 +305,30 @@ natenc :: LParser Term
 natenc =
   do n <- natural
      return $ encode n 
-   where encode 0 = Con (string2Name "Zero") []
-         encode n = Con (string2Name "Succ") [(encode (n-1), Runtime)]
+   where encode 0 = DCon (string2Name "Zero") []
+         encode n = DCon (string2Name "Succ") [(encode (n-1), Runtime)]
+
+moduleImports :: LParser Module
+moduleImports = do
+  reserved "module"
+  modName <- identifier
+  reserved "where"
+  imports <- layout importDef (return ())
+  return $ Module modName imports [] emptyConstructorNames
 
 moduleDef :: LParser Module
 moduleDef = do
   reserved "module"
-  modName <- string2Name <$> identifier
+  modName <- identifier
   reserved "where"
   imports <- layout importDef (return ())
   decls <- layout decl (return ())
-  return $ Module modName imports decls
+  cnames <- get
+  return $ Module modName imports decls cnames
 
 importDef :: LParser ModuleImport
 importDef = do reserved "import" >>  (ModuleImport <$> importName)
-  where importName = string2Name <$> identifier
+  where importName = identifier
 
 telescope :: LParser Telescope
 telescope = many teleBinding
@@ -311,20 +358,25 @@ decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef
 dataDef = do
   th <- option Logic $ theta
   reserved "data"
-  name <- constructor
+  name <- identifier
   params <- telescope
   colon
   reserved "Type"
   level <- fromInteger <$> natural
+  modify (\cnames -> cnames{ tconNames = S.insert name (tconNames cnames) })
   reserved "where"
-  cs <- layout con (return ())
+  cs <- layout constructorDef (return ())
+  forM cs
+    (\(ConstructorDef _ cname _) ->
+       modify (\cnames -> cnames{ dconNames = S.insert cname (dconNames cnames)}))
   return $ Data name params th level cs
-  where con = do
-            pos <- getPosition
-            cname <- constructor
-            args <- option [] (reserved "of" >> telescope)
-            return $ ConstructorDef pos cname args
-          <?> "Constructor"
+
+constructorDef = do
+  pos <- getPosition
+  cname <- identifier
+  args <- option [] (reserved "of" >> telescope)
+  return $ ConstructorDef pos cname args
+  <?> "Constructor"
 
 sigDef = do
   axOrSig <- option Sig $ (reserved "axiom" >> return Axiom)
@@ -360,7 +412,7 @@ termCase :: LParser Term
 termCase = do
   reserved "termcase"
   scrutinee <- expr
-  pf <- braces (string2Name <$> identifier)
+  pf <- braces identifier
   reserved "of"
   (a,t) <- do
     -- Diverges case
@@ -372,7 +424,7 @@ termCase = do
     -- Exprinates case
     te <- do reservedOp "|"
              reservedOp "!"
-             v <- (string2Name <$> identifier)
+             v <- identifier
              reservedOp "->"
              e <- expr <?> "terminates branch"
              return (bind v e)
@@ -442,7 +494,7 @@ conapp :: LParser Term
 conapp = do 
   c <- constructor
   args <- many bfactor
-  return $ Con c args
+  return $ c args
   where bfactor = ((,Erased)  <$> brackets expr) <|>
                   ((,Runtime) <$> factor)
 
@@ -454,7 +506,7 @@ funapp = do
                   ((,Runtime) <$> factor)
         app e1 (e2,ep)  =  App ep e1 e2
 
-factor = choice [ varOrCon <?> "a variable or zero-argument constructor"
+factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
                 , lambda <?> "a lambda"
@@ -578,8 +630,8 @@ expProdOrAnnotOrParens =
          Right a    -> return $ Paren a
 
 pattern :: LParser Pattern 
--- Note that 'construtor' and 'variable' overlaps, annoyingly.
-pattern =      try (PatCon <$> (embed <$> constructor) <*> many arg_pattern)
+-- Note that 'dconstrutor' and 'variable' overlaps, annoyingly.
+pattern =      try (PatCon <$> (embed <$> dconstructor) <*> many arg_pattern)
            <|> atomic_pattern
   where arg_pattern    =    ((,Erased) <$> brackets pattern) 
                         <|> ((,Runtime) <$> atomic_pattern)
@@ -588,12 +640,13 @@ pattern =      try (PatCon <$> (embed <$> constructor) <*> many arg_pattern)
                         <|> do t <- varOrCon
                                case t of
                                  (Var x) -> return $ PatVar x
-                                 (Con c []) -> return $ PatCon (embed c) []
+                                 (DCon c []) -> return $ PatCon (embed c) []
+                                 (TCon c []) -> fail "expected a data constructor but a type constructor was found"
                                  _ -> error "internal error in atomic_pattern"
 
 simpleMatch :: LParser Match
 simpleMatch  =
-  do c <- constructor
+  do c <- dconstructor
      bds <- many impOrExpBind
      reservedOp "->"
      body <- term
