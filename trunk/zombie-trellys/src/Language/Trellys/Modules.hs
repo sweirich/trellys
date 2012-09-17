@@ -3,7 +3,7 @@ module Language.Trellys.Modules(getModules, writeModules) where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax
-import Language.Trellys.Parser(parseModuleFile)
+import Language.Trellys.Parser(parseModuleFile, parseModuleImports)
 
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ (render)
@@ -11,7 +11,9 @@ import Text.PrettyPrint.HughesPJ (render)
 import Language.Trellys.GenericBind
 
 import Text.ParserCombinators.Parsec.Error
+import Control.Applicative 
 import Control.Monad.Error
+import Control.Monad.State.Lazy
 import System.FilePath
 import System.Directory
 import qualified Data.Graph as Gr
@@ -21,30 +23,39 @@ import Data.List(nub,(\\))
 -- transitive dependency. It returns the list of parsed modules, with all
 -- modules appearing after its dependencies.
 getModules
-  :: (MonadIO m) => [Flag] -> [FilePath] -> String -> m (Either ParseError [Module])
-getModules flags prefixes top = runErrorT $ gatherModules flags prefixes [string2Name top]
+  :: (Functor m, MonadError ParseError m, MonadIO m) => 
+     [Flag] -> [FilePath] -> String -> m [Module]
+getModules flags prefixes top = do
+  toParse <- gatherModules flags prefixes [ModuleImport $ string2Name top]
+  flip evalStateT emptyConstructorNames $
+    mapM (reparse flags) toParse
 
--- | Build the module dependency graph, with parsed modules.
+data ModuleInfo = ModuleInfo {
+                    modInfoName :: MName, 
+                    modInfoFilename :: String,
+                    modInfoImports :: [ModuleImport]
+                  }
+
+-- | Build the module dependency graph.
+--   This only parses the imports part of each file; later we go back and parse all of it.
 gatherModules
-  :: (MonadError ParseError m, MonadIO m) =>
-     [Flag] -> [FilePath] -> [MName] -> m [Module]
-gatherModules flags prefixes ms = gatherModules' ms [] where
+  :: (Functor m, MonadError ParseError m, MonadIO m) =>
+     [Flag]  -> [FilePath] -> [ModuleImport] -> m [ModuleInfo]
+gatherModules flags  prefixes ms = gatherModules' ms [] where
   gatherModules' [] accum = return $ topSort accum
-  gatherModules' (m:ms) accum = do
+  gatherModules' ((ModuleImport m):ms) accum = do
     modFileName <- getModuleFileName prefixes m
-    parsedMod <- parseModule flags modFileName
-    let accum' = parsedMod:accum
-    let oldMods = map moduleName accum'
-    let newMods = [mn | ModuleImport mn <- moduleImports parsedMod]
-    gatherModules' (nub (ms ++ newMods) \\ oldMods) accum'
-
+    imports <- moduleImports <$> parseModuleImports flags modFileName
+    let accum' = (ModuleInfo m modFileName imports) :accum
+    let oldMods = map (ModuleImport . modInfoName) accum'
+    gatherModules' (nub (ms ++ imports) \\ oldMods) accum'
 
 -- | Generate a sorted list of modules, with the postcondition that a module
 -- will appear _after_ any of its dependencies.
 -- topSort :: [Module] -> [Module]
-topSort :: [Module] -> [Module]
+topSort :: [ModuleInfo] -> [ModuleInfo]
 topSort ms = reverse sorted -- gr -- reverse $ topSort' ms []
-  where (gr,lu) = Gr.graphFromEdges' [(m, moduleName m, [i | ModuleImport i <- moduleImports m])
+  where (gr,lu) = Gr.graphFromEdges' [(m, modInfoName m, [i | ModuleImport i <- modInfoImports m])
                                       | m <- ms]
         lu' v = let (m,_,_) = lu v in m
         sorted = [lu' v | v <- Gr.topSort gr]
@@ -68,13 +79,14 @@ getModuleFileName prefixes mod = do
                 "\nTried: " ++ show possibleFiles
      else return $ head files
 
-parseModule
-  :: (MonadError ParseError m, MonadIO m) => [Flag] -> String -> m Module
-parseModule flags fname = do
-  res <- liftIO $ parseModuleFile flags fname
-  case res of
-    Left err -> throwError err
-    Right v -> return v
+-- | Fully parse a module (not just the imports).
+reparse :: (MonadError ParseError m, MonadIO m, MonadState ConstructorNames m) => 
+            [Flag] -> ModuleInfo -> m Module
+reparse flags (ModuleInfo _ fileName _) = do
+  cnames <- get
+  mod <- parseModuleFile flags cnames fileName
+  put (moduleConstructors mod)
+  return mod
 
 writeModules :: MonadIO m => [FilePath] -> [Module] -> m ()
 writeModules prefixes mods = mapM_ (writeModule prefixes) mods

@@ -6,7 +6,7 @@ module Language.Trellys.Environment
    Env,
    getFlag,
    emptyEnv, dumpEnv,
-   lookupTy, lookupDef, lookupHint, lookupCon, getTys,
+   lookupTy, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
    getCtx, extendCtx, extendCtxTele, extendCtxs,
    extendCtxMods,
    extendHints,
@@ -90,25 +90,37 @@ lookupDef v = do
   ctx <- asks ctx
   return $ listToMaybe [a | Def v' a <- ctx, v == v']
 
--- | Find a constructor in the context - left is type con, right is term con
-lookupCon :: (MonadReader Env m, MonadError Err m) 
-          => TName -> m (Either (Telescope,Theta,Integer,Maybe [ConstructorDef]) 
-                                (TName,Telescope,Theta,ConstructorDef))
-lookupCon v = do
+-- | Find a type constructor in the context
+lookupTCon :: (MonadReader Env m, MonadError Err m) 
+          => TName -> m (Telescope,Theta,Integer,Maybe [ConstructorDef])
+lookupTCon v = do
   g <- asks ctx
   scanGamma g
   where
-    scanGamma [] = err [DS "The constructor", DD v, DS "was not found."]
+    scanGamma [] = err [DS "The type constructor", DD v, DS "was not found."]
     scanGamma ((Data v' delta th lev cs):g) = 
       if v == v' 
-        then return $ Left (delta,th,lev,Just cs) 
-        else case find (\(ConstructorDef _ v'' tele) -> v''==v ) cs of
-               Nothing -> scanGamma g
-               Just c -> return $ Right (v', delta, th, c)
+        then return $ (delta,th,lev,Just cs) 
+        else  scanGamma g
     scanGamma ((AbsData v' delta th lev):g) =
       if v == v'
-         then return $ Left (delta,th,lev,Nothing)
+         then return $ (delta,th,lev,Nothing)
          else scanGamma g
+    scanGamma (_:g) = scanGamma g
+
+-- | Find a data constructor in the context
+lookupDCon :: (MonadReader Env m, MonadError Err m) 
+          => TName -> m (TName,Telescope,Theta,ConstructorDef)
+lookupDCon v = do
+  g <- asks ctx
+  scanGamma g
+  where
+    scanGamma [] = err [DS "The data constructor", DD v, DS "was not found."]
+    scanGamma ((Data v' delta th lev cs):g) = 
+        case find (\(ConstructorDef _ v'' tele) -> v''==v ) cs of
+          Nothing -> scanGamma g
+          Just c -> return $ (v', delta, th, c)
+    scanGamma ((AbsData v' delta th lev):g) = scanGamma g
     scanGamma (_:g) = scanGamma g
 
 -- | Extend the context with a new binding.

@@ -18,6 +18,8 @@ import Text.ParserCombinators.Parsec.Pos
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Set (Set)
+import qualified Data.Set as S
 
 type TName = Name Term
 type EName = Name ETerm
@@ -64,7 +66,8 @@ deriving instance Show Term
 -- case expressions) and variables introduced by lambda abstractions
 -- and dependent products).
 data Term = Var TName    -- | variables
-          | Con TName [(Term,Epsilon)]   -- | term and type constructors (fully applied)
+          | TCon TName [(Term,Epsilon)]   -- | type constructors (fully applied)
+          | DCon TName [(Term,Epsilon)]   -- | term constructors (fully applied)
           | Type Integer   -- | The 'Type' terminal
           -- | Functions: @\x.e@ and @\[x].e@
           -- No type annotations since we are bidirectional
@@ -169,10 +172,22 @@ extractSubstitution = everything M.union (mkQ M.empty mapping)
   where mapping (SubstitutedFor a x) = M.singleton x a
         mapping _ = M.empty
 
--- | A Module has a name, a list of imports, and a list of declarations
+data ConstructorNames = ConstructorNames {
+                          tconNames :: Set TName,
+                          dconNames :: Set TName
+                        }
+  deriving Show
+
+emptyConstructorNames :: ConstructorNames 
+emptyConstructorNames = ConstructorNames S.empty S.empty
+
+
+-- | A Module has a name, a list of imports, a list of declarations,
+--   and a list of constructor names (which affect parsing).     
 data Module = Module { moduleName :: MName,
                        moduleImports :: [ModuleImport],
-                       moduleEntries :: [Decl]
+                       moduleEntries :: [Decl],
+                       moduleConstructors :: ConstructorNames
                      }
             deriving (Show)
 
@@ -274,19 +289,19 @@ isAt (SubstitutedFor t x) = isAt t
 isAt (At t th) = Just (t, th)
 isAt _         = Nothing
 
-isCon :: Term -> Maybe (TName, [(Term,Epsilon)])
-isCon (Pos _ t) = isCon t
-isCon (Paren t) = isCon t
-isCon (SubstitutedFor t x) = isCon t
-isCon (Con c args) = Just (c, args)
-isCon _ = Nothing
+isTCon :: Term -> Maybe (TName, [(Term,Epsilon)])
+isTCon (Pos _ t) = isTCon t
+isTCon (Paren t) = isTCon t
+isTCon (SubstitutedFor t x) = isTCon t
+isTCon (TCon c args) = Just (c, args)
+isTCon _ = Nothing
 
 isNumeral :: Term -> Maybe Int
 isNumeral (Pos _ t) = isNumeral t
 isNumeral (Paren t) = isNumeral t
 isNumeral (SubstitutedFor t x) = isNumeral t
-isNumeral (Con c []) | c==string2Name "Zero" = Just 0
-isNumeral (Con c [(t,Runtime)]) | c==string2Name "Succ" =
+isNumeral (DCon c []) | c==string2Name "Zero" = Just 0
+isNumeral (DCon c [(t,Runtime)]) | c==string2Name "Succ" =
   do n <- isNumeral t ; return (n+1)
 isNumeral _ = Nothing
 

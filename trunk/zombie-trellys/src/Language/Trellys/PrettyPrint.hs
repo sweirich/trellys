@@ -244,13 +244,21 @@ instance Display Term where
 
   display (isNumeral -> Just i) = display i
 
-  display (Con n args) = do
+  display (TCon n args) = do
     dn <- display n
     dargs <- mapM displayArg args
     return $ dn <+> hsep dargs
-      where displayArg (t, ep) = do
-                                      dt <- display t
-                                      return $ wraparg t $ bindParens ep dt
+      where displayArg (t, ep) = do dt <- display t
+                                    return $ wraparg t $ bindParens ep dt
+
+  display (DCon n args) = do
+    dn <- display n
+    dargs <- mapM displayArg args
+    return $ dn <+> hsep dargs
+      where displayArg (t, ep) = do dt <- display t
+                                    return $ wraparg t $ bindParens ep dt
+
+
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
   display (Arrow ep bnd) = do
@@ -419,7 +427,8 @@ wraparg x = case x of
               Lam _ _     -> parens
               Let _ _ _   -> parens
               Case _ _    -> parens
-              Con _ (_:_) -> parens
+              TCon _ (_:_) -> parens
+              DCon _ (_:_) -> parens
               _           -> id
 wrapf :: Term -> (Doc -> Doc)
 wrapf f = case f of
