@@ -498,7 +498,7 @@ ts tsTh tsTm =
     -- Rule T_type
     ts' _ (Type l) = return (Type l,  Type (l + 1))
 
-    -- Rules T_pi and T_pi_impred
+    -- Rule T_pi
     ts' th (Arrow ep body) =
       do ((x,tyA), tyB) <- unbind body
          isFO <- isFirstOrder (unembed tyA)
@@ -509,7 +509,6 @@ ts tsTh tsTm =
          (etyA, tytyA) <- ts th (unembed tyA)
          (etyB, tytyB) <- extendCtx (Sig x th (unembed tyA)) $ ts th tyB
          case (isType tytyA, isType tytyB) of
-           (Just _, Just 0) -> return $ (Arrow ep  (bind (x,embed etyA) etyB), Type 0)
            (Just n, Just m) -> return $ (Arrow  ep  (bind (x,embed etyA) etyB), Type (max n m))
            (Just _, _)      -> err [DD tyB, DS "is not a type."]
            (_,_)            -> err [DD (unembed tyA), DS "is not a type.", DS "inferred", DD tytyA, DS "at", DD th]

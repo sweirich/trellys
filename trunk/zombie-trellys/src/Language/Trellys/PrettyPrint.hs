@@ -397,6 +397,7 @@ instance Display Term where
   display TrustMe = return $ text "TRUSTME"
   display InferMe = return $ text "_"
 
+  display (SubstitutedFor a x) = display a 
 
 instance Display Match where
   display (Match c bd) =
