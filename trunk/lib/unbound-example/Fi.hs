@@ -44,17 +44,27 @@ data Tm = TmVar TmName
         | TAppI Tm Tm
    deriving Show
 
-$(derive [''Ki, ''Ty, ''Tm])
+data Delta = Empty
+           | ExtTy (Rebind (TyName, Ki) Delta)
+           | ExtIx (Rebind (TmName, Ty) Delta)
+   deriving Show
+type Gamma = [ (TmName, Ty) ]
+
+
+$(derive [''Ki, ''Ty, ''Tm, ''Delta])
 
 ------------------------------------------------------
 instance Alpha Ki where
 instance Alpha Ty where
 instance Alpha Tm where
+instance Alpha Delta where
 
 instance Subst Ty Ki where
 instance Subst Ty Tm where
+instance Subst Ty Delta where
 instance Subst Tm Ki where
 instance Subst Tm Ty where
+instance Subst Tm Delta where
 instance Subst Tm Tm where
   isvar (TmVar x) = Just (SubstName x)
   isvar _  = Nothing
@@ -228,11 +238,6 @@ redTm (TAppI tm1 tm2) = do
 -----------------------------------------------------------------
 -- Typechecker
 -----------------------------------------------------------------
-type Delta = [ (TyName, Ki) ]
-type Gamma = [ (TmName, Ty) ]
-
-data Ctx = Ctx { getDelta :: Delta , getGamma :: Gamma }
-emptyCtx = Ctx { getDelta = [], getGamma = [] }
 
 type M = ErrorT String FreshM
 
@@ -241,71 +246,90 @@ runM m = case (runFreshM (runErrorT m)) of
    Left s  -> error s
    Right a -> a
 
-checkTyVar :: Ctx -> TyName -> M Ki
-checkTyVar g v = do
-    case lookup v (getDelta g) of
-      Just k -> return k
-      Nothing -> throwError "NotFound"
+-- we really need to check |- d but not doing it here TODO
+checkTyVar :: Delta -> TyName -> M Ki
+checkTyVar d v =
+    case d of
+      Empty -> throwError ("TyName "++show v++" not found in Delta")
+      ExtTy b -> let ((n,k),d') = unrebind b
+                  in if n==v then return k else checkTyVar d' v
+      ExtIx b -> checkTyVar (snd (unrebind b)) v
 
-lookupTmVar :: Ctx -> TmName -> M Ty
-lookupTmVar g v = do
-    case lookup v (getGamma g) of
+lookupTmVar :: TmName -> Delta -> M Ty
+lookupTmVar v d =
+    case d of
+      Empty -> throwError ("TmName "++show v++" not found")
+      ExtTy b -> lookupTmVar v (snd (unrebind b))
+      ExtIx b -> let ((n,t),d') = unrebind b
+                  in if n==v then return t else lookupTmVar v d'
+
+-- we really need to check d |- g but not doing it TODO
+lookupCtx :: (Delta,Gamma) -> TmName -> M Ty
+lookupCtx (d,g) v =
+    case lookup v g of
       Just s -> return s
-      Nothing -> throwError "NotFound"
+      Nothing -> lookupTmVar v d
 
-extendTy :: TyName -> Ki -> Ctx -> Ctx
-extendTy n k ctx = ctx { getDelta =  (n, k) : (getDelta ctx) }
+extendTy :: TyName -> Ki -> Delta -> M Delta
+extendTy n k d = return $ ExtTy (rebind (n,k) d)
 
-extendTm :: TmName -> Ty -> Ctx -> Ctx
-extendTm n ty ctx = ctx { getGamma = (n, ty) : (getGamma ctx) }
+extendIx :: TmName -> Ty -> Delta -> M Delta
+extendIx n t d = return $ ExtIx (rebind (n,t) d)
 
-tcty :: Ctx -> Ty -> M Ki
-tcty g  (TyVar x) =
-   checkTyVar g x
-tcty g  (All b) = do
+extend :: TmName -> Ty -> Gamma -> Gamma
+extend n ty g = (n, ty) : g
+
+tcty :: Delta -> Ty -> M Ki
+tcty d  (TyVar x) =
+   checkTyVar d x
+tcty d  (All b) = do
    ((x,Embed k), ty') <- unbind b
-   tcty (extendTy x k g) ty'
-tcty g  (AllI b) = do
+   d' <- extendTy x k d
+   tcty d' ty'
+tcty d  (AllI b) = do
    ((x,Embed t), ty') <- unbind b
-   tcty (extendTm x t g) ty'
-tcty g  (Arr t1 t2) = do
-   k1 <- tcty g  t1
+   d' <- extendIx x t d
+   tcty d' ty'
+tcty d  (Arr t1 t2) = do
+   k1 <- tcty d  t1
    unlessM (k1 =~~~ Star) (throwError "KindError")
-   k2 <- tcty g  t2
+   k2 <- tcty d  t2
    unlessM (k2 =~~~ Star) (throwError "KindError")
    return Star
-tcty g  (TyLam b) = do
+tcty d  (TyLam b) = do
    ((x,Embed k), ty') <- unbind b
-   k' <- tcty (extendTy x k g) ty'
+   d' <- extendTy x k d
+   k' <- tcty d' ty'
    return (KArr k k')
-tcty g  (TyLamI b) = do
+tcty d  (TyLamI b) = do
    ((x,Embed t), ty') <- unbind b
-   k' <- tcty (extendTm x t g) ty'
+   d' <- extendIx x t d
+   k' <- tcty d' ty'
    return (KArrI t k')
-tcty g  (TyApp t1 t2) = do
-   k1 <- tcty g t1
-   k2 <- tcty g t2
+tcty d  (TyApp t1 t2) = do
+   k1 <- tcty d t1
+   k2 <- tcty d t2
    case k1 of
      KArr k11 k21 -> do
        unlessM (k2 =~~~ k11) (throwError "KindError")
        return k21
      _ -> throwError "KindError"
-tcty g  (TyAppI t1 tm2) = do
-   k1 <- tcty g t1
-   t2 <- ti g tm2
+tcty d  (TyAppI t1 tm2) = do
+   k1 <- tcty d t1
+   t2 <- ti (d,[]) tm2
    case k1 of
      KArrI t11 k21 -> do
        unlessM (t2 =~ t11) (throwError "KindError")
        return k21
      _ -> throwError "KindError"
 
-ti :: Ctx -> Tm -> M Ty
-ti g (TmVar x) = lookupTmVar g x
-ti g (Lam bnd) = do
+ti :: (Delta,Gamma) -> Tm -> M Ty
+ti (d,g) (TmVar x) = lookupCtx (d,g) x
+ti (d,g) (Lam bnd) = do
   ((x, Embed ty1), t) <- unbind bnd
-  k1 <- tcty g ty1
+  k1 <- tcty d ty1
   unlessM (k1 =~~~ Star) (throwError "KindError")
-  ty2 <- ti (extendTm x ty1 g) t
+  ty2 <- ti (d,extend x ty1 g) t
   return (Arr ty1 ty2)
 ti g (App t1 t2) = do
   ty1 <- ti g t1
@@ -315,23 +339,25 @@ ti g (App t1 t2) = do
       unlessM (ty2 =~ ty11) (throwError "TypeError")
       return ty21
     _ -> throwError "TypeError"
-ti g (TLam bnd) = do
+ti (d,g) (TLam bnd) = do
   ((x,Embed k), t) <- unbind bnd
-  ty <- ti (extendTy x k g) t
+  d' <- extendTy x k d
+  ty <- ti (d',g) t
   return (All (bind (x,Embed k) ty))
-ti g (TApp t ty) = do
-  tyt <- ti g t
+ti (d,g) (TApp t ty) = do
+  tyt <- ti (d,g) t
   tyt' <- redTy tyt
   case tyt' of
     All b -> do
-      k <- tcty g ty
+      k <- tcty d ty
       ((n1,Embed k'), ty1) <- unbind b
       unlessM (k =~~~ k') (throwError "KindError")
       return $ subst n1 ty ty1
     _ -> throwError "TypeError"
-ti g (TLamI bnd) = do
+ti (d,g) (TLamI bnd) = do
   ((x,Embed k), t) <- unbind bnd
-  ty <- ti (extendTm x k g) t
+  d' <- extendIx x k d
+  ty <- ti (d',g) t
   return (AllI (bind (x,Embed k) ty))
 ti g (TAppI t tm) = do
   tyt <- ti g t

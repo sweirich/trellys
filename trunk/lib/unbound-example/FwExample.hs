@@ -45,9 +45,9 @@ polyidty = _All a Star (Arr (TyVar a) (TyVar a))
 -- \a:*. a
 tyid :: Ty
 tyid = _TyLam a Star (TyVar a)
--- > runM $ tyid =~ tyid tyid
+-- > runM $ tyid =~ TyApp tyid tyid
 -- True
--- > runM $ tyid =~ tyid polyidty
+-- > runM $ tyid =~ TyApp tyid polyidty
 -- False
 
 -- Mu and mcata
