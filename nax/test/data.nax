@@ -199,6 +199,27 @@ polarity x =
          case pol xs of
            Left p -> Right(stepE p)
            Right p -> Left(stepO p)
+           
+           
+{-
+pol:: (x:Nat) -> Either (Even {x}) (Odd {x})
+pol:: (Nat x) -> Either (Even {x}) (Odd {x})
+
+data SingN:: (Nat -> *) -> Nat -> * where
+  Zero:: SingN `zero
+  Succ:: r i -> SingN r i     deriving  fixpoint SingNat
+
+pol x = 
+  mcata { {n} . Either (Even {n}) (Odd {n})} x with
+    pol Zero = Left base
+    pol (Succ xs) =                -- Succ:: r i -> SingN r i
+                                   -- (Succ x):: SingN r i, x:: r i
+                                   -- pol:: r i -> Either (Even {i}) (Odd {i})
+         case pol xs of
+           Left p -> Right(stepE p)
+           Right p -> Left(stepO p)
+
+-}
 
 -------------------------------------------------
 

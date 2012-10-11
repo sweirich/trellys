@@ -1567,14 +1567,14 @@ unifyT loc mess variance x y = do { x1 <- prune x; y1 <- prune y
          ; c2 <- unifyT loc mess variance y b
          ; return(tArrCong c1 c2)}       
   f (TyLift (Checked e)) (TyLift (Checked g)) = 
-    do { (writeln ("\n*****\nIn UnifyT Normalizing\n Handle TEqual for normlization\n  "++
-                   show e++", "++show g))
-       ; ez <- zonkExp e  
+    do { -- (writeln ("\n*****\nIn UnifyT Normalizing\n Handle TEqual for normlization\n  "++
+         --          show e++", "++show g));
+         ez <- zonkExp e  
        ; gz <- zonkExp g  
-       ; writeln("After zonk "++show ez++", "++show gz)
+       -- ; writeln("After zonk "++show ez++", "++show gz)
        ; enf <- normform ez
        ; gnf <- normform gz
-       ; writeln("After norm "++show enf++", "++show gnf)       
+       -- ; writeln("After norm "++show enf++", "++show gnf)       
      
        ; e <- unifyExpT loc mess enf gnf     
        ; if nosplit e
