@@ -35,6 +35,7 @@ import Data.Char(isSpace)
 
 go = run "../test/data.nax"
 work = run "../test/work.nax"
+test = run "../test/ListLike.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env

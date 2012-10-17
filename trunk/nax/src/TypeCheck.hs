@@ -237,7 +237,10 @@ wfGadtKind pos mess frag k =
      ; boundNames <- mapM univ names  -- bind all free variables
      ; let frag2 = addMulti boundNames frag
      ; k2 <- wfKind pos (("Checking wff kind: "++show k):mess) frag2 k
-     ; return(k2,boundNames)
+     ; let f (nm,Kind i) = do { kvar <- freshKind; return(nm,Kind kvar)}
+     ; sub  <- mapM f boundNames
+     ; k3 <- kindSubb pos ([],sub,[]) k2
+     ; return(k3,boundNames)
      }
 
 wfKind:: SourcePos -> [String] -> Frag -> Kind -> FIO Kind
@@ -754,6 +757,7 @@ elab toplevel env (GADT pos t kind cs derivs) =
   do { checkDec toplevel env t 
      -- if toplevel then write ((show t)++", ") else return()
      ; (kind2,newvs) <- wfGadtKind pos ["checking gadt "++show t++":"++show kind] env kind
+     -- ; writeln("\nELAB kind = "++show kind2++",   "++show newvs)
      ; let doOneCon (c,(v:vs),doms,rng) = fail "No foralls in constructor yet"
            doOneCon (c,[],doms,rng) = 
              do { rngVars <- getVarsRho rng
