@@ -72,6 +72,7 @@ data Decl e
    | GADT SourcePos Name Kind [(Name,[Name],[Scheme],Rho)] [Derivation]
    | FunDec SourcePos String [(Name,Kind)] [([Pat],e)]
    | Synonym SourcePos Name [Name] Typ -- This Typ is interpreted as a pattern
+   | Axiom SourcePos Name Typ
 
 data Prog m = Prog [Decl m]
 
@@ -573,6 +574,7 @@ ppDecl ::  PI -> (PI -> a -> Doc) -> Decl a -> Doc
 ppDecl p ppf (Def _ pat exp) = PP.sep [ppPat p pat
                                ,PP.nest 3 (text "=")
                                ,PP.nest 3 (ppf p exp)]
+ppDecl p ppf (Axiom _ nm t) = PP.sep[text "axiom",ppName nm,text":",ppTyp p t]                             
 ppDecl p ppf (FunDec _ nm ts cls) = PP.vcat(map (f ts) cls)
   where f ts (ps,e) = PP.sep [text nm <+> args ts <> PP.hsep(map (ppPat p) ps) <+> text "=", PP.nest 2 (ppf p e)]
         args [] = text ""
@@ -928,6 +930,7 @@ mapMDecl f g (GADT loc nm kind cs derivs) = return(GADT loc nm kind cs derivs)
 mapMDecl f h (FunDec pos nm ts cls) = liftM (FunDec pos nm ts) (mapM g cls)
   where g (ps,e) = do { e2 <- f e; ps2 <- mapM h ps; return(ps2,e2)}
 mapMDecl f g (Synonym pos nm xs typ) = return(Synonym pos nm xs typ)
+mapMDecl f g (Axiom p n t) = return(Axiom p n t)
 
 mapDecl f x = runIdentity (mapMDecl (return . f) return x)
       
@@ -1010,6 +1013,7 @@ decLoc (DataDec pos t args cs derivs) = pos
 decLoc (GADT pos t k cs derivs ) = pos
 decLoc (FunDec pos nm ts cls) = pos
 decLoc (Synonym pos nm xs e) = pos
+decLoc (Axiom p n t) = p
 
 texpLoc:: TExpr -> SourcePos
 texpLoc (TELit p l) = p

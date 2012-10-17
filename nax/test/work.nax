@@ -12,7 +12,8 @@ data Elem: * -> Unit -> Unit -> * where
 data Seq a r s = 
   Con (r a) (s a)
     
-    
+axiom id : a -> a
+
 {-
 plus x y = mcata x with
   pl Zero = y

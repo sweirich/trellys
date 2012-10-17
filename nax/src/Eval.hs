@@ -227,6 +227,9 @@ mprim phi k = mplus (VFun whoknows id) "mprim" phi k
 -- evaluating declarations extends the environment
 
 evalDecC :: VEnv -> Decl TExpr -> (VEnv -> IO a) -> IO a 
+evalDecC env (d@(Axiom p nm t)) k = 
+    k (env{ctbindings = (nm,Type t):(ctbindings env)
+          ,rtbindings = (nm,-675,error("Call to Axiom "++show nm)):(rtbindings env)})
 evalDecC env (d@(Def _ pat exp)) k = 
    -- println ("\n\nDefining: "++show d++"\nIn environment\n"++ browse (Just 10) env) >>
    evalC exp env ((maybe (fail "no Match") k =<<) . matchM env pat)
