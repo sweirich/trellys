@@ -822,7 +822,20 @@ elab toplevel env (d@(Def loc p e)) =
      ; exp4 <- zonkExp (teCast (tGen vs p2) exp3)  -- zonkExp (abstractTyp vs exp3)
      ; let (env2,pat3) = bindPolyPat env vs rho3 pat2
      ; return(env2,Def loc pat3 exp4) }
+
+elab toplevel env (Axiom pos nm t) = 
+  do { if toplevel then write ((show pos)++", ") else return()
+     ; (ptrs,names) <- getVars t
+     ; binders <- mapM univ names
+     ; let env2 = addMulti binders env  
+     ; (ty,k) <- wellFormedType pos ["Checking kind in Axiom "++show nm] env2 t 
+    
+     ; tele <- binderToTelescope binders
+     ; let (env3,_) =  bindPolyPat env tele (Tau ty) (PVar nm Nothing)
      
+     ; return(env3,Axiom pos nm t)
+     }
+  
 elab toplevel env (FunDec fpos f _ clauses) = 
   do { checkDec toplevel env (Nm(f,fpos)) 
        -- if toplevel then write (f++", ") else return()

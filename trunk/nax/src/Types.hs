@@ -383,6 +383,7 @@ checkScheme loc m (Sch vs r) k = checkRho loc m r k
 -- Zonking follows all mutable variable chains and eliminates them
 
 zonkD:: Decl (TExpr) -> FIO (Decl TExpr)
+zonkD (Axiom p nm t) = liftM (Axiom p nm) (zonk t)
 zonkD (Def pos pat e) = liftM (Def pos pat) (zonkExp e)
 zonkD (DataDec pos nm args cs derivs) = liftM (\ x -> DataDec pos nm args x derivs) (mapM f cs)
   where f (c,sch) = do { sch2 <- mapM zonkScheme sch; return(c,sch2)}

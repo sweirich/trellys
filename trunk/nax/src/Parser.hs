@@ -113,6 +113,7 @@ lbStyle = Token.LanguageDef
                   ,"let","in"
                   ,"data"
                   ,"gadt"
+                  ,"axiom"
                   ,"synonym"
                   ,"mcata","mhist","mprim","msfcata","msfprim"
                   ,"where"
@@ -445,7 +446,16 @@ expr =  lambdaExpression
 
 decl:: MParser (Decl Expr)
 decl = -- (datadec <|> gadtdec <|> synP <|> dec) <?> "decl"
-       (genericData <|> synP <|> dec) <?> "decl"
+       (axiomP <|> genericData <|> synP <|> dec) <?> "decl"
+       
+axiomP = 
+  do { pos <- getPosition
+     ; keyword "axiom" 
+     ; n <- nameP
+     ; sym ":"
+     ; typ <- typP
+     ; return(Axiom pos n typ)}
+     
 
 synP =   
   do { pos <- getPosition

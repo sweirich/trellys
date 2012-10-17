@@ -106,12 +106,13 @@ freeExp (EMend s elim e ms) ans = error "No freeExp for EMend yet"
 
 -- freeDec d ans ---> (appear free,binds at value, binds at types)
 
+freeDec (Axiom _ nm t) ans = (error ("No Axiom yet in  freeDec") ans,[name nm],[])
 freeDec (Def _ p e) ans = (freeExp e ans,map name binds,[])
   where (binds) = patBinds p ([])  
 freeDec (DataDec p nm args cs derivs) ans = (ans,map (name . fst) cs,[nm])
 freeDec (GADT p nm kind cs derivs) ans = (ans,map f cs,[nm])
    where f (c,vs,doms,rng) = name c
-freeDec (FunDec p nm ts rhs) ans = (error ("Not yet freeDec") ans,[nm],[])
+freeDec (FunDec p nm ts rhs) ans = (error ("No FunDec yet in freeDec") ans,[nm],[])
 
 
 ------------------------------------------------------
