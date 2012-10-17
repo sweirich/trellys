@@ -327,7 +327,9 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              ; return(TyProof f2 x2,Star)}
         f (TyMu k) =
           do { let m = ("\nChecking wff (Mu "++show k++")"):mess
-             ; k2 <- wfKind pos m frag k
+          -- ; k2 <- wfKind pos m frag k -- cannot check polykinded fixpoint
+          -- so changed to below
+             ; (k2,newvs) <- wfGadtKind pos m frag k -- TODO is this okay? KYA
              ; return(TyMu k2,Karr (Karr k2 k2) k2) }
         f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)      
         f (TyLift (Checked term)) = fail (unlines (("\nError *******\nChecked term: "++show term++", in wellFormedType."):mess))
