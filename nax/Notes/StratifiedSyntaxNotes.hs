@@ -32,8 +32,9 @@ e,t,k,l,x ::=
   |  (v:t) -> t    (when v not in FV(t) we can write:  t->t )
   |  (v:k) => k
   |  (v:t) => k
-  |  all (v:k) . t
-  |  all (v:#) . k
+  |  all (v:k) . t        -- type polymorphism
+  |  all (v:t) . t        -- index polymorphism
+  |  all (v:#) . k        -- kind polymorophism
   |  x x                  -- Application
   |  T x                  -- Construction
   |  case x of T x -> e   -- Deconstruction
