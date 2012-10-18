@@ -1601,7 +1601,7 @@ unifyFunT loc mess (Tau (t@(TyArr x y))) = return(Sch [] (Tau x),Tau y,tRefl t)
 unifyFunT loc mess (Tau x) =
    do { a <- freshType Star
       ; b <- freshType Star
-      ; p <- unifyT loc ("\nIn unifyFun" : mess) Pos x (arrT a b)
+      ; p <- unifyT loc (("\nIn unifyFun: "++show x++" should be an arrow") : mess) Pos x (arrT a b)
       ; a1 <- zonk a
       ; b1 <- zonk b
       ; return (Sch [] (Tau a1),Tau b1,p) }  

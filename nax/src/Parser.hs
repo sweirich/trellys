@@ -530,7 +530,7 @@ gadtdec =
 -}
 
 derivs = (do { keyword "deriving"; sepBy derivation (sym ",") }) <|> return []
-derivation = do { sym "fixpoint"; fmap Syntax conName }
+derivation = do { sym "fixpoint"; fmap Fixpoint conName }
 
 constr2 =
   do { c <- conP
