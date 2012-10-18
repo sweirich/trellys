@@ -238,6 +238,7 @@ wfGadtKind pos mess frag k =
      ; let frag2 = addMulti boundNames frag
      ; k2 <- wfKind pos (("Checking wff kind: "++show k):mess) frag2 k
      ; let f (nm,Kind i) = do { kvar <- freshKind; return(nm,Kind kvar)}
+           f (nm,Type i) = do { tvar <- freshType Star; return(nm,Type tvar)}
      ; sub  <- mapM f boundNames
      ; k3 <- kindSubb pos ([],sub,[]) k2
      ; return(k3,boundNames)
