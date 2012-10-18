@@ -91,13 +91,13 @@ patBinds (PWild pos) ans = ans
 ------------------------------------
 
 data Derivation =
-  Syntax String
+  Fixpoint String
 
 data MuSyntax = None | Syn String  deriving Show
 
 syntax:: [Derivation] -> MuSyntax
 syntax [] = None
-syntax (Syntax s : xs) = Syn s
+syntax (Fixpoint s : xs) = Syn s
 -- syntax (_ : xs) = syntax xs
 
 ------------------------------------------------------------------
@@ -372,7 +372,7 @@ printChoice x p =
    Just b -> b
    Nothing -> False
 
-pi0 = PI [] [("Mu",False),("In",False),("Cast",True),("PatType",False)] -- [listSyn,natSyn] []
+pi0 = PI [] [("Mu",False),("In",False),("Cast",False),("PatType",False)] -- [listSyn,natSyn] []
 
 listSyn (typ@(TyApp (TyMu Star) (TyApp (TyCon _ (Nm("L",_)) k) x))) = Just(TySyn (toName "List") 1 [x] typ)
 listSyn _ = Nothing
@@ -611,7 +611,7 @@ derivations [] = []
 derivations ds = (PP.nest 2 (text "deriving")):(map (\ d -> PP.nest 3(ppDerive d)) ds)
 
 ppDerive :: Derivation -> Doc
-ppDerive (Syntax s) = text("syntax "++s)
+ppDerive (Fixpoint s) = text("fixpoint "++s)
 
 
 ------------------------------------------------------------

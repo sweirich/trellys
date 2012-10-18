@@ -928,7 +928,7 @@ synonymExpand2 nm formals polyk body = (name nm,length formals,f)
 -- Proof t i = Mu P t i        (0,2)  where P: (Tag -> Nat -> *) -> Tag -> Nat -> *
 -- note that some arguments are applied to the Type Constructor before 
 -- the application of Mu, and some after. There is a pair of integers
--- that can be computed by inspecting the kind. 'count' does this
+-- that can be computed by inspecting the kind. 'runcount' does this
 
 runcount t k = collect t k [] k
 collect t all xs (Karr x y) | x==y = (x,length xs,kindArity x)
@@ -1103,26 +1103,26 @@ typeExpT env (e@(EApp fun arg)) expect =
         ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
         ; let cast (e@(TECon mu nm rho n es)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
-        ; let mkTrans t msg = unlines [msg,near e++"\nInfering the application: ("++show e++") where\n   "++
-                           show fun++": "++show fun_ty++
-                           "\n   "++show arg++": "++ show t++
-                           "\n   expected type: "++show expect]
+        ; let mkTrans i t msg = unlines [msg,near e++"\n"++show i++" Infering the type of  the application\n   "++show e++
+                                       "\nthe function  '"++show fun++"'  has type\n   "++show fun_ty++
+                                       "\nthe argument  '"++show arg++"'  has type\n   "++ show t++
+                                       "\nthe expected type\n   "++show expect]
         ; case arg_ty of
            Sch [] argRho -> do { -- writeln("arg = "++show arg++": "++show argRho);
                                  x <- handleM (typeExpT env arg (Check argRho))
-                                              (mkTrans arg_ty)
+                                              (mkTrans 0 arg_ty)
                                ; tt <- zonkRho argRho
-                               ; p2 <- morepolyRExpectR_ (expLoc arg) [mkTrans arg_ty ""] res_ty expect                               
+                               ; p2 <- morepolyRExpectR_ (expLoc arg) [mkTrans 1 arg_ty ""] res_ty expect                               
                                ; eprime <- (smartApp (cast f) x)
                                ; return(teCast p2 eprime)}
-           sigma -> do { (ty,x) <- handleM (inferExpT env arg) (mkTrans sigma)
+           sigma -> do { (ty,x) <- handleM (inferExpT env arg) (mkTrans 2 sigma)
                        ; free <- tvsEnv env
                        ; (sig,sub) <- generalizeRho free ty
                        ; sigma2 <- zonkScheme sigma >>= alpha
                        ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):[mkTrans sigma ""]
+                                  "\nis expected to be polymorphic: "++ show sigma2):[mkTrans 3 sigma ""]
                        ; p3 <- morepolySST (expLoc arg) m2 sig sigma2
-                       ; p4 <- morepolyRExpectR_ (expLoc arg) [mkTrans sigma ""] res_ty expect
+                       ; p4 <- morepolyRExpectR_ (expLoc arg) [mkTrans 4 sigma ""] res_ty expect
                        -- Do some stuff with p3 and p4 here
                        ; smartApp (cast f) x }
         }
