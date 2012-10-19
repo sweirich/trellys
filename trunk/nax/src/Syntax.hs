@@ -545,7 +545,7 @@ ppTExpr p e =
     (ContextHole e1 e2) ->
        PP.braces(PP.vcat[ppTExpr p e1,text "=",ppTExpr p e2])
                                        
-    (Emv (uniq,ptr,k)) -> text("e"++show uniq)
+    (Emv (uniq,ptr,k)) -> text("^E"++show uniq)
     (CSP (nm,i,v)) -> text("`"++show nm)
     
 ppTerm p (Parsed x) = ppExpr p x -- <> text "%"
@@ -637,7 +637,7 @@ ppKind p Star = text "*"
 ppKind p (LiftK s) = ppTyp p s
 ppKind p (Karr (x@(Karr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y]       
 ppKind p (Karr x y) = PP.hsep [ ppKind p x, text "->", ppKind p y]
-ppKind p (Kvar (uniq,ref)) = text ("k"++show uniq)
+ppKind p (Kvar (uniq,ref)) = text ("^K"++show uniq)
 ppKind p (Kname n) = ppName n
 
 ppPolyK:: PI -> PolyKind -> Doc
@@ -667,7 +667,7 @@ ppTyp p (TyTuple k ts) = bracket(PP.cat (PP.punctuate PP.comma (map (ppTyp p) ts
 ppTyp p (TyCon _ c k) = ppName c --  <> text"<" <> ppPolyK p k <> text">"
 ppTyp p (TyMu Star) = text "Mu[*]"
 ppTyp p (TyMu k) = text "Mu[" <> ppKind p k <> text "]"
-ppTyp p (TcTv (uniq,ptr,k)) = text("t"++show uniq)
+ppTyp p (TcTv (uniq,ptr,k)) = text("^T"++show uniq)
 ppTyp p (TyLift x) = PP.braces(ppTerm p x)
 ppTyp p (TyArr x y) =  PP.sep[parenTypArrow p x <+> text "->",PP.nest 1 (ppTyp p y)]
 ppTyp p (TyProof x y) = PP.parens (ppTyp p x <> text "==" <> (ppTyp p y))
@@ -863,7 +863,7 @@ instance Show TypPat where
 showK Star = "Star"
 showK (Karr x y) = "(Karr "++showK x++" "++showK y++")"
 showK (Kname s) = "(Kname "++show s++")"
-showK (Kvar (uniq,ptr)) = "k"++show uniq
+showK (Kvar (uniq,ptr)) = "^K"++show uniq
 showK (LiftK t) = "(LiftK "++showT t++")"
 
 showT (TyVar s k) = "(TyVar "++show s++" "++show k++")"
