@@ -16,6 +16,7 @@ import qualified Data.Map as DM
 import Eval(normform)
 import Parser(parseExpr)
 
+
 import Data.List(unionBy,union,nub,find,(\\),isInfixOf)
 import Data.Char(toLower)
 import UniqInteger(nextinteger)
@@ -105,6 +106,24 @@ instance Show NameContents where
 --------------------------------------------------
 -- operations on Frags
 
+-- look up a classified name in a Frag, to compute a Tele entry
+
+nameToTele:: Frag -> Class Name Name Name -> FIO (Name, Class () Kind Typ)
+nameToTele frag clname = 
+  case (clname,DM.lookup (unClass clname) (table frag)) of
+    (_,Nothing) -> fail (cl++" "++show v++" not found in table.")
+       where (cl,v) = showCl clname
+    (Kind nm,Just(KVAR k)) -> return (nm,Kind ())
+    (Type nm,Just(TYVAR t)) -> do { k <- kindOf t; k2 <- zonkKind k; return(nm,Type k2)}
+    (Exp nm,Just(EVAR(Left(_,sch)))) -> 
+        do { (rho,_) <- instantiate sch
+           ; case rho of
+              Tau t -> do { t2 <- zonk t; return(nm,Exp t2)}
+              Rarr _ _ -> error ("The name "++show nm++" does not have a monomorphic type.") }
+    (x,w) -> fail (v++" is found in the environment with a class different from "++cl++show w)
+       where (cl,v) = showCl x
+       
+       
 addSyn f frag = frag{ppinfo = push f (ppinfo frag)}
   where push f pi = pi{synonymInfo = f : (synonymInfo pi)}
 
@@ -241,7 +260,7 @@ wfGadtKind pos mess frag k =
            f (nm,Type i) = do { tvar <- freshType Star; return(nm,Type tvar)}
      ; sub  <- mapM f boundNames
      ; k3 <- kindSubb pos ([],sub,[]) k2
-     ; return(k3,boundNames)
+     ; return(k2,boundNames)  -- FIX (k3,boundNames)
      }
 
 wfKind:: SourcePos -> [String] -> Frag -> Kind -> FIO Kind
@@ -258,7 +277,7 @@ wfKind pos mess frag k = do { x <- pruneK k; f x }
               Just (KVAR k) -> return k
               Just (EVAR(Left(e,sch))) -> fail(mismatch mess "type" "expression" nm)
               other -> fail(notInScope mess "type" nm 5 frag)     
-
+    
 -- When we see a parsed TyCon object, it might stand for either a real
 -- type constructor, or the name of a Type synonym. Here is where we
 -- decide and expand type synonyms.
@@ -286,7 +305,6 @@ expandTypSyn env (TyCon mu nm polyk) xs =
      Just(TYCON2(str,arity,f)) -> Just(nm,f,xs)
      other -> Nothing
 expandTypSyn env _ xs = Nothing
-
 
 wellFormedType:: SourcePos -> [String] -> Frag -> Typ -> FIO(Typ,Kind)
 wellFormedType pos mess frag typ = do { x <- prune typ
@@ -366,11 +384,28 @@ generalizeK pos env k =
      -- ; writeln ("GEN "++show envPtrs++"\n    "++show freePtrs++"\n    "++show freeNames)
      ; let genericPtrs = freePtrs \\ envPtrs
      ; (subst@(ps,ns,ts),tele) <- ptrSubst (map classToName freeNames) genericPtrs nameSupply ([],[],[])
-     -- the tele may need reordering!!!
+     ; tele2 <- orderTele tele  -- the tele may need reordering!!!
      ; k2 <- kindSubb pos subst k    
-     ; zonkPolyK(PolyK tele k2)
+     ; zonkPolyK(PolyK tele2 k2)
      }
      
+     
+-- Generalize all free variables, both Names and Pointers!
+
+generalizeAll:: SourcePos -> Frag -> Rho -> FIO Scheme
+generalizeAll pos env rho =
+  do { (ptrs,names) <- getVarsRho rho
+     ; nameTele <- mapM (nameToTele env) names
+     -- ; writeln("\nAll  "++show rho++"\n  pointers = "++show ptrs++", names = "++show names++"\n   "++show nameTele)
+     ; let namesNotToUse = map classToName names
+     ; (subst,tele) <- ptrSubst namesNotToUse ptrs nameSupply  ([],[],[])
+     ; body <- rhoSubb pos subst rho 
+     ; nameTele2 <- teleSubb pos subst nameTele
+     -- ; writeln("\nbody = "++show body++",  "++show (tele++nameTele2)++"\n subst = "++show subst)
+     ; ordered_tele <- orderTele (tele++nameTele2)
+     ; return(Sch ordered_tele body)
+     }
+            
 
 
 
@@ -760,22 +795,31 @@ elab toplevel env (GADT pos t kind cs derivs) =
   do { checkDec toplevel env t 
      -- if toplevel then write ((show t)++", ") else return()
      ; (kind2,newvs) <- wfGadtKind pos ["checking gadt "++show t++":"++show kind] env kind
-     -- ; writeln("\nELAB kind = "++show kind2++",   "++show newvs)
+     ; ktele <- binderToTelescope newvs
+     ; let polykind = PolyK ktele kind2 -- <- generalizeK pos env kind2     
+     -- ; writeln("\nELAB kind = "++show polykind++",   "++show newvs)
      ; let doOneCon (c,(v:vs),doms,rng) = fail "No foralls in constructor yet"
            doOneCon (c,[],doms,rng) = 
              do { rngVars <- getVarsRho rng
                 ; allVars <- foldM (accumBy getVarsScheme) rngVars doms
-                --; writeln("GADT "++show t++", constr  "++show c++", allVars = "++show allVars)
+                -- ; writeln("GADT "++show t++", constr  "++show c)
                 ; namesToBind <- mapM univ (snd allVars) -- (freeNames env allVars)
                 ; let domEnv = addMulti namesToBind env
                 ; doms2 <- mapM (wellFormedScheme pos (mess c) domEnv) doms
-                ; let rangeEnv = addTable TYCON1 (t,(syntax derivs,PolyK [] kind2)) domEnv
-                ; rng2 <- wellFormedRho pos (mess c) rangeEnv rng   
-                ; return((c,map fst namesToBind,doms2,rng2),namesToBind) }
+                ; let rangeEnv = addTable TYCON1 (t,(syntax derivs,polykind)) domEnv
+                ; rng2 <- wellFormedRho pos (mess c) rangeEnv rng 
+                ; let wholetype = (foldr Rarr rng2 doms2)
+                ; sch <- generalizeAll pos rangeEnv wholetype
+                ; vars <- getVarsRho wholetype
+                -- ; writeln("\nGADT constr "++show c++": "++show sch)
+                               
+                ; return((c,map fst namesToBind,doms2,rng2),sch) }
+               
      ; cs2 <- mapM doOneCon cs
-     ; let conScheme ((c,_,ds,r),vs) = 
-              do { tele <- binderToTelescope vs; liftM (c,length ds,) (zonkScheme(Sch tele (foldr Rarr r ds)))} 
-     ; polykind <- generalizeK pos env kind2
+     ; let conScheme ((c,_,ds,r),sch) = return (c,length ds,sch)
+             -- do { tele <- binderToTelescope vs
+             --    ; liftM (c,length ds,) (zonkScheme(Sch tele (foldr Rarr r ds)))} 
+     
      ; cs3 <- mapM conScheme cs2
      ; let env4 = addData (syntax derivs) t polykind cs3 env 
      ; return(env4,GADT pos t kind2 (map fst cs2) derivs)}

@@ -1,18 +1,31 @@
+
 data L2: (i -> i -> *) ->
          (i -> i -> *) -> (i -> i -> *) where
-  LNil  : L2 x r i i
-  LCons : x i j -> r j k -> L2 x r i k
+  LNil  : L2 x r {i} {i}
+  LCons : x {i} {j} -> r {j} {k} -> L2 x r {i} {k}
     deriving fixpoint List2
+
 
 data Unit = One
 
 data Elem: * -> Unit -> Unit -> * where
   E: a -> Elem a {One} {One} 
 
+cons' x xs = lCons (E x) xs
+
+
+data V: * -> Nat -> Nat -> * where
+  EV: a -> V a {`succ n} {n}
+
+consv x xs = lCons (EV x) xs
+
+
 data Seq a r s = 
   Con (r a) (s a)
     
 axiom id : a -> a
+
+
 
 {-
 plus x y = mcata x with
@@ -30,4 +43,5 @@ v2 = vcons 3 (vcons 5 vnil)
 appendV xs = mcata{ {i} . Vector a {j} -> Vector a {`plus i j}} xs
   with app Vnil ys = ys
        app (Vcons x xs) ys = vcons x (app xs ys)
--}       
+-}
+

@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, FlexibleInstances #-}
 
 module Types where
 
@@ -18,6 +18,7 @@ import Names
 import BaseTypes
 import Syntax
 import Eval(normform)
+import SCC(topSortQ)
  
 import Debug.Trace 
 ----------------------------------------------------------------
@@ -559,9 +560,6 @@ existTyp nm x = new Exist noPos nm ([],[],[]) x
 -------------------------------------------
 -- Create a scheme
 
--- PM is a "Pointer Map"  Mapping mutable vars to the things they abstract
-type PM t = (Pointer t,t)
-
 generalize:: Pointers -> Typ -> FIO (Scheme,[Class (PM Kind) (PM Typ) (PM TExpr)])
 generalize us t = generalizeRho us (Tau t)
 
@@ -579,6 +577,8 @@ generalizeRho us t =
      ; return(Sch tele body2,ps)
      }
 
+
+
 alphaRho (Rarr s r) = do { s' <- alpha s; r' <- alphaRho r; return(Rarr s' r')}
 alphaRho (Tau t) = return(Tau t)  
 
@@ -592,29 +592,33 @@ ptrSubst:: [Name] ->    -- Names occuring in the term, these are bad so shouldn'
            [Name] ->    -- An infinite name supply of names to choose.
            SubEnv ->
        FIO (SubEnv,Telescope)  --  (mapping ptrs to names, telescope of classified names)
-           
-ptrSubst bad [] names env = return (env,[])
-ptrSubst bad (ps@((Kind(uniq,ptr)):more)) (n:names) env =
-  if elem n bad -- elem (Kind n) bad || elem (Type n) bad || elem (Exp n) bad
-     then ptrSubst bad ps names env
-     else do { (env2,tele) <- ptrSubst bad more names (addPointer (Kind(ptr,Kname n)) env)
-             ; return(env2, (n,Kind ()):tele) }
+ptrSubst bad ptrs names env = 
+        do { (env2,tele) <- help bad ptrs names env
+           ; tele2 <- teleSubb noPos env2 tele
+           ; return(env2,tele2)} where 
+ help bad [] names env = return (env,[])
+ help bad (ps@((Kind(uniq,ptr)):more)) (n:names) env =
+   if elem n bad  
+      then help bad ps names env
+      else do { (env2,tele) <- help bad more names (addPointer (Kind(uniq,ptr,Kname n)) env)
+              ; return(env2, (n,Kind ()):tele) }
               
-ptrSubst bad (ps@((Type(uniq,ptr,kind)):more)) (n:names) env =
-  if elem n bad -- elem (Kind n) bad || elem (Type n) bad || elem (Exp n) bad
-     then ptrSubst bad ps names env
-     else  do { kind1 <- kindSubb noPos env kind
-              ; (env2,tele) <- ptrSubst bad more names (addPointer (Type(ptr,TyVar n kind1)) env)
-              ; return(env2,(n,Type kind1):tele)}
+ help bad (ps@((Type(uniq,ptr,kind)):more)) (n:names) env =
+   if elem n bad  
+      then help bad ps names env
+      else  do { kind1 <- kindSubb noPos env kind
+               ; (env2,tele) <- help bad more names (addPointer (Type(uniq,ptr,TyVar n kind1)) env)
+               ; return(env2,(n,Type kind1):tele)}
 
-ptrSubst bad (ps@((Exp(uniq,ptr,typ)):more)) (n:names) env =
-  if elem n bad -- elem (Kind n) bad || elem (Type n) bad || elem (Exp n) bad
-     then ptrSubst bad ps names env
-     else do { typ1 <- tySubb noPos env typ
-             ; let term = TEVar n (Sch [] (Tau typ1))
-             ; (env2,tele) <- ptrSubst bad more names (addPointer (Exp(ptr,term)) env)            
-             ; return (env2, (n,Exp typ):tele ) 
-             }
+ help bad (ps@((Exp(uniq,ptr,typ)):more)) (n:names) env =
+   if elem n bad  
+      then help bad ps names env
+      else do { typ1 <- tySubb noPos env typ
+              ; let term = TEVar n (Sch [] (Tau typ1))
+              ; (env2,tele) <- help bad more names (addPointer (Exp(uniq,ptr,term)) env)            
+              ; return (env2, (n,Exp typ):tele ) 
+              }
+                 
                  
 
 matchErr loc messages t1 t2 = fail ("\n\n*** Error, near "++show loc++"\n"++(unlines messages)) -- ++"\n   "++show t1++"\n   "++show t2)
@@ -884,22 +888,44 @@ getVarsTele (pair:more) ans = do { env1 <- getVarsTele more ans; getVarsClass pa
         getVarsClass (nm,Exp t) env = 
           do { env2 <- getVars t
              ; (unionW env2 (rem (Type 0) env [nm])) }   
-     
 
+orderTele:: Tele Name -> FIO (Tele Name)     
+orderTele outOfOrderTele = 
+    do { table <- mapM dependsM outOfOrderTele
+       ; return(concat(topSortQ defines (depends table) outOfOrderTele)) }
+ where defines (nm,_) = [nm]
+       dependsM (nm,Kind ()) = return(nm,[])
+       dependsM (nm,Type k) = 
+          do { (_,ns) <- getVarsKind k; return(nm,map unClass ns)}
+       dependsM (nm,Exp t) = 
+          do { (_,ns) <- getVars t; return(nm,map unClass ns)}
+       depends table (nm,_) = 
+          case lookup nm table of
+            Just names -> names
+            Nothing -> []
+            
 -------------------------------------------------------------
 
+-- PM is a "Pointer Map"  Mapping mutable vars to the things they abstract
+type PM t = (Uniq,Pointer t,t)
+
 type SubEnv = 
-      ([Class (Pointer Kind,Kind)     -- Pointers to coresponding objects
-              (Pointer Typ,Typ)
-              (Pointer TExpr,TExpr)]            
+      ([Class (PM Kind)     -- Pointers to coresponding objects
+              (PM Typ)
+              (PM TExpr)]            
       ,[(Name,Class Kind Typ TExpr)]  -- Names to Objects
       ,[(Name,Typ)]                   -- TyCon names to Typ
       )
 
+instance Show (Class (PM Kind)(PM Typ)(PM TExpr)) where
+  show (Kind(u,p,k)) = "^K"++show u++"="++show k
+  show (Type(u,p,k)) = "^T"++show u++"="++show k
+  show (Exp(u,p,k))  = "^E"++show u++"="++show k
+
 findE _ [] ans = ans
-findE (Kind x) (Kind(y,e):more) ans = if x==y then Kind e else findE (Kind x) more ans
-findE (Type x) (Type(y,e):more) ans = if x==y then Type e else findE (Type x) more ans
-findE (Exp x)  (Exp(y,e):more)  ans = if x==y then Exp e else findE (Exp x)  more ans
+findE (Kind x) (Kind(u,y,e):more) ans = if x==y then Kind e else findE (Kind x) more ans
+findE (Type x) (Type(u,y,e):more) ans = if x==y then Type e else findE (Type x) more ans
+findE (Exp x)  (Exp(u,y,e):more)  ans = if x==y then Exp e else findE (Exp x)  more ans
 findE x (m:more) ans = findE x more ans
 
 findF _ [] ans = ans
@@ -996,9 +1022,9 @@ getNamesSubEnv (ptrs,names,tycons) =
            do { ns1 <- foldM getptr [] ptrs
               ; ns2 <- foldM getname ns1 names
               ; foldM getcon ns2 tycons }
-  where getptr ans  (Kind(ptr,k)) = do { (_,cl) <- getVarsKind k; return(map classToName cl ++ ans)}
-        getptr ans  (Type(ptr,t)) = do { (_,cl) <- getVars t; return(map classToName cl ++ ans)}
-        getptr ans  (Exp(ptr,e))  = do { (_,cl) <- getVarsExpr e; return(map classToName cl ++ ans)}
+  where getptr ans  (Kind(u,ptr,k)) = do { (_,cl) <- getVarsKind k; return(map classToName cl ++ ans)}
+        getptr ans  (Type(u,ptr,t)) = do { (_,cl) <- getVars t; return(map classToName cl ++ ans)}
+        getptr ans  (Exp(u,ptr,e))  = do { (_,cl) <- getVarsExpr e; return(map classToName cl ++ ans)}
         getname ans (nm,Kind k)   = do { (_,cl) <- getVarsKind k; return(map classToName cl ++ ans)}
         getname ans (nm,Type t)   = do { (_,cl) <- getVars t; return(map classToName cl ++ ans)}
         getname ans (nm,Exp e)    = do { (_,cl) <- getVarsExpr e; return(map classToName cl ++ ans)}
@@ -1243,6 +1269,13 @@ schemeSubb pos (env@(ptrs,names,tycons)) (Sch vs t) =
      ; t2 <- rhoSubb pos env2 t
      ; return(Sch vs2 t2)}
 
+teleSubb:: SourcePos -> SubEnv -> Tele t -> FIO (Tele t)
+teleSubb pos env xs = mapM f xs
+  where f (nm,Kind ()) = return (nm,Kind ())
+        f (nm,Type t)  = do { t2 <- kindSubb pos env t; return(nm,Type t2)}
+        f (nm,Exp t)  = do { t2 <- tySubb pos env t; return(nm,Exp t2)}    
+        
+        
 -----------------------------------------------------------------
 -- Checking that one type is more polymorphic than another
 
