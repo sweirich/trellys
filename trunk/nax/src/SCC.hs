@@ -2,7 +2,7 @@
 module SCC where
 
 
-import Lib.DepthFirstSearch
+import DepthFirstSearch
 import Data.List(findIndex,union,(\\),nub,partition)
  
 
