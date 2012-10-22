@@ -141,7 +141,9 @@ addExQuant xs frag = frag{existbnd = (xs++ existbnd frag)}
 
 addMulti [] frag = frag
 addMulti ((m@(nm,Exp (term@(TEVar _ sch)))):more) frag = 
-   addMulti more (addTable EVAR (nm,Left(term,sch)) frag)                           
+   addMulti more (addTable EVAR (nm,Left(term,sch)) frag)     
+addMulti ((m@(nm,Exp (term@(Emv(u,ptr,ty))))):more) frag = 
+   addMulti more (addTable EVAR (nm,Left(term,Sch [] (Tau ty))) frag)        
 addMulti ((m@(nm,Type t)):more) frag =
    addMulti more (addTable TYVAR (nm,t) frag)
 addMulti ((m@(nm,Kind k)):more) frag =
@@ -308,10 +310,10 @@ expandTypSyn env _ xs = Nothing
 
 wellFormedType:: SourcePos -> [String] -> Frag -> Typ -> FIO(Typ,Kind)
 wellFormedType pos mess frag typ = do { x <- prune typ
-                                     -- ; writeln ("Enter WFT "++show x)
+                                      -- ; writeln ("Enter WFT "++show x)
                                       ; ans@(t,k) <- f x
-                                     -- ; k2 <- zonkKind k
-                                     -- ; writeln ("Exit WFT "++show t++": "++show k2)
+                                      -- ; k2 <- zonkKind k
+                                      -- ; writeln ("Exit WFT "++show t++": "++show k2)
                                       ; return ans }
   where call x = wellFormedType pos mess frag x
         has k1 x = do { (x2,k2) <- call x
@@ -324,7 +326,10 @@ wellFormedType pos mess frag typ = do { x <- prune typ
               Just (EVAR(Left(e,sch))) -> fail(mismatch mess "type" "expression" nm)
               other -> fail(notInScope mess "type" nm 5 frag)     
         f (typ@(TyApp _ _)) | Just (nm,f,xs) <- expandTypSyn frag typ [] =
-          do { t2 <- f (loc typ) xs; call t2 }
+          do { t2 <- f (loc typ) xs
+             -- ; writeln("\nMacro expands "++show typ++"\n  "++show t2)
+             ; ans <- call t2
+             ; return ans}
         f (typ@(TyApp f x)) = 
           do { dom <- freshKind; rng <- freshKind
              ; (f2,k2) <- call f
@@ -657,13 +662,14 @@ teleKind [] = Star
 teleKind ((nm,Kind ()):xs) = Karr (Kname nm) (teleKind xs)
 teleKind ((nm,Type k):xs) = Karr k (teleKind xs)
 teleKind ((nm,Exp t):xs) = Karr (LiftK t) (teleKind xs)
-  
+
+
 typeElim:: Frag -> Elim [Name] -> FIO (Elim Telescope,Kind)
 typeElim env ElimConst = return(ElimConst,Star)
 typeElim env (e@(ElimFun ns t)) = 
    do { allVars <- getVars t                  -- compute the Class for all vars.
       ; boundVars <- getTypesFor ns allVars   -- assign Class to only those listed.
-      ; namesToBind <- mapM univ (boundVars)  -- assume types for these
+      ; namesToBind <- mapM univ (boundVars)-- FIX ME?                     
       ; let env2 = addMulti namesToBind env   -- extend the env with these types      
       ; (t2,k) <- wellFormedType 
                    (loc e) 
@@ -676,13 +682,18 @@ typeElim env (e@(ElimFun ns t)) =
       -- ; writeln ("\nTypeELIM "++show e++"\n  names bound = "++show namesToBind++ ": "++ show k)
       ; return(ElimFun tele t3,k)}
       
+    
 wellFormedElim:: SourcePos -> Frag -> Elim [Typ] -> FIO (Elim (Telescope,[(Typ,Kind)]),Kind)
 wellFormedElim pos env ElimConst = return(ElimConst,Star)
 wellFormedElim pos env (elim@(ElimFun ts body)) = 
   do { varsBody <- getVars body
      ; (ptrs,names) <- foldM (accumBy getVars) varsBody ts 
-     ; namesToBind <- mapM univ names
+     ; namesToBind <- mapM univ names -- FIX ME??
+                      
+               
      ; let env2 = addMulti namesToBind env
+     -- ; writeln("\nTYPEELIM "++show namesToBind)
+     -- ; showFrag 120 env2              
      ; let wft t = wellFormedType pos ["Checking wellformedness of elim arg: "++show t] env2 t
      ; pairs <- mapM wft ts
      ; (body2,k2) <- wellFormedType pos ["Checking wellformedness of elim body: "++show body] env2 body
@@ -691,7 +702,7 @@ wellFormedElim pos env (elim@(ElimFun ts body)) =
      ; kind <- zonkKind (foldr acc k2 pairs)
      ; body3 <- zonk body2
      ; pairs2 <- mapM (\ (t,k) -> liftM2 (,) (zonk t) (zonkKind k)) pairs
---      ; writeln("\n\nElim = "++show (ElimFun (tele,pairs2) body3)++"\nKind = "++show kind)
+    --  ; writeln("\n\nElim = "++show (ElimFun (tele,pairs2) body3)++"\nKind = "++show kind)
      
      ; return(ElimFun (tele,pairs2) body3,kind)  }  
 
@@ -979,17 +990,19 @@ collect t all xs (Karr x y) | x==y = (x,length xs,kindArity x)
 collect t all xs (Karr x y) = collect t all (x:xs) y
 collect t all xs k = error("\n"++show t++" does not have a kind that supports fixpoint: "++show all)
 
-tyConMacro tname rname (polyk@(PolyK _ k)) = (augment tname rname (", syntax for "++show tname)
+tyConMacro tname rname (polyk@(PolyK tele k)) = (augment tname rname (", syntax for "++show tname)
                                              ,(str,before+after,f))
   where (k4,before,after) = runcount (name tname) k
         tType = (TyCon (Syn rname) tname polyk)
         showType = (TyCon None tname polyk)  -- when we browse we want the In form to print, so use None.
-        build tType xs = applyT ((TyMu k4): muarg : (drop before xs))
-	   where muarg = applyT (tType : take before xs)
+        build tType xs = 
+          do { k5 <- instanK noPos (PolyK tele k4)
+             ; let muarg = applyT (tType : take before xs)
+             ; return(applyT ((TyMu k5): muarg : (drop before xs)))}
         typ x = TyVar x Star	   
         args = take (before+after) nameSupply
         str = rname++plistf show " " args " " " = "++show(build showType (map typ args))
-        f pos xs = return(build tType xs)
+        f pos xs = build tType xs
                   
 
              
