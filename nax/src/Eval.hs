@@ -102,7 +102,8 @@ apply g y fun arg k =
    help (VFunM n vf) x k = vf x k
    help (VFun ty g) x k = k(g x)
    help (VCon i arity c vs) v k | arity > length vs = k(VCon i arity c (vs ++ [v]))
-   help (VCode fun) v k = do { putStrLn ("THERE "++show fun); arg <- reify Nothing v; k(VCode(TEApp fun arg))}
+   help (VCode fun) v k = do { -- putStrLn ("THERE "++show fun); 
+                               arg <- reify Nothing v; k(VCode(TEApp fun arg))}
    help nonfun x k = fail ( near g ++ "A nonfunction ("++show nonfun++") in function position.\nArising from the term\n "++show(TEApp g y))
 
 -- ???: what is 'C'?
