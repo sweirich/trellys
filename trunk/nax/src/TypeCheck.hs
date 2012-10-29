@@ -97,11 +97,11 @@ instance Show NameContents where
          ty nm = EVar nm
   show (TYCON1 (mu,k)) = "TypeCon "++show k++sh mu
     where sh None = ""
-          sh (Syn x) = ", Mu syntax "++x
+          sh (Syn x) = ", Mu syntax. "++x
   show (TYCON2 (str,n,f)) = "TypeCon syntax with arity "++show n++", "++ str        
-  show (ECON (sch,nm,mu)) = "Expr syntax "++show sch++sh mu
+  show (ECON (sch,nm,mu)) = "Expr syntax. "++show sch++sh mu
     where sh None = ""
-          sh (Syn x) = ", 'In' syntax "++nm
+          sh (Syn x) = ", 'In' syntax. "++nm
 
 --------------------------------------------------
 -- operations on Frags
@@ -259,7 +259,9 @@ wfGadtKind pos mess frag k =
      ; let frag2 = addMulti boundNames frag
      ; k2 <- wfKind pos (("Checking wff kind: "++show k):mess) frag2 k
      ; let f (nm,Kind i) = do { kvar <- freshKind; return(nm,Kind kvar)}
-           f (nm,Type i) = do { tvar <- freshType Star; return(nm,Type tvar)}
+           f (nm,Type i) = do { k <- freshKind; tvar <- freshType k; return(nm,Type tvar)}
+           f (nm,Exp i) = do { k <- freshKind; t <- freshType k
+                             ; evar <- freshExp t; return(nm,Exp evar)}
      ; sub  <- mapM f boundNames
      ; k3 <- kindSubb pos ([],sub,[]) k2
      ; return(k2,boundNames)  -- FIX (k3,boundNames)
@@ -400,6 +402,8 @@ generalizeK pos env k =
 generalizeAll:: SourcePos -> Frag -> Rho -> FIO Scheme
 generalizeAll pos env rho =
   do { (ptrs,names) <- getVarsRho rho
+     -- ; writeln("\ngenAll  "++show rho++"\n  pointers = "++show ptrs++", names = "++show names)
+     ; let namesNotToUse = map classToName names
      ; nameTele <- mapM (nameToTele env) names
      -- ; writeln("\nAll  "++show rho++"\n  pointers = "++show ptrs++", names = "++show names++"\n   "++show nameTele)
      ; let namesNotToUse = map classToName names
@@ -813,13 +817,16 @@ elab toplevel env (GADT pos t kind cs derivs) =
            doOneCon (c,[],doms,rng) = 
              do { rngVars <- getVarsRho rng
                 ; allVars <- foldM (accumBy getVarsScheme) rngVars doms
-                -- ; writeln("GADT "++show t++", constr  "++show c)
                 ; namesToBind <- mapM univ (snd allVars) -- (freeNames env allVars)
                 ; let domEnv = addMulti namesToBind env
                 ; doms2 <- mapM (wellFormedScheme pos (mess c) domEnv) doms
                 ; let rangeEnv = addTable TYCON1 (t,(syntax derivs,polykind)) domEnv
                 ; rng2 <- wellFormedRho pos (mess c) rangeEnv rng 
                 ; let wholetype = (foldr Rarr rng2 doms2)
+                ; zs <- getVarsPolyK polykind
+               -- ; writeln("\nGADT "++show t++", constr  "++show c++" allVars = "++show allVars++
+               --           "\n wholetype = "++show wholetype++" polyk "++show polykind++show zs)
+               
                 ; sch <- generalizeAll pos rangeEnv wholetype
                 ; vars <- getVarsRho wholetype
                 -- ; writeln("\nGADT constr "++show c++": "++show sch)

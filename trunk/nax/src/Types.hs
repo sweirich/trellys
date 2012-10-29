@@ -749,6 +749,15 @@ getVarsElim2 ElimConst = return ([],[])
 getVarsElim2 (ElimFun ns t) = 
   do { trip <- getVars t
      ; foldM (accumBy getVars) trip ns }  
+
+getVarsElim3:: Elim(Telescope,[(Typ,Kind)]) -> FIO Vars
+getVarsElim3 ElimConst = return ([],[])
+getVarsElim3 (ElimFun (tele,ts) t) = 
+  do { let f (t,k) = do { trip1 <- getVars t; trip2 <- getVarsKind k; unionW trip1 trip2}
+     ; trip1 <- foldM (accumBy f) ([],[]) ts
+     ; trip2 <- getVars t
+     ; trip3 <- getVarsTele tele trip2
+     ; unionW trip1 trip3 }
   
 getVarsE:: Expr -> FIO Vars
 getVarsE t = f t
@@ -813,7 +822,17 @@ getVarsExpr t = do { x <- pruneE t; f x }
           do { trip1 <- getVarsTEqual p
 	     ; trip2 <- getVarsExpr e
              ; (unionW trip1 trip2)}	     
-        f (TEMend tag elim arg ms) = error ("No getVarsExp for (EMend _ _ _) yet")	 
+        f (TEMend tag elim arg ms) = 
+          do { trip1 <- getVarsExpr arg
+             ; trip2 <- getVarsElim3 elim
+             ; trip3 <- unionW trip1 trip2
+             ; let free (pats,exp) = 
+	             do { (ptrs,vars) <- getVarsExpr exp
+	                ; return (ptrs,remove (Exp 0) vars (patsBind pats [])) }
+	           free2 (tele,pats,exp) = 
+	             do { trip1 <- free (pats,exp)
+	                ; getVarsTele tele trip1 }
+             ; foldM (accumBy free2) trip3 ms  } 
         f (TELet _ _) = error ("No getVarsExp for (ELet _ _) yet")
         f (CSP _) = return([],[])
         f (ContextHole x y ) = 
@@ -887,7 +906,7 @@ getVarsTele (pair:more) ans = do { env1 <- getVarsTele more ans; getVarsClass pa
              ; (unionW env2 (rem (Type 0) env [nm])) }
         getVarsClass (nm,Exp t) env = 
           do { env2 <- getVars t
-             ; (unionW env2 (rem (Type 0) env [nm])) }   
+             ; (unionW env2 (rem (Exp 0) env [nm])) }   
 
 orderTele:: Tele Name -> FIO (Tele Name)     
 orderTele outOfOrderTele = 

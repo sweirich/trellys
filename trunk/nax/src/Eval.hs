@@ -132,13 +132,16 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
   heval (AbsTyp t e) env k = heval e env k
   heval (TECast p e) env k = heval e env k
   heval (t@(Emv _)) env k = k (VCode t) -- fail ("Evaluating mutvar: "++show t)
-  heval (TEMend tag elim x ms) env k 
+  heval (exp@(TEMend tag elim x ms)) env k 
       | Just numpats <- sameLenClauses2 (near x++tag) ms
       = do { phi <- unwind ms env numpats [] return
            ; arg <- evalC x env return
            ; case (arg,tag) of
-              (VCode e,_) -> error("\nBad arg to Mendler "++show e)
-              (_,"mcata")   -> mcata (plistf (\(_,x,y) -> show x++":"++show y) "\n  " ms "\n  " "") phi (\ f -> app "mcata" f arg k)
+              (VCode e,_) -> do { putStrLn("\nBad arg to Mendler "++show e++"\n  "++show exp)
+                                ; k(VCode(TEMend tag elim e ms))
+                                }
+              (_,"mcata")   -> mcata (plistf (\(_,x,y) -> show x++":"++show y) "\n  " ms "\n  " "") 
+                                       phi (\ f -> app "mcata" f arg k)
               (_,"mhist")   -> mhist   phi (\ f -> app "mhist" f arg k)  
               (_,"mprim")   -> mprim   phi (\ f -> app "mprim" f arg k)
               (_,"msfcata") -> msfcata phi (\ f -> app "msfcata" f arg k)
@@ -177,12 +180,11 @@ mcata ms phi k =
       ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
             f (VIn kind x) k = do { v <- app "mcata" phi (VFunM i f) return
                                   ; app "mcata" v x k}
-{-
 --- What if its code? like this?
 
             f (VCode e) k = do { v <- app "mcata" phi (VFunM i f) return
                                ; app "mcata" v (VCode e) k}
--}                               
+                              
                                
             f v k = fail ("mcata applied to non Mu type value: "++show v++" "++show i++"\n"++ms)
       ; k(VFunM i f)}   
@@ -284,10 +286,11 @@ expEnvWithPatMatchingFun numPatInClauses nm cls env =
 tryClauses:: TExpr -> [([Pat], TExpr)]  -> VEnv -> [Value IO] -> [([Pat], TExpr)] -> (Value IO -> IO b) -> IO b
 tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++plistf show "" vs " " ""++plistf g "\n  " allcls "\n  " "\n")
    where g (ps,e) = plistf show "" ps " " "-> " ++ show e
-tryClauses efun allcls env2 vs ((ps,e):more) k = -- putStrLn ("TRY CLAUSES "++show vs++ show ps) >>
-   maybe (tryClauses efun allcls env2 vs more k)  
-         (\ env3 -> evalC e env3 k)
-     =<< threadC efun env2 ps vs
+tryClauses efun allcls env2 vs ((ps,e):more) k = 
+      -- putStrLn ("TRY CLAUSES "++show vs++ show ps) >>
+   (maybe (tryClauses efun allcls env2 vs more k)  
+          (\ env3 -> evalC e env3 k)
+      =<< threadC efun env2 ps vs)
           
 threadC :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(Maybe (VEnv))
 threadC efun env [] [] = return(Just env)

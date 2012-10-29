@@ -633,6 +633,7 @@ firstOrderT p = muApp <|> tyConApp
 simplekindT p = fmap (const Star) (sym "*") <|> 
               kindvariable <|>
               fmap LiftK (firstOrderT p) <|>
+              fmap LiftK (braceS (typT p)) <|>
               try (parenS (kindT p))
               -- (do { t <- firstOrderType; return(LiftK t)}) 
               
