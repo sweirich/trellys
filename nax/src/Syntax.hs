@@ -88,6 +88,7 @@ patBinds (PTuple ps) ans = foldr patBinds ans ps
 patBinds (PCon nm ps) ans = foldr patBinds ans ps
 patBinds (PWild pos) ans = ans
 
+patsBind ps ans = foldr patBinds ans ps
 ------------------------------------
 
 data Derivation =
@@ -635,7 +636,8 @@ ppClass p kf tf ef (Exp  e) = text "E" <+> ef p e
 ppKind:: PI -> Kind -> Doc
 ppKind p Star = text "*"
 ppKind p (LiftK s) = ppTyp p s
-ppKind p (Karr (x@(Karr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y]       
+ppKind p (Karr (x@(Karr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y] 
+ppKind p (Karr (x@(LiftK t)) y) = PP.hsep [ braces(ppTyp p t), text "->", ppKind p y]
 ppKind p (Karr x y) = PP.hsep [ ppKind p x, text "->", ppKind p y]
 ppKind p (Kvar (uniq,ref)) = text ("^K"++show uniq)
 ppKind p (Kname n) = ppName n
@@ -1297,7 +1299,8 @@ nosplit (TEApp x y) = (nosplit x) && (nosplit y)
 nosplit (TETuple xs) = all nosplit xs
 nosplit (TELet _ _) = error ("No TLet in nosplit yet")
 nosplit (TEIn k x) = (nosplit x) 
-nosplit (TEMend _ _ _ _) = error ("No TEMend in nosplit yet")
+nosplit (TEMend tag elim arg arms) = nosplit arg && all f arms
+  where f (tele,pats,e) = nosplit e   
 nosplit (AppTyp e ty) = nosplit e
 nosplit (AbsTyp tele e) = nosplit e
 nosplit (TECast p x) = nosplit x
