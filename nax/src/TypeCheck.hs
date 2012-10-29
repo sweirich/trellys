@@ -358,7 +358,7 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              ; (k2,newvs) <- wfGadtKind pos m frag k -- TODO is this okay? KYA
              ; return(TyMu k2,Karr (Karr k2 k2) k2) }
         f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)      
-        f (TyLift (Checked term)) = fail (unlines (("\nError *******\nChecked term: "++show term++", in wellFormedType."):mess))
+        f (TyLift (Checked texp)) = fail (unlines (("\nError *******\nChecked term: "++show texp++", in wellFormedType."):mess))
 --         f (TyLift (Pattern term)) = fail (unlines (("\nError *******\nPattern term: "++show term++", in wellFormedType."):mess))
         f (TyLift (Parsed term)) =
           do let trans msg = unlines (msg:mess)
