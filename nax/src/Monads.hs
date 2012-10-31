@@ -10,7 +10,7 @@ import Text.Parsec.Pos(SourcePos,newPos)
 import Control.Monad (filterM,liftM)
 import Control.Applicative ((<$>))
 
-import Names(SourcePos,noPos)
+import Names(SourcePos,noPos,Name(..))
 
 tryIO :: IO a -> IO (Either IOError a)
 tryIO = Control.Exception.try
@@ -101,8 +101,15 @@ nextInteger = do { n <- readIORef counter; writeIORef counter (n+1); return n }
 next = fio nextInteger
 
 fresh = unique "_x"
+
 unique s = do { n <- next; return (s++show n)}
 
+freshName (Nm(n,pos)) =
+  do { u <- unique ""; return(Nm(n++u,pos))}
+
+freshNameIO (Nm(n,pos)) = 
+  do { m <- nextInteger; return(Nm(n++show m,pos))}
+  
 -- ???: why unsafePerformIO ?
 counter :: IORef Integer
 counter = unsafePerformIO(newIORef 0)

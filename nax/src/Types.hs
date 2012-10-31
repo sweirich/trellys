@@ -65,7 +65,22 @@ matchK vars (pat,kind) env =
     (Kvar(u1,p1),Kvar(u2,p2)) | u1==u2 -> return env  
     (_,_) -> Nothing
     
-    
+matchPat:: (Pat,Pat) -> [(Name, Class Kind Typ TExpr)] -> Maybe [(Name, Class Kind Typ TExpr)] 
+matchPat (x,y) xs =
+   case (x,y) of 
+     (PVar x _ , PVar y (Just t)) -> Just((y,Exp(TEVar x (Sch [] (Tau t)))):xs)
+     (PVar x (Just t), PVar y _) -> Just((y,Exp(TEVar x (Sch [] (Tau t)))):xs)
+     (PVar x _, PVar y _) -> Just((y,Exp(TEVar x (Sch [] (Tau undefined)))):xs)
+     (PLit _ x,PLit _ y) -> if x==y then Just xs else Nothing
+     (PWild _,PWild _) -> Just xs
+     (PTuple ms, PTuple ns) -> matchPatL ms ns xs
+     (PCon c ms, PCon d ns) -> if c==d then matchPatL ms ns xs else Nothing
+     (_,_) -> Nothing
+     
+matchPatL [] [] xs = Just xs
+matchPatL (m:ms) (n:ns) xs =  do { xs2 <- matchPat (m,n) xs; matchPatL ms ns xs2}
+matchPatL _ _ xs = Nothing
+
 matchE:: [Name] -> (TExpr,TExpr) -> [(Name,Typ)] -> Maybe [(Name,Typ)] 
 matchE vars (pat,exp) env = 
   case (pat,exp) of
@@ -200,7 +215,24 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
           do { unifyK loc message k1 k2
              ; p <- unifyExpT loc message x y
              ; return(TEIn k1 p) }
-       f (TEMend tag elim arg ms) (TEMend _ _ _ _) = error "No EMend in instance (Eq Expr) yet."
+       f (z@(TEMend t1 e1 arg1 ms1)) (w@(TEMend t2 e2 arg2 ms2)) | t1==t2  =
+          do { arg <- unifyExpT loc message arg1 arg2
+             ; writeln("\nUnifying\n  "++show z++"\n  "++show w)
+             ; let match [] [] = return []
+              	   match ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
+           	     case matchPatL ps1 ps2 [] of
+           	       Nothing -> fail "Mendler patterns don't match"
+           	       Just subst ->
+           	            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
+           	               ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
+           	               ; e <- unifyExpT loc message e1 e2s
+           	               ; ms <- match xs ys
+           	               ; return((m,ps1,e):ms)}
+             ; ms <- match ms1 ms2             
+             ; return(TEMend t1 e1 arg ms)
+             }
+           
+           
        f (AppTyp x ts) (AppTyp y ss) =
           do { unifyL Star loc message ts ss
              ; p <- unifyExpT loc message x y
@@ -969,13 +1001,7 @@ hideT ns (ptrs,names,tycons) = (ptrs,filter ns names,tycons)
 
 rigidName (Nm(n,pos)) =
   do { u <- unique ""; return(Nm("_"++n++u,pos))}
- 
-freshName (Nm(n,pos)) =
-  do { u <- unique ""; return(Nm(n++u,pos))}
-
-freshName2 (Nm(n,pos)) = 
-  do { m <- fio(nextInteger); return(Nm(n++show m,pos))}
-  
+   
 data InstanTag 
     = Univ    -- completely replace each name with a fresh mutable variable
     | Exist   -- completely replace each name with a rigid existential variable
