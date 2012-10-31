@@ -7,6 +7,7 @@ import Data.Char(isSpace)
 import Text.Parsec.Pos(SourcePos,newPos,sourceLine,sourceColumn,sourceName)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$),render)
 
+
 dropWhite xs = takeWhile (not . isSpace) (dropWhile isSpace xs)
 
 -----------------------------------------
@@ -65,7 +66,6 @@ strings = map g pairs
         g (x,n) = x ++ show n
 
 pre s = Nm(s,newPos "prelude" 0 0)
-
 
 -------------------------------------
 -- formating lists of strings

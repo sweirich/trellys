@@ -529,7 +529,7 @@ ppTExpr p e =
     (TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
     (TEIn k (TECon (Syn d) c rho 0 [])) ->  text("`"++d)
     (TEIn k (TECon (Syn d) c rho arity xs)) -> 
-        PP.parens(PP.sep(text ("`"++d) : map (ppTExpr p) xs))
+        PP.parens(PP.sep(text ("`"++d) : map (parenTExpr p) xs))
     
     (TEIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),ppTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
@@ -547,7 +547,7 @@ ppTExpr p e =
        PP.braces(PP.vcat[ppTExpr p e1,text "=",ppTExpr p e2])
                                        
     (Emv (uniq,ptr,k)) -> text("^E"++show uniq)
-    (CSP (nm,i,v)) -> text("`"++show nm)
+    (CSP (nm,i,v)) -> text("`"++show nm++"'"++show i)
     
 ppTerm p (Parsed x) = ppExpr p x -- <> text "%"
 ppTerm p (Checked x) = ppTExpr p x -- <> text "#" 

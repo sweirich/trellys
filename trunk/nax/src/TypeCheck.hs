@@ -9,7 +9,7 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleM,fresh)
+import Monads(FIO,fio,handleM,fresh,freshName)
 import Control.Monad(foldM,when,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
@@ -1090,7 +1090,6 @@ predefinedSyn =
 
 interAct tcEnv expect = 
   do { ex <- extract expect
-     ; writeln ("Expected Type\n   "++show expect)
      ; write "\ncheck> "
      ; s <- fio getLine
      ; if s== ":q"
@@ -1159,6 +1158,7 @@ typeExpT env (e@(EApp _ _)) expect
           ; typeExpT env e2 expect}
 typeExpT env (e@(EApp (EVar (Nm("checkT",_))) x)) expect = 
      do { writeln("\nChecking\n   "++show x)
+        ; writeln ("Expected Type\n   "++show expect)
         ; interAct env expect
         ; typeExpT env x expect }
 typeExpT env (e@(EApp fun arg)) expect =
