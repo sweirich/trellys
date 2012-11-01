@@ -358,8 +358,9 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              ; (k2,newvs) <- wfGadtKind pos m frag k -- TODO is this okay? KYA
              ; return(TyMu k2,Karr (Karr k2 k2) k2) }
         f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)      
-        f (TyLift (Checked texp)) = fail (unlines (("\nError *******\nChecked term: "++show texp++", in wellFormedType."):mess))
---         f (TyLift (Pattern term)) = fail (unlines (("\nError *******\nPattern term: "++show term++", in wellFormedType."):mess))
+        f (TyLift (Checked texp)) = 
+          do { t <- typeOf texp
+             ; return(TyLift (Checked texp),LiftK t)}
         f (TyLift (Parsed term)) =
           do let trans msg = unlines (msg:mess)
              (rho,term2) <- handleM (inferExpT frag term) trans
@@ -839,6 +840,7 @@ elab toplevel env (GADT pos t kind cs derivs) =
              --    ; liftM (c,length ds,) (zonkScheme(Sch tele (foldr Rarr r ds)))} 
      
      ; cs3 <- mapM conScheme cs2
+     -- ; writeln("\nELAB kind = "++show polykind++",   "++plistf show "\n " cs3 "\n  " "\n")
      ; let env4 = addData (syntax derivs) t polykind cs3 env 
      ; return(env4,GADT pos t kind2 (map fst cs2) derivs)}
      
@@ -1215,7 +1217,7 @@ typeExpT env (ELet d e) expect =
      ; return(TELet d2 e2)}
 
 typeExpT env (term@(EIn k x)) expect =  
-  do { kind <- wfKind (loc x) ["Checking well formedness of kind from term\n   "++show term] env k
+  do { kind <- wfKind (loc x) ["Checking well formedness of kind from In term\n   "++show term] env k
      ; (dom,rng) <- inType kind
      ; x2 <- typeExpT env x (Check (Tau dom))
      ; let message = [near x++"\nTyping the In term: "++show (EIn kind x)]

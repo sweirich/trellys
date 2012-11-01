@@ -313,7 +313,7 @@ unify loc message x y = do { x1 <- prune x; y1 <- prune y
         f (TyLift (Checked e)) (TyLift (Checked g)) = 
             do { enf <- normform e
                ; gnf <- normform g
-               ; writeln ("\nNormalizing "++show e++", "++show g)
+               -- ; writeln ("\nNormalizing "++show e++", "++show g)
                ; unifyExp loc message enf gnf }
         f (TyLift (Parsed e)) _ = error ("unchecked term in type inside unify: "++show e)
         f _ (TyLift (Parsed e)) = error ("unchecked term in type inside unify: "++show e)
