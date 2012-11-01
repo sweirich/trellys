@@ -97,14 +97,15 @@ matchM env p v =
 ----------------------------------------------------
 apply:: TExpr -> TExpr -> Value IO -> Value IO -> (Value IO -> IO a) -> IO a
 apply g y fun arg k = 
-        -- println("\napply: ("++show (EApp g [y])++"). "++show fun++" "++show arg) >>
-        help fun arg k where
-   help (VFunM n vf) x k = vf x k
-   help (VFun ty g) x k = k(g x)
-   help (VCon i arity c vs) v k | arity > length vs = k(VCon i arity c (vs ++ [v]))
-   help (VCode fun) v k = do { -- putStrLn ("THERE "++show fun); 
-                               arg <- reify Nothing v; k(VCode(TEApp fun arg))}
-   help nonfun x k = fail ( near g ++ "A nonfunction ("++show nonfun++") in function position.\nArising from the term\n "++show(TEApp g y))
+    do { -- println("\napply: ("++show (EApp g [y])++"). "++show fun++" "++show arg);
+        app (show(TEApp g y)) fun arg k }
+        
+app tag (VFunM n vf) x k = vf x k
+app tag (VFun ty g) x k = k(g x)
+app tag (VCon i arity c vs) v k | arity > length vs = k(VCon i arity c (vs ++ [v]))
+app tag (VCode fun) v k = do { arg <- reify Nothing v; k(VCode(TEApp fun arg))}
+app tag nonfun x k = fail ("A nonfunction ("++show nonfun++") in function position.\nArising from the operator "++tag)
+
 
 -- ???: what is 'C'?
 evalC:: TExpr -> VEnv -> (Value IO -> IO a) -> IO a
@@ -121,8 +122,6 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
   heval (TEApp f x) env k = 
      evalC f env (\ v1 -> evalC x env (\ v2 -> apply f x v1 v2 k))
   heval (TEAbs elim ms) env k = do { i <- nextinteger; k(VFunM i (trymatching env ms ms))}
-        --             mkFun i  k }          
- -- mkFun n f k = k(VFunM n f)
   heval (TETuple xs) env k = evalList [] xs env k
     where evalList vs [] env k = k(VTuple (reverse vs))
           evalList vs (x:xs) env k = 
@@ -132,31 +131,28 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
   heval (AbsTyp t e) env k = heval e env k
   heval (TECast p e) env k = heval e env k
   heval (t@(Emv _)) env k = k (VCode t) -- fail ("Evaluating mutvar: "++show t)
+  heval (CSP(nm,i,v)) env k = k v                
   heval (exp@(TEMend tag elim x ms)) env k 
       | Just numpats <- sameLenClauses2 (near x++tag) ms
       = do { phi <- unwind exp env numpats [] return
            ; arg <- evalC x env return
-           ; case (arg,tag) of
-    {-          (VCode e,_) -> do { putStrLn("\nBad arg to Mendler "++show e++"\n  "++show exp)
-                                ; ms2 <- mapM (normClause env) ms
-                                ; k(VCode(TEMend tag elim e ms2))
-                                }
-              (_,"mcata")   -> mcata (plistf (\(_,x,y) -> show x++":"++show y) "\n  " ms "\n  " "") 
-                                       phi (\ f -> app "mcata" f arg k)
-      -}                                       
-              (_,"mcata") -> mcata2 exp env phi arg k    
-              (_,"mhist")   -> mhist   phi (\ f -> app "mhist" f arg k)  
-              (_,"mprim")   -> mprim   phi (\ f -> app "mprim" f arg k)
-              (_,"msfcata") -> msfcata phi (\ f -> app "msfcata" f arg k)
-              (_,"msfprim") -> msfprim phi (\ f -> app "msfprim" f arg k)
-              (_,x) -> fail ("Unimplemented mendler operator: "++x)
+           ; case (tag) of
+              ("mcata") -> phiHas1Arg exp env phi arg k 
+              ("mhist") -> phiHas2Arg exp env phi arg (VFun whoknows outf) k
+                 where outf (VIn k x) = x
+                       outf v = error ("abstract out applied to non Mu type: "++show v)
+              ("mprim") -> phiHas2Arg exp env phi arg (VFun whoknows id) k             
+              ("msfcata") -> phiHas2Arg exp env phi arg (VFun whoknows inversef) k
+                 where inversef x = (VInverse x)
+              (x) -> fail ("Unimplemented mendler operator: "++x)
               }
-  heval (CSP(nm,i,v)) env k = k v              
 
-mcata2 :: forall b . TExpr -> VEnv -> Value IO -> Value IO -> (Value IO -> IO b) -> IO b
-mcata2 (TEMend tag elim _ ms) env phi argv k = 
+
+
+phiHas1Arg :: forall b . TExpr -> VEnv -> Value IO -> Value IO -> (Value IO -> IO b) -> IO b
+phiHas1Arg (TEMend tag elim _ ms) env phi argv k = 
    do { i <- nextinteger
-      -- f is the recursive caller
+      -- f is the recursive caller (mcata phi)
       --  mcata phi (VIn x) = phi (mcata phi) x
       ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
             f (VIn kind x) k = do { v <- app "mcata" phi (VFunM i f) return
@@ -166,15 +162,76 @@ mcata2 (TEMend tag elim _ ms) env phi argv k =
                     ; k(VCode(TEMend tag elim e ms2)) }
             f v k = fail ("mcata applied to non Mu type value: "++show v++" "++show i++"\n"++
                          (plistf (\(_,x,y) -> show x++":"++show y) "\n  " ms "\n  " ""))
-      ; app "mcata" (VFunM i f) argv k }   
+      ; app tag (VFunM i f) argv k }   
+      
+phiHas2Arg
+  :: TExpr               -- source code
+     -> VEnv             -- dynamic environment
+     -> Value IO         -- the phi function
+     -> Value IO         -- value to be analyzed
+     -> Value IO         -- the second argument (after the recursive caller) of phi
+     -> (Value IO -> IO b) -- the current continuation
+     -> IO b
+phiHas2Arg (TEMend tag elim _ ms) env phi arg1 arg2 k = 
+   do { i <- nextinteger
+      ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
+            f (VIn kind x) k = do { v <- app tag phi (VFunM i f) return
+                                  ; u <- app tag v arg2 return
+                                  ; app tag u x k}
+            f (VInverse x) k | tag == "msfcata" = k x
+            f (VCode e) k = 
+                 do { ms2 <- mapM (normClause env) ms
+                    ; k(VCode(TEMend tag elim e ms2)) }            
+            f v k = fail (tag++" applied to non Mu type: "++show v)
+      ; app tag (VFunM i f) arg1 k}  
 
+-- Turn a list of Clauses (the phi function has n args) into a function with continuation 
+unwind:: TExpr -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
+unwind (term@(TEMend tag elim x cls)) env 0 vs k = tryClauses term cls2 env (reverse vs) cls2 k
+  where proj(tele,ps,e) = (ps,e)
+        cls2 = (map proj cls)
+unwind cls env n vs k = 
+    do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind cls env (n-1) (v:vs) k1)) }
+
+-- try each clause, matching the patterns agianst the values   
+tryClauses:: TExpr -> [([Pat], TExpr)]  -> VEnv -> [Value IO] -> [([Pat], TExpr)] -> (Value IO -> IO b) -> IO b
+tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++plistf show "" vs " " ""++plistf g "\n  " allcls "\n  " "\n")
+   where g (ps,e) = plistf show "" ps " " "-> " ++ show e
+tryClauses efun allcls env2 vs ((ps,e):more) k = 
+   do { menv <- matchPatsToVals efun env2 ps vs
+      ; case menv of
+         Nothing -> tryClauses efun allcls env2 vs more k
+         Just env3 -> evalC e env3 k }
+
+
+matchPatsToVals :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(Maybe (VEnv))
+matchPatsToVals efun env [] [] = return(Just env)
+matchPatsToVals efun env (p:ps) ((v@(VCode e)): vs) | refutable p = 
+    fail ("Code value in matchPatsToVals: "++ show (TEApp efun e))
+  where refutable (PVar _ _) = False
+        refutable (PWild pos) = False
+        refutable p = True
+matchPatsToVals efun env (p:ps) (v:vs) = 
+  do { menv <- matchM env p v
+     ; maybe (return Nothing) 
+             (\ env2 -> matchPatsToVals efun env2 ps vs)
+             menv }
+
+-------------------------------------------------------------------
+-- refifcation
+-------------------------------------------------------------------
+
+-- To reify we have to normalize clauses
 normClause env (tele,ps,exp) =
   do { (ps2,delta) <- threadFresh id ps [] []
      ; v <- evalC exp (extendEnvName delta env) return
      ; exp2 <- reify 0 v
      ; return(tele,ps2,exp2)
      }
-
+threadFresh f [] qs ans = return(f (reverse qs),ans)
+threadFresh f (p:ps) qs ans =
+   do { (q,ans2) <- freshPat (p,ans); threadFresh f ps (q:qs) ans2 }
+   
 freshPat:: (Pat,[(Name, Integer, Value IO)]) -> 
            IO (Pat,[(Name, Integer, Value IO)])
 freshPat (pat,ans) = 
@@ -189,114 +246,38 @@ freshPat (pat,ans) =
            ; let sch Nothing = undefined
                  sch (Just t) = Sch [] (Tau t)
            ; return(PVar nm2 mt,(nm,i,VCode(TEVar nm2 (sch mt))):ans)}      
-threadFresh f [] qs ans = return(f (reverse qs),ans)
-threadFresh f (p:ps) qs ans =
-   do { (q,ans2) <- freshPat (p,ans); threadFresh f ps (q:qs) ans2 }
- 
--- cataName
--- get the users name for the recursive caller from the
--- first clause of the phi function
-cataName (((PVar nm t):ps,e):_) = name nm
 
-unwind:: TExpr -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
-unwind (term@(TEMend tag elim x cls)) env 0 vs k = tryClauses term cls2 env (reverse vs) cls2 k
-  where proj(tele,ps,e) = (ps,e)
-        cls2 = (map proj cls)
-unwind cls env n vs k = 
-    do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind cls env (n-1) (v:vs) k1)) }
-   
-tryClauses:: TExpr -> [([Pat], TExpr)]  -> VEnv -> [Value IO] -> [([Pat], TExpr)] -> (Value IO -> IO b) -> IO b
-tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++plistf show "" vs " " ""++plistf g "\n  " allcls "\n  " "\n")
-   where g (ps,e) = plistf show "" ps " " "-> " ++ show e
-tryClauses efun allcls env2 vs ((ps,e):more) k = 
-   do { putStrLn ("TRY CLAUSES "++show vs++ show ps)
-      ; menv <- threadC efun env2 ps vs
-      ; case menv of
-         Nothing -> tryClauses efun allcls env2 vs more k
-         Just env3 -> evalC e env3 k
-      }
+reify  n x  = help n x  where
+  help n (VBase pos x) = return (TELit noPos x)
+  help n (VFun ty f) = 
+   do { next <- nextinteger
+      ; let name = Nm("%"++show next,noPos)
+      ; let result = f (VCode (TEVar name (Sch [] (Tau ty))))
+      ; body <- reify n result
+      ; return(TEAbs ElimConst [(PVar name (Just ty),body)])}
+  help n (VFunM i f) =
+   do { next <- nextinteger
+      ; let name = Nm("%"++show next,noPos)
+      ; result <- f (VCode (TEVar name (error "type of var in reify"))) return
+      ; body <- reify n result
+      ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
+  help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
+  help n (VCon mu arity c vs) = liftM econ (mapM (reify n) vs)
+   where econ es = TECon mu (toName c) (Tau tunit) arity es
+        -- applyTE ( CSP(toName c,mu,VCon mu arity c []) : es)
 
+  help n (VIn kind x) = liftM (TEIn kind) (reify n x)
+  help n (VInverse v) = error ("No VInverse in reify yet: "++show v)
+  help n (VCode e) = return e
+  help n (VProof t1 t2) = error ("No VProof in reify yet: "++show t1++"="++show t2)
+  help n (VType t) =  error ("No VType in reify yet: "++show t)
 
-threadC :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(Maybe (VEnv))
-threadC efun env [] [] = return(Just env)
-threadC efun env (p:ps) ((v@(VCode e)): vs) | refutable p = 
-    fail ("Code value in threadC: "++ show (TEApp efun e))
-  where refutable (PVar _ _) = False
-        refutable (PWild pos) = False
-        refutable p = True
-threadC efun env (p:ps) (v:vs) = 
-  do { menv <- matchM env p v
-     ; maybe (return Nothing) 
-             (\ env2 -> threadC efun env2 ps vs)
-             menv }
-     
-unwind2:: TExpr -> [([Pat], TExpr)] -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
-unwind2 efun cls env 0 vs k = tryClauses efun cls env (reverse vs) cls k
-unwind2 efun cls env n vs k = 
-   do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind2 efun cls env (n-1) (v:vs) k1))}
+-- Normaliztion works for closed terms, where functions have been
+-- replaced with their CSP constants
 
-   
-
-app tag (VFunM n vf) x k = vf x k
-app tag (VFun ty g) x k = k(g x)
-app tag (VCon i arity c vs) v k | arity > length vs = k(VCon i arity c (vs ++ [v]))
-app tag (VCode fun) v k = do { putStrLn ("HERE "++show fun); arg <- reify Nothing v; k(VCode(TEApp fun arg))}
-app tag nonfun x k = fail ("A nonfunction ("++show nonfun++") in function position.\nArising from the operator "++tag)
-
-
---  mcata phi (VIn x) = phi (mcata phi) x
-mcata :: forall b . String -> Value IO -> (Value IO -> IO b) -> IO b
-mcata ms phi k = 
-   do { i <- nextinteger
---      ; putStrLn("\nMCATA "++show i)
-      ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
-            f (VIn kind x) k = do { v <- app "mcata" phi (VFunM i f) return
-                                  ; app "mcata" v x k}
---- What if its code? like this?
-
-            f (VCode e) k = do { v <- app "mcata" phi (VFunM i f) return
-                               ; app "mcata" v (VCode e) k}
-                              
-                               
-            f v k = fail ("mcata applied to non Mu type value: "++show v++" "++show i++"\n"++ms)
-      ; k(VFunM i f)}   
-      
-mplus :: forall b . Value IO -> String -> Value IO -> (Value IO -> IO b) -> IO b
-mplus arg2 tag phi k = 
-   do { i <- nextinteger
-      ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
-            f (VIn kind x) k = do { v <- app tag phi (VFunM i f) return
-                                  ; u <- app tag v arg2 return
-                                  ; app tag u x k}
-            f (VInverse x) k | tag == "msfcata" = k x
-            f v k = fail (tag++" applied to non Mu type: "++show v)
-      ; k(VFunM i f)}        
-
--- mhist phi (In x) = phi (mhist phi) out x
-mhist phi k = mplus (VFun whoknows outf) "mhist" phi k
-  where outf (VIn k x) = x
-        outf v = error ("abstract out applied to non Mu type: "++show v)
-
--- msfcata phi (VIn x) = phi (msfcata phi) VInverse x
--- msfcata phi (VInverse x) = x
-msfcata phi k = mplus (VFun whoknows inversef) "msfcata" phi k
-  where inversef x = (VInverse x)
-  
-msfprim phi k = 
-   do { i <- nextinteger
-      ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
-            f (VIn kind x) k = do { v <- app tag phi (VFun whoknows VInverse) return
-                                  ; u <- app tag v (VFun whoknows id) return
-                                  ; app tag u x k}
-            f (VInverse x) k = k x
-            f v k = fail (tag++" applied to non Mu type: "++show v)
-      ; k(VFunM i f)}  
- where tag = "msfprim"      
-  
--- mprim phi (VIn x) = phi (msfcata phi) id x
-mprim phi k = mplus (VFun whoknows id) "mprim" phi k
-  
-           
+normform :: TExpr -> FIO TExpr 
+normform x = fio (evalC x closedEnv (reify 0))
+  where closedEnv = VEnv [] []
 
 -------------------------------------------------------------------
 -- evaluating declarations extends the environment
@@ -352,45 +333,15 @@ expEnvWithPatMatchingFun numPatInClauses nm cls env =
    do { uniq <- nextinteger
       ; vfun <- fixIO (\ v -> unwind2 (CSP(nm,uniq,v)) cls env numPatInClauses [] return)
       ; return((extendEnvName [(nm,uniq,vfun)] env))}
-
-
-
-
-
+      
+     
+unwind2:: TExpr -> [([Pat], TExpr)] -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
+unwind2 efun cls env 0 vs k = tryClauses efun cls env (reverse vs) cls k
+unwind2 efun cls env n vs k = 
+   do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind2 efun cls env (n-1) (v:vs) k1))}
+     
 evalIO :: TExpr -> VEnv -> IO (Value IO)
 evalIO exp env = evalC exp env return
 
 ------------------------------------------------------------
 
-reify  n x  = help n x  where
-  help n (VBase pos x) = return (TELit noPos x)
-  help n (VFun ty f) = 
-   do { next <- nextinteger
-      ; let name = Nm("%"++show next,noPos)
-      ; let result = f (VCode (TEVar name (Sch [] (Tau ty))))
-      ; body <- reify n result
-      ; return(TEAbs ElimConst [(PVar name (Just ty),body)])}
-  help n (VFunM i f) =
-   do { next <- nextinteger
-      ; let name = Nm("%"++show next,noPos)
-      ; result <- f (VCode (TEVar name (error "type of var in reify"))) return
-      ; body <- reify n result
-      ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
-  help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
-  help n (VCon mu arity c vs) = liftM econ (mapM (reify n) vs)
-   where econ es = TECon mu (toName c) (Tau tunit) arity es
-        -- applyTE ( CSP(toName c,mu,VCon mu arity c []) : es)
-
-  help n (VIn kind x) = liftM (TEIn kind) (reify n x)
-  help n (VInverse v) = error ("No VInverse in reify yet: "++show v)
-  help n (VCode e) = return e
-  help n (VProof t1 t2) = error ("No VProof in reify yet: "++show t1++"="++show t2)
-  help n (VType t) =  error ("No VType in reify yet: "++show t)
-
-
--- Normaliztion works for closed terms, where functions have been
--- replaced with their CSP constants
-
-normform :: TExpr -> FIO TExpr 
-normform x = fio (evalC x closedEnv (reify 0))
-  where closedEnv = VEnv [] []

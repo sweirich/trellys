@@ -217,14 +217,14 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
              ; return(TEIn k1 p) }
        f (z@(TEMend t1 e1 arg1 ms1)) (w@(TEMend t2 e2 arg2 ms2)) | t1==t2  =
           do { arg <- unifyExpT loc message arg1 arg2
-             ; writeln("\nUnifying\n  "++show z++"\n  "++show w)
+             ; writeln("\nUnifying\n"++show z++"\n"++show w)
              ; let match [] [] = return []
               	   match ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
            	     case matchPatL ps1 ps2 [] of
            	       Nothing -> fail "Mendler patterns don't match"
            	       Just subst ->
            	            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
-           	               ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
+           	               -- ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
            	               ; e <- unifyExpT loc message e1 e2s
            	               ; ms <- match xs ys
            	               ; return((m,ps1,e):ms)}
