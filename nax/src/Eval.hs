@@ -78,14 +78,6 @@ extendEnvName vs env = env{rtbindings=(vs ++ rtbindings env)
                           ,ctbindings=(map f vs ++ ctbindings env)} 
   where f (x@(nm,i,v)) = (nm,Exp(CSP x))
   
-trymatching env ms [] v k = fail ("No pattern matches "++show v++"\n   "++show ms)
--- trymatching env ms ((pat,exp):more) (v@(VCode e)) k = 
-     -- at PatVar would be OK here -- error ("Try matching sees a code value: "++show v)
-trymatching env ms ((pat,exp):more) v k =
-            maybe (trymatching env ms more v k)   
-                  (\ env2 -> evalC exp env2 k)
-              =<< matchM env pat v
-
 matchM:: VEnv -> Pat -> Value IO -> IO(Maybe (VEnv))
 matchM env p v = 
      case (match [] p v) of
@@ -121,7 +113,7 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
              evalC x env (\ v -> evalList (v:vs) xs env k)  
   heval (TEApp f x) env k = 
      evalC f env (\ v1 -> evalC x env (\ v2 -> apply f x v1 v2 k))
-  heval (TEAbs elim ms) env k = do { i <- nextinteger; k(VFunM i (trymatching env ms ms))}
+  heval (TEAbs elim ms) env k = do { i <- nextinteger; k(VFunM i (trymatching elim env ms ms))}
   heval (TETuple xs) env k = evalList [] xs env k
     where evalList vs [] env k = k(VTuple (reverse vs))
           evalList vs (x:xs) env k = 
@@ -193,6 +185,18 @@ unwind (term@(TEMend tag elim x cls)) env 0 vs k = tryClauses term cls2 env (rev
 unwind cls env n vs k = 
     do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind cls env (n-1) (v:vs) k1)) }
 
+
+trymatching elim env ms [] v k = fail ("No pattern matches "++show v++"\n   "++show ms)
+trymatching elim env ms ((pat,exp):more) (v@(VCode codeExp)) k = 
+   do { let g (p,e) = do { (_,[p2],e2) <- normClause env (0,[p],e)
+                          ; return(p2,e2) }
+      ; normcls <- mapM g ms
+      ; k(VCode (TEApp (TEAbs elim normcls) codeExp)) }      
+trymatching elim env ms ((pat,exp):more) v k =
+            maybe (trymatching elim env ms more v k)   
+                  (\ env2 -> evalC exp env2 k)
+              =<< matchM env pat v
+
 -- try each clause, matching the patterns agianst the values   
 tryClauses:: TExpr -> [([Pat], TExpr)]  -> VEnv -> [Value IO] -> [([Pat], TExpr)] -> (Value IO -> IO b) -> IO b
 tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++plistf show "" vs " " ""++plistf g "\n  " allcls "\n  " "\n")
@@ -200,22 +204,45 @@ tryClauses efun allcls env2 vs [] k = fail ("No clause matches the inputs: "++pl
 tryClauses efun allcls env2 vs ((ps,e):more) k = 
    do { menv <- matchPatsToVals efun env2 ps vs
       ; case menv of
-         Nothing -> tryClauses efun allcls env2 vs more k
-         Just env3 -> evalC e env3 k }
+         NoMatch -> tryClauses efun allcls env2 vs more k
+         AllPatsMatch env3 -> evalC e env3 k 
+         NeutralTerm ->  -- f p1 p2 = e1
+                         -- f q1 q2 = e2
+                         -- 
+                         -- f 5 <e> --> (\ (p1,p2) -> e1; (q1,q2) -> e2) (5,e)
+           do { argv <- reify 0 (VTuple vs)
+              ; let g (ps,e) = do { (_,ps2,e2) <- normClause env2 (0,ps,e)
+                                  ; return(PTuple ps2,e2) }
+              ; normcls <- mapM g allcls
+              ; k(VCode (TEApp (TEAbs ElimConst normcls) argv)) } }
+            
 
+data ClauseCase env = AllPatsMatch env | NoMatch | NeutralTerm
 
-matchPatsToVals :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(Maybe (VEnv))
-matchPatsToVals efun env [] [] = return(Just env)
-matchPatsToVals efun env (p:ps) ((v@(VCode e)): vs) | refutable p = 
-    fail ("Code value in matchPatsToVals: "++ show (TEApp efun e))
+matchPatsToVals :: TExpr -> VEnv -> [Pat] -> [Value IO] -> IO(ClauseCase VEnv)
+matchPatsToVals efun env [] [] = return(AllPatsMatch env)
+matchPatsToVals efun env (p:ps) ((v@(VCode e)): vs) | refutable p = return NeutralTerm
   where refutable (PVar _ _) = False
         refutable (PWild pos) = False
         refutable p = True
 matchPatsToVals efun env (p:ps) (v:vs) = 
   do { menv <- matchM env p v
-     ; maybe (return Nothing) 
+     ; maybe (return NoMatch) 
              (\ env2 -> matchPatsToVals efun env2 ps vs)
              menv }
+             
+expEnvWithPatMatchingFun:: Int -> Name -> [([Pat], TExpr)] -> VEnv -> IO (VEnv)
+expEnvWithPatMatchingFun numPatInClauses nm cls env = 
+   do { uniq <- nextinteger
+      ; vfun <- fixIO (\ v -> unwind2 (CSP(nm,uniq,v)) cls env numPatInClauses [] return)
+      ; return((extendEnvName [(nm,uniq,vfun)] env))}
+      
+     
+unwind2:: TExpr -> [([Pat], TExpr)] -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
+unwind2 efun cls env 0 vs k = tryClauses efun cls env (reverse vs) cls k
+unwind2 efun cls env n vs k = 
+   do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind2 efun cls env (n-1) (v:vs) k1))}
+                  
 
 -------------------------------------------------------------------
 -- refifcation
@@ -327,19 +354,6 @@ sameLenClauses nm ((ps,e):more) =
          else error ("Function "++show nm++" has different arities.")
     where (Just m) = sameLenClauses nm more    
 
-
-expEnvWithPatMatchingFun:: Int -> Name -> [([Pat], TExpr)] -> VEnv -> IO (VEnv)
-expEnvWithPatMatchingFun numPatInClauses nm cls env = 
-   do { uniq <- nextinteger
-      ; vfun <- fixIO (\ v -> unwind2 (CSP(nm,uniq,v)) cls env numPatInClauses [] return)
-      ; return((extendEnvName [(nm,uniq,vfun)] env))}
-      
-     
-unwind2:: TExpr -> [([Pat], TExpr)] -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b
-unwind2 efun cls env 0 vs k = tryClauses efun cls env (reverse vs) cls k
-unwind2 efun cls env n vs k = 
-   do { i <- nextinteger; k (VFunM i (\ v k1 -> unwind2 efun cls env (n-1) (v:vs) k1))}
-     
 evalIO :: TExpr -> VEnv -> IO (Value IO)
 evalIO exp env = evalC exp env return
 

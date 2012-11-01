@@ -429,15 +429,11 @@ worse x =  bad (In * (MakeY bad))
 ---------------------------------------------------
 -- examples that index by GADTS
 
-data V : * -> ({Nat} -> *) -> {Nat} -> * where
-  VNil  : V a r {`zero}
-  VCons : a -> r {n} -> V a r {`succ n}
-    deriving fixpoint Vec
 
-data Envr : ( ({st} -> *) -> {Vec st {n}} -> * )
-         -> ( ({st} -> *) -> {Vec st {n}} -> * ) where
-  Empty  : Envr r res {`vNil}
-  Extend : res {x} -> r res {xs} -> Envr r res {`vCons x xs}
+data Envr : ( ({st} -> *) -> {Vector st {n}} -> * )
+         -> ( ({st} -> *) -> {Vector st {n}} -> * ) where
+  Empty  : Envr r res {`vnil}
+  Extend : res {x} -> r res {xs} -> Envr r res {`vcons x xs}
     deriving fixpoint Env
     
 
@@ -454,10 +450,10 @@ data SN : (Nat -> *) -> (Nat -> *) where
   Ssuc : r {n} -> SN r {`succ n}
     deriving fixpoint SNat
 
-data Envr' : (({st} -> *) -> {SNat {n}} -> {Vec st {n}} -> *)
-          -> (({st} -> *) -> {SNat {n}} -> {Vec st {n}} -> *) where
-  Empty'  : Envr' r res {`szer} {`vNil}
-  Extend' : res {x} -> r res {n} {xs} -> Envr' r res {`ssuc n} {`vCons x xs}
+data Envr' : (({st} -> *) -> {SNat {n}} -> {Vector st {n}} -> *)
+          -> (({st} -> *) -> {SNat {n}} -> {Vector st {n}} -> *) where
+  Empty'  : Envr' r res {`szer} {`vnil}
+  Extend' : res {x} -> r res {n} {xs} -> Envr' r res {`ssuc n} {`vcons x xs}
     deriving fixpoint Env'
 
 myenv' = extend' File1 (extend' File2 empty')

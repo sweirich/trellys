@@ -31,3 +31,5 @@ data Envr' : (({st} -> *) -> {SNat {n}} -> {Vec st {n}} -> *)
     deriving fixpoint Env'
 
 myenv' = extend' File1 (extend' File2 empty')
+
+id x = x
