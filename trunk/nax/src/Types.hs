@@ -55,13 +55,15 @@ matchT vars (pat,typ) env =
 matchK:: [Name] -> (Kind,Kind) -> [(Name,Typ)] -> Maybe [(Name,Typ)] 
 matchK vars (pat,kind) env = 
   case (pat,kind) of
-    (Kname n,LiftK typ) | elem n vars -> add (n,typ) env
+   -- (Kname n,LiftK typ) | elem n vars -> add (n,typ) env
     (Kname n, Kname m ) | n==m -> return env   
     (Kname n,k) -> fail ("Kind var "++show n++" in matchK")    
     (Star,Star) -> return env
-    (LiftK t1,LiftK t2) -> matchT vars (t1,t2) env
+   -- (LiftK t1,LiftK t2) -> matchT vars (t1,t2) env
     (Karr x y,Karr m n) -> 
        do { env2 <- matchK vars (x,m) env; matchK vars (y,n) env2}
+    (Tarr x y,Tarr m n) -> 
+       do { env2 <- matchT vars (x,m) env; matchK vars (y,n) env2}       
     (Kvar(u1,p1),Kvar(u2,p2)) | u1==u2 -> return env  
     (_,_) -> Nothing
     
@@ -293,7 +295,7 @@ unifyExpVar loc message (x@(u1,r1,typ)) term =
 
 unify :: SourcePos -> [String] -> Typ -> Typ -> FIO ()
 unify loc message x y = do { x1 <- prune x; y1 <- prune y
-                          --  ; writeln("\nUnify "++show x1++" =?= "++show y1)
+                           -- ; writeln("\nUnify "++show x1++" =?= "++show y1)
                            ; f x1 y1 }
   where f (t1@(TyVar n k)) (t2@(TyVar n1 k1)) | n==n1 = return ()
         f (TyApp x y) (TyApp a b) = do { unify loc message x a; unify loc message y b }
@@ -334,6 +336,7 @@ unifyVar loc message (x@(u1,r1,k)) t =
      ; if (any same ptrs) 
           then (matchErr loc ("\nOccurs check" : message)  (TcTv x) t)
           else return ()
+     -- ; writeln ("Before Check "++show t++ " binds to var "++show(TcTv x))          
      ; check loc message t k 
      ; fio(writeIORef r1 (Just t))
      ; return ()
@@ -353,20 +356,26 @@ kindOf t = do { x <- prune t; f x }
         f (TyArr _ _) = return(Karr Star (Karr Star Star))
         f (TySyn nm arity args body) = kindOf body
         f (TyMu k) = return (Karr (Karr k k) k)
-        f (TyApp f x) = do { t2 <- kindOf f
-                           ; case t2 of 
-                               Karr x y -> return y
-                               zz -> error("\nIn the type application: "++show t++"\n"++
-                                           "the type constructor: "++show f++"\n"++
-                                           "does not have an kind arrow as its sort: "++show t2)}
-        f (TyLift (Checked e)) = liftM LiftK (typeOf e)
-        f (TyLift e) = error ("No kindOf for lifted kinds over unchecked terms: "++show e)
+        f (TyApp f arg) = 
+           do { t2 <- kindOf f
+              ; case t2 of 
+                  Karr x y -> return y
+                  Tarr ty y -> return y
+                  zz -> error("\nIn the type application: "++show t++"\n"++
+                              "the type constructor: "++show f++"\n"++
+                              "does not have an kind arrow as its sort: "++show t2)}
+       -- f (TyLift (Checked e)) = liftM LiftK (typeOf e)
+        f (TyLift e) = error ("No kindOf for lifted terms not in arg position: "++show e)
         f (TyAll vs t) = kindOf t
-        
+
+       
 check :: SourcePos -> [String] -> Typ -> Kind -> FIO ()
 check loc message typ kind = -- writeln("\nCHECKING "++show typ++": "++show kind) >>
   case typ of
     TyVar s k -> unifyK loc (("Checking "++show s++"::"++show kind++".\nIt has kind "++show k++" instead.") : message) k kind
+    TyApp f (TyLift (Checked exp)) -> 
+      do { t1 <- typeOf exp
+         ; check loc message f (Tarr t1 kind)}         
     TyApp f x -> 
       do { k1 <- freshKind  
          ; check loc message f (Karr k1 kind)
@@ -378,7 +387,6 @@ check loc message typ kind = -- writeln("\nCHECKING "++show typ++": "++show kind
          }
     TyTuple knd xs -> 
       do { let f n Star = [Star | i <- [1..n]]
-               f n (LiftK _) = fail "Non Star tuple"
                f 1 k = [k]
                f n k = fail ("Tuple kinds don't match in check")
          ; mapM (\ (t,k) -> check loc message t k) (zip xs (f (length xs) knd))
@@ -396,11 +404,8 @@ check loc message typ kind = -- writeln("\nCHECKING "++show typ++": "++show kind
          ; unifyK loc (m:message) kind Star }
     TyMu k -> unifyK loc (m:message) kind (Karr (Karr k k) k)
       where m = "Checking (Mu "++show k++") has kind "++ show kind
-    TyLift (Checked exp) -> 
-      do { t1 <- typeOf exp
-         ; unifyK loc (("Checking kind of lifted term: "++show exp++": "++
-                        show t1++" =?= "++show kind):message) kind (LiftK t1) }
-    TyLift e -> fail (unlines(("Unchecked term: "++show e++"in check"):message))                        
+    TyLift (zz@(Checked exp)) -> 
+       error ("Lifted term as type in non application arg position: "++show zz)
     TcTv (uniq,ptr,k) -> unifyK loc (("Checking t"++show uniq++" has kind "++ show kind) : message) k kind
     TyAll vs t -> check loc message t kind
     
@@ -411,6 +416,7 @@ checkRho loc m (Rarr s r) k = do { checkScheme loc m s Star; checkRho loc m r k}
 
 checkScheme:: SourcePos -> [String] -> Scheme -> Kind -> FIO ()
 checkScheme loc m (Sch vs r) k = checkRho loc m r k
+
 
 -----------------------------------------------------
 -- Zonking follows all mutable variable chains and eliminates them
@@ -426,7 +432,9 @@ zonkD (GADT pos nm k cs derivs) = liftM2 (\ x y -> GADT pos nm x y derivs) (zonk
              ; rng2 <- zonkRho rng
              ; return(nm,args,doms2,rng2)}
 zonkD (FunDec pos fnm args cls) = liftM2 (FunDec pos fnm) (mapM f args) (mapM g cls)
-  where f (nm,k) = do { k2 <- zonkKind k; return(nm,k2)}
+  where f (nm,Type k) = do { k2 <- zonkKind k; return(nm,Type k2)}
+        f (nm,Exp t) = do { t2 <- zonk t; return(nm,Exp t2)}
+        f (nm,Kind()) = return (nm,Kind())
         g (ps,e) = do { e2 <- zonkExp e; return(ps,e)}
 zonkD (Synonym pos nm args typ) = 
   do { typ2 <- zonk typ; return(Synonym pos nm args typ)}
@@ -483,11 +491,14 @@ zonkExp x = do { y <- pruneE x; f y}
          f (Emv(uniq,ptr,t)) = do { t2 <- zonk t; pruneE(Emv(uniq,ptr,t2))}
          f (CSP x) = return(CSP x)
 
-zonkElim::  Elim (Telescope, [(Typ, Kind)]) -> FIO (Elim (Telescope, [(Typ, Kind)]))
+zonkCL (Exp(e,t)) = fmap Exp $ liftM2 (,) (zonkExp e) (zonk t)
+zonkCL (Type(t,k)) = fmap Type $ liftM2 (,) (zonk t) (zonkKind k)
+zonkCL (Kind(k,())) = fmap Kind $ liftM (,()) (zonkKind k)
+           
+zonkElim::  Elim (Telescope, [Class (Kind,())(Typ, Kind) (TExpr,Typ) ]) -> FIO (Elim (Telescope, [Class (Kind,()) (Typ,Kind) (TExpr,Typ)]))
 zonkElim ElimConst = return ElimConst
 zonkElim (ElimFun (tele,pairs) t) = 
-   liftM2 (ElimFun) (liftM2 (,) (zonkTele tele) (mapM f pairs)) (zonk t)
-  where f (t,k) = liftM2 (,) (zonk t) (zonkKind k)
+   liftM2 (ElimFun) (liftM2 (,) (zonkTele tele) (mapM zonkCL pairs)) (zonk t)
 
 zonkElim2::  Elim [(Name, Class () Kind Typ)] -> FIO (Elim [(Name, Class () Kind Typ)])
 zonkElim2 ElimConst = return ElimConst
@@ -685,7 +696,8 @@ unifyK loc message x y = do { x1 <- pruneK x; y1 <- pruneK y; f x1 y1 }
   where f (t1@(Kvar n)) (t2@(Kvar n1)) | n==n1 = return ()
         f (Karr x y) (Karr a b) = do { unifyK loc message x a; unifyK loc message y b }
         f Star Star = return ()
-        f (LiftK s) (LiftK  t) = unify loc message s t
+        f (Tarr s x) (Tarr t y) = 
+           do { unify loc message s t; unifyK loc message x y}
         f (Kname x) (Kname y) | x==y = return()
         f (Kvar x) t = unifyVarK loc message x t
         f t (Kvar x) = unifyVarK loc message x t 
@@ -707,7 +719,7 @@ zonkKind x = do { x1 <- pruneK x; f x1}
   where f (Kvar n) = return (Kvar n)
         f (Karr x y) = do { a <- zonkKind x; b <- zonkKind y; return(Karr a b) }
         f Star = return Star
-        f (LiftK b) = do { c <- zonk b; return(LiftK c)}
+        f (Tarr b k) = do { c <- zonk b; k2 <- zonkKind k; return(Tarr c k2)}
         f (Kname n) = return(Kname n)
 
 
@@ -782,10 +794,12 @@ getVarsElim2 (ElimFun ns t) =
   do { trip <- getVars t
      ; foldM (accumBy getVars) trip ns }  
 
-getVarsElim3:: Elim(Telescope,[(Typ,Kind)]) -> FIO Vars
+getVarsElim3:: Elim(Telescope,[Class (Kind,()) (Typ,Kind) (TExpr,Typ)]) -> FIO Vars
 getVarsElim3 ElimConst = return ([],[])
 getVarsElim3 (ElimFun (tele,ts) t) = 
-  do { let f (t,k) = do { trip1 <- getVars t; trip2 <- getVarsKind k; unionW trip1 trip2}
+  do { let f (Exp(e,t)) = do { trip1 <- getVarsExpr e; trip2 <- getVars t; unionW trip1 trip2}
+           f (Type(t,k)) = do { trip1 <- getVars t; trip2 <- getVarsKind k; unionW trip1 trip2}  
+           f (Kind(k,())) = getVarsKind k
      ; trip1 <- foldM (accumBy f) ([],[]) ts
      ; trip2 <- getVars t
      ; trip3 <- getVarsTele tele trip2
@@ -879,7 +893,10 @@ getVarsKind k =  do { x <- pruneK k; f x }
           do { trip1 <- getVarsKind x 
              ; trip2 <- getVarsKind y
              ; (unionW trip1 trip2)}
-        f (LiftK t) = getVars t
+        f (Tarr x y) =
+          do { trip1 <- getVars x 
+             ; trip2 <- getVarsKind y
+             ; (unionW trip1 trip2)}             
         f (Kvar p) = return ([Kind p],[])
         f (Kname n) = return ([],[Kind n])
 
@@ -1182,9 +1199,14 @@ kbinds (k,env) = do { k2 <- pruneK k; help k2 } where
      do { nm2 <- freshFor nm ([],env,[]) nameSupply 
         ; return(Kname nm2,(nm,Kind(Kname nm2)):env)}
   help (e@(Kname _ )) = return(e,env)
-  help (LiftK t) = do { (t2,env2) <- tbinds (t,env); return(LiftK t2,env2)}
   help (Karr f x) = 
-     do { (f2,env2) <- kbinds (f,env); (x2,env3) <- kbinds (x,env2); return(Karr f2 x2,env3) } 
+     do { (f2,env2) <- kbinds (f,env)
+        ; (x2,env3) <- kbinds (x,env2)
+        ; return(Karr f2 x2,env3) } 
+  help (Tarr f x) = 
+     do { (f2,env2) <- tbinds (f,env)
+        ; (x2,env3) <- kbinds (x,env2)
+        ; return(Tarr f2 x2,env3) }      
   help (Kvar x) = return(Kvar x,env)     
  
 freshElimPairs:: SourcePos -> ([(Typ,Kind)],SubEnv) -> FIO([(Typ,Kind)],SubEnv) 
@@ -1206,7 +1228,7 @@ kindSubb loc (env@(ptrs,names,tycons)) x = do { y <- pruneK x; f y}
   where sub x = kindSubb loc env x
         f Star = return(Star)
         f (Karr x y) = liftM2 Karr (sub x) (sub y)
-        f (LiftK t) = liftM LiftK (tySubb loc env t)
+        f (Tarr t y) = liftM2 Tarr (tySubb loc env t) (sub y)
         f (k@(Kvar (uniq,ptr))) = returnK (findE (Kind ptr) ptrs (Kind k))
         f (Kname n) = returnK(findF (Kind n) names (Kind(Kname n)))
 
@@ -1223,11 +1245,14 @@ elimSubb pos env (ElimFun vs t) =
        ; t2 <- tySubb pos env2 t
        ; return(ElimFun vs2 t2)}
        
-elimSubb2:: SourcePos -> SubEnv -> Elim (Telescope,[(Typ,Kind)]) -> FIO (Elim (Telescope,[(Typ,Kind)]))
+elimSubb2:: SourcePos -> SubEnv -> Elim (Telescope,[Class (Kind,()) (Typ,Kind) (TExpr,Typ)]) -> FIO (Elim (Telescope,[Class (Kind,()) (Typ,Kind) (TExpr,Typ)]))
 elimSubb2 pos env ElimConst = return ElimConst
 elimSubb2 pos (env@(ptrs,names,tycons)) (ElimFun (vs,ts) t) =  -- note the vs are binding occurences
   do { (vs2,env2) <- alphaTele pos (vs,env)
-     ; ts2 <- mapM (\ (t,k) -> liftM2 (,) (tySubb pos env2 t) (kindSubb pos env2 k))  ts
+     ; let f (Type(t,k)) = fmap Type $ liftM2 (,) (tySubb pos env2 t) (kindSubb pos env2 k)
+           f (Exp(e,t)) = fmap Exp $ liftM2 (,) (expSubb pos env2 e) (tySubb pos env2 t)
+           f (Kind(k,())) = fmap Kind $ liftM (,()) (kindSubb pos env2 k)
+     ; ts2 <- mapM f ts
      ; t2 <- tySubb pos env2 t
      ; return(ElimFun (vs2,ts2) t2)}
 
@@ -1399,6 +1424,11 @@ inType k = help k k []
         help all (Karr k1 k2) ts = 
           do { t <- freshType k1
              ; help all k2 (ts++[t]) }
+        help all (Tarr t k2) ts = 
+          do { e <- freshExp t
+             ; help all k2 (ts++[TyLift (Checked e)]) }        
+        
+                
 
 ---------------------------------------------------------------------
 -- Syntax, or macro expansion works over first order terms only.
@@ -1443,7 +1473,7 @@ subKind env x = do { y <- pruneK x; f y}
   where sub x = subKind env x
         f Star = return(Star)
         f (Karr x y) = liftM2 Karr (sub x) (sub y)
-        f (LiftK t) = liftM LiftK (subTyp env t)
+        f (Tarr t y) = liftM2 Tarr (subTyp env t) (sub y)
         f (k@(Kvar (uniq,ptr))) = return k
         f (Kname n) = do { Kind k <- classFind (ret Kind (Kname n)) (Kind n) env; return k}   
 

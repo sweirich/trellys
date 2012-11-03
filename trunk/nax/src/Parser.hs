@@ -190,7 +190,7 @@ kindvariable = do { s <- nameP; return(Kname s)}
 tycon = do { c <- conP; (name2Typ c)}  
 
 badpolykind = PolyK [] badkind
-badkind = LiftK (TyCon None (toName "OOPs") (PolyK [] Star))
+badkind = Tarr (TyCon None (toName "BadKIND") (PolyK [] Star)) Star
 
 -- name2Typ (Nm("Nat",_)) = return nat
 name2Typ (name@(Nm(c,_))) = return (TyCon None name (badpolykind))
@@ -632,14 +632,19 @@ firstOrderT p = muApp <|> tyConApp
 
 simplekindT p = fmap (const Star) (sym "*") <|> 
               kindvariable <|>
-              fmap LiftK (firstOrderT p) <|>
-              fmap LiftK (braceS (typT p)) <|>
               try (parenS (kindT p))
-              -- (do { t <- firstOrderType; return(LiftK t)}) 
               
-kindT p = fmap arrow (sepBy1 (simplekindT p) (sym "->"))
-  where arrow [x] = x
-        arrow (x:xs) = Karr x (arrow xs)        
+kindArrElem p = fmap Left (simplekindT p)    <|>
+                fmap Right (braceS (typT p)) <|>
+                fmap Right (firstOrderT p)  
+              
+kindT p = do { klist <- (sepBy1 (kindArrElem p) (sym "->"))
+             ; case last klist of
+                 Right x -> unexpected ("lifted type at end of kind arrow chain: {"++show x++"}")
+                 Left _ -> return(arrow klist) }
+  where arrow [Left x] = x
+        arrow (Left x : xs) = Karr x (arrow xs)
+        arrow (Right x: xs) = Tarr x (arrow xs)
   
 scheme = do { sym "forall"
             ; vs <- many1 kinding

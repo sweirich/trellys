@@ -270,9 +270,10 @@ wfGadtKind pos mess frag k =
 wfKind:: SourcePos -> [String] -> Frag -> Kind -> FIO Kind
 wfKind pos mess frag k = do { x <- pruneK k; f x }
   where f Star = return Star
-        f (LiftK t) = do { (t2,kind) <- wellFormedType pos (("checking wff type: "++show t):mess) frag t
-                         ; unifyK pos (("checking type lifted to kind, has kind *: "++show t):mess) kind Star
-                         ; return(LiftK t2) }
+        f (zz@(Tarr t k)) = 
+           do { (t2,tkind) <- wellFormedType pos (("checking wff lifted type:\n  "++show t++"\nin kind arrow:\n  "++show zz):mess) frag t
+              ; k2 <- wfKind pos mess frag k
+              ; return(Tarr t2 k2) }
         f (Karr k1 k2) = liftM2 Karr (wfKind pos mess frag k1) (wfKind pos mess frag k2)
         f (k@(Kvar _)) = return k
         f (Kname nm) = 
@@ -332,6 +333,12 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              -- ; writeln("\nMacro expands "++show typ++"\n  "++show t2)
              ; ans <- call t2
              ; return ans}
+        f (typ@(TyApp f (TyLift e))) = 
+          do { (term,dom) <- wellFormedTerm pos mess frag e
+             ; rng <- freshKind
+             ; (f2,k2) <- call f
+             ; unifyK pos mess k2 (Tarr dom rng)
+             ; return(TyApp f2 (TyLift(Checked term)),rng)}            
         f (typ@(TyApp f x)) = 
           do { dom <- freshKind; rng <- freshKind
              ; (f2,k2) <- call f
@@ -357,7 +364,9 @@ wellFormedType pos mess frag typ = do { x <- prune typ
           -- so changed to below
              ; (k2,newvs) <- wfGadtKind pos m frag k -- TODO is this okay? KYA
              ; return(TyMu k2,Karr (Karr k2 k2) k2) }
-        f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)      
+        f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)   
+        f (TyLift t) = fail ("Lifted type in non application argument position: "++show t)
+{-        
         f (TyLift (Checked texp)) = 
           do { t <- typeOf texp
              ; return(TyLift (Checked texp),LiftK t)}
@@ -367,6 +376,18 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              case rho of
                Tau t -> return(TyLift (Checked term2),LiftK t)
                Rarr x y -> fail (unlines (("\nLifted term in type: "++show term++", is a function, "++show rho++", not data"):mess))
+-}
+
+wellFormedTerm :: t -> [String] -> Frag -> Term -> FIO (TExpr, Typ)
+wellFormedTerm pos message frag (Checked texp) = 
+   do { ty <- typeOf texp; return(texp,ty)}
+wellFormedTerm pos message frag (Parsed term) =
+   do { let trans msg = unlines (msg:message)
+      ; (rho,term2) <- handleM (inferExpT frag term) trans
+      ; case rho of
+          Tau t -> return(term2,t)
+          Rarr x y -> fail (unlines (("\nLifted term in type: "++show term++", is a function, "++show rho++", not data"):message))
+      }
 
 
 wellFormedRho:: SourcePos -> [String] -> Frag -> Rho -> FIO Rho
@@ -666,7 +687,7 @@ getTypesFor (x:xs) (e@(ptrs,names)) = liftM2(:)(find x names)(getTypesFor xs e)
 teleKind [] = Star  
 teleKind ((nm,Kind ()):xs) = Karr (Kname nm) (teleKind xs)
 teleKind ((nm,Type k):xs) = Karr k (teleKind xs)
-teleKind ((nm,Exp t):xs) = Karr (LiftK t) (teleKind xs)
+teleKind ((nm,Exp t):xs) = Tarr t (teleKind xs)
 
 
 typeElim:: Frag -> Elim [Name] -> FIO (Elim Telescope,Kind)
@@ -688,7 +709,7 @@ typeElim env (e@(ElimFun ns t)) =
       ; return(ElimFun tele t3,k)}
       
     
-wellFormedElim:: SourcePos -> Frag -> Elim [Typ] -> FIO (Elim (Telescope,[(Typ,Kind)]),Kind)
+wellFormedElim:: SourcePos -> Frag -> Elim [Typ] -> FIO (Elim (Telescope,[Class (Kind,())(Typ,Kind)(TExpr,Typ) ]),Kind)
 wellFormedElim pos env ElimConst = return(ElimConst,Star)
 wellFormedElim pos env (elim@(ElimFun ts body)) = 
   do { varsBody <- getVars body
@@ -698,15 +719,20 @@ wellFormedElim pos env (elim@(ElimFun ts body)) =
                
      ; let env2 = addMulti namesToBind env
      -- ; writeln("\nTYPEELIM "++show namesToBind)
-     -- ; showFrag 120 env2              
-     ; let wft t = wellFormedType pos ["Checking wellformedness of elim arg: "++show t] env2 t
+     -- ; showFrag 120 env2
+     
+     ; let message x t = ["Checking wellformedness of"++x++"elim arg: "++show t]
+           wft (TyLift e) = fmap Exp(wellFormedTerm pos (message " lifted " e) env2 e)
+           wft t          = fmap Type(wellFormedType pos (message " " t)        env2 t)
      ; pairs <- mapM wft ts
      ; (body2,k2) <- wellFormedType pos ["Checking wellformedness of elim body: "++show body] env2 body
-     ; let acc (t,k) ans = Karr k ans
+     ; let acc (Type(t,k)) ans = Karr k ans
+           acc (Exp(e,t)) ans  = Tarr t ans
+           acc (Kind(k,())) ans = ans
      ; tele <- binderToTelescope namesToBind >>= zonkTele
      ; kind <- zonkKind (foldr acc k2 pairs)
      ; body3 <- zonk body2
-     ; pairs2 <- mapM (\ (t,k) -> liftM2 (,) (zonk t) (zonkKind k)) pairs
+     ; pairs2 <- mapM zonkCL pairs
     --  ; writeln("\n\nElim = "++show (ElimFun (tele,pairs2) body3)++"\nKind = "++show kind)
      
      ; return(ElimFun (tele,pairs2) body3,kind)  }  
@@ -929,11 +955,8 @@ elab toplevel env (FunDec fpos f _ clauses) =
                          ; e2 <- expSubb (locL fpos ps) subst e
                          ; return(ps2,e2)}
      ; cls3 <- mapM g clauses2
-     ; let unType (nm,Type k) ans = (nm,k):ans
-           unType (nm,Kind ()) ans = ans
-           unType (nm,Exp t) ans = (nm,LiftK t):ans  
      ; let env2 = addTable EVAR (Nm(f,fpos),Left(TEVar (Nm(f,fpos)) sig,sig)) env
-     ; return(env2,FunDec fpos f (foldr unType [] vs) cls3)
+     ; return(env2,FunDec fpos f vs cls3)
      }
      
 elab toplevel env (dec@(Synonym pos nm xs body)) =
@@ -941,7 +964,7 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
        -- if toplevel then write (show nm++", ") else return()
      ; (ptrs,names) <- getVars body  -- all the variables, those not in "xs" must be in the environment.
      ; let (ns,k) `acc2` (nm,Type t) = do { k2 <- kindOf t; return ((nm,k2):ns,Karr k2 k)}
-	   (ns,k) `acc2` (nm,Exp e) = do { t2 <-typeOf e; return ((nm,LiftK t2):ns,Karr (LiftK t2) k)}
+	   (ns,k) `acc2` (nm,Exp e) = do { t2 <-typeOf e; return ((nm,error ("Lifted exp as type: "++show t2)):ns,Tarr t2 k)}
            (ns,k) `acc2` (nm,Kind _) = fail ("Kind variable in synonym: "++show nm)
            find (Kind n : more) nm | nm==n = return(Kind n)
            find (Type n : more) nm | nm==n = return(Type n)
@@ -953,7 +976,7 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
      ; let env2 = addMulti boundnames env  -- extend the environment with these assumptions
      ; (body2,k) <- wellFormedType pos ["Checking wff type: "++show body++"\nin type synonym:\n"++show dec] env2 body
                     -- body2 has had the variables in the global env replaced with CSP constants
-     ; (zs,kind) <- foldM acc2 ([],k) (reverse boundnames)     
+     ; (_,kind) <- foldM acc2 ([],k) (reverse boundnames)     
      ; tele <- binderToTelescope boundnames
      ; let polyk = PolyK tele kind 
     --  ; writeln("\nSynonym "++show nm++show nameList++": "++show polyk++" = "++show body2)
@@ -1242,12 +1265,14 @@ typeExpT env (term@(EMend tag elim x ms)) expect =
 elimParts ElimConst = do { ans <- freshType Star; return([],[],ans)}
 elimParts (ElimFun (tele,xs) body) = return(tele,xs,body)
 
-elimTypes:: SourcePos -> String -> Kind -> Typ -> Typ -> Elim (Telescope,[(Typ,Kind)])  -> FIO ([Scheme],Typ,Typ)
+elimTypes:: SourcePos -> String -> Kind -> Typ -> Typ -> Elim (Telescope,[Class (Kind,())(Typ,Kind)(TExpr,Typ) ])  -> FIO ([Scheme],Typ,Typ)
 elimTypes pos tag k f r elim = 
    do{ (xs,args,ans) <- elimParts elim
      ; subst@(_,names,_) <- freshenTele pos xs ([],[],[]) 
      -- ; writeln("\nTele = "++show xs++"\nFresh "++show names)
-     ; ts <- return(map fst args)  
+     ; let namepart (Exp(e,t)) = TyLift (Checked e)
+           namepart (Type(t,k)) = t
+     ; ts <- return(map namepart args)  
      ; output <- tySubb pos subst ans
      ; input <- tySubb pos subst (expand(TyApp (TyMu k) f) ts)
      ; let caller = Sch xs (Tau(arrT (expand r ts) ans))

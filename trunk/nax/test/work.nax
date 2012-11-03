@@ -1,35 +1,18 @@
-
-data V : * -> ({Nat} -> *) -> {Nat} -> * where
-  VNil  : V a r {`zero}
-  VCons : a -> r {n} -> V a r {`succ n}
-    deriving fixpoint Vec
-
-data Envr : ( ({st} -> *) -> {Vec st {n}} -> * )
-         -> ( ({st} -> *) -> {Vec st {n}} -> * ) where
-  Empty  : Envr r res {`vNil}
-  Extend : res {x} -> r res {xs} -> Envr r res {`vCons x xs}
-    deriving fixpoint Env
+data Tag = E | O
     
+flip E = O
+flip O = E
 
-data St = Read | Write {-"~~"-} -- resource state
+data P: (Tag -> Nat -> *) -> Tag -> Nat -> * where
+  Base : P r {E} {In[*] Zero} 
+  StepO : r {O} {i} -> P r {E} {`succ i}
+  StepE : r {E} {i} -> P r {O} {`succ i}
+    deriving fixpoint Proof
 
-data Res : St -> * where {-"~~"-} -- resource
-   File1 : Res {Read}
-   File2 : Res {Write}
-   
-myenv = extend File1 (extend File2 empty)   
 
-data SN : (Nat -> *) -> (Nat -> *) where
-  Szer : SN r {`zero}
-  Ssuc : r {n} -> SN r {`succ n}
-    deriving fixpoint SNat
-
-data Envr' : (({st} -> *) -> {SNat {n}} -> {Vec st {n}} -> *)
-          -> (({st} -> *) -> {SNat {n}} -> {Vec st {n}} -> *) where
-  Empty'  : Envr' r res {`szer} {`vNil}
-  Extend' : res {x} -> r res {n} {xs} -> Envr' r res {`ssuc n} {`vCons x xs}
-    deriving fixpoint Env'
-
-myenv' = extend' File1 (extend' File2 empty')
-
-id x = x
+flop x = 
+   -- mcata {{t} {i} . Mu[Tag -> Nat -> *] P {`flip t} {In[*] (Succ i)}} x 
+   mcata {{t} {i} . Proof {`flip t} {`succ i}} x    
+     with  f Base = stepE base
+           f (StepO p) = (stepE(f p))
+           f (StepE p) = stepO(f p)
