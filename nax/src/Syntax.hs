@@ -51,7 +51,7 @@ data TExpr
    | TETuple [TExpr]              -- (5,True,"asd")
    | TELet (Decl (TExpr)) (TExpr)
    | TEIn Kind TExpr
-   | TEMend String (Elim (Telescope,[(Typ,Kind)])) (TExpr) [(Telescope,[Pat],TExpr)]
+   | TEMend String (Elim (Telescope,[Class (Kind,()) (Typ,Kind) (TExpr,Typ)])) (TExpr) [(Telescope,[Pat],TExpr)]
    | AppTyp (TExpr) [Typ]
    | AbsTyp Telescope TExpr
    | TECast TEqual TExpr
@@ -70,7 +70,7 @@ data Decl e
    = Def SourcePos Pat e
    | DataDec SourcePos Name [Name] [(Name,[Scheme])] [Derivation]
    | GADT SourcePos Name Kind [(Name,[Name],[Scheme],Rho)] [Derivation]
-   | FunDec SourcePos String [(Name,Kind)] [([Pat],e)]
+   | FunDec SourcePos String [(Name,Class () Kind Typ)] [([Pat],e)]
    | Synonym SourcePos Name [Name] Typ -- This Typ is interpreted as a pattern
    | Axiom SourcePos Name Typ
 
@@ -114,7 +114,8 @@ flipVar Both = Both
 
 data Kind   
    = Star 
-   | LiftK Typ             -- A first order type, Nat, Bool, but NOT (Bool -> Nat)
+  --  | LiftK Typ  
+   | Tarr Typ Kind
    | Karr Kind Kind
    | Kvar (Uniq,Pointer Kind)
    | Kname Name
@@ -249,7 +250,7 @@ instance Eq Term where
 
 instance Eq Kind where
   Star == Star = True
-  (LiftK s) == (LiftK t) = s==t
+  (Tarr s m) == (Tarr t n) = s==t && m==n
   (Karr x y) == (Karr a b) = x==a && y==b
   (Kvar (i,_)) == (Kvar (j,_)) = i==j
   (Kname x) == (Kname y) = x==y
@@ -635,9 +636,8 @@ ppClass p kf tf ef (Exp  e) = text "E" <+> ef p e
 
 ppKind:: PI -> Kind -> Doc
 ppKind p Star = text "*"
-ppKind p (LiftK s) = ppTyp p s
+ppKind p (Tarr t y) = PP.hsep [ braces(ppTyp p t), text "->", ppKind p y]
 ppKind p (Karr (x@(Karr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y] 
-ppKind p (Karr (x@(LiftK t)) y) = PP.hsep [ braces(ppTyp p t), text "->", ppKind p y]
 ppKind p (Karr x y) = PP.hsep [ ppKind p x, text "->", ppKind p y]
 ppKind p (Kvar (uniq,ref)) = text ("^K"++show uniq)
 ppKind p (Kname n) = ppName n
@@ -773,13 +773,21 @@ class Pretty t where
   
 instance Pretty Name where
   pretty p n = ppName n
-  
+
 instance Pretty (Name,Kind) where
   pretty p (nm,k) = PP.parens(PP.sep[ppName nm,text ":",ppKind p k])
 
 instance Pretty (Typ,Kind) where
   pretty p (nm,k) = PP.parens(PP.sep[ppTyp p nm,text ":",ppKind p k])  
+  
+instance Pretty (TExpr,Typ) where
+  pretty p (nm,k) = PP.parens(PP.sep[ppTExpr p nm,text ":",ppTyp p k])    
 
+instance Pretty (Class (Kind,()) (Typ, Kind) (TExpr,Typ)) where
+  pretty p (Type x) = pretty p x
+  pretty p (Exp x) = pretty p x
+  pretty p (Kind (k,())) = ppKind p k
+  
 instance Pretty n => Pretty (n, Class () Kind Typ) where 
   pretty p (s,Kind ()) = pretty p s <> text ":K" 
   pretty p (s,Type k)  = pretty p s <> text ":T " <> ppKind p k
@@ -791,7 +799,7 @@ instance Pretty a => Pretty [a] where
 instance Pretty Typ where
   pretty p x = ppTyp p x
 
-instance Pretty (Telescope, [(Typ, Kind)]) where
+instance Pretty (Telescope, [Class (Kind,()) (Typ, Kind) (TExpr,Typ)]) where
   pretty p (t,xs) = pretty p t <+> text "|" <+> pretty p xs
 
 -------------------------------------------------------
@@ -864,9 +872,9 @@ instance Show TypPat where
 
 showK Star = "Star"
 showK (Karr x y) = "(Karr "++showK x++" "++showK y++")"
+showK (Tarr x y) = "(Tarr "++showT x++" "++showK y++")"
 showK (Kname s) = "(Kname "++show s++")"
 showK (Kvar (uniq,ptr)) = "^K"++show uniq
-showK (LiftK t) = "(LiftK "++showT t++")"
 
 showT (TyVar s k) = "(TyVar "++show s++" "++show k++")"
 showT (TyCon (Syn m) s k) = "(Con "++show s++" "++show k++" muSyn="++ m++")"
@@ -986,7 +994,7 @@ typLoc (TyAll bs t) = loc t
 
 
 kindLoc Star = noPos
-kindLoc (LiftK t) = typLoc t
+kindLoc (Tarr t k) = typLoc t
 kindLoc (Karr k1 k2) = bestPos (kindLoc k1) (kindLoc k2)
 kindLoc (Kvar _) = noPos
 kindLoc (Kname (Nm(_,p))) = p
@@ -1119,8 +1127,8 @@ lookE x xs def =
 
 pureSubKind :: [(Name,Class Kind Typ TExpr)] -> Kind -> Kind
 pureSubKind env Star = Star
-pureSubKind env (LiftK t) = LiftK(pureSubTyp env t)
-pureSubKind env (Karr f x) = Karr(pureSubKind env f) (pureSubKind env x)
+pureSubKind env (Tarr t k) = Tarr (pureSubTyp env t) (pureSubKind env k)
+pureSubKind env (Karr f x) = Karr(pureSubKind env f)(pureSubKind env x) 
 pureSubKind env (Kname n) = lookK n env (Kname n)
 pureSubKind env (Kvar x) = Kvar x
 
