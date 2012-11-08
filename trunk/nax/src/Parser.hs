@@ -461,7 +461,11 @@ synP =
   do { pos <- getPosition
      ; keyword "synonym"
      ; nm <- conP
-     ; xs <- many nameP
+     -- just to parse   synonym Vec a {n} = ...
+     -- TODO it parses it but does not distinguish from  synonym Vec a n = ...
+     -- so type inference still doesn't work for index argument variables.
+     -- Maybe we need to change the definition of the Synonym data constructor
+     ; xs <- many (braceS nameP <|> nameP)
      ; sym "="
      ; body <- typP -- typT (fmap Pattern (braceS pattern))  -- typPat
      ; return(Synonym pos nm xs body) }
