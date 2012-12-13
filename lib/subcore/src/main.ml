@@ -820,9 +820,11 @@ and morph (g:ctxt) (r:string trie) (p:pd) (subj:term option) (t:term) (pf:term) 
                                                      "do not match.\n\n"^
                                                      "1. the term being morphed: "^(string_of_term t)^
                                                      "\n2. the Pi-proof: "^(string_of_term pf)));
+				       (None,None) 
+(*
                                        let old1 = trie_lookup r x'' in
                                          trie_insert r x'' x';
-                                         (Some(x'',old1),Some(q2))
+                                         (Some(x'',old1),Some(q2)) *)
                                    | _ -> (None,None)
                        in
 
