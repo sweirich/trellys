@@ -16,12 +16,12 @@ Fix nat : * =
               [ unfold ; substself ]
              
       ,
-      succ : nat -> nat = 
-           conv \ n : nat . 
-                   \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
-           to ! n : nat . nat
-           by (! n : nat . ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
-              (! n : nat . [ unfold ; substself ] )
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]
 
 
 Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
@@ -32,21 +32,21 @@ Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by re
               [ unfold ; substself ]
 
 
-Fix renat : * = self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold))),
-      rezero : renat = 
-        conv \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . zcase
-        to renat
-        by (! C : refl . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . (C unfold)))),
-           [unfold ; substself],
-
-      resucc : renat -> renat =
-       conv 
-        \ n : renat .
-           \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
-       to ! n: renat . renat
-       by 
-        (! n : renat . (! C : refl . (! zcase : refl . (! scase : refl . (C ([(unfold refl); eval])))))),
-        (! n : renat . [unfold; substself] )
+#Fix renat : * = self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold))),
+#      rezero : renat = 
+#        conv \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . zcase
+#        to renat
+#        by (! C : refl . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . (C unfold)))),
+#           [unfold ; substself],
+#
+#      resucc : renat -> renat =
+#       conv 
+#        \ n : renat .
+#           \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
+#       to ! n: renat . renat
+#       by 
+#        (! n : renat . (! C : refl . (! zcase : refl . (! scase : refl . (C ([(unfold refl); eval])))))),
+#        (! n : renat . [unfold; substself] )
 
 # This is a tricker cast, because it requires reducing a beta-redex.
 # 
@@ -137,27 +137,28 @@ Fix list : * -> * = \ A : * . self l . ! C : (! b:*. (list b) -> *) .
                        ! consCase : (! x : A . ! xs : (list A).  (C A (cons A x xs))) .
                         (C A (conv l to (list A) by refl , [(unfold refl); eval])),
     nil : ! A : * . (list A) = 
-      conv                      
-         \ A : * . \C : (!b:*. (list b) -> *) . 
+         \ A : * .
+         conv                      
+            \C : (!b:*. (list b) -> *) . 
             \ nilCase : (C A (nil A)) . 
             \ consCase : (! x:A . ! xs : (list A) . (C A (cons A x xs))) .
             nilCase
-      to ! A : * . (list A)
-      by (! A : refl . ! C : refl . ! nilCase : refl . ! consCase : refl . (C refl ([(unfold refl); eval]))),
-         (! A : refl . [(unfold refl); eval; substself]),
+        to  (list A)
+      by (! C : refl . ! nilCase : refl . ! consCase : refl . (C refl ([(unfold refl); eval]))),
+         ( [(unfold refl); eval; substself]),
 
     cons: ! A : * . A -> (list A) -> (list A) =  
-     conv 
        \ A : * . \x:A  . \xs:(list A) . 
+       conv 
           \C : (! b:* . (list b) -> *) .
           \nilCase : (C A (nil A)) .
             \ consCase : (! x:A . ! xs : (list A) . (C A (cons A x xs))) .
                (consCase x xs)
-     to 
-        ! A : * . (! x:A . (! xs:(list A) . (list A)))
-     by 
-       (! A : refl . (! x:A . (! xs:(list A) . (! C : refl . (! nilCase:refl . (!consCase:refl. (C refl [(unfold refl refl refl);eval]))))))),
-       (! A : refl . (! x:A . (! xs:(list A) . [(unfold refl); eval; substself])))
+       to 
+         (list A)
+       by 
+         (! C : refl . (! nilCase:refl . (!consCase:refl. (C refl [(unfold refl refl refl);eval])))),
+         [(unfold refl); eval; substself]
 
 
 Fix len : !A:* . (list A) -> nat = 
@@ -196,28 +197,29 @@ Fix vec :  * -> nat -> * =  \ A : * . \n : nat . self l . ! C : (! b : * . (! m:
                        ! vconsCase : (!p:nat . (! x : A . ! xs : (vec A p).  (C A (succ p) (vcons A p x xs)))) .
                         (C A n (conv l to (vec A n) by refl , [(unfold refl refl); eval])),
     vnil : ! A : * . (vec A zero) = 
-      conv                      
-         \ A : * . \C : (!b:*. !m:nat . (vec b m) -> *) . 
+         \ A : * . 
+        conv                      
+            \C : (!b:*. !m:nat . (vec b m) -> *) . 
             \ vnilCase : (C A zero (vnil A)) . 
             \ vconsCase : (!p:nat . (! x:A . ! xs : (vec A p) . (C A (succ p) (vcons A p x xs)))) .
             vnilCase
-      to ! A : * . (vec A zero)
-      by (! A : refl . ! C : refl . ! vnilCase : refl . ! vconsCase : refl . (C refl refl ([(unfold refl); eval]))),
-         (! A : refl . [(unfold refl refl); eval; substself]),
+        to  (vec A zero)
+        by (! C : refl . ! vnilCase : refl . ! vconsCase : refl . (C refl refl ([(unfold refl); eval]))),
+           [(unfold refl refl); eval; substself],
 
     vcons:  ! A : * . ! n : nat . A -> (vec A n) -> (vec A (succ n)) =  
-     conv 
       \ A : * .\ n : nat .
        \x:A  . \xs:(vec A n) . 
+       conv 
          \C : (! b:* . (!p:nat . (vec b p) -> *)) .
           \vnilCase : (C A zero (vnil A)) .
           \vconsCase : (!p:nat . (! x:A . ! xs : (vec A p ) . (C A (succ p) (vcons A p x xs)))) .
                (vconsCase n x xs)
-     to 
-        ! A : * . ! n : nat . (! x:A . (! xs:(vec A n) . (vec A (succ n))))
-     by 
-        (! A : refl . (! n : refl . (! x: refl . (! xs:refl  . (! C : refl . (! vnilCase:refl . (!vconsCase:refl. (C refl refl [(unfold refl refl refl refl);eval])))))))),
-        (! A : refl . (! n : refl . (! x: refl . (! xs:refl . [(unfold refl refl); eval; substself]))))
+       to 
+          (vec A (succ n))
+       by 
+        (! C : refl . (! vnilCase:refl . (!vconsCase:refl. (C refl refl [(unfold refl refl refl refl);eval])))),
+        [(unfold refl refl); eval; substself]
 
 
 Fix list2 : * -> * = \ A : * . self l . ! C : ((list2 A) -> *) .  
@@ -225,27 +227,28 @@ Fix list2 : * -> * = \ A : * . self l . ! C : ((list2 A) -> *) .
                        ! consCase : (! x : A . ! xs : (list2 A).  (C (cons2 A x xs))) .
                         (C (conv l to (list2 A) by refl , [(unfold refl); eval])),
     nil2 : ! A : * . (list2 A) = 
-      conv                      
-         \ A : * . \C : ((list2 A) -> *) . 
+         \ A : * . 
+        conv                      
+            \C : ((list2 A) -> *) . 
             \ nilCase : (C (nil2 A)) . 
             \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
             nilCase
-      to ! A : * . (list2 A)
-      by (! A : refl . ! C : refl . ! nilCase : refl . ! consCase : refl . (C ([(unfold refl); eval]))),
-         (! A : refl . [(unfold refl); eval; substself]),
+        to  (list2 A)
+        by (! C : refl . ! nilCase : refl . ! consCase : refl . (C ([(unfold refl); eval]))),
+           [(unfold refl); eval; substself],
 
     cons2: ! A : * . A -> (list2 A) -> (list2 A) =  
-     conv 
        \ A : * . \x:A  . \xs:(list2 A) . 
+       conv 
           \C : ((list2 A) -> *) .
           \nilCase : (C (nil2 A)) .
             \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
                (consCase x xs)
      to 
-        ! A : * . (! x:A . (! xs:(list2 A) . (list2 A)))
+        (list2 A)
      by 
-       (! A : refl . (! x:A . (! xs:(list2 A) . (! C : refl . (! nilCase:refl . (!consCase:refl. (C [(unfold refl refl refl);eval]))))))),
-       (! A : refl . (! x:A . (! xs:(list2 A) . [(unfold refl); eval; substself])))
+       (! C : refl . (! nilCase:refl . (!consCase:refl. (C [(unfold refl refl refl);eval])))),
+       [(unfold refl); eval; substself]
 
   
 
