@@ -485,7 +485,7 @@ joinExpr :: ParsecT String u Identity Expr
 joinExpr = do
   reserved "join"
   i0 <- integer
-  i1 <- integer
+  i1 <- option i0 integer
   return $ Join i0 i1
 
 
