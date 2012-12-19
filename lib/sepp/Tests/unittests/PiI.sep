@@ -29,18 +29,21 @@ Program id : [a:Type] (x:a) -> a := x
 
 
 -- Section 5
-
 Theorem id_is_id_term :
-  forall (a:Type)(x:a)(x_term:x!).id [a] x = x :=
-     join 100 : id [a] (tcast x by x_term) = x
+  forall (a:Type)(x:a)(x_term:x!).
+      (id [a] x = x) := 
+    join 100 : 
+      (id [a] (tcast x by x_term) = x)
 
 Theorem id_is_id :
   forall (a:Type)(x:a).id [a] x = x :=
-    termcase x {x_term} of
-       abort ->
-         let u1 = (join 100 : id [a] (abort a) = (abort a))
-         in conv u1 by x_term at hole. (id [a] hole = hole)
-     | ! -> id_is_id_term a x x_term
+   termcase x {x_term} of
+    abort ->
+     let u1 = join 100 
+            : id [a] (abort a) = (abort a)
+     in conv u1 
+         at (id [a] ~x_term = ~x_term)
+  | ! -> id_is_id_term a x x_term
 
 
 -- Section 6
@@ -70,9 +73,9 @@ data Bool : Type where
 infixr 8 &&
 
 Program (&&) : (x:Bool)(y:Bool) -> Bool :=
-   case x {x_eq} of
+  case x {x_eq} of
      True -> y
-    | False -> False
+   | False -> False
 
 Theorem and_commutes :
   forall(x:Bool)(y:Bool)(x_term:x!)(y_term:y!).
@@ -80,16 +83,21 @@ Theorem and_commutes :
      case x {x_eq} x_term of
        True ->
          (case y {y_eq} y_term of
-            True -> let u1 = join 100 : (True && True) = (True && True)
-                    in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
-          | False -> let u1 = join 100 : (True && False) = (False && True)
-                     in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
+            True -> 
+              let u1 = join 100 : (True && True) = (True && True)
+              in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
+          | False -> 
+              let u1 = join 100 : (True && False) = (False && True)
+              in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
       | False ->
          (case y {y_eq} y_term of
-            True -> let u1 = join 100  : (False && True) = (True && False)
-                    in autoconv u1 -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
-          | False -> let u1 = join 100 : (False && False) = (False && False)
-                     in autoconv u1) -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
+            True -> 
+              let u1 = join 100  : (False && True) = (True && False)
+              in autoconv u1 -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
+          | False -> 
+              let u1 = join 100 : (False && False) = (False && False)
+              in autoconv u1) -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
+
 
 Theorem morejoin_and_commutes :
  forall(x:Bool)(y:Bool)(x_term:x!)(y_term:y!).
@@ -112,7 +120,8 @@ data List : [a:Type] -> Type where
    Nil : List a
  | Cons : (x:a) -> (xs:List a) -> List a
 
-Recursive append : [b:Type] (xs:List b) (ys:List b)  -> List b :=
+Recursive append : 
+  [b:Type] (xs:List b) (ys:List b)  -> List b :=
     case xs {xs_eq} of
        Nil -> ys
      | Cons x xs' -> Cons [b] x (append [b] xs' ys)
@@ -120,23 +129,28 @@ Recursive append : [b:Type] (xs:List b) (ys:List b)  -> List b :=
 
 -- Figure 13
 
-Inductive append_term : forall(a:Type)(xs:List a){xs_term}(ys:List a)(ys_term:ys!).(append [a] xs ys)! :=
+Inductive append_term : 
+  forall(a:Type)(xs:List a){xs_term}(ys:List a)(ys_term:ys!).
+     (append [a] xs ys)! :=
    case xs {xs_eq} xs_term of
       Nil -> let u1 = morejoin {sym xs_eq, xs_term, ys_term} : append [a] xs ys = ys
              in conv ys_term at ~(sym u1) !
-    | Cons x xs' -> let ih = append_term [a] xs' (ord xs_eq : xs' < xs) ys ys_term;
-                        x_term = value x : x!;
-                        unroll_app  = morejoin {sym xs_eq,xs_term,ys_term }
-                                  :  append [a] xs ys = Cons [a] x (append [a] xs' ys);
-                        u1 = value (Cons [a] ~x_term ~ih)
-                    in conv u1 at ~(sym unroll_app) !
+    | Cons x xs' -> 
+        let ih = append_term [a] xs' (ord xs_eq : xs' < xs) ys ys_term;
+            x_term = value x : x!;
+            unroll_app = morejoin {sym xs_eq,xs_term,ys_term }
+                       :  append [a] xs ys = Cons [a] x (append [a] xs' ys);
+            u1 = value (Cons [a] ~x_term ~ih)
+        in conv u1 at ~(sym unroll_app) !
 
 
 -- Figure 14
 
 Inductive append_assoc_term :
-  forall (a:Type) (xs:List a){xs_term} (ys:List a)(ys_term:ys!)(zs:List a)(zs_term:zs!) .
-    append [a] xs (append [a] ys zs) = append [a] (append [a] xs ys) zs :=
+  forall (a:Type) (xs:List a){xs_term} 
+      (ys:List a)(ys_term:ys!)(zs:List a)(zs_term:zs!) .
+    append [a] xs (append [a] ys zs) = 
+     append [a] (append [a] xs ys) zs :=
    let term_xs_ys = append_term [a] xs xs_term ys ys_term;
        term_ys_zs = append_term [a] ys ys_term zs zs_term
    in case xs {xs_eq} xs_term of
@@ -171,7 +185,6 @@ Inductive append_assoc_term :
                  = Cons [a] x (append [a] (append [a] xs' ys) zs)
         in conv u1 at append [a] xs (append [a] ys zs) = ~(sym u5)
 
-
 -- Utilities, not in the paper
 
 Theorem cons_term_head : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). x ! :=
@@ -187,49 +200,48 @@ Theorem cons_term_tail : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). xs
 
 
 -- Figure 15
-
-Inductive append_assoc : forall (a:Type) (xs:List a){xs_term} (ys:List a) (zs:List a) .
-                   append [a] xs (append [a] ys zs) = append [a] (append [a] xs ys) zs :=
-   termcase ys {ys_term} of
-      abort -> let aleft = aborts (append [a] xs (append [a] ~ys_term zs));
-                   aright = aborts (append [a] (append [a] xs ~ys_term) zs)
-               in trans (sym aleft) aright
-    | ! ->  termcase zs {zs_term} of
-               abort -> let aleft = aborts (append [a] xs (append [a] ys ~zs_term));
-                            aright = aborts (append [a] (append [a] xs ys) ~zs_term)
-                        in trans (sym aleft) aright
-             | ! -> let term_xs_ys = append_term [a] xs xs_term ys ys_term;
-                        term_ys_zs  = append_term [a] ys ys_term zs zs_term
-                    in case xs {xs_eq} xs_term of
-                         Nil -> let u1 = morejoin {sym xs_eq, ys_term, xs_term} :
-                                      ys = append [a] xs ys;
-                                    u2 = morejoin {sym xs_eq, xs_term} :
-                                       append [a] xs
-                                                  (tcast (append [a] ys zs) by term_ys_zs)
-                                       =  append [a] ys zs;
-                                    u3  = morejoin {sym xs_eq, xs_term, ys_term} :
-                                        ys = append [a] xs ys
-                                 in conv u2 at append [a] xs (append [a] ys zs) =  append [a] ~u3 zs
-
-                        | Cons x xs' -> let unroll_app  = morejoin {sym xs_eq,xs_term} :
-                                                 append [a] xs
-                                                    (tcast (append [a] ys zs) by term_ys_zs) =
-                                                  Cons [a] x (append [a] xs' (tcast (append [a] ys zs) by term_ys_zs));
-                                            ih = append_assoc [a] xs' (ord xs_eq) ys zs;
-                                            u1 = conv unroll_app at append [a] xs (append [a] ys zs) = Cons [a] x ~ih;
-                                            u2 = morejoin {sym xs_eq, xs_term, ys_term} : append [a] xs ys = Cons [a] x (append [a] xs' ys);
-                                            x_term = cons_term_head a x xs' (conv xs_term at ~(sym xs_eq) !);
-                                            xs'_term = cons_term_tail a x xs' (conv xs_term at ~(sym xs_eq) !);
-                                            term_xs'_ys = append_term [a] xs' xs'_term ys ys_term;
-                                            u3 = morejoin {sym xs_eq, xs_term,ys_term} :
-                                                          append [a] (append [a] xs ys) zs = (append [a] (Cons [a] x (append [a] xs' ys)) zs);
-                                            u4 = morejoin {zs_term, ys_term} : append [a] (Cons [a] (tcast x by x_term) (tcast (append [a] xs' ys) by term_xs'_ys)) zs =
-                                                                                  Cons [a] x (append [a] (tcast (append [a] xs' ys) by term_xs'_ys) zs);
-                                            u5 = sym (trans u3 u4 : append [a] (append [a] xs ys) zs = Cons [a] x (append [a] (tcast (append [a] xs' ys) by term_xs'_ys) zs))
-
-                                        in conv u1 at append [a] xs (append [a] ys zs) = ~u5
-
-
+Theorem append_assoc :
+  forall (a:Type) (xs:List a)(ys:List a)(zs:List a).
+    append [a] xs (append [a] ys zs) = 
+      append [a] (append [a] xs ys) zs :=
+  termcase xs {xs_term} of
+     abort ->
+      let aleft = join 100 :
+           (append [a] (abort (List a)) (append [a] ys zs)) = (abort (List a));
+          aright = join 100 :
+           (abort (List a)) = (append [a] (append [a] (abort (List a)) ys) zs);
+          u1 =  trans aleft aright
+      in conv u1 at
+          append [a] ~xs_term (append [a] ys zs) =
+          append [a] (append [a] ~xs_term ys) zs
+   | ! ->
+      termcase ys {ys_term} of
+         abort ->
+          let aleft = morejoin {xs_term} :
+               (append [a] xs (append [a] (abort (List a)) zs)) = 
+                 (abort (List a)) ;
+              aright = morejoin {xs_term} :
+                 (abort (List a)) = 
+                    (append [a] (append [a] xs (abort (List a))) zs);
+              u1 = trans aleft aright
+          in conv u1 at
+                append [a] xs (append [a] ~ys_term zs) =
+                append [a] (append [a] xs ~ys_term) zs
+       | ! ->
+        termcase zs {zs_term} of
+          abort -> 
+             let aleft = morejoin {xs_term,ys_term} :
+                    (append [a] xs (append [a] ys (abort (List a)))) = 
+                       abort (List a);
+                 a_x_y_term = append_term a xs xs_term ys ys_term;
+                 aright = morejoin {xs_term,ys_term,a_x_y_term} :
+                    (abort (List a)) = 
+                       (append [a] (append [a] xs ys) (abort (List a)));
+                 u1 = trans aleft aright
+              in conv u1 at
+                  append [a] xs (append [a] ys ~zs_term) =
+                    append [a] (append [a] xs ys) ~zs_term
+       | ! -> append_assoc_term [a] xs xs_term ys ys_term zs zs_term
 
 -- Section 7
 
@@ -308,7 +320,6 @@ Inductive isValue_term : forall (t:Term){t_term}.isValue t ! :=
                   in conv valax False at ~u1 !
 
 
-
 -- Figure 17
 
 -- Predicate to determine if a term is a redex.
@@ -329,6 +340,27 @@ Program isRedex : (t:Term) -> Bool :=
                    K -> False
                  | S -> isValue t1 && isValue t2 && isValue t3
                  | App f3 t4 -> False
+
+Program isRedex : (t:Term) -> Bool :=
+ case t {t_eq} of
+   K -> False
+ | S -> False
+ | App f1 t1 ->
+    case f1 {f2_eq} of
+      K -> False
+    | S -> False
+    | App f2 t2 ->
+       case f2 {f2_eq} of
+         K -> isValue t1 && isValue t2
+       | S -> False
+       | App f2 t3 ->
+           case f2 {f2_eq} of
+             K -> False
+           | S -> isValue t1 && 
+                  isValue t2 && 
+                  isValue t3
+           | App f3 t4 -> False
+
 
 Inductive isRedex_terminates : forall (t:Term){t_term}.isRedex t ! :=
   case t {t_eq} t_term of
@@ -378,12 +410,18 @@ Inductive isRedex_terminates : forall (t:Term){t_term}.isRedex t ! :=
 
 
 data RedexProp : (t:Term)  -> Type where
-  RedexK : (t1:Term) -> (t2:Term) -> [p:t = App (App K t1) t2] ->
-           [p1:isValue t1 = True] -> [p2:isValue t2 = True] -> RedexProp t
- |RedexS : (t1:Term) -> (t2:Term) -> (t3:Term) ->
-             [p:t = App (App (App S t1) t2) t3] ->
-             [p1:isValue t1 = True] -> [p2:isValue t2 = True] -> [p3:isValue t3 = True] ->
-             RedexProp t
+ RedexK : (t1:Term) -> (t2:Term) ->
+    [p:t = App (App K t1) t2] ->
+    [p1:isValue t1 = True] ->
+    [p2:isValue t2 = True] -> 
+    RedexProp t
+|RedexS :
+  (t1:Term) -> (t2:Term) -> (t3:Term) ->
+  [p:t = App (App (App S t1) t2) t3] ->
+  [p1:isValue t1 = True] ->
+  [p2:isValue t2 = True] ->
+  [p3:isValue t3 = True] ->
+  RedexProp t
 
 
 -- Utilities, not in the paper
@@ -433,99 +471,111 @@ Program redexProp : (t:Term)[p:isRedex t = True] -> RedexProp t :=
        | S -> abort (RedexProp t) -- Contradiction, since isRedex t = True
        | App f2 t2 ->
            case f2 {f2_eq} of
-              K -> let [u1] = conv sym t_eq at t = App ~(sym f1_eq) t1; -- t = App (App f2 t2) t1
-                       [u2] = conv u1 at t = App (App ~(sym f2_eq) t2) t1; -- t = App (App K t2) t1
-                       [u3] = morejoin { u2, valax t2, valax t1} : isRedex t = (isValue t1 && isValue t2);
-                       [u4] = trans (sym p) u3 : True = (isValue t1 && isValue t2)
+              K -> let [u1] = (conv sym t_eq at t = App ~(sym f1_eq) t1)
+                            : t = App (App f2 t2) t1;
+                       [u2] = (conv u1 at t = App (App ~(sym f2_eq) t2) t1)
+                            : t = App (App K t2) t1;
+                       [u3] = morejoin { u2, valax t2, valax t1} 
+                            : isRedex t = (isValue t1 && isValue t2);
+                       [u4] = trans (sym p) u3 
+                            : True = (isValue t1 && isValue t2)
                    in RedexK t t2 t1 [u2]
                          [and_right (isValue t1) (isValue t2) (sym u4)]
                          [and_left (isValue t1) (isValue t2) (sym u4)]
              | S ->  abort (RedexProp t) -- Contradiction, since isRedex t = True
              | App f3 t3 ->
                  case f3 {f3_eq} of
-                    K -> abort (RedexProp t) -- Contradiction, since isRedex t = True
-                  | App f4 t4 -> abort (RedexProp t) -- Contradiction, since isRedex t = True
+                    K -> abort (RedexProp t) -- Contradiction
+                  | App f4 t4 -> abort (RedexProp t) -- Contradiction
                   | S ->
-                      let [u1] = conv sym t_eq at t = App ~(sym f1_eq) t1; -- t = App (App f2 t2) t1
-                          [u2] = conv u1 at t = App (App ~(sym f2_eq) t2) t1; -- t = App (App (App f3 t3) t2) t1
+                      let [u1] = (conv sym t_eq at t = App ~(sym f1_eq) t1)
+                               : t = App (App f2 t2) t1;
+                          [u2] = (conv u1 at t = App (App ~(sym f2_eq) t2) t1)
+                               : t = App (App (App f3 t3) t2) t1;
                           [u3] = conv u2 at t = App (App (App ~(sym f3_eq) t3) t2) t1;
-                          [u4] = morejoin { u3, valax t3, valax t2, valax t1} : isRedex t = (isValue t1 && isValue t2 && isValue t3);
-                          [u5] = trans (sym u4) p : (isValue t1 && isValue t2 && isValue t3) = True
+                          [u4] = morejoin { u3, valax t3, valax t2, valax t1} 
+                               : isRedex t = (isValue t1 && isValue t2 && isValue t3);
+                          [u5] = trans (sym u4) p 
+                               : (isValue t1 && isValue t2 && isValue t3) = True
                       in RedexS t t3 t2 t1 [u3]
-                          [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
-                          [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                          [and_right (isValue t2) (isValue t3) 
+                            (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                          [and_left (isValue t2) (isValue t3) 
+                            (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
                           [and_left (isValue t1) (isValue t2 && isValue t3) u5]             
 
-
--- FIXME: Change this to a theorem
-Theorem redexPropTerm : forall(t:Term)(p:isRedex t = True). redexProp t [p] ! :=
+Theorem redexPropTerm : 
+  forall(t:Term)(p:isRedex t = True). redexProp t [p] ! :=
    termcase t {t_term} of
-      abort -> let isredex_t_aborts = aborts (isRedex ~t_term) : ((abort Bool) = (isRedex t));
-                   isredex_t_terminates = (conv valax True at ~(sym p) !) : (isRedex t) !
-               in  contraabort isredex_t_aborts isredex_t_terminates
-     | ! -> 
-  case t {t_eq} t_term of
-     K -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
-          in contra (equiv 3 : False = True)
-   | S -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
-          in contra (equiv 3 : False = True)
-   | App f1 t1 ->
-      case f1 {f1_eq} (valax f1) of
-         K -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App K t1;
-                  u1 = morejoin {t_term, t_eq'} : False = isRedex t
+      abort -> 
+       let isredex_t_aborts = aborts (isRedex ~t_term) 
+                            : ((abort Bool) = (isRedex t));
+           isredex_t_terminates = (conv valax True at ~(sym p) !) 
+                                : (isRedex t) !
+       in  contraabort isredex_t_aborts isredex_t_terminates
+   | ! -> 
+       case t {t_eq} t_term of
+         K -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
               in contra (equiv 3 : False = True)
-       | S -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App S t1;
-                  u1 = morejoin {t_term, t_eq'} : False = isRedex t
+       | S -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
               in contra (equiv 3 : False = True)
-       | App f2 t2 ->
-          let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : (t = App (App f2 t2) t1)
-          in case f2 {f2_eq} (valax f2) of
-              K -> let t_eq'' = conv t_eq' at t = App (App ~(sym f2_eq) t2) t1; -- t = App (App K t2) t1
-                       u3 = morejoin {t_term, t_eq''} : isRedex t = (isValue t1 && isValue t2);
-                       u4 = trans (sym p) u3 : True = (isValue t1 && isValue t2);
-                       u6 = morejoin {t_term,t_eq''} :
-                              redexProp t [p] = RedexK t t2 t1 [t_eq'']
-                                               [and_right (isValue t1) (isValue t2) (sym u4)]
-                                               [and_left (isValue t1) (isValue t2) (sym u4)];
-                       res_term = valax (RedexK (tcast t by t_term) t2 t1 [t_eq'']
-                                          [and_right (isValue t1) (isValue t2) (sym u4)]
-                                          [and_left (isValue t1) (isValue t2) (sym u4)])                                                
+       | App f1 t1 ->
+          case f1 {f1_eq} (valax f1) of
+             K -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App K t1;
+                      u1 = morejoin {t_term, t_eq'} : False = isRedex t
+                  in contra (equiv 3 : False = True)
+           | S -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App S t1;
+                      u1 = morejoin {t_term, t_eq'} : False = isRedex t
+                  in contra (equiv 3 : False = True)
+           | App f2 t2 ->
+              let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : (t = App (App f2 t2) t1)
+              in case f2 {f2_eq} (valax f2) of
+                  K -> let t_eq'' = conv t_eq' at t = App (App ~(sym f2_eq) t2) t1; -- t = App (App K t2) t1
+                           u3 = morejoin {t_term, t_eq''} : isRedex t = (isValue t1 && isValue t2);
+                           u4 = trans (sym p) u3 : True = (isValue t1 && isValue t2);
+                           u6 = morejoin {t_term,t_eq''} :
+                                  redexProp t [p] = RedexK t t2 t1 [t_eq'']
+                                                   [and_right (isValue t1) (isValue t2) (sym u4)]
+                                                   [and_left (isValue t1) (isValue t2) (sym u4)];
+                           res_term = valax (RedexK (tcast t by t_term) t2 t1 [t_eq'']
+                                              [and_right (isValue t1) (isValue t2) (sym u4)]
+                                              [and_left (isValue t1) (isValue t2) (sym u4)])                                                
 
-                   in conv res_term at ~(sym u6) !
-             | S -> let t_eq'' = (conv t_eq' at t = App (App ~(sym f2_eq) t2) t1) : t = App (App S t2) t1;
-                        u1 = morejoin {t_term, t_eq''} : False = isRedex t
-                    in contra (equiv 3 : False = True)
-             | App f3 t3 ->
-                 let t_eq'' = (conv t_eq' at t = (App (App ~(sym f2_eq) t2) t1)) :
-                               t = App (App (App f3 t3) t2) t1 in
-                 case f3 {f3_eq} (valax f3) of
-                    K -> let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
-                                            t = App (App (App K t3) t2) t1;
-                             u1 = morejoin {t_term, t_eq'''} : False = isRedex t
-                         in contra (equiv 3 : False = True)
-                  | App f4 t4 -> 
-                         let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
-                                            t = App (App (App (App f4 t4) t3) t2) t1;
-                             u1 = morejoin {t_term, t_eq'''} : False = isRedex t
-                         in contra (equiv 3 : False = True)
-                  
-                  | S ->
-                         let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
-                                            t = App (App (App S t3) t2) t1;
-                             u4 = morejoin { t_term, t_eq''', valax t3, valax t2, valax t1} :
-                                 isRedex t = (isValue t1 && isValue t2 && isValue t3);
-                             u5 = trans (sym u4) p : (isValue t1 && isValue t2 && isValue t3) = True;
-                             res = morejoin {t_term, t_eq'''} :
-                                redexProp t [p] =
-                                   RedexS t t3 t2 t1 [t_eq''']
-                                    [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
-                                    [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
-                                    [and_left (isValue t1) (isValue t2 && isValue t3) u5];
-                             res_term =  valax (RedexS (tcast t by t_term) t3 t2 t1 [t_eq''']
+                       in conv res_term at ~(sym u6) !
+                 | S -> let t_eq'' = (conv t_eq' at t = App (App ~(sym f2_eq) t2) t1) : t = App (App S t2) t1;
+                            u1 = morejoin {t_term, t_eq''} : False = isRedex t
+                        in contra (equiv 3 : False = True)
+                 | App f3 t3 ->
+                     let t_eq'' = (conv t_eq' at t = (App (App ~(sym f2_eq) t2) t1)) :
+                                   t = App (App (App f3 t3) t2) t1 in
+                     case f3 {f3_eq} (valax f3) of
+                        K -> let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App K t3) t2) t1;
+                                 u1 = morejoin {t_term, t_eq'''} : False = isRedex t
+                             in contra (equiv 3 : False = True)
+                      | App f4 t4 -> 
+                             let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App (App f4 t4) t3) t2) t1;
+                                 u1 = morejoin {t_term, t_eq'''} : False = isRedex t
+                             in contra (equiv 3 : False = True)
+                      
+                      | S ->
+                             let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App S t3) t2) t1;
+                                 u4 = morejoin { t_term, t_eq''', valax t3, valax t2, valax t1} :
+                                     isRedex t = (isValue t1 && isValue t2 && isValue t3);
+                                 u5 = trans (sym u4) p : (isValue t1 && isValue t2 && isValue t3) = True;
+                                 res = morejoin {t_term, t_eq'''} :
+                                    redexProp t [p] =
+                                       RedexS t t3 t2 t1 [t_eq''']
                                         [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
                                         [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
-                                        [and_left (isValue t1) (isValue t2 && isValue t3) u5])
-                         in conv res_term at ~(sym res) !                          
+                                        [and_left (isValue t1) (isValue t2 && isValue t3) u5];
+                                 res_term =  valax (RedexS (tcast t by t_term) t3 t2 t1 [t_eq''']
+                                            [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                            [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                            [and_left (isValue t1) (isValue t2 && isValue t3) u5])
+                             in conv res_term at ~(sym res) !                          
 
 
 
@@ -535,8 +585,17 @@ Program step : (t:Term)[p:isRedex t = True] -> Term :=
           RedexK t1 t2 [isapp] [isval1] [isval2] -> t1
         | RedexS t1 t2 t3 [isapp] [isval1] [isval2] [isval3] -> App (App t1 t2) (App t1 t3)
 
+Program step : 
+ (t:Term)[p:isRedex t = True] -> Term :=
+ case redexProp t [p] {redex_eq} of
+   RedexK t1 t2 
+     [isapp] [isval1] [isval2] -> t1
+ | RedexS t1 t2 t3 
+     [isapp] [isval1] [isval2] [isval3] 
+    -> App (App t1 t2) (App t1 t3)
 
-Theorem step_terminates : forall (t:Term)(p:isRedex t = True).step t [p] ! :=
+Theorem step_terminates : 
+ forall (t:Term)(p:isRedex t = True).step t [p] ! :=
    termcase t {t_term} of
      abort -> let u1 = (aborts (isRedex ~t_term))
                      : (abort Bool) = isRedex t;
@@ -560,7 +619,8 @@ Theorem step_terminates : forall (t:Term)(p:isRedex t = True).step t [p] ! :=
 data Ctx : Type where
     Box : Ctx
   | C1 : Ctx -> Term -> Ctx
-  | C2 : (t:Term) -> [p:isValue t = True] -> Ctx ->  Ctx
+  | C2 : (t:Term) -> [p:isValue t = True] 
+         -> Ctx ->  Ctx
 
 
 data Decomp : Type where
@@ -572,14 +632,18 @@ data Decomp : Type where
 Recursive decompose : (t:Term) -> Decomp  :=
   case isRedex t {redex_t} of
       True -> Dec Box t
-    | False -> (case t {e_eq} of
-                  K -> Dec Box t
-                | S -> Dec Box t
-                | App x y -> (case isValue x {x_val} of
-                                True -> (case decompose y {y_eq} of
-                                          Dec c' t' -> Dec (C2 x [sym x_val] c') t')
-                               | False -> (case decompose x {x_eq} of
-                                          Dec c' t' -> Dec (C1 c' y) t')))
+    | False -> 
+       case t {e_eq} of
+          K -> Dec Box t
+        | S -> Dec Box t
+        | App x y -> 
+           case isValue x {x_val} of
+             True -> (case decompose y {y_eq} of
+                 Dec c' t' -> 
+                  Dec (C2 x [sym x_val] c') t')
+           | False -> (case decompose x {x_eq} of
+                 Dec c' t' -> 
+                  Dec (C1 c' y) t')
 
 -- Plugging a term into n evaluation context.  
 Recursive plug : (c:Ctx)(t:Term) -> Term :=
