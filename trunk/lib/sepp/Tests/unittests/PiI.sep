@@ -6,7 +6,7 @@ flag ImplicitArgs false
 -- Section 2
 data Nat : Type where
   Z : Nat
-| S : Nat -> Nat
+| S : (x:Nat) -> Nat
 
 data Vec : [a:Type] [n:Nat] -> Type where
    VNil : [q:n = Z] -> Vec a n
@@ -32,13 +32,13 @@ Program id : [a:Type] (x:a) -> a := x
 
 Theorem id_is_id_term :
   forall (a:Type)(x:a)(x_term:x!).id [a] x = x :=
-     join 100 0 : id [a] (tcast x by x_term) = x
+     join 100 : id [a] (tcast x by x_term) = x
 
 Theorem id_is_id :
   forall (a:Type)(x:a).id [a] x = x :=
     termcase x {x_term} of
        abort ->
-         let u1 = (join 100 100 : id [a] (abort a) = (abort a))
+         let u1 = (join 100 : id [a] (abort a) = (abort a))
          in conv u1 by x_term at hole. (id [a] hole = hole)
      | ! -> id_is_id_term a x x_term
 
@@ -80,15 +80,15 @@ Theorem and_commutes :
      case x {x_eq} x_term of
        True ->
          (case y {y_eq} y_term of
-            True -> let u1 = join 100 100 : (True && True) = (True && True)
+            True -> let u1 = join 100 : (True && True) = (True && True)
                     in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
-          | False -> let u1 = join 100 100 : (True && False) = (False && True)
+          | False -> let u1 = join 100 : (True && False) = (False && True)
                      in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
       | False ->
          (case y {y_eq} y_term of
-            True -> let u1 = join 100 100 : (False && True) = (True && False)
+            True -> let u1 = join 100  : (False && True) = (True && False)
                     in autoconv u1 -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
-          | False -> let u1 = join 100 100 : (False && False) = (False && False)
+          | False -> let u1 = join 100 : (False && False) = (False && False)
                      in autoconv u1) -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
 
 Theorem morejoin_and_commutes :
@@ -611,7 +611,7 @@ Program dec_ctx :  (d:Decomp) -> Ctx :=
 Theorem dec_ctx_inj : forall (c1:Ctx)(c2:Ctx)(t1:Term)(t2:Term)
                               (c1_term:c1!)(c2_term:c2!)(t1_term:t1!)(t2_term:t2!)
                          (p:Dec c1 t1 = Dec c2 t2).c1 = c2 :=
-   let u1 = join 0 0 : dec_ctx (Dec c1 t1) = dec_ctx (Dec c1 t1);
+   let u1 = join 0 : dec_ctx (Dec c1 t1) = dec_ctx (Dec c1 t1);
        u1' = conv u1 at dec_ctx (Dec c1 t1) = dec_ctx ~p;
        u2 = morejoin {c1_term,c2_term,t1_term,t2_term} : c1 = dec_ctx (Dec c1 t1);
        u3 = morejoin {c1_term,c2_term,t1_term,t2_term} : c2 = dec_ctx (Dec c2 t2)
@@ -621,7 +621,7 @@ Theorem dec_ctx_inj : forall (c1:Ctx)(c2:Ctx)(t1:Term)(t2:Term)
 Theorem dec_term_inj : forall (c1:Ctx)(c2:Ctx)(t1:Term)(t2:Term)
                               (c1_term:c1!)(c2_term:c2!)(t1_term:t1!)(t2_term:t2!)
                          (p:Dec c1 t1 = Dec c2 t2).t1 = t2 :=
-   let u1 = join 0 0 : dec_focus (Dec c1 t1) = dec_focus (Dec c1 t1);
+   let u1 = join 0 : dec_focus (Dec c1 t1) = dec_focus (Dec c1 t1);
        u1' = conv u1 at dec_focus (Dec c1 t1) = dec_focus ~p;
        u2 = morejoin {c1_term,c2_term,t1_term,t2_term} : t1 = dec_focus (Dec c1 t1);
        u3 = morejoin {c1_term,c2_term,t1_term,t2_term} : t2 = dec_focus (Dec c2 t2)
@@ -1117,10 +1117,10 @@ Inductive s_free_term : forall (t:Term){t_term}(p:s_free t = True).(reduction t)
                    let p' = decomp_preserves_s_free t t_term t' (valax t') c (valax c) p (sym dec_t_eq);
                        p'' = conv p' at s_free ~isapp = True; -- App (App (App S t1) t2) t3 = True
                        p3 = s_free_app_1 (App (App (App S t1) t2) t3) (App (App S t1) t2) t3
-                                  (join 0 0) p'' : s_free (App (App S t1) t2) = True;
-                       p4 = s_free_app_1 (App (App S t1) t2) (App S t1) t2 (join 10 10) p3 : s_free (App S t1) = True;
-                       p5 = s_free_app_1 (App S t1) S t1 (join 10 10) p4 : s_free S = True;
-                       p5_counter = join 10 10 : False = s_free S
+                                  (join 0) p'' : s_free (App (App S t1) t2) = True;
+                       p4 = s_free_app_1 (App (App S t1) t2) (App S t1) t2 (join 10) p3 : s_free (App S t1) = True;
+                       p5 = s_free_app_1 (App S t1) S t1 (join 10) p4 : s_free S = True;
+                       p5_counter = join 10 : False = s_free S
                    in contra (trans p5_counter p5)
 
 
