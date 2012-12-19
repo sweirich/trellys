@@ -235,7 +235,7 @@ sepEval :: Parser Decl
 sepEval = do
   reserved "Eval"
   EvalStmt <$> expr
-  
+
 
 -- Tokenizer definition
 sepPPStyle :: GenLanguageDef String u Identity
@@ -627,7 +627,7 @@ letdecls
   :: Parser [(Stage, Name Expr, Maybe (Name Expr), Expr)]
 letdecls =
   semiSep1 (do (x,stage) <- nm
-               y <- option Nothing (Just <$> brackets (string2Name <$> identifier) <?> "name for let-binding equality")
+               y <- option Nothing eqvar
                reservedOp "="
                z <- expr
                return(stage,x,y,z))
@@ -637,6 +637,10 @@ letdecls =
           <|>
           do ident <- string2Name <$> identifier
              return (ident,Dynamic)
+        eqvar :: Parser (Maybe (Name Expr))
+        eqvar = (Just <$> braces (string2Name <$> identifier) <?> "name for let-binding equality") -- brackets notations should be deprecated
+                   <|>
+                (Just <$> brackets (string2Name <$> identifier) <?> "name for let-binding equality")
 
 letExpr :: Parser Expr
 letExpr = do
@@ -857,4 +861,3 @@ telescope = do
 -- Parameters marked with ? before a name are supposed to be inferred.
 infOption :: Parser Bool
 infOption = option False $ (reservedOp "?" >> return True)
-
