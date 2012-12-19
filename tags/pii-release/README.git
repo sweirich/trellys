@@ -1,0 +1,35 @@
+Clone the svn repo with git-svn:
+
+  git svn clone --prefix=svn/ \
+      --stdlayout \
+      --ignore-paths=nax/src/Language/Trellys/LayoutToken.hs \
+      https://trellys.googlecode.com/svn/ \
+      trellys-lang.git
+
+The --ignore-paths avoids the corrupted LayoutToken.hs.  It's not
+present in current revisions, but will still confuse git.
+
+Add a git remote:
+
+  git remote add github git@github.com:ntc2/trellys-google-git-svn.git
+
+Your remote might be different.
+
+Save your work in progress to the git remote:
+
+  git push -u github <branch>
+
+The -u makes github/<branch> the default remote for the local
+<branch>.
+
+Problem: even linear history causes problems with git-svn.  When
+svn/trunk is a strict ancestor of both github/master and master, a
+`git svn dcommit` makes master and github/master diverge.  One is a
+subset of the other, but the commits have been rewritten by the
+implicit rebase in the dcommit.  This does not work:
+
+  git co master
+  git merge --strategy ours github/master
+
+It confuses svn.  And even if it didn't, there would be a spurious
+merge commit :P

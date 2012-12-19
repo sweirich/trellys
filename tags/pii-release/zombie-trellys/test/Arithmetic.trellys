@@ -1,0 +1,124 @@
+module Arithmetic where
+
+import Prelude
+
+plus : Nat -> Nat -> Nat
+ind plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [ord cw] m)
+
+
+mult : Nat -> Nat -> Nat
+ind mult n = \m .
+  case n [cw] of
+    Zero -> Zero
+    Succ pred -> plus m (mult pred [ord cw] m)
+
+
+minus : Nat -> Nat -> Nat
+ind minus n = \m .
+   case n [cn] of
+     Zero -> Zero
+     Succ pred -> case m [cm] of
+                    Zero -> n
+                    Succ mpred -> minus pred [ord cn] mpred
+
+-- 'x > y'
+gt : Nat -> Nat -> Bool
+ind gt x = \y.
+   case x [xpf] of
+        Zero    -> False
+        Succ x' -> case y [_] of
+                   Zero -> True
+                   Succ y' -> gt x' [ord xpf] y' 
+-- 'x < y'
+lt : Nat -> Nat -> Bool
+lt = \x.\y.gt y x
+
+-- 'x >= y'
+ge : Nat -> Nat -> Bool
+ge = \x y . gt (Succ x) y
+
+-- 'x <= y'
+le : Nat -> Nat -> Bool
+le = \x.\y.ge y x
+
+-- 'x = y'
+eq : Nat -> Nat -> Bool
+eq = \x.\y.case (gt x y) [_] of
+           False -> case (lt  x y) [_] of
+                    False -> True
+                    True -> False
+           True  -> False
+
+-- x != y
+neq : Nat -> Nat -> Bool
+neq = \x.\y.case (eq x y) [_] of
+            True -> False
+            False -> True
+
+-- 'div' calculates ceiling(n/m+1)
+prog div : Nat -> Nat -> Nat
+rec div n = \m .
+  case n [_] of
+    Zero -> Zero
+    Succ pred ->  let prog rc = div (minus pred m) m in
+                  Succ rc
+
+minus_same_zero : (n : Nat) -> (minus n n = 0)
+ind minus_same_zero n =
+    case n [n_eq] of
+      Zero -> (join : minus 0 0 = 0)
+      Succ pred ->
+        let _ = (join : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+          minus_same_zero pred [ord n_eq]
+
+-- n - 0 = n
+lemma_minus_zero_id : (n : Nat) -> (minus n 0 = n)
+lemma_minus_zero_id =
+  \n . case n [eq_n] of 
+    Zero -> (join : minus 0 0 = 0)
+    Succ n' -> (join 10 : minus (Succ n') 0 = Succ n')
+
+-- (m + n) - m = n
+lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
+ind lemma_minus_plus_id m = \n .
+  case m [m_eq] of
+     Zero -> let _ = (join : n = plus 0 n) in
+              lemma_minus_zero_id n
+     Succ m' -> let _ = (join : minus (plus (Succ m') n) (Succ m')
+                                = minus (plus m' n) m') in
+                 (lemma_minus_plus_id m' [ord m_eq] n)
+
+-- m*(n+1) / n = m
+log div_mult : (m : Nat) -> (n : Nat) ->
+    (div (mult m (Succ n)) n = m)
+ind div_mult m = \n .
+  case m [m_eq] of
+    Zero -> (join : div (mult Zero (Succ n)) n = Zero)
+               -- (S m' * S n) / n = (let r = ((n + (m' * S n)) - n) / n in S r)
+    Succ m' -> let _    = (join: div (mult (Succ m') (Succ n)) n =
+                                      (let prog r [_] = div (minus (plus n (mult m' (Succ n))) n) n
+                                       in Succ r))
+               in let _ = lemma_minus_plus_id n (mult m' (Succ n))
+               in let _ = div_mult m' [ord m_eq] n
+               in let _ = (join : (let prog r [_] = m' in Succ r) = Succ m')
+               in (_ : (div (mult m (Succ n)) n = m))
+
+plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
+plus_associates = ind pa i = \j k .
+  case i [ieq] of
+            -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
+    Zero -> (join : plus (plus 0 j) k = plus 0 (plus j k))
+               -- associate `plus` in `Succ` of the inductive case: S ((i'+j)+k) = S (i'+(j+k))
+    Succ i' -> let ih = pa i' [ord ieq] j k
+               -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
+               in let e2 = (join : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
+               -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
+               in let e3 = (join : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
+               -- move the `Succ` inside both sides
+               in (_ : (plus (plus i j) k) = (plus i (plus j k)))
+
+main : Nat
+main = plus 2 3

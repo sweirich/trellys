@@ -1,0 +1,11 @@
+-- The number of subpatterns in a constructor pattern must match the number
+-- of arguments for that constructor.
+
+module DeepMatchError3 where
+import Prelude
+
+prog f : Nat -> Nat
+f = \n .
+  case n [_] of
+    Zero -> Zero
+    Succ n m -> Zero

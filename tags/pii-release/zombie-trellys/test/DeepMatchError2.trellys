@@ -1,0 +1,15 @@
+--It is an error to match against an abstract datatype.
+
+-- It's not obvious that you could actually do so in a well-typed program anyway.
+-- The following example would fail to typecheck for a different reason, but
+-- the "abstract datatype" error message gets triggered first.
+
+module DeepMatchError2 where
+import Prelude
+
+data Foo : Type 0 where
+  mkFoo of
+
+log data C : Type 0 where
+  MkC of (x : C) (y : (case x [_] of mkFoo -> Nat  : Type 0))
+

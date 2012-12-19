@@ -1,0 +1,12 @@
+-- All branches of a case must have the same number of patterns, 
+-- equal to the number of scrutinees.
+module DeepMatchError5 where
+
+import Prelude
+
+prog min : Nat -> Nat -> Nat
+rec min m = \n . 
+  case m [_], n [_] of
+    Zero -> Zero
+    _ , Zero -> Zero
+    Succ m', Succ n' -> Succ (min m' n')

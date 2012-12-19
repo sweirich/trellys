@@ -1,0 +1,20 @@
+#!/bin/bash
+
+TORUN=$1
+EXPECTED=$2
+
+echo -n "${TORUN}: "
+./trellys -e "${TORUN}" | grep "${EXPECTED}" > /dev/null
+RESULT=${PIPESTATUS[*]}
+
+case "${RESULT}" in
+  "1 0" )
+     echo 
+     exit 0 ;;
+  "1 1" ) 
+     echo "failed with the wrong error message" 
+     exit 1 ;;
+  0* ) 
+     echo "suceeded, but should fail" 
+     exit 1 ;;
+esac

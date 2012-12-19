@@ -1,0 +1,20 @@
+Fix nat : * = 
+        self n . ! C : (nat -> *) . (! n : nat. (C n) -> (C (succ n))) -> (C zero) -> 
+                   (C conv n to nat by refl, unfold) 
+    ,
+    zero : nat = 
+         conv \ C : nat -> * . \ s : (! n : nat. (C n) -> (C (succ n))) . \ z : (C zero) . z 
+         to nat 
+         by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+            [ unfold ; substself ]
+           
+    ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat -> * . \ s : (! n : nat. (C n) -> (C (succ n))) . \ z : (C zero) . 
+             (s n ((conv n to ! C : (nat -> *) . (! n : nat. (C n) -> (C (succ n))) -> (C zero) -> (C n)
+                      by [ unfold ; substself ] , refl) 
+                    C s z)) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]

@@ -1,0 +1,111 @@
+-- h2 (x:(forall a. a -> Int)) = x 6
+-- g2 (x:(forall a. a -> a)) = (x 5)
+-- g3 (x:Int->Int) = x 9
+-- g4 (x:(forall a. a -> a -> (a,a))) = (x 5)
+-- h3 (x:(forall a b . a -> b)) = x 5
+id x = x
+g5 (x:Int) = poly id
+-- ex4 x = (x 5,x 2)
+-- ex4 x = (h2 x,h3 x)
+-- h5: (forall a . a -> Int) -> Int
+-- h5 f = f True
+-- ex4 x y = (h2 x,x 4,x True,g2 y,y 4, x y)
+-- ex4 x = (id x 3, x True)
+
+-- ex5 x = (g2 (x 2), x 1 True,g3 (x 0),x)
+
+
+-- ex6 = g2 (poly (\ x -> x))
+-- ex7 = g2 (poly id)
+-- ex8 = g4 (poly (\ x y -> (x,y))) 2
+
+-- ex9 = instan (\ x y -> (x,y)) : (forall a . a -> Int -> (a,Int))
+ex10 = (instan (g5 0)) 8
+
+
+
+{-
+h (x:(forall a. a -> Int)) = x 6
+
+id x = x
+
+-- test21 x = (id x 3,h x)
+
+-- bad1 x = (x 3,x 'c')
+   -- mono type used at two different types
+   
+-- bad2  x = (h x,x 3,x 'c')
+  -- lambda bound variable used at more than one type
+  
+-- bad3 x = (x 3,h x)
+  -- h expects poly type, 'x 3' forces mono type on x
+
+-- bad4 x = (h2 x, h x)
+  -- h expects poly type, 'h2 3' forces mono type on x
+
+
+-- bad5 (x:zzz) = let {w: (forall a . a -> zzz); w y = x} in g (poly w)
+   -- vars escape
+   
+-- bad6 x = let { app: (forall a . Int -> a); app y = x} in x
+   -- not as polymorphic as claimed
+        
+         
+
+
+
+g (x:(forall a. a -> a)) = (x 5,x 'z')
+
+g2 (x:(forall a. a -> a)) = (x 5,poly x)
+
+apply x y = (x y)   -- used to be "f"
+
+f2 = poly apply (forall w . (w -> Int) -> w -> Int)
+
+mapP f = poly(\ g x -> case x of
+                        (P m n) -> P (f m) (g n))
+                        
+
+h2 (x: Int -> Int) = 3
+
+
+h3: (forall a. a -> Int) -> Int
+h3 x = x 6
+
+ 
+g4 x = (h x,h x)
+
+head x = case x of
+          (Cons x xs) -> x
+
+
+id2 : (forall a. a -> a)
+id2 x = x
+
+id x = x
+
+id3 = \ x -> x
+
+two = \ x -> (x,5,x)
+testtwo (x:(forall a. a -> a)) = (two (poly x))
+
+
+not x = case x of
+         True -> False
+         False -> True 
+
+test = g (poly id)
+
+one = (Cons (poly id) Nil)
+
+two = ((head one) 4, (head one) 'x')
+
+mapP f = poly(\ g x -> case x of
+                        (P m n) -> P (f m) (g n))
+         
+maptest = mapP not id (False,2)    
+
+-}
+
+
+

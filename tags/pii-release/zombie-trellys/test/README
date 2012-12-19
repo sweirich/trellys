@@ -1,0 +1,9 @@
+Test
+====
+
+Do `make` to run all tests.  See Makefile for more tests.
+
+To run `trellys` manually, do .e.g `./trellys -t Prelude.trellys` to
+typecheck Prelude.trellys.  NB: the trellys binary is in this
+directory, which is probably not on your path, so you need the leading
+"./".

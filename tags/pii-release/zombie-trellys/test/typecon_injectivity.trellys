@@ -1,0 +1,43 @@
+-- Alexandre Miquel's proof that
+-- injectivity of typeconstructors with large indices
+-- living in an impredicative universe is inconsistent.
+-- [See https://lists.chalmers.se/pipermail/agda/2010/001543.html 
+-- for the (easier to understand) original].
+
+-- This no longer typechecks, because I turned off impredicative Pi-types.
+
+module Typecon_injectivity where
+
+data False : Type 0 where {}
+
+data Iff (p : Type 0@log) (q : Type 0@log) : Type 0 where
+  IffIntro of ((p@log) -> q)  ((q@log) -> p)
+
+data I (f : (Type 0@log) -> Type 0 @log) : Type 0 where {}
+
+axiom log iinj: (f : (Type 0@log) -> Type 0 @log) -> (g : (Type 0@log) -> Type 0 @log) -> (I f = I g) -> f = g
+
+log r : (Type 0@log) -> Type 0
+r = \ x . (p:(Type 0@log) -> Type 0 @log) -> (x = I p) -> ((p x @log) -> False)
+
+log r_spec : (p : (Type 0@log)->Type 0 @log) -> Iff (r (I p) @log) ((p (I p) @log) -> False)
+r_spec = \p . IffIntro [r (I p) @log] [(p (I p) @log) -> False]
+                (\rIp . (conv rIp 
+                           by (join : r (I p) = (p':(Type 0@log)->Type 0 @log)->(I p = I p') -> ((p' (I p)@log)->False))
+                           at t.t)
+                              p join) 
+                (\npIp. conv \p' eq . conv npIp 
+                                      by (iinj p p' eq : p=p')
+                                      at t. ((t (I p) @log)->False)
+                        by (join : ((p':(Type 0@log)->Type 0 @log)->(I p=I p') -> ((p' (I p) @log)-> False)) = r (I p))
+                        at t.t)
+
+log r_bad : Iff (r (I r) @log) ((r (I r) @log) -> False)
+r_bad = r_spec r
+
+log falsity : False
+falsity = case r_bad [_] of
+            IffIntro ltr rtl ->
+              let f [_] = (\x . ltr x x : (r (I r) @log) -> False) in 
+              let y [_] = rtl f in 
+                f y
