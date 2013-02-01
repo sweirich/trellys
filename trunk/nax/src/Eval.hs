@@ -15,6 +15,7 @@ import Value(Encoding(..),Typable(..),traceScheme,showScheme,prims,imply,applyTE
             ,injectIII,injectBBB,injectIIB,notInfo,conkeyM)
 -- import Types(patBinds,tint,tbool,arrT)
 import Monads(FIO,fio,freshNameIO)
+import Data.IORef(newIORef,IORef)
 -- Miscellaneous stuff
 
 import Control.Monad(foldM,liftM,liftM2,liftM3)
@@ -274,6 +275,12 @@ freshPat (pat,ans) =
                  sch (Just t) = Sch [] (Tau t)
            ; return(PVar nm2 mt,(nm,i,VCode(TEVar nm2 (sch mt))):ans)}      
 
+ioFresh k =  
+  do { n <- (nextinteger)
+     ; p <- (newIORef Nothing)
+     ; return(TcTv (n,p,k)) }
+
+
 reify  n x  = help n x  where
   help n (VBase pos x) = return (TELit noPos x)
   help n (VFun ty f) = 
@@ -285,7 +292,8 @@ reify  n x  = help n x  where
   help n (VFunM i f) =
    do { next <- nextinteger
       ; let name = Nm("%"++show next,noPos)
-      ; result <- f (VCode (TEVar name (error "type of var in reify"))) return
+      ; ty <- ioFresh Star
+      ; result <- f (VCode (TEVar name (Sch [] (Tau ty)))) return
       ; body <- reify n result
       ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
   help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)

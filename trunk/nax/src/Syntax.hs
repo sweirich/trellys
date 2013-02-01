@@ -141,6 +141,14 @@ data Typ
    | TyAll Telescope Typ
    | Typ :@: Theta
 
+
+t0 = TyVar (toName "t0") Star
+t1 = TyVar (toName "t1") Star
+sch1 = Sch [] (Tau t0) 
+one = TELit noPos (LInt 1)
+two = TELit noPos (LInt 2)
+c = TECon None (toName "C") (Tau t0) 2 [one,two]
+
 ----------
 data Rho 
    = Tau Typ
@@ -376,6 +384,9 @@ printChoice x p =
 
 pi0 = PI [] [("Mu",False),("In",False),("Cast",False),("PatType",False)] -- [listSyn,natSyn] []
 
+pi1 = PI [] [("Mu",True),("In",True),("Cast",False),("PatType",False)]
+
+
 listSyn (typ@(TyApp (TyMu Star) (TyApp (TyCon _ (Nm("L",_)) k) x))) = Just(TySyn (toName "List") 1 [x] typ)
 listSyn _ = Nothing
 
@@ -416,7 +427,7 @@ parenTExpr p (x @ (TELit _ _)) = ppTExpr p x
 parenTExpr p (x @ (TETuple _)) = ppTExpr p x
 parenTExpr p (x@(CSP _)) = ppTExpr p x
 parenTExpr p (x@(Emv _)) = ppTExpr p x
-parenTExpr p (TEIn Star x) | Just (a,ys) <- isTExprList x  = ppTList (ppTExpr p) ys
+-- parenTExpr p (TEIn Star x) | Just (a,ys) <- isTExprList x  = ppTList (ppTExpr p) ys
 parenTExpr p (x @ (TEIn _ _)) = ppTExpr p x
 parenTExpr p x = PP.parens $ ppTExpr p x 
 
@@ -469,7 +480,7 @@ ppExpr p e =
                 ,text "in" <+> ppExpr p body]
       where (d:ds,body) = flatLet e []
     (EIn Star x) | Just ys <- isExprList x -> ppList (ppExpr p) ys
-    (EIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),ppExpr p x]<>text ")"
+    (EIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenExpr p x]<>text ")"
 
     (EMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppExpr p exp <+> text "where"): map f ms)
        where f (ps,body) = PP.nest 2(PP.sep[PP.hsep (map (ppPat p) ps) <+> text "=",PP.nest 2 (ppExpr p body)])
@@ -525,14 +536,14 @@ ppTExpr p e =
                 ,text "in" <+> ppTExpr p  body]
       where (d:ds,body) = flatLet e []
             flatLet (TELet d e) ds = flatLet e (d:ds)
-	    flatLet e ds = (ds,e)
-    (TEIn k x)  | printChoice "In" p -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),ppTExpr p x]<>text ")"
-    (TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
+            flatLet e ds = (ds,e)
+    (TEIn k x)  | printChoice "In" p -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
+    --(TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
     (TEIn k (TECon (Syn d) c rho 0 [])) ->  text("`"++d)
     (TEIn k (TECon (Syn d) c rho arity xs)) -> 
         PP.parens(PP.sep(text ("`"++d) : map (parenTExpr p) xs))
     
-    (TEIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),ppTExpr p x]<>text ")"
+    (TEIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
        where f (tele,ps,body) = PP.nest 2(PP.sep[PP.brackets(PP.sep (ppKArgs p tele))
                                                 ,PP.sep (map (ppPat p) ps) <+> text "="
@@ -543,7 +554,7 @@ ppTExpr p e =
                  ->  PP.parens(PP.vcat[text "cast"
                                       ,PP.nest 3 (ppTEqual p c)
                                       ,ppTExpr p t]) 
-    (TECast c t) -> ppTExpr p t                                      
+    (TECast c t) -> text"CAST " <> ppTExpr p t                                      
     (ContextHole e1 e2) ->
        PP.braces(PP.vcat[ppTExpr p e1,text "=",ppTExpr p e2])
                                        
@@ -1304,6 +1315,7 @@ nosplit (TELit _ _) = True
 nosplit (TEVar _ _) = True
 nosplit (TECon mu c ty arity xs) = all nosplit xs
 nosplit (TEApp x y) = (nosplit x) && (nosplit y)
+nosplit (TEAbs _ pairs) = all (\ (p,e) -> nosplit e) pairs
 nosplit (TETuple xs) = all nosplit xs
 nosplit (TELet _ _) = error ("No TLet in nosplit yet")
 nosplit (TEIn k x) = (nosplit x) 

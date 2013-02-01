@@ -36,6 +36,7 @@ import Data.Char(isSpace)
 go = run "../test/data.nax"
 work = run "../test/work.nax"
 test = run "../test/ListLike.nax"
+zap = run "../test/collapseLang.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env
@@ -210,7 +211,7 @@ smartPrims =
         ,(injectIIB "==" 14 (==))
         ,(injectIIB "/=" 15 (/=))
         ,((Nm("trace",preline 16),16,traceM 16),(Nm("trace",preline 16),traceScheme))
-	,((Nm("show",preline 18),18,VFun whoknows (\ v -> to(show v))),(Nm("show",preline 18),showScheme))
+        ,((Nm("show",preline 18),18,VFun whoknows (\ v -> to(show v))),(Nm("show",preline 18),showScheme))
         ,((Nm("reify",preline 19),19, reifyV 19),(Nm("reify",preline 19),reifyScheme))
         
         

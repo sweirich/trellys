@@ -22,6 +22,7 @@ import Data.Char(toLower)
 import UniqInteger(nextinteger)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
                                 ,render,vcat,sep,nest,parens)
+import Debug.Trace(trace)                                
 --------------------------------------------------------
 -- Type inference
 --------------------------------------------------------
@@ -213,13 +214,13 @@ isTuple loc size x = do {y <- zonkExpRho x; help y}
         help (Check (Tau t)) = 
            do { rs <- mapM (\ n -> freshType Star) [1..size]
               ; let message = "\nThe type: "++show t++" is not a tuple."
-	      ; unify loc [message] t (TyTuple Star rs)
+              ; unify loc [message] t (TyTuple Star rs)
               ; mapM zonk rs }
         help (Infer ref) = 
            do { rs <- mapM (\ n -> freshType Star) [1..size]
-	      ; fio(writeIORef ref (Tau(TyTuple Star rs)))
-	      ; return rs }
-	      
+              ; fio(writeIORef ref (Tau(TyTuple Star rs)))
+              ; return rs }
+              
 
 unifyMonad :: SourcePos -> Expected Rho -> FIO(Typ,Typ,TEqual)
 unifyMonad loc (Check (t@(Tau(TyApp m a)))) = return (m,a,TRefl (rhoToTyp t))
@@ -386,9 +387,16 @@ wellFormedTerm pos message frag (Parsed term) =
       ; (rho,term2) <- handleM (inferExpT frag term) trans
       ; case rho of
           Tau t -> return(term2,t)
+          (Rarr (Sch [] (Tau dom)) (Tau rng)) -> return(term2,TyArr dom rng)
           Rarr x y -> fail (unlines (("\nLifted term in type: "++show term++", is a function, "++show rho++", not data"):message))
       }
 
+etaReduce (TECast eq x) = TECast eq (etaReduce x)
+etaReduce (term@(TEAbs ElimConst [(PVar x _,TEApp f (TEVar y _))]))
+   | x==y = trace ("HERE1 "++show term) (etaReduce f)
+   | otherwise = trace ("HERE2 "++show term++", "++show x++" "++show y) term
+etaReduce term = trace ("HERE3 "++show term) term   
+  
 
 wellFormedRho:: SourcePos -> [String] -> Frag -> Rho -> FIO Rho
 wellFormedRho pos mess frag (Tau t) = 
@@ -964,7 +972,7 @@ elab toplevel env (dec@(Synonym pos nm xs body)) =
        -- if toplevel then write (show nm++", ") else return()
      ; (ptrs,names) <- getVars body  -- all the variables, those not in "xs" must be in the environment.
      ; let (ns,k) `acc2` (nm,Type t) = do { k2 <- kindOf t; return ((nm,k2):ns,Karr k2 k)}
-	   (ns,k) `acc2` (nm,Exp e) = do { t2 <-typeOf e; return ((nm,error ("Lifted exp as type: "++show t2)):ns,Tarr t2 k)}
+           (ns,k) `acc2` (nm,Exp e) = do { t2 <-typeOf e; return ((nm,error ("Lifted exp as type: "++show t2)):ns,Tarr t2 k)}
            (ns,k) `acc2` (nm,Kind _) = fail ("Kind variable in synonym: "++show nm)
            find (Kind n : more) nm | nm==n = return(Kind n)
            find (Type n : more) nm | nm==n = return(Type n)
@@ -1031,7 +1039,7 @@ tyConMacro tname rname (polyk@(PolyK tele k)) = (augment tname rname (", syntax 
           do { k5 <- instanK noPos (PolyK tele k4)
              ; let muarg = applyT (tType : take before xs)
              ; return(applyT ((TyMu k5): muarg : (drop before xs)))}
-        typ x = TyVar x Star	   
+        typ x = TyVar x Star       
         args = take (before+after) nameSupply
         str = rname++plistf show " " args " " " = "++show(build showType (map typ args))
         f pos xs = build tType xs
@@ -1101,10 +1109,10 @@ tyConTable = DM.fromList (map g predefinedTyCon)
   where g (s,TyCon syn nm k) = (nm,TYCON1 (syn,k))
    
 predefinedSyn =
- 	  [(toName "List",Right(1::Int,f))
- 	  ,(toName "Nat",Right(0,g))
- 	 -- ,(toName "P" ,Right(2,h))
- 	  ]
+          [(toName "List",Right(1::Int,f))
+          ,(toName "Nat",Right(0,g))
+         -- ,(toName "P" ,Right(2,h))
+          ]
    where f nm [(x,k)] = do { unifyK noPos ["Type synonym List arg is well kinded"] k Star
                         ; return(TySyn nm 1 [x] (listT x))}
          g nm [] = return(TySyn nm 0 [] nat)

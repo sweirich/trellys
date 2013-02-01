@@ -221,15 +221,15 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
           do { arg <- unifyExpT loc message arg1 arg2
              ; writeln("\nUnifying\n"++show z++"\n"++show w)
              ; let match [] [] = return []
-              	   match ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
-           	     case matchPatL ps1 ps2 [] of
-           	       Nothing -> fail "Mendler patterns don't match"
-           	       Just subst ->
-           	            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
-           	               -- ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
-           	               ; e <- unifyExpT loc message e1 e2s
-           	               ; ms <- match xs ys
-           	               ; return((m,ps1,e):ms)}
+                   match ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
+                     case matchPatL ps1 ps2 [] of
+                       Nothing -> fail "Mendler patterns don't match"
+                       Just subst ->
+                            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
+                               -- ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
+                               ; e <- unifyExpT loc message e1 e2s
+                               ; ms <- match xs ys
+                               ; return((m,ps1,e):ms)}
              ; ms <- match ms1 ms2             
              ; return(TEMend t1 e1 arg ms)
              }
@@ -260,13 +260,13 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
 compareTerms loc message x y =
   do { xnf <- normform x
      ; ynf <- normform y
---     ; writeln("\nStarting terms "++show x++" =?= "++show y)
---     ; writeln("Normal forms   "++show xnf++" =?= "++show ynf)
+     ; writeln("\nStarting terms "++show x++" =?= "++show y)
+     ; writeln("Normal forms   "++show xnf++" =?= "++show ynf)
      ; if xnf == ynf
           then return ()
           else  matchErr loc 
                 (("Term unification fails\n   "++
-                  show xnf++ " =/= " ++show ynf):
+                  render(ppTExpr pi1 xnf)++ " =/= " ++render(ppTExpr pi1 ynf)):
                   message)  x y }
 
 unifyExpVar loc message (x@(u1,r1,typ)) term =
@@ -854,30 +854,30 @@ getVarsExpr t = do { x <- pruneE t; f x }
         f (TEIn k x) = do { a <- getVarsKind k; b <- getVarsExpr x; unionW a b}
         f (Emv p) = return([Exp p],[]) 
         f (AppTyp x ts) =
-	  do { trip1 <- getVarsExpr x 
-	     ; foldM (accumBy getVars) trip1 ts} 	     
+          do { trip1 <- getVarsExpr x 
+             ; foldM (accumBy getVars) trip1 ts}             
         f (AbsTyp xs y) =
-	  do { trip1 <- getVarsExpr y
-	     ; getVarsTele xs trip1 }
-	f (TECast (TGen xs x) y) = 
-	  do { trip1 <- getVarsTEqual x
-	     ; trip2 <- getVarsExpr y
-	     ; trip3 <- unionW trip1 trip2
-	     ; getVarsTele xs trip3 }
+          do { trip1 <- getVarsExpr y
+             ; getVarsTele xs trip1 }
+        f (TECast (TGen xs x) y) = 
+          do { trip1 <- getVarsTEqual x
+             ; trip2 <- getVarsExpr y
+             ; trip3 <- unionW trip1 trip2
+             ; getVarsTele xs trip3 }
         f (TECast p e) = 
           do { trip1 <- getVarsTEqual p
-	     ; trip2 <- getVarsExpr e
-             ; (unionW trip1 trip2)}	     
+             ; trip2 <- getVarsExpr e
+             ; (unionW trip1 trip2)}         
         f (TEMend tag elim arg ms) = 
           do { trip1 <- getVarsExpr arg
              ; trip2 <- getVarsElim3 elim
              ; trip3 <- unionW trip1 trip2
              ; let free (pats,exp) = 
-	             do { (ptrs,vars) <- getVarsExpr exp
-	                ; return (ptrs,remove (Exp 0) vars (patsBind pats [])) }
-	           free2 (tele,pats,exp) = 
-	             do { trip1 <- free (pats,exp)
-	                ; getVarsTele tele trip1 }
+                     do { (ptrs,vars) <- getVarsExpr exp
+                        ; return (ptrs,remove (Exp 0) vars (patsBind pats [])) }
+                   free2 (tele,pats,exp) = 
+                     do { trip1 <- free (pats,exp)
+                        ; getVarsTele tele trip1 }
              ; foldM (accumBy free2) trip3 ms  } 
         f (TELet _ _) = error ("No getVarsExp for (ELet _ _) yet")
         f (CSP _) = return([],[])
@@ -1284,7 +1284,7 @@ expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
          f (AppTyp e t) = liftM2 AppTyp (sub e) (mapM (tySubb pos env) t)
          f (AbsTyp ts e) = 
             do { (vs2,env2) <- alphaTele pos (ts,env)
-	       ; e2 <- expSubb pos env2 e
+               ; e2 <- expSubb pos env2 e
                ; return(AbsTyp vs2 e2)}  
          f (TECast (TGen ts t) e) =
            do { (vs2,env2) <- alphaTele pos (ts,env)
@@ -1494,8 +1494,8 @@ subTyp env x = do { a <- prune x; f a }
         f (TyLift (Parsed e)) = liftM (TyLift . Parsed) (subExpr env e)
         f (TcTv (uniq,ptr,k)) = liftM (\ k -> TcTv(uniq,ptr,k)) (subKind env k)
         f (TyAll vs t) = 
-	  do { (vs2,env2) <- freshTele (vs,env)
-	     ; t2 <- subTyp env2 t
+          do { (vs2,env2) <- freshTele (vs,env)
+             ; t2 <- subTyp env2 t
              ; return(TyAll vs2 t2)}   
          
 subRho env (Tau t) = do {a <- subTyp env t; return(Tau a)}
