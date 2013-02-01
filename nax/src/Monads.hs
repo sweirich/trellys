@@ -9,6 +9,7 @@ import System.IO.Unsafe(unsafePerformIO)
 import Text.Parsec.Pos(SourcePos,newPos)
 import Control.Monad (filterM,liftM)
 import Control.Applicative ((<$>))
+import UniqInteger(nextinteger)
 
 import Names(SourcePos,noPos,Name(..))
 
@@ -97,8 +98,6 @@ fio x = FIO $ do result <- tryIO x
 
 write = fio . putStr
 writeln = fio . putStrLn
-nextInteger = do { n <- readIORef counter; writeIORef counter (n+1); return n }
-next = fio nextInteger
 
 fresh = unique "_x"
 
@@ -110,9 +109,9 @@ freshName (Nm(n,pos)) =
 freshNameIO (Nm(n,pos)) = 
   do { m <- nextInteger; return(Nm(n++show m,pos))}
   
--- ???: why unsafePerformIO ?
-counter :: IORef Integer
-counter = unsafePerformIO(newIORef 0)
+nextInteger = UniqInteger.nextinteger 
+next = fio nextInteger
+----------------------------------------------
 
 newRef x = fio(newIORef x)
 readRef r = fio(readIORef r)
