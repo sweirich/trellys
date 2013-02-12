@@ -361,9 +361,12 @@ wellFormedType pos mess frag typ = do { x <- prune typ
              ; return(TyProof f2 x2,Star)}
         f (TyMu k) =
           do { let m = ("\nChecking wff (Mu "++show k++")"):mess
-          -- ; k2 <- wfKind pos m frag k -- cannot check polykinded fixpoint
-          -- so changed to below
-             ; (k2,newvs) <- wfGadtKind pos m frag k -- TODO is this okay? KYA
+             -- ; k <- freshKind -- want kinds inferred
+             -- Howver the commented line above does not work
+             --  because of "collect" function used by "runcount" function
+             --  I think we must only consider TyMu in its fully applied form
+             --  or do something else
+             ; (k2,newvs) <- wfGadtKind pos m frag k -- kind checking
              ; return(TyMu k2,Karr (Karr k2 k2) k2) }
         f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)   
         f (TyLift t) = fail ("Lifted type in non application argument position: "++show t)
