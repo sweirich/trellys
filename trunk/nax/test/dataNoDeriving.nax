@@ -139,14 +139,16 @@ data P: (Tag -> Nat -> *) -> Tag -> Nat -> * where
   Base : P r {E} {In[*] Zero} 
   StepO : r {O} {i} -> P r {E} {`succ i}
   StepE : r {E} {i} -> P r {O} {`succ i}
-    deriving fixpoint Proof
+--    deriving fixpoint Proof
 
---base = In[Tag -> Nat -> *] Base
---stepO x = In[Tag -> Nat -> *] (StepO x)
---stepE x = In[Tag -> Nat -> *] (StepE x)
+synonym Proof {t} {n} = Mu[Tag -> Nat -> *] P {t} {n}
 
-p1 = stepE base
-p2 = stepO p1
+base = In[Tag -> Nat -> *] Base
+stepO x = In[Tag -> Nat -> *] (StepO x)
+stepE x = In[Tag -> Nat -> *] (StepE x)
+
+-- p1 = stepE base -- ERROR there is something seriously woring here
+-- p2 = stepO p1   -- cannot do this since above is an error
 
 -- Define synonym of synonym
 synonym Even x = Proof {E} {x}
@@ -167,30 +169,32 @@ flop x =
 data V: * -> (Nat -> *) -> Nat -> * where
   Vnil: V a r {`zero}
   Vcons: a -> r {n} -> V a r {`succ n}
-    deriving fixpoint Vector
+--    deriving fixpoint Vector
 
+synonym Vector a {n} = Mu[Nat -> *] (V a) {n}
+vnil = In[Nat -> *] Vnil 
+vcons x xs = In[Nat -> *] (Vcons x xs)
 
-
-v2 = vcons 3 (vcons 5 vnil)
+-- v2 = vcons 3 (vcons 5 vnil) -- ERROR all applications have problems
 
 -- requires equating  e   == `plus `zero e     and `plus is recursive
 appendV xs = mcata{ {i} . Vector a {j} -> Vector a {`plus i j}} xs
   with app Vnil ys = ys
        app (Vcons x xs) ys = vcons x (app xs ys)
 
--- vnil = In[Nat -> *] Vnil 
--- vcons x xs = In[Nat -> *] (Vcons x xs)
+
 
 vlen x = mcata{ {i} . Int} x with
   len Vnil = 0
   len (Vcons x xs) = 1 + len xs
-  
+ 
  
 vtail x = 
   mprim{ {`succ i} . Vector a {i}} x with
     -- tail cast Vnil = unreachable
     tail cast (Vcons y ys) = cast ys    
 
+{- ------------- ERROR this doesn't work ------------          
 polarity x = 
   mcata { {n} . Either (Even {n}) (Odd {n})} x with
     pol Vnil = Left base
@@ -198,8 +202,8 @@ polarity x =
          case pol xs of
            Left p -> Right(stepE p)
            Right p -> Left(stepO p)
-           
-           
+-}
+
 {-
 pol:: (x:Nat) -> Either (Even {x}) (Odd {x})
 pol:: (Nat x) -> Either (Even {x}) (Odd {x})
@@ -227,10 +231,13 @@ pol x =
 data Nest: (* -> *) -> * -> * where
    Tip: a -> Nest r a
    Fork: r(a,a) -> Nest r a
- deriving fixpoint PowerTree
- 
- 
-tree1 = tip 3
+ -- deriving fixpoint PowerTree
+
+synonym PowerTree a = Mu[* -> *] Nest a
+tip v = In[* -> *] (Tip v)
+fork t = In[* -> *] (Fork t)
+
+tree1 = tip 3  -- this works maybe kinds only consisting of * is okay
 tree2 = fork(tip(2,5))
 tree3 = fork(fork(tip((4,7),(0,2))))
 
@@ -238,7 +245,7 @@ sumTree x = (mcata { a . (a -> Int) -> Int} x with
   sum (Tip x) f = f x
   sum (Fork x) f = sum x (\ (a,b) -> f a + f b)) (\ x -> x)
 
-
+{-
 -------------------------------------------------
 
 data Equal: a -> a -> * where
@@ -273,7 +280,7 @@ data LamF: (Nat -> *) -> Nat -> * where
   Var: Fin {n} -> LamF f {n}
   App: f {n} -> f {n} -> LamF f {n}
   Abs: f{`succ n} -> LamF f {n}
-    deriving fixpoint Lam -- ERROR this should raise an error but accepted
+    deriving fixpoint Lam
 
 -- synonym Lam n = Mu [Nat -> *] LamF {n}
     
@@ -457,3 +464,4 @@ data Envr' : (({st} -> *) -> {SNat {n}} -> {Vector st {n}} -> *)
     deriving fixpoint Env'
 
 myenv' = extend' File1 (extend' File2 empty')
+-}
