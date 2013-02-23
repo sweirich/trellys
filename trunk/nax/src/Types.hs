@@ -92,8 +92,7 @@ matchE vars (pat,exp) env =
     (TEApp x y,TEApp m n) -> 
        do { env2 <- matchE vars (x,m) env; matchE vars (y,n) env2}  
     (TEAbs _ _,TEAbs _ _) -> error ("No TEAbs in matchE yet: "++show pat++" =?= "++show exp)
-    (TECon _ c1 _ a1 xs1,TECon _ c2 _ a2 xs2) | c1==c2 && a1==a2 
-       ->  foldM (flip $ matchE vars) env (zip xs1 xs2) 
+    (TECon _ c1 _ a1,TECon _ c2 _ a2) | c1==c2 && a1==a2 -> return env 
     (TETuple xs,TETuple ys) | length xs==length ys ->
        foldM (flip $ matchE vars) env (zip xs ys) 
     (TELet _ _,TELet _ _) -> error ("No TELet in matchE yet: "++show pat++" =?= "++show exp)
@@ -208,9 +207,9 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
              ; x2 <- unifyExpT loc message y b
              ; return(TEApp x1 x2) }
        f (TEAbs e1 _) (TEAbs e2 _) = error "No Abs in unifyExp yet."
-       f (z@(TECon mu c rho a xs)) (w@(TECon _ d _ b ys)) 
+       f (z@(TECon mu c rho a)) (w@(TECon _ d _ b)) 
               | c==d && a==b 
-              = unifyLT (TECon mu c rho a) z w loc message [] xs ys          
+              = return z          
        f (x@(TETuple xs)) (y@(TETuple ys)) = unifyLT TETuple x y loc message [] xs ys
        f (TELet x y) (TELet m n) = error "No Let in instance (Eq Expr) yet."
        f (TEIn k1 x) (TEIn k2 y) = 
@@ -472,7 +471,7 @@ zonkExp :: TExpr -> FIO TExpr
 zonkExp x = do { y <- pruneE x; f y}
    where f (TELit loc l) = return(TELit loc l)
          f (TEVar nm sch) = liftM (TEVar nm) (zonkScheme sch)
-         f (TECon mu nm rho a xs) = liftM2 (\ r x -> TECon mu nm r a x) (zonkRho rho) (mapM zonkExp xs)
+         f (TECon mu nm rho a) = liftM (\ r -> TECon mu nm r a) (zonkRho rho)
          f (TEApp x y) = liftM2 TEApp (zonkExp x) (zonkExp y)
          f (TEAbs e1 ms) = liftM2 TEAbs (zonkElim2 e1)(mapM g ms)
             where g (p,e) = do { e2 <- zonkExp e; p2 <- zonkPat p; return(p2,e2)}
@@ -833,10 +832,7 @@ getVarsExpr t = do { x <- pruneE t; f x }
              ;  if conP v
                   then return pair
                   else  (unionW pair ([],[Exp v]) )}
-        f (TECon mu c rho arity xs) = 
-          do { v1 <- foldM (accumBy getVarsExpr) ([],[]) xs
-             ; v2 <- getVarsRho rho
-             ; unionW v1 v2}
+        f (TECon mu c rho arity) = getVarsRho rho
         f (TEApp x y) =
           do { trip1 <- getVarsExpr x 
              ; trip2 <- getVarsExpr y
@@ -1263,8 +1259,8 @@ expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
          f (TEVar nm sch) = 
            do { sch2 <- schemeSubb pos env sch
               ; returnE(findF (Exp nm) names (Exp (TEVar nm sch2)))}
-         f (TECon mu nm rho arity xs) =
-           liftM2 (\ r x -> TECon mu nm r arity x) (rhoSubb pos env rho) (mapM sub xs)
+         f (TECon mu nm rho arity) =
+           liftM (\ r -> TECon mu nm r arity) (rhoSubb pos env rho)
          f (TEApp x y) = liftM2 TEApp (sub x) (sub y)
          f (TEAbs e1 ms) = liftM2 TEAbs (elimSubb pos env e1) (mapM g ms)
               where g (p,e) = do { p2 <- patSubb pos env p
@@ -1366,7 +1362,7 @@ typeOf x = do { r <- checkExp x
 checkExp :: TExpr -> FIO Rho
 checkExp (TELit loc x) = return(Tau(fst(inferLit x)))
 checkExp (TEVar v sch) = do {(rho,ts) <- instantiate sch; return rho}
-checkExp (TECon mu c rho arity xs) = return rho
+checkExp (TECon mu c rho arity) = return rho
 checkExp (e@(TEApp fun arg)) =
      do { (fun_ty) <- checkExp fun
         ; (arg_ty, res_ty, p) <- unifyFunT (loc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty

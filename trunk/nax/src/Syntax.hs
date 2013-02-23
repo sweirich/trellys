@@ -45,7 +45,7 @@ data Expr
 data TExpr 
    = TELit SourcePos Literal      -- 5, 2.3, "abc", etc.
    | TEVar Name Scheme            -- x , ?x1
-   | TECon MuSyntax Name Rho Arity [TExpr]
+   | TECon MuSyntax Name Rho Arity -- [TExpr]
    | TEApp (TExpr) (TExpr)        -- e1 e2                           
    | TEAbs (Elim Telescope) [(Pat,TExpr)]     -- (\ x -> f[x]+1)   
    | TETuple [TExpr]              -- (5,True,"asd")
@@ -147,7 +147,7 @@ t1 = TyVar (toName "t1") Star
 sch1 = Sch [] (Tau t0) 
 one = TELit noPos (LInt 1)
 two = TELit noPos (LInt 2)
-c = TECon None (toName "C") (Tau t0) 2 [one,two]
+c = TECon None (toName "C") (Tau t0) 2 --[one,two]
 
 ----------
 data Rho 
@@ -235,7 +235,7 @@ instance Eq Expr where
 instance Eq TExpr where
   (TELit _ x) == (TELit _ y) = x==y
   (TEVar(Nm(x,_)) sch1) == (TEVar(Nm(y,_)) sch2) = x==y
-  (TECon _ n _ a1 xs) == (TECon _ m _ a2 ys) = n==m && xs==ys && a1==a2
+  (TECon _ n _ a1) == (TECon _ m _ a2) = n==m && a1==a2
   (TEApp x y) == (TEApp a b) = x==a && y==b  
   (TEAbs e1 ms1) == (TEAbs e2 ms2) = error "No Abs in instance (TEq Expr) yet."
   (TETuple xs) == (TETuple ys) = xs == ys
@@ -317,11 +317,9 @@ isExprList (EApp (EApp (EVar (Nm("Cons",_))) x) (EIn Star y))
 isExprList (EVar (Nm("Nil",_))) = Just []
 isExprList _ = Nothing
 
-isTExprList -- (TEApp (TEApp (AppTyp (TEVar (Nm("C",_)) sch) [TyApp (TyMu Star) (TyApp (TyCon _ (Nm("L",_)) s) b),a]) x) (TEIn Star y)) =
-            (TECon (Syn "cons") (Nm("Cons",_)) _ 2 [x,TEIn Star y]) =
+isTExprList (TEApp (TEApp (TECon (Syn "cons") (Nm("Cons",_)) _ 2) x) (TEIn Star y)) =
    do { (a,ys) <- isTExprList y; return (a,x:ys)}
-isTExprList -- (AppTyp (TEVar (Nm("N",_)) sch) [TyApp (TyMu Star) (TyApp (TyCon _ (Nm("L",_)) s) b),a]) | a==b = 
-            (TECon (Syn "nil") (Nm("Nil",_)) _ 0 []) = 
+isTExprList (TECon (Syn "nil") (Nm("Nil",_)) _ 0) = 
    Just (0,[])
 isTExprList x = Nothing -- trace ("Not a TList: "++show x) Nothing
 
@@ -422,12 +420,12 @@ parensKindQ p x =
 
 parenTExpr:: PI -> TExpr -> Doc
 parenTExpr p (x @ (TEVar _ sch)) = ppTExpr p x
-parenTExpr p (x @ (TECon _ _ _ _ _)) = ppTExpr p x
+parenTExpr p (x @ (TECon _ _ _ _)) = ppTExpr p x
 parenTExpr p (x @ (TELit _ _)) = ppTExpr p x
 parenTExpr p (x @ (TETuple _)) = ppTExpr p x
 parenTExpr p (x@(CSP _)) = ppTExpr p x
 parenTExpr p (x@(Emv _)) = ppTExpr p x
--- parenTExpr p (TEIn Star x) | Just (a,ys) <- isTExprList x  = ppTList (ppTExpr p) ys
+parenTExpr p (TEIn Star x) | Just (a,ys) <- isTExprList x  = ppTList (ppTExpr p) ys
 parenTExpr p (x @ (TEIn _ _)) = ppTExpr p x
 parenTExpr p x = PP.parens $ ppTExpr p x 
 
@@ -517,8 +515,12 @@ ppTExpr p e =
     (TELit pos l) -> ppLit l
     (TEVar (Nm(v,pos)) sch) -> text v
                                -- PP.parens(text v<>text":"<>ppScheme p sch)
-    (TECon mu (Nm(v,pos)) typ arity []) -> text v  -- <>PP.brackets(ppRho p typ)
-    (TECon mu  (Nm(v,pos)) typ arity xs) -> PP.parens(PP.sep (text v : map (parenTExpr p) xs))<>text "'"
+    (TECon mu (Nm(v,pos)) typ arity) -> text v  
+    (t@(TEApp _ _)) |  Just(v,xs) <- constrP t []
+                    -> PP.parens(PP.sep (text v : map (parenTExpr p) xs))
+      where constrP (TECon mu (Nm(v,pos)) typ arity) args = Just(v,reverse args)
+            constrP (TEApp f x) args = constrP f (x:args)
+            constrP _ args = Nothing
     (TEApp (TEAbs elim ms) e) -> 
        (text "case" <> ppElim p elim <+> parenTExpr p e <+> text "of") $$
                  (PP.nest 2 (PP.vcat (map (ppMatch p ppTExpr) ms)))
@@ -538,10 +540,10 @@ ppTExpr p e =
             flatLet (TELet d e) ds = flatLet e (d:ds)
             flatLet e ds = (ds,e)
     (TEIn k x)  | printChoice "In" p -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
-    --(TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
-    (TEIn k (TECon (Syn d) c rho 0 [])) ->  text("`"++d)
-    (TEIn k (TECon (Syn d) c rho arity xs)) -> 
-        PP.parens(PP.sep(text ("`"++d) : map (parenTExpr p) xs))
+    (TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
+    (TEIn k (TECon (Syn d) c rho 0)) ->  text("`"++d)
+   -- (TEIn k (TECon (Syn d) c rho arity xs)) -> 
+   --     PP.parens(PP.sep(text ("`"++d) : map (parenTExpr p) xs))
     
     (TEIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
@@ -1039,7 +1041,7 @@ decLoc (Axiom p n t) = p
 texpLoc:: TExpr -> SourcePos
 texpLoc (TELit p l) = p
 texpLoc (TEVar (Nm(nm,pos)) sch) = pos
-texpLoc (TECon _ (Nm(nm,pos)) ty arity xs) = pos
+texpLoc (TECon _ (Nm(nm,pos)) ty arity) = pos
 texpLoc (TEApp x y) = texpLoc x
 texpLoc (TEAbs elim zs) = texpLoc (snd(head zs))
 texpLoc (TETuple xs) = texpLoc (head xs)
@@ -1154,7 +1156,7 @@ pureSubTerm env (Parsed t) =  error ("No Parsed yet")
 pureSubTExpr :: [(Name,Class Kind Typ TExpr)] -> TExpr -> TExpr
 pureSubTExpr env (TELit p l) = TELit p l
 pureSubTExpr env (TEVar nm sch) = lookE nm env  (TEVar nm (pureSubScheme env sch))
-pureSubTExpr env (TECon mu c ty arity xs) = TECon mu c ty arity (map (pureSubTExpr env) xs)
+pureSubTExpr env (TECon mu c ty arity) = TECon mu c ty arity 
 pureSubTExpr env (TEApp x y) = TEApp (pureSubTExpr env x) (pureSubTExpr env y)
 pureSubTExpr env (TETuple xs) = TETuple (map (pureSubTExpr env) xs)
 pureSubTExpr env (TEIn k x) = TEIn (pureSubKind env k) (pureSubTExpr env x)
@@ -1302,8 +1304,6 @@ split (ContextHole e1 e2) = (e1,e2)
 split (TEApp x y) = spread2 TEApp (split x) (split y)
 split (TETuple xs) = spread1 TETuple (map fst pairs,map snd pairs)
   where pairs = map split xs
-split (TECon mu c ty arity xs) = spread1 (TECon mu c ty arity) (map fst pairs,map snd pairs)
-   where pairs = map split xs
 split (TEIn k x) = spread1 (TEIn k) (split x) 
 split (AppTyp e ty) = split e
 split (AbsTyp tele e) = split e
@@ -1313,7 +1313,7 @@ split x = (x,x)
 
 nosplit (TELit _ _) = True
 nosplit (TEVar _ _) = True
-nosplit (TECon mu c ty arity xs) = all nosplit xs
+nosplit (TECon mu c ty arity) = True
 nosplit (TEApp x y) = (nosplit x) && (nosplit y)
 nosplit (TEAbs _ pairs) = all (\ (p,e) -> nosplit e) pairs
 nosplit (TETuple xs) = all nosplit xs

@@ -102,7 +102,7 @@ lbStyle = Token.LanguageDef
 --                , Token.identStart     = letter
                 , Token.identStart     = lower
                 , Token.identLetter    = alphaNum <|> oneOf "_'"
-                , Token.opStart	       = oneOf ":!#$%&*+./<=>?@\\^|-~"
+                , Token.opStart        = oneOf ":!#$%&*+./<=>?@\\^|-~"
                 , Token.opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~"
                 , Token.caseSensitive  = True
                 , Token.reservedOpNames =
@@ -338,20 +338,20 @@ section = try operator <|> try left <|> try right <|> try pairOper
                   ; sym "("; z <- oper; y <- expr; sym ")"
                   ; return (EAbs ElimConst
                                  [(PVar (Nm("_x",l)) Nothing
-		                  ,applyE [EVar (Nm(z,l)), EVar (Nm("_x",l)) ,y])])})
+                                  ,applyE [EVar (Nm(z,l)), EVar (Nm("_x",l)) ,y])])})
         right = (do { l <- getPosition
                     ; sym "("; y <- simpleExpression; z <- oper; sym ")"
                     ; return (EAbs ElimConst
                                    [(PVar (Nm("_x",l)) Nothing
-		                   ,applyE [EVar (Nm(z,l)),y,EVar (Nm("_x",l))])])})
-		                   
+                                   ,applyE [EVar (Nm(z,l)),y,EVar (Nm("_x",l))])])})
+                                   
 -- () (x) (x,y,z) (+) (+ 3) (3 *) (,) etc
 parenExpression ::  MParser Expr
 parenExpression = try section <|> tuple  
   where tuple = 
           do { xs <- parenS(sepBy expr (commA))
-             ; return(expTuple xs)}		                   
-	                                           
+             ; return(expTuple xs)}                                
+                                                   
                                      
 -- [2,3,4]
 listExpression :: MParser Expr
@@ -563,9 +563,9 @@ dec = do { pos <- getPosition
          ; resOp "=" 
          ; case lhs of
             ((PVar f _ : (p:ps))) -> 
-	        do { body <- expr; return(FunDec pos (name f) [] [(p:ps,body)]) }
-	    ([p]) -> do { b <- expr; return(Def pos p b) }
-	    ((PCon c []):ps) ->  do { b<- expr; return(Def pos (PCon c ps) b)} }
+                do { body <- expr; return(FunDec pos (name f) [] [(p:ps,body)]) }
+            ([p]) -> do { b <- expr; return(Def pos p b) }
+            ((PCon c []):ps) ->  do { b<- expr; return(Def pos (PCon c ps) b)} }
 
 program = do { whiteSp
              ; ds <- layoutDecl (return ())
@@ -680,8 +680,8 @@ elim xP = (do { sym "{"; more}) <|> return ElimConst
   where more = do { ns <- many1 xP
                   ; sym "."
                  -- ; ((ts,us),cols) <- getState
-		 -- ; setState ((ts,(map (\ x -> (x,Star)) ns)++us),cols)
-		  ; t <- typP
+                 -- ; setState ((ts,(map (\ x -> (x,Star)) ns)++us),cols)
+                  ; t <- typP
                  -- ; setState ((ts,us),cols)
                   ; sym "}"
                   ;return(ElimFun ns t)}

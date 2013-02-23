@@ -333,9 +333,9 @@ notInfo n = (triple,(name,scheme))
         v0 (VCon _ 0 "False" []) = to True
         v0 v = error ("not applied to non Bool: "++show v)
                 
-trueTExp = TECon None (toName "True") (Tau tbool) 0 [] 
+trueTExp = TECon None (toName "True") (Tau tbool) 0 
      -- CSP(toName "True",conkey "True",to True)
-falseTExp = TECon None (toName "False") (Tau tbool) 0 [] 
+falseTExp = TECon None (toName "False") (Tau tbool) 0 
      -- CSP(toName "False",conkey "False",to False)
         
 applyTE :: [TExpr] -> TExpr
