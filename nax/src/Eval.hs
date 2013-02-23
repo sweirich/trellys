@@ -108,10 +108,7 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
   heval (TELit loc x) env k = k(VBase loc x)
   heval (TEVar nm sch) env k = 
      do { (uniq,v) <- evalMVar (rtbindings env) nm (rtbindings env); k v}
-  heval (TECon mu c rho arity xs) env k = evalList [] xs env k 
-    where evalList vs [] env k = k(VCon mu arity (name c) (reverse vs))
-          evalList vs (x:xs) env k = 
-             evalC x env (\ v -> evalList (v:vs) xs env k)  
+  heval (TECon mu c rho arity) env k = k(VCon mu arity (name c) [])
   heval (TEApp f x) env k = 
      evalC f env (\ v1 -> evalC x env (\ v2 -> apply f x v1 v2 k))
   heval (TEAbs elim ms) env k = do { i <- nextinteger; k(VFunM i (trymatching elim env ms ms))}
@@ -297,10 +294,10 @@ reify  n x  = help n x  where
       ; body <- reify n result
       ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
   help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
-  help n (VCon mu arity c vs) = liftM econ (mapM (reify n) vs)
-   where econ es = TECon mu (toName c) (Tau tunit) arity es
-        -- applyTE ( CSP(toName c,mu,VCon mu arity c []) : es)
-
+  help n (VCon mu arity c vs) = liftM (econ con) (mapM (reify n) vs)
+   where con = TECon mu (toName c) (Tau tunit) arity
+         econ e [] = e
+         econ e (x:xs) = econ (TEApp e x) xs
   help n (VIn kind x) = liftM (TEIn kind) (reify n x)
   help n (VInverse v) = error ("No VInverse in reify yet: "++show v)
   help n (VCode e) = return e

@@ -577,12 +577,14 @@ tyConArity c env =
 
 smartApp:: TExpr -> TExpr -> FIO TExpr
 smartApp x y = do { m <- pruneE x; (help m) } where
+  help x = return(TEApp x y) 
+{-  
   help (TECon mu c (Rarr dom rng) arity xs) | length xs < arity =
      do { -- actual <- checkExp y
           -- ; let mess = "\nChecking the constructor argument:\n   "++show y++": "++show actual++"\nhas expected type:\n   "++show dom
           -- ; morepolySS (loc y) [mess] (Sch [] actual) dom 
         ; return(TECon mu c rng arity (xs++[y]))}
-  help x = return(TEApp x y)        
+-}
 
 ------------------------------------------
 
@@ -1187,7 +1189,7 @@ typeExpT env (e@(ECon c)) expectRho =
         ; (ts,p) <- morepolySExpectR_ (loc c) [mess] polyTyp expectRho
         ; rho <- extract expectRho
         -- note we discard p, because each occurrence of a Constructor is given a monomorphic type, rho.
-        ; return (TECon mu nm rho n [])}     
+        ; return (TECon mu nm rho n)}     
 typeExpT env (e@(EApp _ _)) expect 
      | Just(c,f,xs) <- expandExprSyn env e []
      = do { e2 <- f (loc e) xs
@@ -1201,7 +1203,7 @@ typeExpT env (e@(EApp fun arg)) expect =
      do { (fun_ty,f) <- inferExpT env fun
         -- ; writeln ("\ntypExp  f="++show f++": "++show fun_ty)
         ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
-        ; let cast (e@(TECon mu nm rho n es)) = e  -- Don't cast a monomorphic Constructor
+        ; let cast (e@(TECon mu nm rho n)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
         ; let mkTrans i t msg = unlines [msg,near e++"\n"++show i++" Infering the type of  the application\n   "++show e++
                                        "\nthe function  '"++show fun++"'  has type\n   "++show fun_ty++
