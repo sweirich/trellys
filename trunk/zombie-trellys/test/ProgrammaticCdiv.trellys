@@ -72,10 +72,10 @@ cdivP_t_f' = \m gm n . case m [m_eq] of
   Zero    -> cdivP_t_f_base m [m_eq] n
   Succ m' -> cdivP_t_f_step m m' [m_eq] gm n
 
-cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> cdivP_t_p k @log) -> cdivP_t_p m
+cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> Unit -> cdivP_t_p k @log) -> cdivP_t_p m
 cdivP_t_f = \m gm .
-  let gm' [_] = (\k [k_lt_m] .
-                 (conv (gm k [k_lt_m]) by (cdivP_t_p_red k) at t.t)
+  let gm' [_] = (\k [k_lt_m] _ .
+                 (conv (gm k [k_lt_m] U) by (cdivP_t_p_red k) at t.t)
               : (k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
   in conv (cdivP_t_f' m gm') by (cdivP_t_p_red' m) at t.t
 

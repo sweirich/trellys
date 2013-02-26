@@ -18,7 +18,7 @@ PASS=Prelude Arithmetic Arithmetic-old Vectors LetRebind Trees Append2 \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
-     BasicOrd DeepMatch
+     BasicOrd DeepMatch CongruenceTests
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
@@ -50,9 +50,10 @@ fail:
 	@./expect_error Test_T_Let_2_FV_1 "appear in the erasure of the body"
 	@./expect_error Test_T_Let_2_FV_2 "appear in the erasure of the body"
 	@./expect_error Test_T_Rec2_FV "variable n appears free in body"
-	@./expect_error Bug_T_Case_FV "should not appear in the erasure"
+	@./expect_error Bug_T_Case_FV "should not appear in the erasure of the case expression"
+	@./expect_error Bug_T_Case_FV_2 "should not appear in the erasure of the case expression"
 	@./expect_error Test_T_RN2_FV "variable n appears free in body"
-	@./expect_error jointest "The erasures of terms h n and p are not joinable."
+	@./expect_error jointest "The erasures of terms .* are not joinable."
 	@./expect_error DeepMatchError1 "must be a member of a datatype, but is not."
 	@./expect_error DeepMatchError2 "is a member of an abstract datatype"
 	@./expect_error DeepMatchError3 "should take 1 constructors,"

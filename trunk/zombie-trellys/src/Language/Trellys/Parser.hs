@@ -1,5 +1,6 @@
-
 {-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts, TupleSections #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
+
 -- | A parsec-based parser for the Trellys concrete syntax.
 module Language.Trellys.Parser
   (
@@ -196,6 +197,7 @@ trellysStyle = Token.LanguageDef
                   ["ord"
                   ,"ordtrans"
                   ,"join"
+                  ,"unfold"
                   ,"rec"
                   ,"ind"
                   ,"Type"
@@ -458,6 +460,16 @@ join =
        (Just n,Nothing)  -> return $ Join n n
        (Just n1,Just n2) -> return $ Join n1 n2
        _                 -> error $ "Internal error: nat after no nat"
+
+
+unfold :: LParser Term
+unfold = 
+  do reserved "unfold"
+     s <- optionMaybe (fromInteger <$> natural)
+     e <- expr
+     case s of
+       Nothing -> return $ Unfold 100 e
+       Just n  -> return $ Unfold n e
 
 -- Expressions
 

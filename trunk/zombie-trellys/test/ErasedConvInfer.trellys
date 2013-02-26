@@ -33,5 +33,3 @@ goal = _
 --goal =  conv (join : ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] a) : Nat -> Nat))
 --		    by [atype = btype], p
 --        at t1 t2  . ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [t1] t2) : Nat -> Nat)
-
-

@@ -7,6 +7,7 @@ import Language.Trellys.Environment
 import Language.Trellys.GenericBind(FreshMT(..), runFreshMT)
 
 
+import Control.Monad (liftM)
 import Control.Monad.Reader(ReaderT(..))
 import Control.Monad.Writer(WriterT(..))
 import Control.Monad.Error(ErrorT(..))
@@ -22,3 +23,14 @@ runTcMonad :: Env -> TcMonad a -> IO (Either Err a)
 runTcMonad env m = runErrorT $
              flip runReaderT env $
              runFreshMT m
+
+
+-- Here are some monadic utililty functions that should really be in
+-- the Haskell standard library. I guess this is a rather random place 
+-- to put them, but shrug.
+
+allM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+allM p = liftM and . mapM p
+
+anyM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+anyM p = liftM or . mapM p

@@ -36,7 +36,7 @@ data Epsilon = Runtime | Erased
 -- (general). The constructor names should be
 data Theta = Logic  -- ^ Proof terms
            | Program -- ^ Program terms
-            deriving (Read,Show,Eq)
+            deriving (Read,Show,Eq,Bounded)
 
 -- | Compute the least-upper bound on classifications.
 lub :: Theta -> Theta -> Theta
@@ -68,7 +68,7 @@ deriving instance Show Term
 data Term = Var TName    -- | variables
           | TCon TName [(Term,Epsilon)]   -- | type constructors (fully applied)
           | DCon TName [(Term,Epsilon)]   -- | term constructors (fully applied)
-          | Type Integer   -- | The 'Type' terminal
+          | Type Int   -- | The 'Type' terminal
           -- | Functions: @\x.e@ and @\[x].e@
           -- No type annotations since we are bidirectional
           | Lam Epsilon (Bind TName Term)
@@ -94,6 +94,8 @@ data Term = Var TName    -- | variables
           -- | The 'join' expression, written @join k1 k2@.  We
           -- bidirectionally infer the terms
           | Join Int Int
+          -- | The 'unfold' expression, only present in the surface language.
+          | Unfold Int Term       
           -- | @conv a by b at C@
           | Conv Term [(Term,Epsilon)] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
@@ -121,7 +123,10 @@ data Term = Var TName    -- | variables
           -- | Concrete syntax is an underscore.
           | SubstitutedFor Term TName
           -- Marks where a term was substituted for a variable; used in elaborating
-          --  conv-expressions.
+          --  the erased parts of conv-expressions.
+          | SubstitutedForA ATerm TName
+          -- Marks where an aterm was substituted for a variable; used in elaborating
+          --  the proved parts of conv-expressions. 
           
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables
@@ -130,6 +135,17 @@ data Match = Match TName (Bind [(TName, Epsilon)] Term)  --the name is the const
 
 -- | In the surface language, there is also ComplexMatch, which does several levels of 
 -- pattern matching at once. These get elaborated into nested simple matches.
+
+{- The list of [(TName,Embet ATerm)] is never used in the surface langauage. The idea is
+   that
+     ComplexMatch (bind [p1,p2] [(x1,embed a1), (x2,embed a2)] body)
+   means
+     p1, p2 => let x1 = a1 in
+               let x2 = a2 in 
+                 body
+   This is used when elaborating complex case expressions into multiple simpler ones.
+-}  
+
 deriving instance Show ComplexMatch
 data ComplexMatch = ComplexMatch (Bind [Pattern] Term)
 
@@ -137,16 +153,20 @@ deriving instance Show Pattern
 data Pattern = PatCon (Embed TName) [(Pattern, Epsilon)]
              | PatVar TName
 
--- | This just deletes any top level Pos or Paren (or, hrm, SubstitutedFor)  from a term
-delPosParen :: Term -> Term
-delPosParen (Pos _ tm)            = tm
-delPosParen (Paren tm)            = tm
-delPosParen (SubstitutedFor tm _) = tm
-delPosParen tm                    = tm
-
--- Really: Term -> Term
-delPosParenDeep :: Rep a => a -> a
+-- Todo: see if these are still needed.
+delPosParenDeep :: Term -> Term
 delPosParenDeep = everywhere (mkT delPosParen)
+  where delPosParen :: Term -> Term
+        delPosParen (Pos _ tm)             = tm
+        delPosParen (Paren tm)             = tm
+        delPosParen (SubstitutedFor  tm _) = tm
+        delPosParen tm                     = tm
+
+aDelPosParenDeep :: ATerm -> ATerm
+aDelPosParenDeep = everywhere (mkT aDelPosParen)
+  where aDelPosParen :: ATerm -> ATerm 
+        aDelPosParen (ASubstitutedFor a _) = a
+        aDelPosParen a                     = a
 
 -- | Partial inverse of Pos
 unPos :: Term -> Maybe SourcePos
@@ -162,14 +182,15 @@ unPosFlaky :: Term -> SourcePos
 unPosFlaky t = fromMaybe (newPos "unknown location" 0 0) (unPosDeep t)
 
 -- | replace all the (SubstitutedFor a x) with just x
-unsubstitute :: Term -> Term
+unsubstitute :: ATerm -> ATerm 
 unsubstitute = everywhere (mkT unsubstituteHere)
-  where unsubstituteHere (SubstitutedFor _ x) = (Var x)
+  where unsubstituteHere (ASubstitutedFor _ x) = (AVar x)
         unsubstituteHere e = e
 
-extractSubstitution :: Term -> Map TName Term
+-- | Gather all the terms occuring in ASubstitutedFor subterms.
+extractSubstitution :: ATerm -> Map AName ATerm
 extractSubstitution = everything M.union (mkQ M.empty mapping) 
-  where mapping (SubstitutedFor a x) = M.singleton x a
+  where mapping (ASubstitutedFor a x)   = M.singleton x a
         mapping _ = M.empty
 
 data ConstructorNames = ConstructorNames {
@@ -198,8 +219,8 @@ newtype ModuleImport = ModuleImport MName
 data Decl = Sig  TName Theta Term
           | Axiom TName Theta Term
           | Def TName Term
-          | Data TName Telescope Theta Integer [ConstructorDef]
-          | AbsData TName Telescope Theta Integer
+          | Data TName Telescope Theta Int [ConstructorDef]
+          | AbsData TName Telescope Theta Int
   deriving (Show)
 
 
@@ -208,8 +229,8 @@ data ConstructorDef = ConstructorDef SourcePos TName Telescope
   deriving (Show)
 
 -- | Goals (in the Coq sense), just used for pretty-printing so far.
-data Goal = Goal [Decl] --available context
-                 Term   --type to be proven.
+data Goal = Goal [ADecl] --available context
+                 ATerm   --type to be proven.
 
 -------------
 -- Telescopes
@@ -254,7 +275,11 @@ isVar (SubstitutedFor t x) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
-isType :: Term -> Maybe Integer
+isAVar :: ATerm -> Bool
+isAVar (AVar _) = True
+isAVar _        = False
+
+isType :: Term -> Maybe Int
 isType (Pos _ t)  = isType t
 isType (Paren t)  = isType t
 isType (SubstitutedFor t x) = isType t
@@ -329,45 +354,49 @@ type AName = Name ATerm
 deriving instance Show ATerm
 
 -- | ATerm are annotated terms.
---   Given an environment and a theta, we can synthesize an unannotated term and a type.
+--   Given an environment, we can synthesize an unannotated (erased) term, a type, and a theta.
 
 data ATerm = 
     AVar AName
   | AFO ATerm
   | ASquash ATerm
-  | ACumul ATerm Integer
-  | AType Integer
-  | AUnboxVar Theta ATerm    --the theta is the what we should check the inner term at.
-  | ATCon AName [ATerm]
+  | ACumul ATerm Int
+  | AType Int
+  | ATCon AName [ATerm] 
   | ADCon AName [ATerm] [(ATerm,Epsilon)]
   -- ET_arrow and ET_arrowImpred
   | AArrow   Epsilon (Bind (AName, Embed ATerm) ATerm)
-  -- ET_lamPlus and ET_lamMinus. The first ATerm is they (pi) type of the entire lambda.
-  | ALam ATerm Epsilon (Bind AName ATerm)
-  -- ET_appPlus and ET_appMinus:
-  | AApp Epsilon ATerm ATerm
+  -- ET_lamPlus and ET_lamMinus. The first ATerm is the (pi) type of the entire lambda.
+  | ALam ATerm  Epsilon (Bind AName ATerm)
+  -- ET_appPlus and ET_appMinus. The last expression is the type of the entire application:
+  | AApp Epsilon ATerm ATerm ATerm
   | AAt ATerm Theta
+  | AUnboxVal ATerm
   | ABoxLL ATerm Theta
-  | ABoxLV ATerm
+  | ABoxLV ATerm Theta
   | ABoxP ATerm Theta
   | AAbort ATerm
   | ATyEq ATerm ATerm
   | AJoin ATerm Int ATerm Int
-  | AConv ATerm [(Epsilon,ATerm)] (Bind [AName] ATerm)
+  -- The last term is the type of the entire case-expression
+  | AConv ATerm [(ATerm,Epsilon)] (Bind [AName] ATerm) ATerm
   -- First ATerm is proof, second is the type annotation.
   | AContra ATerm ATerm
   | ASmaller ATerm ATerm
-  -- First ATerm is proof, other two are the ones we are comparing.
-  | AOrdAx ATerm ATerm ATerm
+  -- First ATerm is a proof of (a1 = c=1 b1 ... bn), the second one is the subterms bi.
+  | AOrdAx ATerm ATerm 
   | AOrdTrans ATerm ATerm 
   -- ET_indPlus and ET_indMinus (the first ATerm is the (pi) type of the function):
   | AInd ATerm Epsilon (Bind (AName, AName) ATerm)
   -- ET_recPlus and ET_recMinus:
   | ARec ATerm Epsilon (Bind (AName, AName) ATerm)
   -- Why is let in the core language? To get more readable core terms.
-  | ALet Theta Epsilon (Bind (AName, AName, Embed ATerm) ATerm)
+  | ALet Epsilon (Bind (AName, AName, Embed ATerm) ATerm)
    -- the final ATerm is the type of the entire match.
   | ACase ATerm (Bind AName [AMatch]) ATerm
+   -- the ATerm is the ascribed type
+  | ATrustMe ATerm
+  | ASubstitutedFor ATerm AName
   
 {-
           -- | ATermination case
@@ -380,25 +409,31 @@ data ATerm =
 deriving instance Show AMatch
 data AMatch = AMatch AName (Bind [(AName, Epsilon)] ATerm)
 
-data ADecl = ASig     Theta ATerm
-           | AAxiom   Theta ATerm
-           | ADef     Theta ATerm ATerm --Type, Term
-           | AData    Telescope Theta Int [AConstructorDef]
-           | AAbsData Telescope Theta Int
+data ADecl = ASig     AName Theta ATerm       --Type
+           | ADef     AName ATerm             --Term
+           | AData    AName ATelescope Theta Int [AConstructorDef]
+           | AAbsData AName ATelescope Theta Int
   deriving (Show)
 
 data AConstructorDef = AConstructorDef AName ATelescope
   deriving (Show)
 
+data AHint = AHint AName Theta ATerm --The type
+
+data AModule = AModule { aModuleName :: MName,
+                         aModuleEntries :: [ADecl]
+                       }
+
+declname :: ADecl -> AName
+declname (ASig x _ _) = x
+declname (ADef x _) = x
+declname (AData x _ _ _ _) = x
+declname (AAbsData x _ _ _) = x
+
 -------------
 -- Annotated Telescopes
 -------------
 type ATelescope = [(AName,ATerm,Epsilon)]
-
--- | teleApp applies some term to all the variables in a telescope
-aTeleApp :: ATerm -> ATelescope -> ATerm
-aTeleApp tm tms =
-  foldl (\a (nm,_,ep) -> AApp ep a (AVar nm)) tm tms
 
 aTelePi :: ATelescope -> ATerm -> ATerm
 aTelePi tele tyB =
@@ -422,8 +457,6 @@ aSwapTeleVars _ _ =
 aSetTeleEps :: Epsilon -> ATelescope -> ATelescope
 aSetTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 
-
-
 ------------------------
 ------------------------
 --- Unannotated Language
@@ -434,9 +467,9 @@ deriving instance Show ETerm
 
 -- ETerm for "erased" term
 data ETerm = EVar EName
-           -- Fixme: split into ETCon and EDCon (because they are different for isEValue)
-           | ECon EName [ETerm]
-           | EType Integer
+           | ETCon EName [ETerm]
+           | EDCon EName [ETerm]
+           | EType Int
            | EArrow Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
            | EApp ETerm ETerm
@@ -451,8 +484,8 @@ data ETerm = EVar EName
            | ELet ETerm (Bind EName ETerm)
            | EContra
            | EAt ETerm Theta
-           | ETerminationCase ETerm (Bind EName (ETerm, 
-              (Bind EName ETerm)))
+--           | ETerminationCase ETerm (Bind EName (ETerm, 
+--              (Bind EName ETerm)))
            | ETrustMe 
 
 deriving instance Show EMatch
@@ -474,7 +507,9 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Term, ''Match, ''ComplexMatch, ''ETerm, ''Pattern, ''EMatch, ''ATerm, ''AMatch])
+$(derive [''Epsilon, ''Theta, ''Term, ''Match, ''ComplexMatch, 
+         ''ETerm, ''Pattern, ''EMatch, 
+         ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef])
 
 
 instance Alpha Term
@@ -483,10 +518,14 @@ instance Alpha ComplexMatch
 instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
-
 instance Subst Term Term where
   isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
+
+-- aterms should never contain term variables.
+instance Subst Term ATerm where
+  isvar _ = Nothing
+instance Subst Term AMatch where
 
 instance Subst Term Epsilon
 instance Subst Term Theta
@@ -496,6 +535,8 @@ instance Subst Term Pattern
 
 instance Alpha ATerm
 instance Alpha AMatch
+instance Alpha ADecl
+instance Alpha AConstructorDef
 
 instance Subst ATerm ATerm where
   isvar (AVar x) = Just (SubstName x)
@@ -515,5 +556,3 @@ instance Subst ETerm ETerm where
 instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta
-
-

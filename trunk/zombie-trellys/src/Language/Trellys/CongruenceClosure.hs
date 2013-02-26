@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, FlexibleInstances, FlexibleContexts #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
  Constant(..), EqConstConst(..), EqBranchConst(..), Equation, 
