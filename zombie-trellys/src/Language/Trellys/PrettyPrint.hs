@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances,
              ViewPatterns
  #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-name-shadowing #-}
 
 -- | A Pretty Printer for the core trellys. The 'Disp' class and
 -- 'D' type should
@@ -10,10 +11,10 @@ module Language.Trellys.PrettyPrint(Disp(..), D(..))  where
 import Language.Trellys.Syntax
 import Language.Trellys.GenericBind
 
-import Generics.RepLib.R (Rep)
 import Control.Monad.Reader
 import Text.PrettyPrint.HughesPJ as PP
-import Text.ParserCombinators.Parsec.Pos
+import Text.ParserCombinators.Parsec.Pos (SourcePos, sourceName, sourceLine, sourceColumn)
+import Text.ParserCombinators.Parsec.Error (ParseError)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.List (intersperse)
@@ -40,6 +41,8 @@ cleverDisp d =
 instance Disp Term where
   disp = cleverDisp
 instance Disp ETerm where
+  disp = cleverDisp
+instance Disp ATerm where
   disp = cleverDisp
 instance Rep a => Disp (Name a) where
   disp = cleverDisp
@@ -157,9 +160,9 @@ displays xs = help (reverse xs) [] where
     s2 <- case x of
         Dd y -> do y' <- display y
                    return [y']
-        Ds s -> return [text s]
-        Dn y -> do s <- display y
-                   return [s <> text "\n"]
+        Ds str -> return [text str]
+        Dn y -> do str <- display y
+                   return [str <> text "\n"]
         D doc -> return [doc]
         Dl ys sep -> dispL display ys (text sep)
         Dlf f ys sep -> dlf f ys (text sep)
@@ -223,6 +226,7 @@ instance Disp Decl where
 instance Disp Goal where
   disp (Goal ctx statement) = 
    foldr ($+$) empty (map disp ctx)
+   --foldr ($+$) empty (map (text . show) ctx)
    $+$ text "========================================="
    $+$ disp statement
 {-
@@ -230,7 +234,7 @@ instance Disp Goal where
    $+$ foldr ($+$) empty (map (text . show) ctx)
    $+$ text "========================================="
    $+$ text (show statement)
- -}
+-}
 
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
@@ -369,6 +373,9 @@ instance Display Term where
                                    then ""
                                    else show s1
                             else show s1 ++ " " ++ show s2)
+  display (Unfold s a) = do
+    da <- display a
+    return $ text "unfold" <+> text (show s) <+> da
   display (Contra ty)  = do
      dty <- display ty
      return $ text "contra" <+> dty
@@ -397,7 +404,8 @@ instance Display Term where
   display TrustMe = return $ text "TRUSTME"
   display InferMe = return $ text "_"
 
-  display (SubstitutedFor a x) = display a 
+  display (SubstitutedFor  a x) = display a 
+  display (SubstitutedForA a x) = display a                                
 
 instance Display Match where
   display (Match c bd) =
@@ -420,23 +428,31 @@ instance Display Pattern where
       parens <$> ((<+>) <$> (display c) <*> (hsep <$> (mapM display args)))
   display (PatVar x) = display x
 
--- NC copied this wrapper code from display EApp below without
--- much thought or testing ... it works pretty well down there
 wraparg :: Term -> (Doc -> Doc)
 wraparg x = case x of
-              App _ _ _   -> parens
-              Lam _ _     -> parens
-              Let _ _ _   -> parens
-              Case _ _    -> parens
-              TCon _ (_:_) -> parens
-              DCon _ (_:_) -> parens
-              _           -> id
+              Var _     -> id
+              TCon _ [] -> id
+              DCon _ [] -> id
+              TrustMe   -> id
+              _         -> parens
 wrapf :: Term -> (Doc -> Doc)
 wrapf f = case f of
-            Lam _ _     -> parens
-            Let _ _ _   -> parens
-            Case _ _    -> parens
-            _           -> id
+            Var _       -> id
+            App _ _ _   -> id
+            _           -> parens
+
+aWrapf :: ATerm -> Doc -> Doc
+aWrapf a =  case a of
+              AVar _       -> id
+              AApp _ _ _ _ -> id
+              _            -> parens
+
+aWraparg :: Epsilon -> ATerm -> Doc -> Doc
+aWraparg ep b = case b of
+                 AVar _        -> bindParens ep
+                 ATCon _ []    -> bindParens ep 
+                 ADCon _ [] [] -> bindParens ep
+                 _             -> mandatoryBindParens ep
 
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem
@@ -444,20 +460,192 @@ epParens Runtime l = Dd (brackets (displays l))
 epParens Erased  l = Dd displays l
 -}
 
+instance Display ATerm where
+  display (AVar v) = display v
+  display (AFO a) = do
+    da <- display a
+    return $ text "fo" <+> da
+  display (ASquash a) = display a
+  display (ACumul a level) = display a
+  display (AType level) = return $ text "Type" <+> int level
+  display (AUnboxVal a) = do
+    da <- display a
+    return $ text "unbox" <+> aWraparg Runtime a da
+  display (ATCon n params) = do
+    dn <- display n
+    dparams <- mapM (\a -> aWraparg Runtime a <$> display a) params
+    return $ dn <+> hsep dparams
+  display (ADCon n params args) = do
+    dn <- display n
+    dparams <- mapM (\a -> aWraparg Runtime a <$> display a) params
+    dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> display a) args
+    return $ dn <+> hsep dparams <+> hsep dargs
+  display (AArrow ep bnd) = 
+    lunbind bnd $ \((n, unembed -> a), b) -> do 
+      dn <- display n
+      da <- display a
+      db <- display b
+      return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
+               <+> text "->" <+> db
+  display (ALam ty ep bnd) = 
+    lunbind bnd $ \(n, body) -> do
+      dty <- display ty     
+      dn <- display n
+      dbody <- display body
+      return $ text "\\" <+> dn <+> colon <+> dty <+> text "." <+> dbody
+  display (AApp ep a b ty) = do 
+    da <- display a 
+    db <- display b
+    return $ aWrapf a da <+> aWraparg ep b db
+  display (AAt a th) = do
+    da <- display a
+    return $ da <+> text "@" <+> disp th
+  display (ABoxLL a th) = do
+    da <- display a
+    return $ text "box" <+> aWraparg Runtime a da
+  display (ABoxLV a th) = do
+    da <- display a
+    return $ text "box" <+> aWraparg Runtime a da
+  display (ABoxP a th) = do
+    da <- display a
+    return $ text "box" <+> aWraparg Runtime a da
+  display (AAbort a) = do
+    da <- display a 
+    return $ text "abort" <+> da
+  display (ATyEq a b) = do
+    da <- display a
+    db <- display b
+    return $ parens da <+> text "=" <+> parens db
+  display (AJoin a i b j) = do
+    da <- display a
+    db <- display b
+    return $ text "join" <+> parens da <+> disp i
+                         <+> parens db <+> disp j
+  display (AConv a pfs bnd ty) = 
+    lunbind bnd $ \(xs, template) -> do 
+      da <- display a
+      dpfs <- mapM display pfs
+      dxs <- mapM display xs
+      dtemplate <- display template
+      dty <- display ty
+      return $ text "conv" <+> da <+> text "by" <+> hsep dpfs
+               <+> text "at" <+> hsep dxs <+> text "." <+> dtemplate
+               <+> colon <+> dty
+  display (AContra a aTy) = do
+    da <- display a
+    daTy <- display aTy
+    return $ text "contra" <+> da <+> text ":" <+> daTy
+  display (ASmaller a b) = do
+    da <- display a
+    db <- display b
+    return $ parens da <+> text "<" <+> parens db
+  display (AOrdAx pf a) = do
+    dpf <- display pf
+    da <- display a
+    return $ text "ordax :" <+> dpf <+> da <+> text "< ?"
+  display (AOrdTrans a b) = do
+    da <- display a
+    db <- display b
+    return $ text "ordtrans" <+> parens da <+> parens db
+  display (AInd ty ep bnd) = 
+    lunbind bnd $ \((n,m), body) -> do
+      dty <- display ty
+      dn <- display n
+      dm <- display m
+      dbody <- display body
+      return $ parens (text "ind" <+> dn <+> brackets dm 
+                         <+> text ":" <+> dty
+                         <+> text "." <+> dbody)
+  display (ARec ty ep bnd) = 
+    lunbind bnd $ \((n,m), body) -> do
+      dty <- display ty
+      dn <- display n
+      dm <- display m
+      dbody <- display body
+      return $ parens (text "rec" <+> dn <+> brackets dm 
+                         <+> text ":" <+> dty
+                         <+> text "." <+> dbody)
+  display (ALet  ep bnd) = 
+    lunbind bnd $ \((n,m, unembed -> a), b) -> do 
+      dn <- display n
+      dm <- display m
+      da <- display a
+      db <- display b
+      return $ sep [text "let" <+> dn <+> brackets dm <+> text "="
+                     <+> da <+> text "in",
+                     db]
+  display (ACase a bnd ty) =
+    lunbind bnd $ \(n,mtchs) -> do
+      da <- display a
+      dn <- display n
+      dmtchs <- mapM display mtchs
+      dty <- display ty
+      return $ (parens (text "case" <+> da <+> brackets dn <+> text "of" $$
+                         nest 2 (vcat dmtchs))
+                 <+> text ":" <+> dty)
+  display (ATrustMe a) = do
+    da <- display a
+    return $ parens (text "TRUSTME" <+> colon <+> da)
+
+  display (ASubstitutedFor a x) = display a
+
+instance Display AMatch where
+  display (AMatch c bnd) = 
+    lunbind bnd $ \(args, body) -> do
+      dc <- display c
+      dargs <- mapM display args
+      dbody <- display body
+
+      return $ dc <+> (hcat $ punctuate space dargs) <+> text "->" <+> dbody
+
+instance Disp ADecl where
+  disp (ASig x th ty) = 
+    disp th <+> disp x <+> text ":" <+> disp ty
+  disp (ADef x a) = do
+    disp x <+> text "=" <+> disp a
+  disp (AData n params th level constructors) = 
+    hang (disp th <+> text "data" <+> disp n <+> disp params
+           <+> colon <+> text "Type" <+> int level
+           <+> text "where")
+         2
+         (vcat $ map disp constructors)
+  disp (AAbsData n params th level) =
+    disp th <+> text "data" <+> disp th <+> disp params 
+       <+> colon <+> text "Type" <+> int level
+
+instance Disp AConstructorDef where
+  disp (AConstructorDef c tele) = 
+    disp c <+> disp tele
+
+instance Disp ATelescope where
+  disp ts = hcat $ map dispEntry ts
+             where dispEntry (n, ty, ep) = mandatoryBindParens ep (disp n <+> colon <+> disp ty)
+
+instance Disp [ADecl] where
+  disp = vcat . map disp
+
+instance Disp AModule where
+  disp m = text "module" <+> disp (aModuleName m) <+> text "where" $$
+           disp (aModuleEntries m)
+
 instance Display ETerm where
   display (EVar v) = display v
-  display (ECon n args) = do
+  display (ETCon n args) = do
     dn <- display n
     dargs <- mapM display args
     return $ dn <+> hsep dargs
-  display (EType level) = return $ text "Type" <+> integer level
+  display (EDCon n args) = do
+    dn <- display n
+    dargs <- mapM display args
+    return $ dn <+> hsep dargs
+  display (EType level) = return $ text "Type" <+> int level
   display (EArrow ep a bnd) = do
      da <- display a
      lunbind bnd $ \ (n,b) -> do
         dn <- display n
         db <- display b
-        return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da) <+>
-                    text "->" <+> db
+        return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
+                    <+> text "->" <+> db
   display (ELam  b) =
      lunbind b $ \ (n, body) -> do
        dn <- display n
@@ -466,17 +654,15 @@ instance Display ETerm where
   display (EApp f x) = do
        df <- display f
        dx <- display x
-       let wrapx = case x of
-                     EApp _ _  -> parens
-                     ELam _    -> parens
-                     ELet _ _  -> parens
-                     ECase _ _ -> parens
-                     _         -> id
        let wrapf = case f of
-                     ELam _    -> parens
-                     ELet _ _  -> parens
-                     ECase _ _ -> parens
-                     _         -> id
+                     EVar _     -> id
+                     EApp _ _   -> id
+                     _          -> parens
+       let wrapx = case x of
+                     EVar _     -> id
+                     ETCon _ [] -> id
+                     EDCon _ [] -> id
+                     _          -> parens
        return (wrapf df <+> wrapx dx)
   display (EOrdAx) = return $ text "ord"
   display (ESmaller e0 e1) = do
@@ -598,3 +784,9 @@ instance Disp a => Disp (Maybe a) where
   disp (Just a) = text "Just" <+> disp a
   disp Nothing = text "Nothing"
 
+instance (Disp a, Disp b) => Disp (Either a b) where
+  disp (Left a) = text "Left" <+> disp a
+  disp (Right a) = text "Right" <+> disp a
+
+instance Disp ParseError where
+  disp = text . show

@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Language.Trellys.Modules(getModules, writeModules) where
+{-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
+
+module Language.Trellys.Modules(getModules, writeAModules) where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax
@@ -88,10 +90,10 @@ reparse flags (ModuleInfo _ fileName _) = do
   put (moduleConstructors mod)
   return mod
 
-writeModules :: MonadIO m => [FilePath] -> [Module] -> m ()
-writeModules prefixes mods = mapM_ (writeModule prefixes) mods
+writeAModules :: MonadIO m => [FilePath] -> [AModule] -> m ()
+writeAModules prefixes mods = mapM_ (writeAModule prefixes) mods
 
-writeModule :: MonadIO m => [FilePath] -> Module -> m ()
-writeModule prefixes mod = do
-  basename <- getModuleFileName prefixes (moduleName mod)
+writeAModule :: MonadIO m => [FilePath] -> AModule -> m ()
+writeAModule prefixes mod = do
+  basename <- getModuleFileName prefixes (aModuleName mod)
   liftIO $ writeFile (basename ++ "-elaborated") (render $ disp mod)  

@@ -1,4 +1,3 @@
--- -*- haskell-program-args: ("-package" "RepLib-0.3.1" "-package" "base-4.3.0.0" "-package" "containers-0.4.0.0" "-package" "directory-1.1.0.0" "-package" "filepath-1.2.0.0" "-package" "mtl-2.0.1.0" "-package" "parsec-3.1.0" "-package" "pretty-1.0.1.2") -*-
 -- Note: need to do ":cd ../.." in *haskell* window to make things work.
 
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell, ScopedTypeVariables,
@@ -6,105 +5,21 @@
     UndecidableInstances, ViewPatterns, TupleSections #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
-module TypeCheckCore where
+module Language.Trellys.TypeCheckCore (aTcModules, aTs, aKcAt, aKcAny, aGetTh) where
 
-import Data.List (lookup, find)
-import Data.Maybe (isJust)
+import Data.List (find)
+import Data.Set (Set)
 import qualified Data.Set as S
-import Control.Monad.Reader
-import Control.Monad.Error
+import Control.Monad.Reader hiding (join)
+import Control.Monad.Error hiding (join)
 import Control.Applicative
 
-import Generics.RepLib hiding (Arrow,Con)
-import qualified Generics.RepLib as RL
-
 import Language.Trellys.Error
-import Language.Trellys.Environment (Env, err)
+import Language.Trellys.Environment -- (Env, err, lookupTy, lookupTCon, lookupDCon, extendCtx)
 import Language.Trellys.GenericBind
 import Language.Trellys.Syntax
-import Language.Trellys.OpSem (isEValue)
-
-----------------------------------------------------------------
--- Environment stuff, should get folded with the TcM eventually
-----------------------------------------------------------------
-
-lookupCoreVar :: (MonadReader Env m, MonadError Err m) => 
-                 AName -> m (Theta, ATerm)
-lookupCoreVar = undefined
-
-lookupCoreTCon :: (MonadReader Env m, MonadError Err m) => 
-                  AName -> m (Integer, ATelescope, Maybe [AConstructorDef])
-lookupCoreTCon = undefined 
-
-lookupCoreDCon :: (MonadReader Env m, MonadError Err m) =>
-                  AName -> m (AName,      --datatype name
-                              ATelescope, --indices
-                              ATelescope) --arguments
-lookupCoreDCon = undefined
-
-extendCtx :: (MonadReader Env m) =>
-          AName -> Theta -> ATerm -> m a -> m a
-extendCtx = undefined 
-
----------------------------------------------------------------
--- Erasing core terms. 
----------------------------------------------------------------
-aErase :: (Fresh m, Applicative m) => ATerm -> m ETerm
-aErase (AVar x) = return $ EVar (translate x)
-aErase (AFO a) = aErase a
-aErase (ASquash a) = aErase a
-aErase (ACumul a i) = aErase a
-aErase (AType i) = return $ EType i
-aErase (AUnboxVar th a) = aErase a
-aErase (ATCon c indxs) = ECon (translate c) <$> return []
-aErase (ADCon c indxs args) = ECon (translate c) <$> mapM (aErase . fst) (filter ((==Runtime) . snd) args)
-aErase (AArrow ep bnd) = do
-  ((x, unembed -> a), b) <- unbind bnd
-  EArrow ep <$> aErase a <*> (bind (translate x) <$> aErase b)
-aErase (ALam _ ep bnd) = do
-  (x, body) <- unbind bnd
-  if ep == Runtime
-    then ELam <$> (bind (translate x) <$> aErase body)
-    else aErase body
-aErase (AApp Runtime a b) = EApp <$> aErase a <*> aErase b
-aErase (AApp Erased a b) = aErase a
-aErase (AAt a th) = EAt <$> aErase a <*> pure th
-aErase (ABoxLL a th) = aErase a
-aErase (ABoxLV a) = aErase a
-aErase (ABoxP a th) = aErase a
-aErase (AAbort _) = return EAbort
-aErase (ATyEq a b) = ETyEq <$> aErase a <*> aErase b
-aErase (AJoin a i b j) = return EJoin
-aErase (AConv a _ _) = aErase a
-aErase (AContra a ty) = return EContra
-aErase (ASmaller a b) = ESmaller <$> aErase a <*> aErase b
-aErase (AOrdAx _ _ _) = return EOrdAx
-aErase (AOrdTrans _ _) = return EOrdAx
-aErase (AInd _  ep bnd) = do
-  ((f, y), r) <- unbind bnd
-  if (ep == Runtime) 
-   then ERecPlus <$> (bind (translate f, translate y) <$> aErase r)
-   else ERecMinus <$> (bind (translate f) <$> aErase r)
-aErase (ARec _ ep bnd) = do
-  ((f, y), r) <- unbind bnd
-  if (ep == Runtime) 
-   then ERecPlus <$> (bind (translate f, translate y) <$> aErase r)
-   else ERecMinus <$> (bind (translate f) <$> aErase r)
-aErase (ALet th ep bnd) = do
-  ((x, xeq, unembed -> a), b) <- unbind bnd
-  if ep == Runtime
-    then ELet <$> aErase a <*> (bind (translate x) <$> aErase b)
-    else aErase b
-aErase (ACase a bnd _) = do
-  (xeq, matchs) <- unbind bnd
-  ECase <$> aErase a <*> (mapM aEraseMatch matchs)
-
-aEraseMatch  :: (Fresh m, Applicative m) => AMatch -> m EMatch
-aEraseMatch (AMatch c bnd) = do
-  (xeps, b) <- unbind bnd
-  EMatch  (translate c)
-      <$> (bind (map (translate . fst) $ filter ((==Runtime).snd) xeps) <$> aErase b)
-
+import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
+import Language.Trellys.TypeMonad
 
 -------------------
 -------------------
@@ -112,307 +27,463 @@ aEraseMatch (AMatch c bnd) = do
 -------------------
 -------------------
 
-coreErr :: (MonadReader Env m, MonadError Err m) => String -> m b
-coreErr msg = err [DS $ "Internal error: ill-typed core term. (" ++ msg ++ ")"]
-
--- Given an environment and a theta, we synthesize a type or fail.
+coreErr :: (MonadReader Env m, MonadError Err m) => [D] -> m b
+coreErr msg = do
+  gamma <- getLocalCtx
+  err $ [DS "Internal error: ill-typed core term."] 
+        ++ msg
+        ++ [DS "In context", DD gamma]
+        
+-- Given an environment and a theta, we synthesize a type and a theta or fail.
 --  Since the synthesized type is "very annotated", this is a bit like regularity.
-aTs :: (Fresh m, Applicative m, MonadReader Env m, MonadError Err m) =>  
-       Theta -> ATerm -> m ATerm
-aTs th (AVar x) = do
-  (th', ty) <- lookupCoreVar x
-  unless (th == th') $
-    coreErr "AVar th"
-  return $ ty
-aTs Logic   (AFO a) = aTs Program a
-aTs Program (ASquash a) = do
- ty <- aErase =<< (aTs Program a)
- case ty of
-   (EType _) -> return $ AType 0
-   _        -> coreErr "ASquash not type"
-aTs th   (ACumul a j) = do
- ty <- aErase =<< (aTs th a)
- case ty of
-   (EType i) | i < j -> return $ AType j
-   _ -> coreErr "ACumul"
-aTs th  (AType i) = return $ AType (i+1)
-aTs th' (AUnboxVar th a) = do
-  ea <- aErase a
-  unless (isJust (isEVar ea)) $
-    coreErr "AUnboxVar not var"
-  atTy <- aTs th a
-  case atTy of
-    (AAt ty th'') | th'' == th' -> return ty
-                  | otherwise -> coreErr "AUnboxVar th'"
-    _  -> coreErr "AUnboxVar not a box"
-aTs th (ATCon c idxs) = do
-  (i, tys, _) <- lookupCoreTCon c
-  aTcTele th (map (,Runtime) idxs) tys
-  return (AType i)
+aTs :: ATerm -> TcMonad (Theta, ATerm)
+aTs (AVar x) = lookupTy x
 
-aTs th (ADCon c idxs args) = do 
-  (tyc, indx_tys, arg_tys) <- lookupCoreDCon c
-  aTcTele th (map (,Runtime) idxs ++ args) (indx_tys ++ arg_tys)
-  return $ ATCon (translate tyc) (map fst args)
+aTs (AFO a) = do
+   (th, aTy) <- aTs a
+   fo <- isEFirstOrder =<< (erase aTy)
+   unless fo $
+     coreErr [DS "Subterm of AFO should have a first-order type but has type", DD aTy]
+   return (Logic, aTy)
 
-aTs th (AArrow ep bnd) = do
+aTs (ASquash a) = do
+  (th, aTy) <- aTs a
+  ty <- erase aTy 
+  case ty of
+    (EType _) -> return $ (Program, AType 0)
+    _         -> coreErr [DS "Subterm of ASquash should be a type but is", DD aTy]
+
+aTs (ACumul a j) = do
+ (th, aTy) <- aTs a
+ ty <- erase aTy
+ case ty of
+   (EType i) | i < j -> return $ (th,AType j)
+   _ -> coreErr [DS "Subterm of ACulum should be a type but is", DD aTy]
+
+aTs (AType i) = return $ (Logic, AType (i+1))
+
+aTs deriv@(AUnboxVal a) = do
+  ea <- erase a
+  unless (isEValue ea) $
+    coreErr [DS "Argument of AUnboxVal should be a value, but is", DD a]
+  (_, atTy) <- aTs a
+  case eraseToHead atTy of
+    (AAt ty th) -> return (th, ty)
+    _  -> coreErr [DS "Argument of AUnboxVal should have an @-type, but has type", DD atTy,
+                   DS ("\n when checking (" ++ show deriv ++ ")") ]
+
+aTs (ATCon c idxs) = do
+  (tys, thData, i, _) <- lookupTCon c
+  th <- aTcTele (map (,Runtime) idxs) tys
+  return (max thData th, AType i)
+
+aTs (ADCon c idxs args) = do 
+  (tyc, indx_tys, thData, (AConstructorDef _ arg_tys)) <- lookupDCon c 
+  th <- aTcTele (map (,Runtime) idxs ++ args) (indx_tys ++ arg_tys)
+  return (max thData th, ATCon (translate tyc) idxs)
+
+aTs  (AArrow ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
-  fo <- isEFO =<< (aErase a)
-  unless fo $
-    coreErr "AArrow FO"
-  tya <- aTs th a
-  tyb <- extendCtx x th a $ 
-           aTs th b
+  fo <- isEFirstOrder =<< (erase a)
+  unless fo $ do
+    coreErr [DS "The domain of an arrow should be first-order, but here it is", DD a]
+  (tha, tya) <- aTs a
+  (thb, tyb) <- extendCtx (ASig x Program a) $ 
+                   aTs b
   case (tya, tyb) of
-    (AType i, AType 0) -> return $ AType 0
-    (AType i, AType j) -> return $ AType (max i j)
-    _ -> coreErr "AArrow nontype"
+    (AType i, AType j) -> return (max tha thb, AType (max i j))
+    (_, AType _) -> coreErr [DS "domain of an arrow should be a type, but here is", DD tya]
+    (_, _) -> coreErr [DS "range of an arrow should be a type, but here is", DD tyb]
 
--- Fixme: this is not right, because it assumes the pitype 
--- is AArrow, but we should also accept (AConv (AArrow ...) ...), etc.
-aTs th (ALam (AArrow epTy bndTy) ep bnd) = do
+aTs (ALam (eraseToHead -> (AArrow epTy bndTy))  ep bnd) = do
   unless (epTy == ep) $
-    coreErr "ALam ep"
-  aKc th (AArrow epTy bndTy)  
+    coreErr [DS "ALam ep"]
+  th1 <- aKc (AArrow epTy bndTy)  
   Just ((x , unembed -> aTy), bTy , _, b) <- unbind2 bndTy bnd
-  bTy' <- extendCtx x th aTy $
-            aTs th b
-  bTyEq <- aeq <$> (aErase bTy) <*> (aErase bTy')
-  unless bTyEq $
-    coreErr "ALam annotation mismatch"
-  return $ (AArrow epTy bndTy)
+  (th2, bTy') <- extendCtx (ASig x Program aTy) $ aTs b
+  bTyEq <- aeq <$> (erase bTy) <*> (erase bTy')
+  unless bTyEq $ do
+    bTyErased  <- erase bTy
+    bTyErased' <- erase bTy'
+    coreErr [DS "ALam annotation mismatch, function body was annotated as", DD bTyErased,
+             DS "but checks at", DD bTyErased',
+             DS "The full annotation was", DD (AArrow epTy bndTy)]
+  return $ (max th1 th2, AArrow epTy bndTy)
 
-aTs th (AApp ep a b) = do
-  tyA <- aTs th a
-  tyB <- aTs th b
+aTs (ALam ty _ _) = coreErr [DS "ALam malformed annotation, should be an arrow type but is", DD ty]
+
+aTs (AApp ep a b ty) = do
+  (tha, tyA) <- aTs a
+  (thb, tyB) <- aTs b
+  thty <- aKc ty
   case tyA of
     AArrow ep' bnd -> do
       unless (ep == ep') $
-        coreErr "AApp ep mismatch"
+        coreErr [DS "AApp ep mismatch"]
+      when (ep == Erased && thb == Program) $
+        coreErr [DS "AApp: an erased argument must terminate, but", DD b, DS "checks at P"]        
       ((x, unembed -> tyB'), tyC) <- unbind bnd
-      tyAEq <- aeq <$> aErase tyB <*> aErase tyB'
-      unless tyAEq $
-        coreErr "AApp dom mismatch"
-      return $ subst x b tyC
-    _ -> coreErr "AApp not arrow"
+      tyBEq <- aeq <$> erase tyB <*> erase tyB'
+      unless tyBEq $
+        coreErr [DS "AApp dom mismatch", DD tyB, DS "vs", DD tyB']
+      tyEq <- aeq <$> erase ty <*> erase (subst x b tyC)
+      unless tyEq $ 
+        coreErr [DS "AApp annotation mismatch. Application has type", DD (subst x b tyC), 
+                 DS "but was annotated as", DD ty]
+      return (maximum [tha, thb, thty], ty)
+    _ -> coreErr [DS "AApp not arrow"]
 
-aTs th (AAt a th') = do
-  aTy <- aTs th' a
-  case aTy of 
-    AType i -> return $ AType i
-    _ -> coreErr "AAt not type"
+aTs (AAt a th') = do
+  (tha, aTy) <- aTs a
+  unless (tha <= th') $
+    coreErr [DS "Argument of AAt should check at", DD th', 
+             DS "but it has theta", DD tha,
+             DS ("when checking " ++ show (AAt a th'))]
+  case eraseToHead aTy of 
+    AType i -> return $ (Logic, AType i)
+    _ -> coreErr [DS "The argument to AAt should be a type, but it is", DD a, DS "which has type", DD aTy]
 
-aTs th (ABoxLL a th') = AAt <$> aTs Logic a <*> pure th'
+aTs (ABoxLL a th') = do
+  (tha, aTy) <- aTs a
+  unless (tha == Logic) $
+    coreErr [DS "Argument to ABoxLL should check logically, but", DD a,
+             DS "checks as Program"]
+  return (Logic, AAt aTy th')
 
-aTs th (ABoxLV a) = do
-  aEVal <- isEValue <$> aErase a
+aTs (ABoxLV a th') = do
+  aEVal <- isEValue <$> erase a
   unless aEVal $
-    coreErr "ABoxLV nonvalue"
-  AAt <$> aTs Program a <*> pure Program
+    coreErr [DS "ABoxLV nonvalue"]
+  (tha, aTy) <- aTs a
+  return (Logic, AAt aTy th')
 
-aTs Program (ABoxP a th') = do
-  aTy <- aTs th' a
-  return (AAt a th')
+aTs (ABoxP a th') = do
+  (th, aTy) <- aTs a
+  unless (th <= th') $
+    coreErr [DS "Argument of ABoxP should check at", DD th', 
+             DS "but it has theta", DD th]
+  return (Program, AAt aTy th')
 
-aTs Program (AAbort aTy) = do
-  aKc Program aTy
-  return aTy
+aTs (AAbort aTy) = do
+  aKcAny aTy
+  return (Program, aTy)
 
-aTs th (ATyEq a b) = do
-  _ <- aTs Program a
-  _ <- aTs Program b
-  return (AType 0)
+aTs (ATyEq a b) = do
+  _ <- aTs a
+  _ <- aTs b
+  return (Logic, AType 0)
 
-aTs th (AJoin a i b j) = do
- aKc th (ATyEq a b)
- -- joinable <- join a i b j
- let joinable = True --fixme
- unless joinable $
-   coreErr "AJoin not joinable"
- return $ ATyEq a b
+aTs (AJoin a i b j) = do
+  aKcAny (ATyEq a b)
+  aE <- erase =<< substDefs a
+  bE <- erase =<< substDefs b
+  joinable <- join i j aE bE
+  unless joinable $
+    coreErr [DS "AJoin: not joinable"]
+  return (Logic, ATyEq a b)
 
-aTs th (AConv a prfs bnd) = do
+aTs (AConv a prfs bnd ty) = do
   (xs, template) <- unbind bnd
-  etemplate <- aErase template
+  etemplate <- erase template
   let runtimeVars = fv etemplate
-  aTy <- aTs th a
+  (th, aTy) <- aTs a
   unless (length xs == length prfs) $
-    coreErr "AConv lenght mismatch"
-  eqs <-  let processPrf _ (Runtime,pf) = do
-                              pfTy <- aTs Logic pf
-                              case pfTy of
-                                (ATyEq a1 a2) -> return (a1, a2)
-                                _ -> coreErr "AConv not eq"
-              processPrf x (Erased,ATyEq a1 a2) = do
+    coreErr [DS "AConv length mismatch"]
+  eqs <-  let processPrf _ (pf,Runtime) = do
+                              (th', pfTy) <- aTs pf
+                              case (th', pfTy) of
+                                (Logic, ATyEq a1 a2) -> return (a1, a2)
+                                (Program, _) -> 
+                                    coreErr [DS "Equality proofs should check at L, but",
+                                             DD pf, DS "checks at P"]
+                                (Logic, _) -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
+                                                       DD pfTy]
+              processPrf x (ATyEq a1 a2, Erased) = do
                               when (translate x `S.member` runtimeVars) $
-                                   coreErr "AConv not erased var"
+                                   coreErr [DS "AConv not erased var"]
                               return (a1, a2)
-              processPrf _ (Erased, _) = coreErr "AConv malformed irrelevant eq"
+              processPrf _ (_, Erased) = coreErr [DS "AConv malformed irrelevant eq"]
            in zipWithM processPrf xs prfs
   let aTy1 = substs (zip xs (map fst eqs)) template
   let aTy2 = substs (zip xs (map snd eqs)) template
-  fromEq <- aeq <$> aErase aTy <*> aErase aTy1
+  fromEq <- aeq <$> erase aTy <*> erase aTy1
+  toEq   <- aeq <$> erase ty  <*> erase aTy2
   unless fromEq $
-    coreErr "AConv wrong type"
-  aKc th aTy2
-  return aTy2
+    coreErr [DS "AConv: the term", DD a, DS "has type", DD aTy,
+             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1]
+  unless toEq $ 
+    coreErr [DS "AConv: the conv-expression was annotated as", DD ty, 
+             DS "but substituting the RHSs of the equations into the template creates the type", DD aTy2]
+  th' <- aKc ty
+  return (max th th', aTy2)
 
-aTs th (AContra a ty) = do 
-  aKc th ty
-  aTy <- aTs Logic a
-  eaTy <- aErase aTy
+aTs (AContra a ty) = do 
+  aKcAny ty
+  (th, aTy) <- aTs a
+  unless (th == Logic) $
+   coreErr [DS "The proof of contradiction", DD a, DS "should typecheck at L, but here checks at P"]
+  eaTy <- erase aTy
   case eaTy of 
-    ETyEq (ECon c1 args1) (ECon c2 args2) -> do
+    ETyEq (EDCon c1 args1) (EDCon c2 args2) -> do
       unless (c1 /= c2) $
-        coreErr "AContra Not unequal constructors"
+        coreErr [DS "AContra Not unequal constructors"]
       unless (all isEValue args1 && all isEValue args2) $
-        coreErr "AContra not values"
-      return ty
-    _ -> coreErr "AContra not equality"
+        coreErr [DS "AContra not values"]
+      return (Logic, ty)
+    _ -> coreErr [DS "AContra not equality"]
    
-aTs th (ASmaller a b)  = do
-  _ <- aTs Program a
-  _ <- aTs Program b
-  return (AType 0)
+aTs (ASmaller a b)  = do
+  _ <- aTs a
+  _ <- aTs b
+  return (Logic, AType 0)
 
-aTs th (AOrdAx a a1 a2) = do 
-  aTy <- aTs Logic a
-  eaTy <- aErase aTy
-  ea1 <- aErase a1
-  ea2 <- aErase a2
-  case eaTy of 
-    (ETyEq eb1 (ECon c eb2s)) -> do
-       unless (aeq ea2 eb1) $
-         coreErr "AOrdAx a2"
+aTs (AOrdAx pf a1) = do 
+  (th, pfTy) <- aTs pf
+  unless (th == Logic) $
+    coreErr [DS "The proof to AOrdAx,", DD pf, DS "must typecheck at L"]
+  ea1 <- erase a1
+  case eraseToHead pfTy of 
+    (ATyEq b1 (ADCon c params b2s)) -> do
+       eb1 <- erase b1 
+       eb2s <- mapM (erase . fst) b2s
        unless (any (aeq ea1) eb2s) $
-         coreErr "AOrdAx a1"
-       return $ (ASmaller a1 a2)
-    _ -> coreErr "AOrdAx badeq"
+         coreErr [DS "The term", DD a1, DS "is not one of the subterms appearing in RHS of", DD pfTy]
+       return $ (Logic, ASmaller a1 b1)
+    _ -> coreErr [DS "AOrdAx badeq"]
         
-aTs Logic (AOrdTrans a b) = do
-  tya <- aTs Logic a
-  tyb <- aTs Logic b
-  --fixme: this is wrong for the same reason as ALam
-  case (tya, tyb) of
+aTs (AOrdTrans a b) = do
+  (tha, tya) <- aTs a
+  unless (tha == Logic) $
+    coreErr [DS "The proof", DD a, DS "given to AOrdTrans should check at L but checks at P"]
+  (thb, tyb) <- aTs b
+  unless (thb == Logic) $
+    coreErr [DS "The proof", DD b, DS "given to AOrdTrans should check at L but checks at P"]
+  case (eraseToHead tya, eraseToHead tyb) of
     (ASmaller t1 t2, ASmaller t2' t3') | t2 `aeq` t2' ->
-       return $ ASmaller t1 t3'
-    _ -> coreErr "AOrdTrans"
+       return $ (Logic, ASmaller t1 t3')
+    _ -> coreErr [DS "The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
--- fixme: wrong for same reason as ALam
-aTs Logic  (AInd (AArrow epTy bndTy) ep bnd) = do
+aTs (AInd (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
   unless (epTy == ep) $
-    coreErr "AInd ep"
-  aKc Logic (AArrow epTy bndTy)
+    coreErr [DS "AInd ep"]
+  aKcAt Logic (AArrow epTy bndTy)
   ((y, unembed -> aTy), bTy) <-unbind bndTy
-  ((dumby ,f), dumbb) <- unbind bnd
+  ((f,dumby), dumbb) <- unbind bnd
   let b = subst dumby (AVar y) dumbb
   when (ep == Erased) $ do
-    bIsVal <- isEValue <$> aErase b
+    bIsVal <- isEValue <$> erase b
     unless bIsVal $
-      coreErr "AInd Erased nonvalue"
-    runtimeVars <- fv <$> aErase b
-    when (translate y `S.member` runtimeVars) $
-      coreErr "AInd Erased var"
+      coreErr [DS "AInd Erased nonvalue"]
+    runtimeVars <- fv <$> erase b
+    when (translate y `S.member` runtimeVars) $ do
+      erasedB <- erase b
+      coreErr [DS "AInd: the variable", DD y, 
+               DS "is marked erased, but it appears in an unerased position in the body", DD erasedB]
   x <- fresh (string2Name "x")
   z <- fresh (string2Name "z")
   let fTy =  AArrow ep (bind (x, embed aTy)
                        (AArrow Erased (bind (z, embed (ASmaller (AVar x) (AVar y)))
                                             (subst y (AVar x) bTy))))
-  bTy' <-
-    extendCtx y Logic aTy $
-      extendCtx f Logic fTy $
-        aTs Logic b
-  bTyEq <- aeq <$> aErase bTy <*> aErase bTy'
+  (th', bTy') <-
+    extendCtx (ASig y Logic aTy) $
+      extendCtx (ASig f Logic fTy) $
+        aTs b
+  unless (th' == Logic) $
+    coreErr [DS "AInd: body should check at L, but is P"]
+  bTyEq <- aeq <$> erase bTy <*> erase bTy'
   unless bTyEq $
-    coreErr "AInd annotation mismatch"
-  return $ bTy
-  
--- fixme: wrong for same reason as ALam
-aTs Program  (ARec (AArrow epTy bndTy) ep bnd) = do
+    coreErr [DS "AInd should have type", DD bTy, DS "but has type", DD bTy']
+  return $ (Logic, AArrow epTy bndTy)
+
+aTs (AInd ty _ _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
+
+aTs (ARec (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
   unless (epTy == ep) $
-    coreErr "AInd ep"
-  aKc Logic (AArrow epTy bndTy)
-  ((y, unembed -> aTy), bTy) <-unbind bndTy
-  ((dumby ,f), dumbb) <- unbind bnd
+    coreErr [DS "AInd ep"]
+  aKcAt Logic (AArrow epTy bndTy)
+  ((y, unembed -> aTy), bTy) <- unbind bndTy
+  ((f,dumby), dumbb) <- unbind bnd
   let b = subst dumby (AVar y) dumbb
   when (ep == Erased) $ do
-    bIsVal <- isEValue <$> aErase b
+    bIsVal <- isEValue <$> erase b
     unless bIsVal $
-      coreErr "ARec Erased nonvalue"
-    runtimeVars <- fv <$> aErase b
+      coreErr [DS "ARec Erased nonvalue"]
+    runtimeVars <- fv <$> erase b
     when (translate y `S.member` runtimeVars) $
-      coreErr "ARec Erased var"
-  bTy' <-
-    extendCtx y Logic aTy $
-      extendCtx f Logic (AArrow epTy bndTy) $
-        aTs Logic b
-  bTyEq <- aeq <$> aErase bTy <*> aErase bTy'
+      coreErr [DS "ARec Erased var"]
+  (th',  bTy') <-
+    extendCtx (ASig y Logic aTy) $
+      extendCtx (ASig f Logic (AArrow epTy bndTy)) $
+        aTs b
+  bTyEq <- aeq <$> erase bTy <*> erase bTy'
   unless bTyEq $
-    coreErr "ARec annotation mismatch" 
-  return $ bTy
+    coreErr [DS "ARec annotation mismatch"]
+  return $ (Program, AArrow epTy bndTy)
   
-aTs th (ALet th' ep bnd) = do
-  ((x, xeq, unembed -> a), b) <- unbind bnd
-  when (th' == Program && ep == Erased) $
-    coreErr "ALet ep"
-  runtimeVars <- fv <$> aErase b
-  when (ep == Erased && (translate x) `S.member` runtimeVars) $
-    coreErr "ALet erased var"
-  aTy <- aTs th' a
-  bTy <- extendCtx x th' aTy $ aTs th b
-  aKc th bTy
-  return bTy
+aTs (ARec ty _ _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs th (ACase a bnd ty) = do
+aTs (ALet ep bnd) = do
+  ((x, xeq, unembed -> a), b) <- unbind bnd
+  runtimeVars <- fv <$> erase b
+  when (ep == Erased && (translate x) `S.member` runtimeVars) $
+    coreErr [DS "ALet erased var"]
+  (th',aTy) <- aTs a
+  when (th' == Program && ep == Erased) $
+    coreErr [DS "the bound term in ALet is P, so it cannot be erased"]
+  (th,bTy) <- extendCtx (ASig x th' aTy) $ 
+                 extendCtx (ASig xeq Logic (ATyEq (AVar x) a)) $ do
+                  aTs b
+  aKcAny bTy  --To check that no variables escape.
+  return (max th th', bTy) --The max enforces that P vars can not be bound in an L context.
+
+aTs (ACase a bnd ty) = do
   (xeq, mtchs) <- unbind bnd
-  aTy <- aTs th a
+  (th, aTy) <- aTs a
   case aTy of 
     (ATCon c idxs) -> do
-      tCon <- lookupCoreTCon c
+      tCon <- lookupTCon c
       case tCon of 
-        (_, _, Just cons) -> do
+        (delta, _, _, Just cons) -> do
           unless (length mtchs == length cons) $
-            coreErr "ACase wrong number of branches"
-          return $ undefined
-        (_, _, Nothing) -> coreErr "ACase case on abstract type"
-    _ -> coreErr "ACase not data"
-  
-{-
-  | ACase ATerm (Bind AName [AMatch])
--}
+            coreErr [DS "ACase The case expression has", DD (length mtchs),
+                     DS "branches, but the datatype", DD c, DS "has", DD (length cons), DS "constructors"]
+          unless (length delta == length idxs) $
+            coreErr [DS "ACase malformed core term, this should never happen"]
+          ths <- mapM (aTsMatch th ty (zip (map (\(x,_,_)->x) delta) idxs) cons (\pat -> ASig xeq Logic (ATyEq a pat)))
+                      mtchs
+          return (max th (maximum (minBound:ths)), ty)     
+        (_, _, _, Nothing) -> coreErr [DS "ACase case on abstract type"]
+    _ -> coreErr [DS "ACase not data"]
 
--- Check that a term has a given type
-aTc :: (Fresh m, Applicative m, MonadReader Env m, MonadError Err m) => 
-           Theta -> ATerm -> ATerm -> m ()
-aTc th t ty = do
-  ety1 <- aErase =<< (aTs th t)
-  ety2 <- aErase ty
-  unless (ety1 `aeq` ety2) $
-    coreErr "aTC"
+aTs (ATrustMe ty) = do
+  th <- aKc ty
+  return (th, ty)
 
--- Check that a term is a type
-aKc :: (Fresh m, Applicative m, MonadReader Env m, MonadError Err m) => 
-           Theta -> ATerm  -> m ()
-aKc th t  = do
-  ety <- aErase =<< (aTs th t)
+aTs (ASubstitutedFor a _) = aTs a
+
+-- Compute the best theta that can be given to a term.
+aGetTh :: ATerm -> TcMonad Theta
+aGetTh a = do
+  (th, _) <- aTs a
+  return th
+
+-- Check that a term is a type (at any theta)
+aKcAny :: ATerm  -> TcMonad ()
+aKcAny t  = aKc t >> return ()
+
+-- Check that a term is a type (at a given theta)
+aKcAt :: Theta -> ATerm -> TcMonad ()
+aKcAt th t  = do
+  th' <- aKc t
+  if th' <= th 
+    then return ()
+    else coreErr [DS "The type", DD t, DS "should check at L but checks at P"]
+
+-- Check that a term is a type 
+aKc :: ATerm  -> TcMonad Theta
+aKc t  = do
+  (th,ty) <- aTs t
+  ety <- erase ty
   case ety of
-    (EType _) -> return ()
-    _ -> coreErr "aKc"
+    (EType _) -> return th
+    _ -> coreErr [DD t, DS "should be a type, but has type", DD ty]
+
+-- Check that all types in a telescope are well-formed.
+aKcTele :: ATelescope -> TcMonad Theta
+aKcTele [] = return Logic
+aKcTele ((x,ty,ep):rest) = do
+  th1 <- aKc ty
+  th2 <- extendCtx (ASig x th1 ty) $ aKcTele rest
+  return (max th1 th2)
+
+-- Check that the body of a match typecheck at the right type.
+aTsMatch ::  Theta                -- the theta of the scrutinee
+             -> ATerm             -- the type that the branch should check at.
+             -> [(AName,ATerm)]   -- substitution for type indexes
+             -> [AConstructorDef] -- the constructors of the datatype
+             -> (ATerm -> ADecl)  -- the "scrutinee = pattern" equality, partially applied
+             -> AMatch            -- the branch to check
+             -> TcMonad Theta
+aTsMatch th ty idxs cons xeq (AMatch c bnd) = do
+  (xs, a) <- unbind bnd
+  case find (\(AConstructorDef c' _) -> c'==c) cons of
+    Nothing -> coreErr [DS "AMatch: Trying to match against the constructor", DD c,
+                        DS "which is not a constructor of the datatype."]
+    Just (AConstructorDef _ cargs) -> do
+      unless (length cargs == length xs) $
+        coreErr [DS "AMatch: Branch expects", DD (length xs), DS "arguments",
+                 DS "but the constructor", DD c, DS "has", DD (length cargs), DS "arguments"]
+      extendCtxTele (aSwapTeleVars (substs idxs cargs) (map fst xs)) th $ 
+        extendCtx (xeq (ADCon c (map snd idxs) (map (\(x,ep) -> (AVar x, ep)) xs))) $ do
+         (th', ty') <- aTs a
+         ety' <- erase ty'
+         ety  <- erase ty
+         unless (ety' `aeq` ety) $
+           coreErr [DS "AMatch: Branch has type", DD ty', DS "but was expected to have type", DD ty]
+         return th'
 
 
-aTcTele :: (Fresh m, Applicative m, MonadReader Env m, MonadError Err m) => 
-           Theta -> [(ATerm,Epsilon)] -> ATelescope -> m ()
-aTcTele th [] [] = return ()
-aTcTele th ((t,ep1):ts) ((x,ty,ep2):tele') = do
+aTcTele :: [(ATerm,Epsilon)] -> ATelescope -> TcMonad Theta
+aTcTele [] [] = return Logic
+aTcTele ((t,ep1):ts) ((x,ty,ep2):tele') = do
   unless (ep1==ep1) $
-    coreErr "aTcTele ep"
-  aTc th t ty
-  aTcTele th ts (subst x t tele')
-aTcTele _ _ _ = coreErr "aTcTele telescope length mismatch"
+    coreErr [DS "aTcTele ep"]
+  (th', ty') <- aTs t
+  ety  <- erase ty
+  ety' <- erase ty'
+  unless (ety' `aeq` ety) $
+    coreErr [DS "aTcTele: the expression",DD t,DS "should have type", DD ty,
+             DS "but has type", DD ty']
+  th <-  aTcTele ts (subst x t tele')
+  return (max th th')
+aTcTele _ _ = coreErr [DS "aTcTele telescope length mismatch"]
 
-isEFO :: (Fresh m, Applicative m, MonadReader Env m, MonadError Err m) =>
-         ETerm -> m Bool
-isEFO = undefined
+isEFirstOrder :: ETerm -> TcMonad Bool
+isEFirstOrder m = isEFirstOrder' S.empty m
+  where isEFirstOrder' :: Set EName -> ETerm -> TcMonad Bool
+        isEFirstOrder' _ (ETyEq _ _)    = return True
+        isEFirstOrder' _ (ESmaller _ _) = return True
+        isEFirstOrder' _ (EAt _ _)      = return True
+        isEFirstOrder' s (ETCon d _) | d `S.member` s  = return True
+        isEFirstOrder' s (ETCon d _) = do
+           ent <- lookupTCon (translate d)
+           case ent of 
+             (_,_,_,Nothing)   -> return False --Abstract datatype constructor
+             (_,_,_,Just cons) -> --see corresponding comment in TypeCheck.hs
+               allM (\(AConstructorDef _ args) ->
+                         allM (\(_,ty,_) -> do
+                                           ety <- erase ty
+                                           isEFirstOrder' (S.insert d s) ety)
+                              args)
+                    cons
+        isEFirstOrder' _ _ = return False
+             
+----------------------------------------------
+-- Typechecking an entire set of modules.
+----------------------------------------------
 
-allM :: (Applicative m, Monad m) => (a -> m Bool) -> [a] -> m Bool
-allM p xs = and <$> mapM p xs
+
+aTcModules :: [AModule] -> TcMonad ()
+aTcModules mods = aTcEntries (concatMap aModuleEntries mods) 
+
+-- Fixme: this is not enough, it just checks that each entry has _some_ type, but it should already
+-- catch some errors.
+aTcEntries :: [ADecl] -> TcMonad ()
+aTcEntries [] = return ()
+aTcEntries (d@(ASig x th aTy) : rest) = do
+  aKcAt th aTy
+  extendCtx d $ aTcEntries rest
+aTcEntries (d@(ADef x a) : rest) = do
+  _ <- aTs a
+  extendCtx d $ aTcEntries rest
+aTcEntries (d@(AData t delta th lvl constructors) : rest) = do
+  th1 <- aKcTele delta
+  ths <- extendCtx (AAbsData t delta th lvl) $
+            mapM (\(AConstructorDef c args) -> extendCtxTele delta th1 $ aKcTele args) constructors
+  unless (th <= (max th1 (maximum (Logic:ths)))) $
+    err [DS "Datatype", DD t, DS "was annotated at", DD th, DS "but only checks at P"]
+  extendCtx d $ aTcEntries rest
+aTcEntries (d@(AAbsData t delta th lvl) : rest)  = do 
+  th1 <- aKcTele delta
+  unless (th <= th1) $
+    err [DS "Datatype", DD t, DS "was annotated at", DD th, DS "but only checks at P"]

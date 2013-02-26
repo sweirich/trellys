@@ -5,7 +5,9 @@ import Language.Trellys.Options
 import Language.Trellys.Syntax (moduleEntries)
 import Language.Trellys.Modules
 import Language.Trellys.PrettyPrint
-import Language.Trellys.TypeCheck
+import Language.Trellys.TypeMonad (runTcMonad)
+import Language.Trellys.TypeCheck (tcModules)
+import Language.Trellys.TypeCheckCore (aTcModules)
 import Language.Trellys.OpSem
 import Language.Trellys.Environment
  
@@ -43,23 +45,21 @@ main = do
                         putStrLn "Type Error:"
                         putStrLn $ render $ disp typeError
                         exitFailure
-               Right defs ->
-                 if (Elaborate `elem` flags)
-                   then do
-                        putStrLn "Elaboration pass successful. Typechecking the core terms."
-                        --writeModules defs --can uncomment this line for debugging.
-                        contents' <- runTcMonad (emptyEnv (delete Elaborate flags)) (tcModules defs)
-                        case contents' of
+               Right defs -> do
+                        putStrLn "Elaboration pass successful. Writing elaborated terms."
+                        writeAModules prefixes defs 
+                        putStrLn "Typechecking the elaborated terms."
+                        result <- runTcMonad (emptyEnv flags) (aTcModules defs)
+                        case  result of
                           Left typeError -> do
                                   putStrLn "Internal error, elaborated term fails type check:"
                                   putStrLn $ render $ disp typeError
                                   exitFailure
                           Right _ -> do
-                            putStrLn "Type check successful. Writing elaborated terms."
-                            writeModules prefixes defs
-
-                   else do
-                        putStrLn "Type check successful"
+                            putStrLn "Type check successful."
+                            exitSuccess
+--fixme: bring back the "Reduce" flag?
+{-
                         if (Reduce `elem` flags)
                            then do
                               let eenv = concatMap makeModuleEnv defs
@@ -74,7 +74,7 @@ main = do
                                                putStrLn $ render $ disp err
                                 Right x -> putStrLn $ render $ disp x
                            else return ()
-
+-}
 
 getOptions :: [String] -> IO ([Flag], [String])
 getOptions argv =

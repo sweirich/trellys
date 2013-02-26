@@ -1,9 +1,13 @@
 module Vectors where
 import Prelude
 
-log data Vector (a : Type 0@log) (n : Nat) : Type 0 where
-   VNil  of [n = 0] 
-   VCons of [size : Nat] [n = Succ size]  (x:a) (xs : Vector a size)
+log data Vector (a : Type 0@log) (t : Nat) : Type 0 where
+   VNil  of [t = 0] 
+   VCons of [size : Nat] [t = Succ size]  (x:a) (xs : Vector a size)
+
+--log data Vector (a : Type 0@log) (n : Nat) : Type 0 where
+--   VNil  of [n = 0] 
+--   VCons of [size : Nat] [n = Succ size]  (x:a) (xs : Vector a size)
 
 -- terminating recursor for the vector type
 recvec : [a : Type 0@log] -> [c : ([n : Nat] -> (v:Vector a n@log) -> Type 0)@log] ->

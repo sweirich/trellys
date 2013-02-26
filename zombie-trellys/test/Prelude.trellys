@@ -57,10 +57,10 @@ sym1 : (A : Type 1@prog) -> (B : Type 1@prog) -> (a : A@prog) -> (b : B@prog)  -
 sym1 = \ A B a b p . 
            conv (join 1 : a = a) by p at x.x = a
 
-trans : [A : Type 0@prog] -> [B : Type 0@prog] -> [cTy : Type 0@prog] ->
-        [a : A@prog] -> [b : B@prog] -> [c : cTy@prog] ->
+trans : [A : Type 0@prog] -> [B : Type 0@prog] -> [C : Type 0@prog] ->
+        [a : A@prog] -> [b : B@prog] -> [c : C@prog] ->
 				[p : a = b] -> [q : b = c] -> (a = c)
-trans = \ [A] [B] [cTy] [a] [b] [c] [p] [q] .
+trans = \ [A] [B] [C] [a] [b] [c] [p] [q] .
              conv join 0 
                by (conv p by q at h.a = h)
                at h.a = h
@@ -69,22 +69,22 @@ trans = \ [A] [B] [cTy] [a] [b] [c] [p] [q] .
 -- But this forces p to be a runtime argument to trans, which is
 -- annoying
 
-trans1 : (A : Type 1@prog) -> (B : Type 1@prog) -> (cTy : Type 1@prog) ->
-         (a : A@prog) -> (b : B@prog) -> (c : cTy@prog) ->
+trans1 : (A : Type 1@prog) -> (B : Type 1@prog) -> (C : Type 1@prog) ->
+         (a : A@prog) -> (b : B@prog) -> (c : C@prog) ->
 				(p : a = b) -> (q : b = c) -> (a = c)
-trans1 = \ A B cTy a b c p q .
+trans1 = \ A B C a b c p q .
              conv q by (sym1 A B a b p) at x.x = c
 
-trans' : (A : Type 0@prog) -> (B : Type 0@prog) -> (cTy : Type 0@prog) ->
-         (a : A@prog) -> (b : B@prog) -> (c : cTy@prog) ->
+trans' : (A : Type 0@prog) -> (B : Type 0@prog) -> (C : Type 0@prog) ->
+         (a : A@prog) -> (b : B@prog) -> (c : C@prog) ->
 				(p : a = b) -> (q : b = c) -> (a = c)
-trans' = \ A B cTy a b c p q .
+trans' = \ A B C a b c p q .
              conv join 0 
                by (conv p by q at h.a = h)
                at h.a = h
 
-trans4' : (A : Type 0@prog) -> (B : Type 0@prog) -> (cTy : Type 0@prog) -> (dTy : Type 0@prog) -> 
-         (a : A@prog) -> (b : B@prog) -> (c : cTy@prog) -> (d : dTy@prog) -> 
+trans4' : (A : Type 0@prog) -> (B : Type 0@prog) -> (C : Type 0@prog) -> (D : Type 0@prog) -> 
+         (a : A@prog) -> (b : B@prog) -> (c : C@prog) -> (d : D@prog) -> 
 				(p : a = b) -> (q : b = c) -> (r : c = d) -> (a = d)
 trans4' = \ A B cTy dTy a b c d p q r . 
 		    trans' A cTy dTy a c d
