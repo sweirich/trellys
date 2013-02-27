@@ -257,16 +257,16 @@ import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive 
 --
 --   sn = Y o flip.
 cov : [p:Nat -> Type 0 @log]
-   -> ((n:Nat) -> ((m:Nat) -> [ltT m n @log] -> Unit -> p m @log) -> p n @log)
+   -> ((n:Nat) -> ((m:Nat) -> [ltT m n @log] -> p m @log) -> p n @log)
    -> ((n:Nat) -> p n)
 cov = \[p] f .
   -- g _ n _ : (m:Nat) -> LT m n -> p m, and so proves p n via f
   let g [_] = 
-   ((ind g [i] = \n [n_lt_i] m [m_lt_n] _ .
+   ((ind g [i] = \n [n_lt_i] m [m_lt_n] .
        let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in       -- i = S (pred i)
        let [m_lt_i'] [_] = lt_trans_pred m n i m_lt_n n_lt_i in -- m < pred i
        f m (g [pred i] [ord i_eq] m [m_lt_i'])
-             ) : [i:Nat] -> (n:Nat) -> [ltT n i@log] -> (m:Nat) -> [ltT m n@log] -> Unit -> p m)
+             ): [i:Nat] -> (n:Nat) -> [ltT n i@log] -> ((m:Nat) -> [ltT m n@log] -> p m))
   in \n . f n (g [Succ n] n [m_lt_Sm n])
 
 {- And here's the first version of StrongNat.
@@ -318,11 +318,11 @@ cdiv = \m n .
          Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n)
                                    by (sym Nat Nat m (Succ m') m_eq)
                                    at m.ltT ((minus (Succ m') (Succ n))) m in
-                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p] U)
+                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
                                    by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
                                    at h.h in
                     conv (Succ recg) by (join : Nat = cdiv_p m) at h.h
-                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m@log] -> Unit -> cdiv_p m_minus_sn @log) -> cdiv_p m))
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m@log] -> cdiv_p m_minus_sn @log) -> cdiv_p m))
        in conv (cov [cdiv_p] f m) by (join : cdiv_p m = Nat) at h.h
 
 -- Tests
@@ -336,10 +336,10 @@ test_cdiv3 : cdiv 10 1 = 5
 test_cdiv3 = join 1000
 
 test_cdiv4 : cdiv 10 2 = 4
-test_cdiv4 = join
+test_cdiv4 = join 1000
 
 test_cdiv5 : cdiv 10 3 = 3
-test_cdiv5 = join
+test_cdiv5 = join 1000
 
 -- * Programmatic division and proofs it meets a specification
 --   ---------------------------------------------------------
@@ -361,16 +361,16 @@ fdiv_case = \m n b [m_lt_n] .
     True  -> Zero
     False -> Succ (fdiv (minus m n) n)) : Nat))
 
-fdiv_caseT : (m:Nat) -> (n:Nat) -> (lt m n = True) -> fdiv m n = Zero
-fdiv_caseT = \m n m_lt_n .
+fdiv_caseT : (m:Nat) -> (n:Nat) -> [lt m n = True] -> fdiv m n = Zero
+fdiv_caseT = \m n [m_lt_n] .
   conv (fdiv_case m n True [m_lt_n])
   by (join :   ((case True [_] of
     True  -> Zero
     False -> Succ (fdiv (minus m n) n)) : Nat) = Zero)
   at h . fdiv m n = h
 
-fdiv_caseF : (m:Nat) -> (n:Nat) -> (lt m n = False) -> fdiv m n = Succ (fdiv (minus m n) n)
-fdiv_caseF = \m n m_lt_n .
+fdiv_caseF : (m:Nat) -> (n:Nat) -> [lt m n = False] -> fdiv m n = Succ (fdiv (minus m n) n)
+fdiv_caseF = \m n [m_lt_n] .
   conv (fdiv_case m n False [m_lt_n])
   by (join :   ((case False [_] of
     True  -> Zero
@@ -395,12 +395,12 @@ fdiv_ub_p_red' : (m:Nat) ->
   = fdiv_ub_p m
 fdiv_ub_p_red' = \m . join
 
-fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> (lt m (Succ n) = True)
+fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
               -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
-fdiv_ub_f_base = \m n m_lt_Sn .
+fdiv_ub_f_base = \m n [m_lt_Sn] .
   let    e1 [_] = (join : le (mult Zero (Succ n)) m = True)
   in let e2 [_] = conv join
-                  by (fdiv_caseT m (Succ n) m_lt_Sn )
+                  by (fdiv_caseT m (Succ n) [m_lt_Sn])
                   at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
                           = le (mult h (Succ n)) m)
 
@@ -429,8 +429,8 @@ fdiv_ub_f_base = \m n m_lt_Sn .
 --                   S n' + (S m' - S n')
 --                      = S (n' + (m' - n'))   (by join)
 --                   rewrite the first equality in the second.
-minus_plus_id : (n:Nat) -> (m:Nat) -> (lt m n = False) -> m = (plus n (minus m n))
-ind minus_plus_id n = \m m_lt_n . case n [n_eq] of
+minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plus n (minus m n))
+ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
   Zero    -> conv (conv join -- (join : (plus Zero (minus m Zero)) = minus m Zero)
                    by (lemma_minus_zero_id m)
                    at h . h = (plus Zero (minus m Zero)))
@@ -442,12 +442,12 @@ ind minus_plus_id n = \m m_lt_n . case n [n_eq] of
                            by m_eq, n_eq
                            at m n. lt m n = False)
                        at h . h = True)
-    Succ m' -> let m'_lt_n' [_] = conv (conv m_lt_n
+    Succ m' -> let [m'_lt_n'] [_] = conv (conv m_lt_n
                                         by m_eq, n_eq
                                         at m n . lt m n = False)
                                   by (join : lt (Succ m') (Succ n') = lt m' n')
                                   at h . h = False
-               in let ih [_] = minus_plus_id n' [ord n_eq] m' m'_lt_n'
+               in let ih [_] = minus_plus_id n' [ord n_eq] m' [m'_lt_n']
                in let eq1 [_] = (join : Succ (plus n' (minus m' n'))
                                      = plus (Succ n') (minus (Succ m') (Succ n')))
                in let eq2 [_] = conv (conv join by ih at h . Succ m' = Succ h)
@@ -540,8 +540,8 @@ plus_le_specialized = \m n . ind plus_le k = case k [k_eq] of
                                            (plus k m)
              in conv ih by step' at h . h = le (mult (fdiv m n) n) m
 
-not_lt_S__pred : (m:Nat) -> (n:Nat) -> (lt m (Succ n) = False) -> m = Succ (pred m)
-not_lt_S__pred = \m n m_lt_n . case m [m_eq] of
+not_lt_S__pred : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False] -> m = Succ (pred m)
+not_lt_S__pred = \m n [m_lt_n] . case m [m_eq] of
   Zero    -> let [e1] [_] = (conv m_lt_n by m_eq at m . lt m (Succ n) = False)
              in contra (conv e1 by (join : lt Zero (Succ n) = True) at h . h = False)
   -- need to do this more often: join's type can be inferred from the context
@@ -552,11 +552,11 @@ s_minus_s__lt' = \m n . conv (s_minus_s__lt m n)
                         by (gs (minus (Succ m) (Succ n)) (Succ m))
                         at t.t
 
-fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> (lt m (Succ n) = False @log)
-              -> ((k:Nat) -> (lt k m = True) -> fdiv_ub_p k @log)
+fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False @log]
+              -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
               -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
-fdiv_ub_f_step = \m n m_lt_Sn gm .
-  let    e1 [_] = conv join by (fdiv_caseF m (Succ n) m_lt_Sn)
+fdiv_ub_f_step = \m n [m_lt_Sn] gm .
+  let    e1 [_] = conv join by (fdiv_caseF m (Succ n) [m_lt_Sn])
                   at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
                           = le (mult h (Succ n)) m)
   -- plus works here even tho mult is defined in terms of plus ... they both reduce to plus
@@ -564,7 +564,7 @@ fdiv_ub_f_step = \m n m_lt_Sn gm .
                                    = (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))))
                   at h . le (mult (fdiv m (Succ n)) (Succ n)) m
                        = le h m
-  in let e3 [_] = conv e2 by (minus_plus_id (Succ n) m m_lt_Sn)
+  in let e3 [_] = conv e2 by (minus_plus_id (Succ n) m [m_lt_Sn])
                   at h . le (mult (fdiv m (Succ n)) (Succ n)) m
                        = le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) h
   {-
@@ -578,13 +578,13 @@ fdiv_ub_f_step = \m n m_lt_Sn gm .
   in let e4 [_] = conv e3 by (plus_le_specialized (minus m (Succ n)) (Succ n) (Succ n))
                   at h . le (mult (fdiv m (Succ n)) (Succ n)) m
                        = h
-  in let m_eq [_] = not_lt_S__pred m n m_lt_Sn
+  in let m_eq [_] = not_lt_S__pred m n [m_lt_Sn]
   in let m_eq' [_] = sym Nat Nat m (Succ (pred m)) m_eq
   in let e5 [_] = conv e4 by m_eq at h . le (mult (fdiv m (Succ n)) (Succ n)) m
      = le (mult (fdiv (minus h (Succ n)) (Succ n)) (Succ n)) (minus h (Succ n))
   in let ih1 [_] = gm (minus m (Succ n))
-                     (conv (s_minus_s__lt' (pred m) n) by m_eq'
-                      at m . lt (minus m (Succ n)) m = True)
+                     [conv (s_minus_s__lt' (pred m) n) by m_eq'
+                      at m . lt (minus m (Succ n)) m = True]
   -- couldn't get fdiv_ub_p to join here, but introduce it as lemma
   -- fdiv_ub_p_red above worked ???
   in let ih2 [_] = conv ih1 by (fdiv_ub_p_red (minus m (Succ n))) at t.t
@@ -599,25 +599,25 @@ fdiv_ub_f_step = \m n m_lt_Sn gm .
   in conv e4 by ih at h . le (mult (fdiv m (Succ n)) (Succ n)) m = h
 
 -- combine base and step
-fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> (lt k m = True) -> fdiv_ub_p k @log)
+fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
          -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub_f' = \m gm n . case (lt m (Succ n)) [m_lt_n] of
-  True  -> fdiv_ub_f_base m n _
-  False -> fdiv_ub_f_step m n _ gm
+  True  -> fdiv_ub_f_base m n [m_lt_n]
+  False -> fdiv_ub_f_step m n [m_lt_n] gm
 
 -- massage lt=True into ltT
-fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> Unit -> fdiv_ub_p k @log)
+fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log)
          -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 fdiv_ub_f'' = \m gm .
-  let gm' [_] = (\k k_lt_m .
-                 gm k [conv k_lt_m by (sg k m) at t.t] U
-              : (k:Nat) -> (lt k m = True) -> fdiv_ub_p k)
+  let gm' [_] = (\k [k_lt_m] .
+                 gm k [conv k_lt_m by (sg k m) at t.t]
+              : (k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
   in fdiv_ub_f' m gm'
 
 -- massage return types into fdiv_ub_p
-fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> Unit -> fdiv_ub_p k @log) -> fdiv_ub_p m
+fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> fdiv_ub_p m
 fdiv_ub_f = \m . conv (fdiv_ub_f'' m) by (fdiv_ub_p_red' m)
-                 at t . ((k:Nat) -> [ltT k m @log] -> Unit -> fdiv_ub_p k @log) -> t
+                 at t . ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> t
 
 -- prove fdiv_ub by cov
 fdiv_ub' : (m:Nat) -> fdiv_ub_p m

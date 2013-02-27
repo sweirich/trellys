@@ -36,10 +36,10 @@ erase (AArrow ep bnd) = do
 erase (ALam _ ep bnd) = do
   (x, body) <- unbind bnd
   if ep == Runtime
-    then ELam <$> (bind (translate x) <$> erase body)
-    else erase body
-erase (AApp Runtime a b ty) = EApp <$> erase a <*> erase b
-erase (AApp Erased a b ty) = erase a
+    then ELam  <$> (bind (translate x) <$> erase body)
+    else EILam <$> erase body
+erase (AApp Runtime a b ty) = EApp  <$> erase a <*> erase b
+erase (AApp Erased a b ty)  = EIApp <$> erase a
 erase (AAt a th) = EAt <$> erase a <*> pure th
 erase (AUnboxVal a) = erase a
 erase (ABoxLL a th) = erase a
@@ -56,8 +56,8 @@ erase (AOrdTrans _ _) = return EOrdAx
 erase (AInd _  ep bnd) = do
   ((f, y), r) <- unbind bnd
   if (ep == Runtime) 
-   then ERecPlus <$> (bind (translate f, translate y) <$> erase r)
-   else ERecMinus <$> (bind (translate f) <$> erase r)
+   then EIndPlus <$> (bind (translate f, translate y) <$> erase r)
+   else EIndMinus <$> (bind (translate f) <$> erase r)
 erase (ARec _ ep bnd) = do
   ((f, y), r) <- unbind bnd
   if (ep == Runtime) 
@@ -92,7 +92,6 @@ eraseToHead (AFO a) = eraseToHead a
 eraseToHead (ASquash a) = eraseToHead a
 eraseToHead (ACumul a i) = eraseToHead a
 eraseToHead (AUnboxVal a) = eraseToHead a
-eraseToHead (AApp Erased a b ty) = eraseToHead a
 eraseToHead (ABoxLL a th) = eraseToHead a
 eraseToHead (ABoxLV a th) = eraseToHead a
 eraseToHead (ABoxP a th) = eraseToHead a
@@ -129,6 +128,7 @@ cbvStep (EDCon c args)   = stepArgs [] args
 cbvStep (EType _)        = return Nothing
 cbvStep (EArrow _ _ _)   = return Nothing 
 cbvStep (ELam _)         = return Nothing
+cbvStep (EILam _)        = return Nothing
 cbvStep (EApp a b)       =
   do stpa <- cbvStep a
      case stpa of
@@ -152,16 +152,36 @@ cbvStep (EApp a b)       =
                      ERecPlus bnd ->
                        do ((f,x),body) <- unbind bnd
                           return $ Just $ subst f a $ subst x b body
+                     EIndPlus bnd ->
+                       do ((f,x),body) <- unbind bnd
+                          x' <- fresh (string2Name "x")
+                          return $ Just $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
                      _ -> return  Nothing
                   -- else return Nothing
+cbvStep (EIApp a) =
+  do stpa <- cbvStep a
+     case stpa of 
+       Just EAbort -> return $ Just EAbort
+       Just a'     -> return $ Just $ EIApp a'
+       Nothing     ->        
+         case a of
+           EILam body -> return $ Just $  body
+           ERecMinus bnd ->
+             do (f,body) <- unbind bnd
+                return $ Just $ subst f a $ body
+           EIndMinus bnd ->
+             do (f,body) <- unbind bnd
+                return $ Just $ subst f (EILam (EILam (EIApp a))) $ body
+           _ -> do warn [DS "The argument to EIApp does not step, it was", DD a]
+                   return  Nothing
 cbvStep (ETyEq _ _)     = return Nothing
 cbvStep EJoin           = return Nothing
 cbvStep EAbort          = return $ Just EAbort
 cbvStep EContra         = return Nothing
 cbvStep (ERecPlus _)    = return Nothing
-cbvStep (ERecMinus bnd) =
-  do (f,body) <- unbind bnd
-     return $ Just $ subst f (ERecMinus bnd) body
+cbvStep (ERecMinus _)  = return Nothing
+cbvStep (EIndPlus _)    = return Nothing
+cbvStep (EIndMinus _)  = return Nothing
 cbvStep (ECase b mtchs) =
   do stpb <- cbvStep b
      case stpb of
@@ -185,9 +205,11 @@ cbvStep (ELet m bnd)   =
      case stpm of
        Just EAbort -> return $ Just EAbort
        Just m'     -> return $ Just $ ELet m' bnd
-       _ -> if not (isEValue m) then return Nothing else
-              do (x,n) <- unbind bnd
-                 return $ Just $ subst x m n
+       Nothing -> 
+            if not (isEValue m) 
+              then return Nothing
+              else do (x,n) <- unbind bnd
+                      return $ Just $ subst x m n
 cbvStep (EAt _ _) = return Nothing
 cbvStep ETrustMe = return Nothing
 
@@ -217,8 +239,8 @@ isValue (OrdTrans _ _)     = return True
 isValue (TyEq _ _)         = return True
 isValue (Join _ _)         = return True
 isValue Abort              = return False
-isValue (Ind ep _)         = return (ep == Runtime)
-isValue (Rec ep _)         = return (ep == Runtime)
+isValue (Ind ep _)         = return True
+isValue (Rec ep _)         = return True
 isValue (Case _ _)         = return False
 isValue (ComplexCase _)    = return False
 isValue (Let _ Erased a) = do
@@ -246,16 +268,18 @@ isEValue (EDCon _ args)   = all isEValue args
 isEValue (EType _)        = True
 isEValue (EArrow _ _ _)   = True
 isEValue (ELam _)         = True
+isEValue (EILam _)        = True
 isEValue (EApp _ _)       = False
+isEValue (EIApp _)        = False
 isEValue (ESmaller _ _)   = True
 isEValue EOrdAx           = True
 isEValue (ETyEq _ _)      = True
 isEValue EJoin            = True
 isEValue EAbort           = False
 isEValue (ERecPlus _)     = True
--- Fixme: this is wrong, but various test cases currenty assume it...
---isEValue (ERecMinus bnd)  = isEValue (snd (unsafeUnbind bnd)) 
-isEValue (ERecMinus _) = False
+isEValue (ERecMinus _)    = True
+isEValue (EIndPlus _)     = True
+isEValue (EIndMinus _)    = True
 isEValue (ECase _ _)      = False
 isEValue (ELet _ _)       = False
 isEValue EContra          = False
