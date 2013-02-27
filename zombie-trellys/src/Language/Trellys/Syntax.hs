@@ -472,7 +472,9 @@ data ETerm = EVar EName
            | EType Int
            | EArrow Epsilon ETerm (Bind EName ETerm)
            | ELam (Bind EName ETerm)
+           | EILam ETerm             --erased lambda
            | EApp ETerm ETerm
+           | EIApp ETerm             --erased application
            | ESmaller ETerm ETerm
            | EOrdAx
            | ETyEq ETerm ETerm
@@ -480,6 +482,8 @@ data ETerm = EVar EName
            | EAbort
            | ERecPlus (Bind (EName, EName) ETerm)
            | ERecMinus (Bind EName ETerm)
+           | EIndPlus (Bind (EName, EName) ETerm)
+           | EIndMinus (Bind EName ETerm)
            | ECase ETerm [EMatch]
            | ELet ETerm (Bind EName ETerm)
            | EContra

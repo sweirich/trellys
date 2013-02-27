@@ -117,77 +117,6 @@ instance Display Char where
 instance Display Bool where
   display = return . text . show
 
-{-
--- | 'Display' is automatically lifted across pairs.
-instance (Display a, Display b) => Display (a,b) where
-  display (x,y) = do
-      s1 <- display x
-      s2 <- display y
-      return $ PP.parens (s1 <> text "," <> s2)
--}
-
--- | 'DispElem' is used like a format string, to pretty print
---   complicated types, or long rich error messages. A whole class of
---   functions take @['DispElem']@ as input; for example, see
---   'displays', 'docM', 'stringM', 'warnM', and 'errM'.
-
-data DispElem
-  = -- | A displayable object.
-    forall x . (Display x) =>  Dd x
-    -- | Some literal text.
-  | Ds String
-    -- | Display the object, followed by a newline.
-  | forall x . (Display x) => Dn x
-    -- | A list of objects, separated by the given string.
-  | forall x . (Display x) => Dl [x] String
-    -- | A list of objects to be formatted according to the given
-    --   specification, separated by the given string.
-  | forall a x . Dlf (a -> [DispElem]) [a] String
-    -- | A literal document.
-  | D Doc
-    -- | A nested list of display elements.
-  | Dr [DispElem]
-
-
--- | 'displays' is the main function that combines together
--- display elements.
-displays :: [DispElem] -> M [Doc]
-displays xs = help (reverse xs) [] where
-  help :: [DispElem] -> [Doc] -> M [Doc]
-  help [] s = return s
-  help ((Dr xs):ys) s = help (reverse xs++ys) s
-  help (x:xs) s = do
-    s2 <- case x of
-        Dd y -> do y' <- display y
-                   return [y']
-        Ds str -> return [text str]
-        Dn y -> do str <- display y
-                   return [str <> text "\n"]
-        D doc -> return [doc]
-        Dl ys sep -> dispL display ys (text sep)
-        Dlf f ys sep -> dlf f ys (text sep)
-        Dr xs -> help (reverse xs) s
-    help xs (s2++s)
-
-dlf ::  (a -> [DispElem]) -> [a] -> Doc  -> M [Doc]
-dlf f ys sep = do
-  let elems = map f ys
-  docss <- mapM displays elems
-  return $ PP.punctuate sep (map PP.hcat docss)
-
-dispL :: (a -> M Doc) -> [a] -> Doc -> M [Doc]
-dispL f [] sep = return [PP.empty]
-dispL f [m] sep = do { y <- f m ; return [y] }
-dispL f (m:ms) sep = do
-  a <- f m
-  b <- dispL f ms sep
-  return (a:[sep]++b)
-
-docM :: [DispElem] -> M Doc
-docM xs = do
-   docs <- displays xs
-   return $ PP.fsep docs
-
 -------------------------------------------------------------------------
 
 bindParens :: Epsilon -> Doc -> Doc
@@ -651,6 +580,9 @@ instance Display ETerm where
        dn <- display n
        dbody <- display body
        return ( text "\\" <+> dn <+> text "." <+> dbody )
+  display (EILam  body) = do
+    dbody <- display body
+    return ( text "\\ []." <+> dbody )
   display (EApp f x) = do
        df <- display f
        dx <- display x
@@ -664,6 +596,13 @@ instance Display ETerm where
                      EDCon _ [] -> id
                      _          -> parens
        return (wrapf df <+> wrapx dx)
+  display (EIApp f) = do
+       df <- display f
+       let wrapf = case f of
+                     EVar _     -> id
+                     EApp _ _   -> id
+                     _          -> parens
+       return (wrapf df <+> text "[]")
   display (EOrdAx) = return $ text "ord"
   display (ESmaller e0 e1) = do
        de0 <- display e0
@@ -683,11 +622,26 @@ instance Display ETerm where
         return $ parens ( text "rec" <+> dn <+> brackets (dw)
                           <+> text "."
                           <+> db )
+  display (EIndPlus bnd) =
+     lunbind bnd $ \ ((n,w),body) -> do
+        dn <- display n
+        dw <- display w
+        db <- display body
+        return $ parens ( text "ind" <+> dn <+> brackets (dw)
+                          <+> text "."
+                          <+> db )
   display (ERecMinus bnd) =
      lunbind bnd $ \ (n,body) -> do
         dn <- display n
         db <- display body
         return $ parens ( text "rec" <+> dn
+                          <+> text "."
+                          <+> db )
+  display (EIndMinus bnd) =
+     lunbind bnd $ \ (n,body) -> do
+        dn <- display n
+        db <- display body
+        return $ parens ( text "ind" <+> dn
                           <+> text "."
                           <+> db )
   display (ECase dis matches) = do

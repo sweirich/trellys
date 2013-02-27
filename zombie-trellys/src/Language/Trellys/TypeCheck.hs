@@ -196,12 +196,6 @@ ta (Lam lep lbody) arr@(AArrow aep abody) = do
   when (lep == Erased && xE `S.member` fv bodyE) $
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
-
-  when (lep == Erased) $ do
-    unless (isEValue bodyE) $
-        err [DS "ta : The body of an implicit lambda must be a value",
-             DS "but here is:", DD body, DS "which erases to", DD bodyE]
-
   return (ALam arr lep (bind (translate x) ebody))
 
 -- rules T_ind1 and T_ind2

@@ -31,11 +31,4 @@ poe : [t:Type 0@log] -> [v:Void] -> t
 --   \[t] [v] . conv U by (case v [_] of {} : Unit = t) at t.t
 --
 -- or
-
--- Well, actually this is also not accepted because contra is not considered a value.
---poe = \[_] [v] . contra (case v [_] of {} : 0 = 1)
-
--- So let's do
-poe = \[t] [v] . conv (join : 0=0)
-		   by (case v [_] of {} : (0=0) = t)
-                   at x.x
+poe = \[_] [v] . contra (case v [_] of {} : 0 = 1)

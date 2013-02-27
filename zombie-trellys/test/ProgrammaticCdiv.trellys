@@ -72,21 +72,26 @@ cdivP_t_f' = \m gm n . case m [m_eq] of
   Zero    -> cdivP_t_f_base m [m_eq] n
   Succ m' -> cdivP_t_f_step m m' [m_eq] gm n
 
-cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> Unit -> cdivP_t_p k @log) -> cdivP_t_p m
+cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> cdivP_t_p k @log) -> cdivP_t_p m
 cdivP_t_f = \m gm .
-  let gm' [_] = (\k [k_lt_m] _ .
-                 (conv (gm k [k_lt_m] U) by (cdivP_t_p_red k) at t.t)
+  let gm' [_] = (\k [k_lt_m] .
+                 (conv (gm k [k_lt_m]) by (cdivP_t_p_red k) at t.t)
               : (k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
   in conv (cdivP_t_f' m gm') by (cdivP_t_p_red' m) at t.t
 
 cdivP_t' : (m:Nat) -> cdivP_t_p m
 cdivP_t' = cov [cdivP_t_p] cdivP_t_f
 
--- it's tricky to state these equalities so that trellys can infer the
--- type of the Nat -> Type 0 lambda ...
+-- It's tricky to state these equalities so that trellys can infer the
+-- type of the (Nat@log) -> Type 0 lambda
+--
+-- (Why @log? Because of the definition of the Exists datatype).
+--
 cdivP_ex_red2 : (m:Nat) -> (n:Nat) -> Exists Nat (cdivP_ex m n)
                                     = Exists Nat (\v . cdivP m (Succ n) = v)
-cdivP_ex_red2 = \m n . join
+cdivP_ex_red2 = \m n . 
+  let lemma = (join : cdivP_ex m n = (\v. cdivP m (Succ n) = v : (Nat@log) -> Type 0))
+  in _
 
 cdivP_t : (m:Nat) -> (n:Nat) -> Exists Nat (\v . cdivP m (Succ n) = v)
 cdivP_t = \m n . conv (conv cdivP_t' m by (cdivP_t_p_red m) at t.t) n
