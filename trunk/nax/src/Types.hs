@@ -206,7 +206,13 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
           do { x1 <- unifyExpT loc message x a
              ; x2 <- unifyExpT loc message y b
              ; return(TEApp x1 x2) }
-       f (TEAbs e1 _) (TEAbs e2 _) = error "No Abs in unifyExp yet."
+       f (TEAbs ElimConst ms) (TEAbs ElimConst ns) = 
+          do { let fill (x,y) = ((),[x],y)
+                   proj ((),[x],y) = (x,y)
+             ; zs <- matchBinds message loc (map fill ms) (map fill ns)
+             ; return(TEAbs ElimConst (map proj zs))}
+           
+       f (TEAbs e1 _) (TEAbs e2 _) = error ("No Abs in unifyExp yet. "++show e1++" | "++show e2)
        f (z@(TECon mu c rho a)) (w@(TECon _ d _ b)) 
               | c==d && a==b 
               = return z          
@@ -217,23 +223,10 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
              ; p <- unifyExpT loc message x y
              ; return(TEIn k1 p) }
        f (z@(TEMend t1 e1 arg1 ms1)) (w@(TEMend t2 e2 arg2 ms2)) | t1==t2  =
-          do { arg <- unifyExpT loc message arg1 arg2
-             ; writeln("\nUnifying\n"++show z++"\n"++show w)
-             ; let match [] [] = return []
-                   match ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
-                     case matchPatL ps1 ps2 [] of
-                       Nothing -> fail "Mendler patterns don't match"
-                       Just subst ->
-                            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
-                               -- ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
-                               ; e <- unifyExpT loc message e1 e2s
-                               ; ms <- match xs ys
-                               ; return((m,ps1,e):ms)}
-             ; ms <- match ms1 ms2             
+          do { arg <- unifyExpT loc message arg1 arg2    
+             ; ms <- matchBinds message loc ms1 ms2          
              ; return(TEMend t1 e1 arg ms)
-             }
-           
-           
+             }           
        f (AppTyp x ts) (AppTyp y ss) =
           do { unifyL Star loc message ts ss
              ; p <- unifyExpT loc message x y
@@ -254,6 +247,21 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
                           ++show s2++"\nand\n   "++show t2++"\n"++msg
                   ; handleM (compareTerms loc message s2 t2) trans
                   ; return(ContextHole s2 t2)}
+
+matchBinds message loc [] [] = return []
+matchBinds message loc [] (_:_) = 
+  matchErr loc ("different lengths in binds": message) 0 0
+matchBinds message loc (_:_) [] = 
+  matchErr loc ("different lengths in binds": message) 0 0
+matchBinds message loc ((m,ps1,e1):xs) ((n,ps2,e2):ys) = 
+     case matchPatL ps1 ps2 [] of
+       Nothing -> fail "Mendler patterns don't match"
+       Just subst ->
+            do { e2s <- expSubb (texpLoc e2) ([],subst,[]) e2
+               -- ; writeln("\nUnifying\n  "++show e1++"\n  "++show e2s)
+               ; e <- unifyExpT loc message e1 e2s
+               ; ms <- matchBinds message loc xs ys
+               ; return((m,ps1,e):ms)}
                  
 
 compareTerms loc message x y =
@@ -333,7 +341,7 @@ unifyVar loc message (x@(u1,r1,k)) t =
      ; let same (Type(u0,r0,k0)) = r0==r1
            same _ = False
      ; if (any same ptrs) 
-          then (matchErr loc ("\nOccurs check" : message)  (TcTv x) t)
+          then (matchErr loc (("\nOccurs check "++show (TcTv x)++":"++show k++" in "++show t) : message)  (TcTv x) t)
           else return ()
      -- ; writeln ("Before Check "++show t++ " binds to var "++show(TcTv x))          
      ; check loc message t k 
@@ -613,7 +621,7 @@ classToName (Exp  nm) = nm
 generalizeRho:: Pointers -> Rho -> FIO(Scheme,[Class (PM Kind) (PM Typ) (PM TExpr)])
 generalizeRho us t =  
   do { (ptrs,badvars) <- getVarsRho t
-     ; (subst@(ps,ns,ts),tele) <- ptrSubst (map classToName badvars)  ptrs nameSupply ([],[],[])
+     ; (subst@(ps,ns,ts),tele) <- ptrSubst (map classToName badvars) ptrs nameSupply ([],[],[])
      ; body <- rhoSubb noPos subst t
      ; body2 <- alphaRho body
      ; return(Sch tele body2,ps)
@@ -701,7 +709,7 @@ unifyK loc message x y = do { x1 <- pruneK x; y1 <- pruneK y; f x1 y1 }
         f (Kvar x) t = unifyVarK loc message x t
         f t (Kvar x) = unifyVarK loc message x t 
         f s t = do { s2 <- zonkKind s; t2 <- zonkKind t
-                   ; matchErr loc (("\nDifferent kinds "++showK s2++" =/= "++showK t2): message)  s2 t2 
+                   ; matchErr loc (("\nDifferent kinds \n"++show s2++"\n  =/=\n"++show t2): message)  s2 t2 
                    }
 
 unifyVarK loc message (uniq,r1) t =
@@ -847,7 +855,11 @@ getVarsExpr t = do { x <- pruneE t; f x }
                       ; return (ptrs,remove (Exp 0) vars (patBinds pat [])) }
 
         f (TETuple xs) = foldM (accumBy getVarsExpr) ([],[]) xs
-        f (TEIn k x) = do { a <- getVarsKind k; b <- getVarsExpr x; unionW a b}
+        f (TEIn k x) = 
+           do { a <- getVarsKind k
+              -- ; writeln("getVarsEXp In[k] = "++show a)
+              ; b <- getVarsExpr x
+              ; unionW a b}
         f (Emv p) = return([Exp p],[]) 
         f (AppTyp x ts) =
           do { trip1 <- getVarsExpr x 
@@ -855,7 +867,7 @@ getVarsExpr t = do { x <- pruneE t; f x }
         f (AbsTyp xs y) =
           do { trip1 <- getVarsExpr y
              ; getVarsTele xs trip1 }
-        f (TECast (TGen xs x) y) = 
+        f (TECast (p@(TGen xs x)) y) = 
           do { trip1 <- getVarsTEqual x
              ; trip2 <- getVarsExpr y
              ; trip3 <- unionW trip1 trip2
@@ -924,7 +936,7 @@ getVars t = do { x <- prune t; f x }
           do { trip3 <- getVars body
              ; foldM (accumBy getVars) trip3 xs }
         f (TyMu k) = getVarsKind k
-        f (TyLift (Checked e)) = getVarsExpr e       
+        f (TyLift (Checked e)) = getVarsExpr e 
         f (TyLift (Parsed e)) = getVarsE e
 --         f (TyLift (Pattern p)) = return([],map Exp (patBinds p []))
         f (TcTv (t@(uniq,ptr,k))) = 

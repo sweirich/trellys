@@ -84,6 +84,12 @@ factN x =
     fact cast Zero = succ zero
     fact cast (Succ n) = times (succ (cast n)) (fact n)
     
+max x = mprim x with
+         r castX Zero y = y
+         r castX (Succ n) y = 
+            mprim y with
+             f castY Zero = succ(castX n)
+             f castY (Succ a) = succ(r n (castY a))                                           
                                            
 iterateSub out x = mcata x with
   sub2 Zero     n = n

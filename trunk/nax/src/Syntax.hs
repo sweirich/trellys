@@ -553,7 +553,7 @@ ppTExpr p e =
     (AppTyp e ts) -> ppTExpr p e <> PP.brackets(ppSepBy (map (ppTyp p) ts) ",")
     (AbsTyp vs t) -> PP.parens (PP.sep [braces(PP.sep (ppKArgs p vs)) <+> text ".", ppTExpr p t])
     (TECast c t) | printChoice "Cast" p
-                 ->  PP.parens(PP.vcat[text "cast"
+                 ->  PP.parens(PP.vcat[text "cast "
                                       ,PP.nest 3 (ppTEqual p c)
                                       ,ppTExpr p t]) 
     (TECast c t) -> text"CAST " <> ppTExpr p t                                      
@@ -651,6 +651,7 @@ ppKind:: PI -> Kind -> Doc
 ppKind p Star = text "*"
 ppKind p (Tarr t y) = PP.hsep [ braces(ppTyp p t), text "->", ppKind p y]
 ppKind p (Karr (x@(Karr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y] 
+ppKind p (Karr (x@(Tarr _ _)) y) = PP.hsep [ PP.parens (ppKind p x), text "->", ppKind p y] 
 ppKind p (Karr x y) = PP.hsep [ ppKind p x, text "->", ppKind p y]
 ppKind p (Kvar (uniq,ref)) = text ("^K"++show uniq)
 ppKind p (Kname n) = ppName n

@@ -159,7 +159,7 @@ pCom (tcEnv,rtEnv) more =
 kCom (tcEnv,rtEnv) more = 
   do { let mess = ["Computing the kind of the type:\n   "++more++"\nusing the :k command."]
            typ = (parse2 typP more)
-     ; kind <- runFIO (do { (typ,kind) <- wellFormedType noPos mess tcEnv typ
+     ; kind <- runFIO (do { (typ,kind) <- wellFormedType 0 noPos mess tcEnv typ
                           ; zonkKind kind} )
      ; putStrLn (show kind) }
      
