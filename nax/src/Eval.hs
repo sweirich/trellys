@@ -268,7 +268,7 @@ freshPat (pat,ans) =
       PVar nm mt -> 
         do { nm2 <- freshNameIO nm
            ; i <- nextinteger
-           ; let sch Nothing = undefined
+           ; let sch Nothing = (error ("Nothing in freshPat: "++show pat))
                  sch (Just t) = Sch [] (Tau t)
            ; return(PVar nm2 mt,(nm,i,VCode(TEVar nm2 (sch mt))):ans)}      
 
