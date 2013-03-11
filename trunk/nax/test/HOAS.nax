@@ -1,0 +1,53 @@
+data E: (* -> *) -> * -> * where
+  Const: Int -> E r Int
+  App: r (a -> b) -> r a -> E r b
+  Abs: (r a -> r b) -> E r (a -> b)
+    deriving fixpoint Exp
+
+data Id x = MkId x
+unId (MkId x) = x 
+
+{-
+ msfcata :
+  ( (forall r i . r i -> ans i) ->    -- call   
+    (forall r i . ans i -> r i) ->    -- inv
+    (forall r . F r j -> ans j) )
+  -> mu F j -> ans j
+-}
+
+-- eval : Exp t -> Id t
+eval x = msfcata { t . Id t } x with
+  call inv (Const n) = MkId n
+  call inv (App f x) = MkId (unId(call f) (unId(call x)))
+  call inv (Abs f) = MkId(\v -> unId(call (f (inv (MkId v)))))
+
+id = abs (\x -> x)
+
+
+data V : (* -> *) -> * -> * where
+  Vnat : Int -> V r Int
+  Vfun : (r a -> r b) -> V r (a -> b)
+    deriving fixpoint Value
+
+data Ty = INT | Arr Int
+data V' : ({Ty} -> *) -> {Ty} -> * where
+  Vnat' : Int -> V' r {INT}
+  Vfun' : (r{a} -> r{b}) -> V' r {`arr a b}
+    deriving fixpoint Value'
+
+{-
+  ( (forall r i . r i -> ans i) ->                -- call   
+    (forall r i . (i < j) => r i -> mu F i) ->    -- cast   
+    (forall r i . (i < j) => mu F i -> r i) ->    -- uncast 
+    (forall r . F r j -> ans j) )
+  -> mu F j -> ans j
+
+apV :: Value (a -> b) -> Value a -> Value b
+needs cast uncast stuff
+
+eval :: Lam a -> V a
+eval (Val i)     = Vnat i
+eval (App e1 e2) = apV (eval e1) (eval e2)
+eval (Abs e)     = Vfun (\x -> eval (e x))
+
+-}
