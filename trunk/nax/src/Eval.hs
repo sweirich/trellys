@@ -134,6 +134,7 @@ evalC exp env k =   -- println ("Entering eval: "++ show exp) >>
               ("mprim") -> phiHas2Arg exp env phi arg (VFun whoknows id) k             
               ("msfcata") -> phiHas2Arg exp env phi arg (VFun whoknows inversef) k
                  where inversef x = (VInverse x)
+              ("mprsi") -> phiHas3Arg exp env phi arg (VFun whoknows id) (VFun whoknows id) k
               (x) -> fail ("Unimplemented mendler operator: "++x)
               }
 
@@ -174,6 +175,30 @@ phiHas2Arg (TEMend tag elim _ ms) env phi arg1 arg2 k =
                     ; k(VCode(TEMend tag elim e ms2)) }            
             f v k = fail (tag++" applied to non Mu type: "++show v)
       ; app tag (VFunM i f) arg1 k}  
+      
+      
+phiHas3Arg
+  :: TExpr               -- source code
+     -> VEnv             -- dynamic environment
+     -> Value IO         -- the phi function
+     -> Value IO         -- value to be analyzed
+     -> Value IO         -- the second argument (after the recursive caller) of phi
+     -> Value IO         -- the third argument (after the recursive caller) of phi     
+     -> (Value IO -> IO b) -- the current continuation
+     -> IO b
+phiHas3Arg (TEMend tag elim _ ms) env phi arg1 arg2 arg3 k = 
+   do { i <- nextinteger
+      ; let f:: forall b . Value IO -> (Value IO -> IO b) -> IO b
+            f (VIn kind x) k = do { v <- app tag phi (VFunM i f) return
+                                  ; u <- app tag v arg2 return
+                                  ; w <- app tag u arg3 return
+                                  ; app tag w x k}
+            f (VCode e) k = 
+                 do { ms2 <- mapM (normClause env) ms
+                    ; k(VCode(TEMend tag elim e ms2)) }            
+            f v k = fail (tag++" applied to non Mu type: "++show v)
+      ; app tag (VFunM i f) arg1 k}        
+      
 
 -- Turn a list of Clauses (the phi function has n args) into a function with continuation 
 unwind:: TExpr -> VEnv -> Int -> [Value IO] -> (Value IO -> IO b) -> IO b

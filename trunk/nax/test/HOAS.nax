@@ -24,19 +24,68 @@ eval x = msfcata { t . Id t } x with
 id = abs (\x -> x)
 
 
+--------------------------------------------------------
+-- Embedding in a type indexed Value
+
 data V : (* -> *) -> * -> * where
-  -- Vnat : Int -> V r Int
+  Vnat : Int -> V r Int
   Vfun : (r a -> r b) -> V r (a -> b)
     deriving fixpoint Val
 
+-- axiom unVfun : Val (a -> b) -> Val a -> Val b
+
+unVfun x = mprsi{ (a->b) . Val a -> Val b} x with
+              call cast uncast (Vfun f) = \ x -> cast(f(uncast x))
+  
+
+-- forall a:* . Exp a -> Val a
+veval e = msfcata { t . Val t } e with
+             call inv (Const n) = vnat n
+             call inv (App f x) = unVfun (call f) (call x)
+             call inv (Abs f) = vfun(\v -> (call (f (inv v))))
+             
+t3 = app (abs (\ x -> x)) (const 3)             
+
+
+----------------------------------------------------------
+-- Embedding in a term-indexed value
 
 data T r = Integer | Arr r r deriving fixpoint Ty
+
+data Trm: ({Ty} -> *) -> {Ty} -> * where
+  Tconst: Int -> Trm r {`integer}
+  Tapp: r {`arr a b} -> r {a} -> Trm r {b}
+  Tabs: (r {a} -> r {b}) -> Trm r {`arr a b}
+    deriving fixpoint Term
+
 data V' : ({Ty} -> *) -> {Ty} -> * where
-  -- Vnat' : Int -> V' r {integer}
+  Vnat' : Int -> V' r {`integer}
   Vfun' : (r{a} -> r{b}) -> V' r {`arr a b}
     deriving fixpoint Val'
+    
+reif x = msfcata{{t} . Term{t}} x with
+             call inv (Vnat' n) = tconst n
+             call inv (Vfun' f) = tabs (\ t -> call (f(inv t)))
+    
+-- axiom unVfun' : Val' {`arr a b} -> Val' {a} -> Val' {b}
 
-{-
+unVfun' x = mprsi{ {`arr a b} . Val' {a} -> Val' {b}} x with
+              call cast uncast (Vfun' f) = \ x -> cast(f(uncast x))
+
+ueval e = msfcata { {t} . Val' {t} } e with
+            call inv (Tconst n) = vnat' n
+            call inv (Tapp f x) = unVfun' (call f) (call x)
+            call inv (Tabs f) = vfun'(\v -> (call (f (inv v)))) 
+            
+plus1 x = msfcata{ {`integer} . Val' {`integer}} x with
+           call inv (Vnat' n) = vnat' (n+1)
+           
+termplus1 = reif (vfun' plus1)
+
+t4 = tapp (tabs (\ x -> x)) (tconst 3)  
+t5 = tapp termplus1 t4
+
+{- forall j .
   ( (forall r i . r i -> ans i) ->                -- call   
     (forall r i . (i < j) => r i -> mu F i) ->    -- cast   
     (forall r i . (i < j) => mu F i -> r i) ->    -- uncast 
@@ -45,18 +94,10 @@ data V' : ({Ty} -> *) -> {Ty} -> * where
 
 apV :: Value (a -> b) -> Value a -> Value b
 needs cast uncast stuff
-
-eval :: Lam a -> V a
-eval (Val i)     = Vnat i
-eval (App e1 e2) = apV (eval e1) (eval e2)
-eval (Abs e)     = Vfun (\x -> eval (e x))
-
 -}
 
-axiom unVfun : Val (a -> b) -> Val a -> Val b
 
-veval e = msfcata { t . Val t } e with
-             call inv (App f x) = unVfun (call f) (call x)
-             call inv (Abs f) = vfun(\v -> (call (f (inv v))))
+
+
 
 

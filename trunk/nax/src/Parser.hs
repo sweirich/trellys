@@ -115,7 +115,7 @@ lbStyle = Token.LanguageDef
                   ,"gadt"
                   ,"axiom"
                   ,"synonym"
-                  ,"mcata","mhist","mprim","msfcata","msfprim"
+                  ,"mcata","mhist","mprim","msfcata","msfprim","mprsi"
                   ,"where"
                   ,"with"
                   ,"Mu","In"
@@ -688,10 +688,11 @@ elim xP = (do { sym "{"; more}) <|> return ElimConst
 
 --------------------------------------------------------
 
-mendlerOp = (keyword "mcata"  >> return "mcata") <|> 
-            (keyword "mhist"   >> return "mhist") <|>
-            (keyword "mprim"   >> return "mprim") <|>
+mendlerOp = (keyword "mcata"   >> return "mcata")   <|> 
+            (keyword "mhist"   >> return "mhist")   <|>
+            (keyword "mprim"   >> return "mprim")   <|>
             (keyword "msfcata" >> return "msfcata") <|>
+            (keyword "mprsi"   >> return "mprsi")   <|>            
             (keyword "msfprim" >> return "msfprim") <?> "mendler operator"
             
 mendlerExp =
