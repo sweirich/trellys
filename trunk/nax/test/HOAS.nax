@@ -25,15 +25,16 @@ id = abs (\x -> x)
 
 
 data V : (* -> *) -> * -> * where
-  Vnat : Int -> V r Int
+  -- Vnat : Int -> V r Int
   Vfun : (r a -> r b) -> V r (a -> b)
-    deriving fixpoint Value
+    deriving fixpoint Val
 
-data Ty = INT | Arr Int
+
+data T r = Integer | Arr r r deriving fixpoint Ty
 data V' : ({Ty} -> *) -> {Ty} -> * where
-  Vnat' : Int -> V' r {INT}
+  -- Vnat' : Int -> V' r {integer}
   Vfun' : (r{a} -> r{b}) -> V' r {`arr a b}
-    deriving fixpoint Value'
+    deriving fixpoint Val'
 
 {-
   ( (forall r i . r i -> ans i) ->                -- call   
@@ -51,3 +52,11 @@ eval (App e1 e2) = apV (eval e1) (eval e2)
 eval (Abs e)     = Vfun (\x -> eval (e x))
 
 -}
+
+axiom unVfun : Val (a -> b) -> Val a -> Val b
+
+veval e = msfcata { t . Val t } e with
+             call inv (App f x) = unVfun (call f) (call x)
+             call inv (Abs f) = vfun(\v -> (call (f (inv v))))
+
+
