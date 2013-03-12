@@ -178,6 +178,7 @@ checkType (tcEnv,rtEnv) exp =
   do { (rho,exp2) <- inferExpT tcEnv exp
      ; r2 <- zonkRho rho
      ; free <- tvsEnv tcEnv
+     -- ; writeln("\ncheckType "++show free++" "++show r2)
      ; (sch,vs) <- generalizeRho free r2
      ; sch2 <- zonkScheme sch
      ; exp3 <- zonkExp exp2

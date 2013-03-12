@@ -253,22 +253,23 @@ normClause env (tele,ps,exp) =
      ; exp2 <- reify 0 v
      ; return(tele,ps2,exp2)
      }
+
 threadFresh f [] qs ans = return(f (reverse qs),ans)
 threadFresh f (p:ps) qs ans =
    do { (q,ans2) <- freshPat (p,ans); threadFresh f ps (q:qs) ans2 }
    
 freshPat:: (Pat,[(Name, Integer, Value IO)]) -> 
            IO (Pat,[(Name, Integer, Value IO)])
-freshPat (pat,ans) = 
-     case pat of
-      PLit pos l -> return(pat,ans)
-      PWild pos -> return(pat,ans)
+freshPat (pat2,ans) = 
+     case pat2 of
+      PLit pos l -> return(pat2,ans)
+      PWild pos -> return(pat2,ans)
       PTuple ps -> threadFresh PTuple ps [] ans
       PCon nm ps -> threadFresh (PCon nm) ps [] ans
       PVar nm mt -> 
         do { nm2 <- freshNameIO nm
            ; i <- nextinteger
-           ; let sch Nothing = (error ("Nothing in freshPat: "++show pat))
+           ; let sch Nothing = Sch [] (error ("Nothing in freshPat: "++show pat2++" "++show nm2))
                  sch (Just t) = Sch [] (Tau t)
            ; return(PVar nm2 mt,(nm,i,VCode(TEVar nm2 (sch mt))):ans)}      
 
@@ -290,9 +291,10 @@ reify  n x  = help n x  where
    do { next <- nextinteger
       ; let name = Nm("%"++show next,noPos)
       ; ty <- ioFresh Star
-      ; result <- f (VCode (TEVar name (Sch [] (Tau ty)))) return
+      ; let ptype = (Sch [] (Tau ty))
+      ; result <- f (VCode (TEVar name ptype)) return
       ; body <- reify n result
-      ; return(TEAbs (ElimConst) [(PVar name Nothing,body)])}
+      ; return(TEAbs (ElimConst) [(PVar name (Just ty),body)])}
   help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
   help n (VCon mu arity c vs) = liftM (econ con) (mapM (reify n) vs)
    where con = TECon mu (toName c) (Tau tunit) arity
