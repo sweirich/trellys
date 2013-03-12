@@ -574,7 +574,8 @@ ppPat:: PI -> Pat -> Doc
 ppPat p pat =
   case pat of
     PLit p l -> ppLit l
-    PVar v (Just t) | printChoice "PatType" p -> PP.parens(text (name v)<>text":"<>ppTyp p t)
+    PVar v (Just t) | printChoice "PatType" p 
+                    -> PP.parens(text (name v)<>text":"<>ppTyp p t)
     PVar v _ -> text (name v)
     PTuple ps -> ppSepByParen (map (ppPat p) ps) "," 
     PWild p -> text "_"

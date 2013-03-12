@@ -637,7 +637,7 @@ alpha sch = schemeSubb noPos ([],[],[]) sch
 
 addPointer x (ptrs,names,tycons) = (x:ptrs,names,tycons)
 
-ptrSubst:: [Name] ->    -- Names occuring in the term, these are bad so shouldn't be used.
+ptrSubst:: [Name] ->    -- Names occuring in the term, these are bad so shouldn't be used as new names.
            Pointers ->  -- Pointers that should be generalized.
            [Name] ->    -- An infinite name supply of names to choose.
            SubEnv ->
@@ -645,7 +645,8 @@ ptrSubst:: [Name] ->    -- Names occuring in the term, these are bad so shouldn'
 ptrSubst bad ptrs names env = 
         do { (env2,tele) <- help bad ptrs names env
            ; tele2 <- teleSubb noPos env2 tele
-           ; return(env2,tele2)} where 
+           ; tele3 <- orderTele tele2
+           ; return(env2,tele3)} where 
  help bad [] names env = return (env,[])
  help bad (ps@((Kind(uniq,ptr)):more)) (n:names) env =
    if elem n bad  
@@ -669,7 +670,10 @@ ptrSubst bad ptrs names env =
               ; return (env2, (n,Exp typ):tele ) 
               }
                  
-                 
+defUses :: (t, Class () Kind Typ) -> FIO ([t], Names)
+defUses (e,Exp t) = do { (_,ns) <- getVars t; return([e],ns)}
+defUses (t,Type k) = do { (_,ns) <- getVarsKind k; return([t],ns)}
+defUses (k,Kind ()) = return([k],[])
 
 matchErr loc messages t1 t2 = fail ("\n\n*** Error, near "++show loc++"\n"++(unlines messages)) -- ++"\n   "++show t1++"\n   "++show t2)
 
@@ -860,7 +864,9 @@ getVarsExpr t = do { x <- pruneE t; f x }
               -- ; writeln("getVarsEXp In[k] = "++show a)
               ; b <- getVarsExpr x
               ; unionW a b}
-        f (Emv p) = return([Exp p],[]) 
+        f (Emv (p@(uniq,ptr,ty))) = 
+          do { pairs <- getVars ty
+             ; unionW ([Exp p],[]) pairs }
         f (AppTyp x ts) =
           do { trip1 <- getVarsExpr x 
              ; foldM (accumBy getVars) trip1 ts}             

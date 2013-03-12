@@ -22,8 +22,12 @@ data T: (Nat -> *) -> Nat -> * where
 
 data Lam: ({Ty {i}} -> *) -> {Ty {i}} -> * where
   Const: Int -> Lam r {`integer}
-  App: r {`arr a b} -> r {a} -> Lam r {b}
   Abs: (r {a} -> r {b}) -> Lam r {`arr a b}
+  App: r {`arr a b} -> r {a} -> Lam r {b}
+    deriving fixpoint Exp
+  
+
+id = abs (\ x -> x)
 
 
 {-
