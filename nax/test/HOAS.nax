@@ -44,8 +44,35 @@ veval e = msfcata { t . Val t } e with
              call inv (App f x) = unVfun (call f) (call x)
              call inv (Abs f) = vfun(\v -> (call (f (inv v))))
              
-t3 = app (abs (\ x -> x)) (const 3)             
 
+rei x = msfcata{ t . Exp t } x with
+             call inv (Vnat n) = const n
+             call inv (Vfun f) = abs (\ t -> call (f (inv t)))
+
+-- the problem is that we can define this function
+-- it should be  add1 x = msfcata{ t . Val t } x with ...
+-- then you cannot define add1
+add1 x = msfcata{ Int . Val Int } x with
+           call inv (Vnat n) = vnat (n+1)
+
+-- this is itself okay but should not be used inside msfcata
+add1' x = vnat ( mcata { t . Int } x with
+                   call (Vnat n) = n+1
+                   call (Vfun f) = 0   )
+
+-- the right approach
+add1'' x = vnat ( msfcata { t . Int } x with
+                     call inv (Vnat n) = n+1
+                     call inv (Vfun f) = 0  )
+
+expadd1 = rei (vfun add1)
+expadd1' = rei (vfun add1')
+expadd1'' = rei (vfun add1'')
+
+e1 = app (abs (\ x -> x)) (const 3)             
+e2 = app expadd1 e1 -- this is problematic because of add1 not being polymorphic
+e2' = app expadd1' e1 -- this makes a problem because of add1' using mcata
+e2'' = app expadd1'' e1 -- this is okay!!!!!!!!!!!!!!!!! hurray!!!!
 
 ----------------------------------------------------------
 -- Embedding in a term-indexed value
@@ -65,7 +92,7 @@ data V' : ({Ty} -> *) -> {Ty} -> * where
     
 reif x = msfcata{{t} . Term{t}} x with
              call inv (Vnat' n) = tconst n
-             call inv (Vfun' f) = tabs (\ t -> call (f(inv t)))
+             call inv (Vfun' f) = tabs (\ t -> call (f (inv t)))
     
 -- axiom unVfun' : Val' {`arr a b} -> Val' {a} -> Val' {b}
 
@@ -76,14 +103,32 @@ ueval e = msfcata { {t} . Val' {t} } e with
             call inv (Tconst n) = vnat' n
             call inv (Tapp f x) = unVfun' (call f) (call x)
             call inv (Tabs f) = vfun'(\v -> (call (f (inv v)))) 
-            
+
+-- the problem is that we can define this function
+-- it should be  plus1 x = msfcata{ {t} . Val' {t} } x with ...
+-- then you cannot define plus1
 plus1 x = msfcata{ {`integer} . Val' {`integer}} x with
            call inv (Vnat' n) = vnat' (n+1)
-           
-termplus1 = reif (vfun' plus1)
 
-t4 = tapp (tabs (\ x -> x)) (tconst 3)  
-t5 = tapp termplus1 t4
+-- this is itself okay but should not be used inside msfcata
+plus1' x = vnat' ( mcata { {t} . Int } x with
+                     call (Vnat' n) = n+1
+                     call (Vfun' f) = 0   )
+
+-- the right approach
+plus1'' x = vnat' ( msfcata { {t} . Int } x with
+                      call inv (Vnat' n) = n+1
+                      call inv (Vfun' f) = 0  )
+
+          
+termplus1 = reif (vfun' plus1)
+termplus1' = reif (vfun' plus1')
+termplus1'' = reif (vfun' plus1'')
+
+t1 = tapp (tabs (\ x -> x)) (tconst 3)  
+t2 = tapp termplus1 t1 -- this is problemematic because of plus1 not polymorphic
+t2' = tapp termplus1' t1 -- this makes a problem because of plus1 using mcata
+t2'' = tapp termplus1'' t1 -- this is okay!!!!!!!!!!!!!!!!! hurray!!!!
 
 {- forall j .
   ( (forall r i . r i -> ans i) ->                -- call   
