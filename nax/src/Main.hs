@@ -37,6 +37,7 @@ go = run "../test/data.nax"
 work = run "../test/work.nax"
 test = run "../test/ListLike.nax"
 zap = run "../test/collapseLang3.nax"
+hoas = run "../test/HOAS.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env

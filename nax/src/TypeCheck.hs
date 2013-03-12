@@ -1306,6 +1306,7 @@ elimTypes pos tag k f r elim =
      ; let caller = Sch xs (Tau(arrT (expand r ts) ans))
            out = Sch xs (Tau(expand (arrT r (TyApp f r)) ts))
            cast = Sch xs (Tau(expand(arrT r (TyApp (TyMu k) f)) ts))
+           uncast = Sch xs (Tau(expand(arrT (TyApp (TyMu k) f) r) ts))           
            inverse = Sch xs (Tau(arrT ans (expand r ts)))
            struct =  Sch xs (Tau(arrT (expand(TyApp f r) ts) ans))          
            
@@ -1315,6 +1316,7 @@ elimTypes pos tag k f r elim =
         "mprim" -> return([caller,cast,struct],input,output) 
         "msfcata" -> return([caller,inverse,struct],input,output) 
         "msfprim" -> return([caller,inverse,cast,struct],input,output)
+        "mprsi" -> return([caller,cast,uncast,struct],input,output)
         "mall" -> return([caller,out,cast,inverse,struct],input,output) 
      }
         
