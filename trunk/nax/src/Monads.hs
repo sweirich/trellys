@@ -78,6 +78,13 @@ handleM :: FIO a -> (String -> String) -> FIO a
 handleM comp transformer = comp `handle` handler
   where handler f@(Fail { msg = oldMsg }) = 
           FIO . return $ f { msg = transformer oldMsg }
+          
+-- | On error, apply the monadic transformer to the error msg
+handleMM :: FIO a -> (String -> FIO String) -> FIO a
+handleMM comp transformer = comp `handle` handler
+  where handler f@(Fail { msg = oldMsg }) = 
+            do { new <- transformer oldMsg
+               ; FIO (return(f { msg = new }))}
 
 runFIO :: FIO x -> IO x
 runFIO (FIO mx) = do

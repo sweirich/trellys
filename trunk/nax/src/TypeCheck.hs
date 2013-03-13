@@ -9,7 +9,7 @@ import Syntax
 import BaseTypes
 import Types
 import Terms(applyE,abstract)
-import Monads(FIO,fio,handleM,fresh,freshName)
+import Monads(FIO,fio,handleM,handleMM,fresh,freshName)
 import Control.Monad(foldM,when,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
@@ -1220,26 +1220,30 @@ typeExpT env (e@(EApp fun arg)) expect =
         ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
         ; let cast (e@(TECon mu nm rho n)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
-        ; let mkTrans i t msg = unlines [msg,near e++"\n"++show i++" Infering the type of  the application\n   "++show e++
-                                       "\nthe function  '"++show fun++"'  has type\n   "++show fun_ty++
-                                       "\nthe argument  '"++show arg++"'  has type\n   "++ show t++
-                                       "\nthe expected type\n   "++show expect]
+        ; let mkTrans i t msg = do { ft <- zonkRho fun_ty; tt <- zonkScheme t; ex <- zonkExpRho expect;
+                                     return(unlines [msg,near e++"\n"++show i++" Infering the type of  the application\n   "++show e++
+                                       "\nthe function  '"++show fun++"'  has type\n   "++show ft++
+                                       "\nthe argument  '"++show arg++"'  has type\n   "++ show tt++
+                                       "\nthe expected type\n   "++show ex])}
         ; case arg_ty of
            Sch [] argRho -> do { -- writeln("arg = "++show arg++": "++show argRho);
-                                 x <- handleM (typeExpT env arg (Check argRho))
-                                              (mkTrans 0 arg_ty)
+                                 x <- handleMM (typeExpT env arg (Check argRho))
+                                               (mkTrans 0 arg_ty)
                                ; tt <- zonkRho argRho
-                               ; p2 <- morepolyRExpectR_ (expLoc arg) [mkTrans 1 arg_ty ""] res_ty expect                               
+                               ; m1 <- mkTrans 1 arg_ty ""
+                               ; p2 <- morepolyRExpectR_ (expLoc arg) [m1] res_ty expect                               
                                ; eprime <- (smartApp (cast f) x)
                                ; return(teCast p2 eprime)}
-           sigma -> do { (ty,x) <- handleM (inferExpT env arg) (mkTrans 2 sigma)
+           sigma -> do { (ty,x) <- handleMM (inferExpT env arg) (mkTrans 2 sigma)
                        ; free <- tvsEnv env
                        ; (sig,sub) <- generalizeRho free ty
                        ; sigma2 <- zonkScheme sigma >>= alpha
+                       ; m3 <- mkTrans 3 sigma ""
                        ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):[mkTrans 3 sigma ""]
+                                  "\nis expected to be polymorphic: "++ show sigma2):[m3]
                        ; p3 <- morepolySST (expLoc arg) m2 sig sigma2
-                       ; p4 <- morepolyRExpectR_ (expLoc arg) [mkTrans 4 sigma ""] res_ty expect
+                       ; m4 <- mkTrans 4 sigma ""
+                       ; p4 <- morepolyRExpectR_ (expLoc arg) [m4] res_ty expect
                        -- Do some stuff with p3 and p4 here
                        ; smartApp (cast f) x }
         }
