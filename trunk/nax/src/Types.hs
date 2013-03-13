@@ -104,7 +104,8 @@ matchE vars (pat,exp) env =
     (AppTyp _ _,AppTyp _ _) -> error ("No AppTyp in matchE yet: "++show pat++" =?= "++show exp)    
     (AbsTyp _ _,AbsTyp _ _) -> error ("No AbsTyp in matchE yet: "++show pat++" =?= "++show exp)    
     (Emv(u1,p1,k1),Emv(u2,p2,k2)) | u1==u2 -> return env
-    (CSP(u1,p1,k1),CSP(u2,p2,k2)) | u1==u2 -> return env  
+    (CSP(u1,p1,k1),CSP(u2,p2,k2)) | u1==u2 -> return env 
+    (TEAnn a x,TEAnn b y) | a==b -> matchE vars (x,y) env
     (_,_) -> Nothing
     
 
@@ -222,6 +223,7 @@ unifyExpT loc message x y = do { x1 <- pruneE x; y1 <- pruneE y; f x1 y1 }
           do { unifyK loc message k1 k2
              ; p <- unifyExpT loc message x y
              ; return(TEIn k1 p) }
+       f (TEAnn a x) (TEAnn b y) | a==b = do { p <- unifyExpT loc message x y; return(TEAnn a p)}
        f (z@(TEMend t1 e1 arg1 ms1)) (w@(TEMend t2 e2 arg2 ms2)) | t1==t2  =
           do { arg <- unifyExpT loc message arg1 arg2    
              ; ms <- matchBinds message loc ms1 ms2          
@@ -457,6 +459,7 @@ zonkE (EApp x y) = liftM2 EApp (zonkE x) (zonkE y)
 --            where g (p,e) = do { e2 <- zonkE e; return(p,e2)}
 zonkE (ETuple es) = liftM ETuple (mapM zonkE es)
 zonkE (EIn k x) = liftM2 EIn (zonkKind k)(zonkE x)
+zonkE (EAnn a e) = liftM (EAnn a) (zonkE e)
 {-
 zonkE (EMend tag elim scr ms) = liftM3 (TEMend tag) (zonkElim elim) (zonkExp scr) (mapM g ms)
             where g (ps,e) = do { e2 <- zonkExp e; return(ps,e2)}
@@ -497,6 +500,7 @@ zonkExp x = do { y <- pruneE x; f y}
          f (ContextHole e1 e2) = liftM2 ContextHole (zonkExp e1) (zonkExp e2)
          f (Emv(uniq,ptr,t)) = do { t2 <- zonk t; pruneE(Emv(uniq,ptr,t2))}
          f (CSP x) = return(CSP x)
+         f (TEAnn a x) = liftM (TEAnn a) (zonkExp x)
 
 zonkCL (Exp(e,t)) = fmap Exp $ liftM2 (,) (zonkExp e) (zonk t)
 zonkCL (Type(t,k)) = fmap Type $ liftM2 (,) (zonk t) (zonkKind k)
@@ -830,7 +834,8 @@ getVarsE t = f t
         f (ETuple xs) = foldM (accumBy getVarsE) ([],[]) xs
         f (EIn k x) = do { a <- getVarsKind k; b <- getVarsE x; unionW a b}
         f (ELet d e) = error ("No getVarsE for (ELet _ _) yet")    
-        f (EMend _ _ _ _ ) = error ("No getVarsE for (EMend _ _ _ _) yet")    
+        f (EMend _ _ _ _ ) = error ("No getVarsE for (EMend _ _ _ _) yet")
+        f (EAnn a e) = getVarsE e
 
 -- is a variable a type constructor?
 conP (Nm(c:cs,pos)) = isUpper c
@@ -898,7 +903,8 @@ getVarsExpr t = do { x <- pruneE t; f x }
         f (ContextHole x y ) = 
           do { trip1 <- getVarsExpr x 
              ; trip2 <- getVarsExpr y
-             ; (unionW trip1 trip2)}        
+             ; (unionW trip1 trip2)}  
+        f (TEAnn a x) = getVarsExpr x             
 
 getVarsKind:: Kind -> FIO Vars
 getVarsKind k =  do { x <- pruneK k; f x }
@@ -1205,6 +1211,7 @@ ebinds (e,env) = do { e2 <- pruneE e; help e2 }  where
   help (ContextHole x y) = return(ContextHole x y,env)
   help (Emv x) = return(Emv x,env)
   help (CSP x) = return(CSP x,env)
+  help (TEAnn a x) = do { (x2,env2) <- ebinds (x,env); return(TEAnn a x2,env2)}
 
 kbinds :: (Kind, [(Name, Class Kind Typ TExpr)]) -> FIO (Kind, [(Name, Class Kind Typ TExpr)])  
 kbinds (k,env) = do { k2 <- pruneK k; help k2 } where
@@ -1270,6 +1277,24 @@ elimSubb2 pos (env@(ptrs,names,tycons)) (ElimFun (vs,ts) t) =  -- note the vs ar
      ; t2 <- tySubb pos env2 t
      ; return(ElimFun (vs2,ts2) t2)}
 
+eSubb:: SourcePos -> SubEnv -> Expr -> FIO Expr
+eSubb pos (env@(ptrs,names,tycons)) x = f x
+  where f (ELit x y) = return(ELit x y)
+        f (EVar nm) = 
+           case findF (Exp nm) names (Exp (TEVar nm undefined)) of
+             Exp(TEVar z _) -> return(EVar z)
+             Exp other -> fail (show pos++" Non variable inside eSubb: ("++show nm++","++show other++")") 
+        f (EFree nm) = return(EFree nm)
+        f (ECon c) = return(ECon c)
+        f (EApp g y) = liftM2 EApp (f g) (f y)
+        f (ETuple es) = liftM ETuple (mapM f es)
+        f (EIn k e) = liftM2 EIn (kindSubb pos env k) (f e)
+        f (EAnn a e) = liftM (EAnn a) (f e)
+        f x = fail ("Not implemented in eSubb yet: "++show x)
+
+             
+               
+
 expSubb:: SourcePos -> SubEnv -> TExpr -> FIO TExpr
 expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
    where sub x = expSubb pos env x
@@ -1311,12 +1336,15 @@ expSubb pos (env@(ptrs,names,tycons))  x = do { y <- pruneE x; f y}
                ; returnE(findE (Exp ptr) ptrs (Exp(Emv(uniq,ptr,t2))))}
          f (ContextHole e1 e2) = liftM2 ContextHole (sub e1) (sub e2)
          f (CSP x) = return(CSP x)
+         f (TEAnn a x) = liftM (TEAnn a) (sub x)
 
 patSubb :: SourcePos -> SubEnv -> Pat -> FIO Pat
 patSubb loc env (PVar x (Just t)) = liftM (PVar x . Just) (tySubb loc env t)
 patSubb loc env (PTuple ps) = liftM PTuple (mapM (patSubb loc env) ps)
 patSubb loc env (PCon c ps) = liftM (PCon c) (mapM (patSubb loc env) ps)
 patSubb loc env p = return p
+
+-- tySubb loc env x = do { a <- prune x; writeln("\ntySubb "++show a); tySubb1 loc env a }
 
 tySubb :: SourcePos -> SubEnv -> Typ -> FIO Typ
 tySubb loc (env@(ptrs,names,tycons)) x = do { a <- prune x; f a }
@@ -1335,7 +1363,7 @@ tySubb loc (env@(ptrs,names,tycons)) x = do { a <- prune x; f a }
         f (TySyn nm arity xs body) = liftM2 (TySyn nm arity) (mapM sub xs) (sub body)
         f (TyMu k) = liftM TyMu (kindSubb loc env k)        
         f (TyLift (Checked e)) = liftM (TyLift . Checked) (expSubb loc env e)
-        f (TyLift (Parsed e)) = fail ("unchecked term in type inside tySubb: "++show e)        
+        f (TyLift (Parsed e)) = liftM (TyLift . Parsed) (eSubb loc env e)        
         f (TcTv (uniq,ptr,k)) = 
           do { k2 <- kindSubb loc env k
              ; returnT(findE (Type ptr) ptrs (Type (TcTv (uniq,ptr,k2))))}
@@ -1393,7 +1421,7 @@ checkExp (e@(TEApp fun arg)) =
                        ; (sig,sub) <- generalizeRho [] ty  -- The [] is NOT RIGHT
                        ; sigma2 <- zonkScheme sigma >>= alpha
                        ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):message
+                                  "\nis expected to be polymorphic\n  "++ show sigma2++"\n  "++show sig):message
                        ; morepolySST (loc arg) m2 sig sigma2
                        ; return res_ty } }  
 checkExp (e@(TEAbs elim cls)) =   
@@ -1421,6 +1449,7 @@ checkExp (e@(AbsTyp tele t)) = checkExp t
    -- fail ("Not yet in checkExp (AbsTyp _ _): "++show e) 
 checkExp (Emv (uniq,ptr,t)) = return(Tau t) 
 checkExp (CSP _) = freshRho Star
+checkExp (TEAnn a x) = checkExp x
 -- checkExp other = error ("Not yet in check Exp: "++show other)
 
 
@@ -1545,6 +1574,7 @@ subExpr env x = f x
          f (EIn k x) = liftM2 EIn (subKind env k) (sub x)
          f (x@(ELet d exp)) = fail ("No subExpr for (ELet _ _) yet: "++show x)
          f (x@(EMend tag e1 scr ms)) = fail ("No subExpr for (EMend _) yet: "++show x)
+         f (EAnn a e) = liftM (EAnn a) (sub e)
 
 subElim:: FOsub -> Elim [Name] -> FIO(Elim [Name])
 subElim env ElimConst = return(ElimConst)

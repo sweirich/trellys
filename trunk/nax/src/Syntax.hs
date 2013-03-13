@@ -26,6 +26,7 @@ type Uniq = Integer
 ---------------------------------------------------------
 -- Terms
 
+data Annotation = CheckT | Poly  deriving Eq
 
 data Expr
    = ELit SourcePos Literal  -- 5, 2.3, "abc", etc.
@@ -41,6 +42,7 @@ data Expr
    | ELet (Decl Expr) Expr
    | EIn Kind Expr
    | EMend String (Elim [Typ]) Expr [([Pat],Expr)]
+   | EAnn Annotation Expr
 
 data TExpr 
    = TELit SourcePos Literal      -- 5, 2.3, "abc", etc.
@@ -58,6 +60,7 @@ data TExpr
    | Emv (Uniq,Pointer (TExpr),Typ)  -- Typ has to be first order, I.e. data, not a function.
    | CSP (Name,Integer,Value IO)
    | ContextHole TExpr TExpr
+   | TEAnn Annotation TExpr
 
 data Pat
    = PVar Name (Maybe Typ) -- the Typ added in type-reconstruction
@@ -248,6 +251,7 @@ instance Eq TExpr where
   (ContextHole x y ) == (ContextHole a b ) = x==a && y==b  
   (Emv (u1,_,_)) == (Emv (u2,_,_)) = u1==u2
   (CSP (nm,i,u)) == (CSP (n,j,v)) = i==j
+  (TEAnn x y) == (TEAnn a b) = x==a && y==b
   _ == _ = False  
 
 instance Eq Term where
@@ -328,6 +332,12 @@ isValueList (VIn _ (VCon _ 2 "Cons" [x,xs])) =
   do { ys <- isValueList xs; return(x:ys)}
 isValueList _ = Nothing  
 
+isConApp :: TExpr -> Maybe(String,[TExpr])
+isConApp (TECon (Syn s) nm rho arity) = Just(s,[])
+isConApp (TEApp f x) = 
+  do { (s,xs) <- isConApp f
+     ; return(s,xs++[x])}
+isConApp x = Nothing  
 
 -----------------------------------------------
 -- printing lists and sequences 
@@ -461,6 +471,7 @@ ppExpr p e =
     (ELit pos l) -> ppLit l
     (EVar (Nm(v,pos))) -> text v
     (EFree (Nm(v,pos))) -> text("`"++v)
+    (EAnn a e) -> text (show a) <+> ppExpr p e
     (ECon (Nm(v,pos))) -> text v
     (EApp (EAbs e1 ms) e) -> 
        (text "case" <> ppElim p e1 <+> parenExpr p e <+> text "of") $$
@@ -541,11 +552,13 @@ ppTExpr p e =
             flatLet e ds = (ds,e)
     (TEIn k x)  | printChoice "In" p -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEIn Star x) | Just (a,ys) <- isTExprList x -> ppTList (ppTExpr p) ys
+    (TEIn k e) | Just (c,es) <- isConApp e
+               -> PP.sep(text ("`"++c) : map (parenTExpr p) es)
     (TEIn k (TECon (Syn d) c rho 0)) ->  text("`"++d)
    -- (TEIn k (TECon (Syn d) c rho arity xs)) -> 
    --     PP.parens(PP.sep(text ("`"++d) : map (parenTExpr p) xs))
     
-    (TEIn k x) -> PP.sep[text "(In"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
+    (TEIn k x) -> PP.sep[text "(In$"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
        where f (tele,ps,body) = PP.nest 2(PP.sep[PP.brackets(PP.sep (ppKArgs p tele))
                                                 ,PP.sep (map (ppPat p) ps) <+> text "="
@@ -562,6 +575,7 @@ ppTExpr p e =
                                        
     (Emv (uniq,ptr,k)) -> text("^E"++show uniq)
     (CSP (nm,i,v)) -> text("`"++show nm++"'"++show i)
+    (TEAnn a e) -> text (show a) <+> ppTExpr p e    
     
 ppTerm p (Parsed x) = ppExpr p x -- <> text "%"
 ppTerm p (Checked x) = ppTExpr p x -- <> text "#" 
@@ -821,6 +835,10 @@ instance Pretty (Telescope, [Class (Kind,()) (Typ, Kind) (TExpr,Typ)]) where
 -- Show instances
 -------------------------------------------------------
 
+instance Show Annotation where
+  show CheckT = "check"
+  show Poly = "poly"
+  
 instance Show (Class Kind Typ TExpr) where
   show x = render(ppClass pi0 (ppKind) (ppTyp) (ppTExpr) x)
   
@@ -1025,6 +1043,7 @@ expLoc (ETuple xs) = expLoc (head xs)
 expLoc (EIn _ x) = expLoc x
 expLoc (ELet d x) = decLoc d
 expLoc (EMend s elim e ms) = expLoc e
+expLoc (EAnn a e) = expLoc e
 
 patLoc (PVar nm _) = loc nm
 patLoc (PLit pos c) = pos
@@ -1053,6 +1072,7 @@ texpLoc (AppTyp e ty) = texpLoc e
 texpLoc (AbsTyp s e) = texpLoc e
 texpLoc (TECast p e) = texpLoc e
 texpLoc (ContextHole e1 e2) = texpLoc e1
+texpLoc (TEAnn a e) = texpLoc e
 texpLoc (Emv _) = noPos
 texpLoc x = noPos
 

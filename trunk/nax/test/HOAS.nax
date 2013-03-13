@@ -105,7 +105,7 @@ expadd1' = rei (vfun add1')
 expadd1'' = rei (vfun add1'')
 
 e1 = app (abs (\ x -> x)) (const 3) 
-e3 = abs (\ x -> vpair e1 x)
+e3 = abs (\ x -> pair e1 x)
 e2 = app expadd1 e1 -- this is problematic because of add1 not being polymorphic
 e2' = app expadd1' e1 -- this makes a problem because of add1' using mcata
 e2'' = app expadd1'' e1 -- this is okay!!!!!!!!!!!!!!!!! hurray!!!!
