@@ -121,6 +121,8 @@ lbStyle = Token.LanguageDef
                   ,"Mu","In"
                   ,"forall"
                   ,"deriving"
+                  ,"check"
+                  ,"poly"
                   ]
                 }
                       
@@ -435,10 +437,14 @@ expr =  lambdaExpression
 --     <|> letExpression
     <|> ifExpression
     <|> inExpression
+    <|> annotateExpr
     <|> infixExpression     --names last
     <?> "expression"
 
-
+annotateExpr = 
+  do { a <- annot
+     ; e <- expr
+     ; return(EAnn a e)}
 
 ------------------------------------------
 -- Note, other than data declarations all decls
@@ -687,6 +693,8 @@ elim xP = (do { sym "{"; more}) <|> return ElimConst
                   ;return(ElimFun ns t)}
 
 --------------------------------------------------------
+annot = (keyword "check"  >> return CheckT)   <|> 
+        (keyword "poly"   >> return Poly )   <?> "annotation"
 
 mendlerOp = (keyword "mcata"   >> return "mcata")   <|> 
             (keyword "mhist"   >> return "mhist")   <|>

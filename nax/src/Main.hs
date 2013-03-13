@@ -38,6 +38,7 @@ work = run "../test/work.nax"
 test = run "../test/ListLike.nax"
 zap = run "../test/collapseLang3.nax"
 hoas = run "../test/HOAS.nax"
+msf = run "../test/betterMSFcata.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env

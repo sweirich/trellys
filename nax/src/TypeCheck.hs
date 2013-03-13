@@ -424,6 +424,7 @@ wellFormedScheme:: Int -> SourcePos -> [String] -> Frag -> Scheme -> FIO Scheme
 wellFormedScheme i pos mess frag (Sch [] rho) = liftM monoR (wellFormedRho (i+1) pos mess frag rho)
 wellFormedScheme i pos mess frag (Sch vs rho) = 
   do { (frag2,vs2,sub) <- freshPairs pos mess frag vs
+     ; writeln("JUst before rhoSubb "++show vs++show rho++show sub)
      ; rho2 <- rhoSubb pos ([],sub,[]) rho
      ; rho3 <- wellFormedRho (i+1) pos mess frag2 rho2
      ; return(Sch vs2 rho3)}
@@ -794,7 +795,7 @@ generalizeS pos env (s@(Sch us rho)) =
      ; let g (nm,Kind ()) = return (nm,Kind ())
            g (nm,Type k) = do { k2 <- kindSubb pos subst k; return(nm,Type k2)}
            g (nm,Exp t) = do { t2 <- tySubb pos subst t; return(nm,Exp t2)} 
-     ; vs2 <- mapM g us   
+     ; vs2 <- mapM g us 
      ; sch2 <- schemeSubb pos subst (Sch (tele++vs2) rho)
      ; return sch2
      }     
@@ -1209,19 +1210,19 @@ typeExpT env (e@(EApp _ _)) expect
      | Just(c,f,xs) <- expandExprSyn env e []
      = do { e2 <- f (loc e) xs
           ; typeExpT env e2 expect}
-typeExpT env (e@(EApp (EVar (Nm("checkT",_))) x)) expect = 
+typeExpT env (e@(EAnn CheckT x)) expect = 
      do { writeln("\nChecking\n   "++show x)
         ; writeln ("Expected Type\n   "++show expect)
         ; interAct env expect
         ; typeExpT env x expect }
 typeExpT env (e@(EApp fun arg)) expect =
      do { (fun_ty,f) <- inferExpT env fun
-        -- ; writeln ("\ntypExp  f="++show f++": "++show fun_ty)
+        -- ; writeln ("\ntypExp  f="++show f++": "++show fun_ty++" location = "++show (loc arg))
         ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
         ; let cast (e@(TECon mu nm rho n)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
         ; let mkTrans i t msg = do { ft <- zonkRho fun_ty; tt <- zonkScheme t; ex <- zonkExpRho expect;
-                                     return(unlines [msg,near e++"\n"++show i++" Infering the type of  the application\n   "++show e++
+                                     return(unlines [msg,near arg++"\n"++show i++" Infering the type of  the application\n   "++show e++
                                        "\nthe function  '"++show fun++"'  has type\n   "++show ft++
                                        "\nthe argument  '"++show arg++"'  has type\n   "++ show tt++
                                        "\nthe expected type\n   "++show ex])}
@@ -1239,8 +1240,10 @@ typeExpT env (e@(EApp fun arg)) expect =
                        ; (sig,sub) <- generalizeRho free ty
                        ; sigma2 <- zonkScheme sigma >>= alpha
                        ; m3 <- mkTrans 3 sigma ""
-                       ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic: "++ show sigma2):[m3]
+                       ; let m2 =["\nWhile checking the type of the application\n  "++show e ++
+                                  "\nThe argument: "++show arg++" with type\n  "++
+                                  show sig++"\nis expected to be polymorphic\n  "++
+                                  show sigma2]
                        ; p3 <- morepolySST (expLoc arg) m2 sig sigma2
                        ; m4 <- mkTrans 4 sigma ""
                        ; p4 <- morepolyRExpectR_ (expLoc arg) [m4] res_ty expect
@@ -1305,6 +1308,8 @@ elimTypes pos tag k f r elim =
      ; let namepart (Exp(e,t)) = TyLift (Checked e)
            namepart (Type(t,k)) = t
      ; ts <- return(map namepart args)  
+     -- ; writeln ("\nelimTypes "++show elim)
+          
      ; output <- tySubb pos subst ans
      ; input <- tySubb pos subst (expand(TyApp (TyMu k) f) ts)
      ; let caller = Sch xs (Tau(arrT (expand r ts) ans))
