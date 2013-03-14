@@ -4,13 +4,13 @@ data T r = Integer | Arr r r deriving fixpoint Ty
 data Trm: (* -> {Ty} -> *) -> * -> {Ty} -> * where
   Tconst: Int -> Trm r ans {`integer}
   Tapp: r ans {`arr a b} -> r ans {a} -> Trm r ans {b}
-  Tabs: (forall ans . r ans {aa} -> r ans {bbb}) -> Trm r ans {`arr aaa bbb}
+  Tabs: (forall ans . r ans {az} -> r ans {b}) -> Trm r ans {`arr az b}
     deriving fixpoint Term
     
 axiom test : Term Int {`integer} -> Term a {`integer}    
 
-f x = mcata{a {t} . Int} x with
-        rcall (Tabs f) = check 7
+f x = mcata{axy {txy} . Int} x with
+        rcall (Tabs f) = 7
 {-
 Term ans i = mu[* -> {Ty} -> *] Trm ans i   
 

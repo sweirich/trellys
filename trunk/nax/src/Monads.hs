@@ -11,7 +11,7 @@ import Control.Monad (filterM,liftM)
 import Control.Applicative ((<$>))
 import UniqInteger(nextinteger)
 
-import Names(SourcePos,noPos,Name(..))
+import Names(SourcePos,noPos,Name(..),near)
 
 tryIO :: IO a -> IO (Either IOError a)
 tryIO = Control.Exception.try
@@ -28,7 +28,7 @@ data Exception x
           , msg     :: String     -- message
           }
   deriving (Functor)
-showFail (Fail srcPos msg) =  show srcPos ++ ": " ++ msg
+showFail (Fail srcPos msg) =  near srcPos ++ ": " ++ msg
 
 instance Monad Exception where
   return x = Ok x

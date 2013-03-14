@@ -420,14 +420,51 @@ wellFormedRho i pos mess frag (Tau t) =
 wellFormedRho i pos mess frag (Rarr s r) =
   liftM2 Rarr (wellFormedScheme (i+1) pos mess frag s) (wellFormedRho (i+1) pos mess frag r)
 
+ -- new version
 wellFormedScheme:: Int -> SourcePos -> [String] -> Frag -> Scheme -> FIO Scheme
 wellFormedScheme i pos mess frag (Sch [] rho) = liftM monoR (wellFormedRho (i+1) pos mess frag rho)
 wellFormedScheme i pos mess frag (Sch vs rho) = 
   do { (frag2,vs2,sub) <- freshPairs pos mess frag vs
-     ; writeln("JUst before rhoSubb "++show vs++show rho++show sub)
-     ; rho2 <- rhoSubb pos ([],sub,[]) rho
-     ; rho3 <- wellFormedRho (i+1) pos mess frag2 rho2
+     ; rho2 <- return rho
+     ; rho3 <- wellFormedRho (i+1) pos mess frag2 rho2 
      ; return(Sch vs2 rho3)}
+
+freshPairs:: SourcePos -> [String] -> Frag -> Telescope -> FIO (Frag,Telescope,[(Name,Class Kind Typ TExpr)])
+freshPairs pos mess frag [] = return (frag,[],[]) 
+freshPairs pos mess frag ((nm,Type k):more) =   
+  do { k2 <- wfKind 0 pos mess frag k
+     ; nm2 <- freshName nm
+     ; let pair1 = (nm,Type(TyVar nm2 k2))
+           pair2 = (nm,Type(TyVar nm2 k2))
+           frag2 = addMulti [pair1] frag  
+     ; (frag3,ans,sub) <- freshPairs pos mess frag2 more
+     ; return(frag3,(nm2,Type k2):ans,pair2:sub)}
+
+{-   --  Old version used with rhoSubb in wellFormed Scheme
+
+wellFormedScheme:: Int -> SourcePos -> [String] -> Frag -> Scheme -> FIO Scheme
+wellFormedScheme i pos mess frag (Sch [] rho) = liftM monoR (wellFormedRho (i+1) pos mess frag rho)
+wellFormedScheme i pos mess frag (Sch vs rho) = 
+  do { (frag2,vs2,sub) <- freshPairs pos mess frag vs
+     -- ; writeln("JUst before rhoSubb "++show vs++show rho++show sub)
+     ; rho2 <- rhoSubb pos ([],sub,[]) rho
+     ; rho3 <- wellFormedRho (i+1) pos mess frag2 rho2  -- old version
+     ; return(Sch vs2 rho3)}
+
+-- telescoping
+freshPairs:: SourcePos -> [String] -> Frag -> Telescope -> FIO (Frag,Telescope,[(Name,Class Kind Typ TExpr)])
+freshPairs pos mess frag [] = return (frag,[],[]) 
+freshPairs pos mess frag ((nm,Type k):more) =   
+  do { k2 <- wfKind 0 pos mess frag k
+     ; nm2 <- freshName nm
+     ; let pair1 = (nm2,Type(TyVar nm2 k2))
+           pair2 = (nm,Type(TyVar nm2 k2))
+           frag2 = addMulti [pair1] frag  
+     ; (frag3,ans,sub) <- freshPairs pos mess frag2 more
+     ; return(frag3,(nm2,Type k2):ans,pair2:sub)}
+-}
+
+
 
 
 generalizeK:: SourcePos -> Frag -> Kind -> FIO PolyKind
@@ -464,17 +501,6 @@ generalizeAll pos env rho =
 
 
 
--- telescoping
-freshPairs:: SourcePos -> [String] -> Frag -> Telescope -> FIO (Frag,Telescope,[(Name,Class Kind Typ TExpr)])
-freshPairs pos mess frag [] = return (frag,[],[]) 
-freshPairs pos mess frag ((nm,Type k):more) =   
-  do { k2 <- wfKind 0 pos mess frag k
-     ; nm2 <- freshName nm
-     ; let pair1 = (nm2,Type(TyVar nm2 k2))
-           pair2 = (nm,Type(TyVar nm2 k2))
-           frag2 = addMulti [pair1] frag  
-     ; (frag3,ans,sub) <- freshPairs pos mess frag2 more
-     ; return(frag3,(nm2,Type k2):ans,pair2:sub)}
 
 
 --------------------------------------------------------------------
@@ -751,6 +777,7 @@ wellFormedElim i pos env (elim@(ElimFun ts body)) =
            wft (TyLift e) = fmap Exp(wellFormedTerm (i+1) pos (message " lifted " e) env2 e)
            wft t          = fmap Type(wellFormedType (i+1) pos (message " " t)        env2 t)
      ; pairs <- mapM wft ts
+     -- ; writeln("\nWellFormedElim "++show ts ++ show pairs)
      ; (body2,k2) <- wellFormedType (i+1) pos ["Checking wellformedness of elim body: "++show body] env2 body
      ; let acc (Type(t,k)) ans = Karr k ans
            acc (Exp(e,t)) ans  = Tarr t ans
@@ -762,6 +789,8 @@ wellFormedElim i pos env (elim@(ElimFun ts body)) =
     --  ; writeln("\n\nElim = "++show (ElimFun (tele,pairs2) body3)++"\nKind = "++show kind)
      
      ; return(ElimFun (tele,pairs2) body3,kind)  }  
+
+
 
 binderToTelescope :: [(Name, Class Kind Typ TExpr)] -> FIO Telescope
 binderToTelescope xs = mapM f xs
@@ -931,7 +960,7 @@ elab toplevel env (d@(DataDec pos tname args cs derivs)) =
 elab toplevel env (d@(Def loc p e)) =
   do { if toplevel then write ((show p)++", ") else return()
      -- ; let vars = patBinds p [] 
-     ; (rho,env2,pat2) <- inferPat loc env p
+     ; ([rho],env2,[pat2]) <- inferBs loc env [p]
      ; (rho2,exp2) <- inferExpT env e
      ; p1 <- morepolyRRT loc ["?"] rho rho2
      ; free <- tvsEnv env
@@ -1287,13 +1316,13 @@ typeExpT env (term@(EMend tag elim x ms)) expect =
      ; f <- freshType (Karr k k)
      ; (Type (r@(TyVar rname rkind))) <- existTyp (Nm("r",loc x)) (Type k)
      ; (ops,input,output) <- elimTypes (loc x) tag k f r elim2   
-     -- ; writeln("\nInput "++show input++"\nOutput "++show output++plistf show "\nops\n  " ops "\n  " "")
      ; x2 <- typeExpT env x (Check(Tau input))
      ; ms2 <- mapM (\ m -> typeOperClause rname rkind env env ops m []) ms 
      ; p1 <- morepolyRExpectR_ (loc x) 
              ["Checking the return type of the mendler operator:\n"++show term] 
              (Tau output) expect   
-     ; zonkExp(teCast p1 (TEMend tag elim2 x2 ms2))}     
+     ; zonkExp(teCast p1 (TEMend tag elim2 x2 ms2))} 
+typeExpT env term expect = error ("\nNot yet in typeExpT\n  "++ show term)
 
 ------------------------------------------    
 
@@ -1308,10 +1337,10 @@ elimTypes pos tag k f r elim =
      ; let namepart (Exp(e,t)) = TyLift (Checked e)
            namepart (Type(t,k)) = t
      ; ts <- return(map namepart args)  
-     -- ; writeln ("\nelimTypes "++show elim)
-          
+      
      ; output <- tySubb pos subst ans
      ; input <- tySubb pos subst (expand(TyApp (TyMu k) f) ts)
+ 
      ; let caller = Sch xs (Tau(arrT (expand r ts) ans))
            out = Sch xs (Tau(expand (arrT r (TyApp f r)) ts))
            cast = Sch xs (Tau(expand(arrT r (TyApp (TyMu k) f)) ts))
@@ -1353,10 +1382,7 @@ typeOperClause r rkind oldenv env [sch] ([p],body) qs =
      ; let subst = (sub,[],[])
      ; body3 <- expSubb (loc body2) subst body2
      ; pat3 <- patSubb (loc pat2) subst pat2
-     
-     -- ; writeln("OPER "++show pat3++" = "++show body++"\n"++show sigma)
- 
-     
+
      ; rigidCheck body rho2 oldenv [r]  --- r is the type (an existenial type variable) of the abstract carrier
      ; return(tele2,reverse(pat3:qs),teCast proof1 body3) }
 typeOperClause ans rkind oldenv env [sch] (p:ps,body) qs = typeOperClause ans rkind oldenv env [sch] ([p],abstract ps body) qs

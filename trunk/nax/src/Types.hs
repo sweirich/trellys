@@ -77,6 +77,8 @@ matchPat (x,y) xs =
      (PWild _,PWild _) -> Just xs
      (PTuple ms, PTuple ns) -> matchPatL ms ns xs
      (PCon c ms, PCon d ns) -> if c==d then matchPatL ms ns xs else Nothing
+     (PAnn p _,q) -> matchPat (p,q) xs
+     (p,PAnn q _) -> matchPat (p,q) xs
      (_,_) -> Nothing
      
 matchPatL [] [] xs = Just xs
@@ -1283,7 +1285,7 @@ eSubb pos (env@(ptrs,names,tycons)) x = f x
         f (EVar nm) = 
            case findF (Exp nm) names (Exp (TEVar nm undefined)) of
              Exp(TEVar z _) -> return(EVar z)
-             Exp other -> fail (show pos++" Non variable inside eSubb: ("++show nm++","++show other++")") 
+             Exp other -> fail (near nm++" Non variable inside eSubb: ("++show nm++","++show other++")") 
         f (EFree nm) = return(EFree nm)
         f (ECon c) = return(ECon c)
         f (EApp g y) = liftM2 EApp (f g) (f y)
@@ -1603,6 +1605,7 @@ freshPat supply (PTuple ps,env) =
   do { (ps2,env2) <- freshPats supply (ps,env); return(PTuple ps2,env2)}
 freshPat supply (PCon nm ps,env) = 
   do { (ps2,env2) <- freshPats supply (ps,env); return(PCon nm ps2,env2)}
+freshPat supply (PAnn p t,env) = do { (q,env2) <- freshPat supply (p,env); return(PAnn q t,env2)}
   
 
 freshPats supply = threadM (freshPat supply)

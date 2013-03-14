@@ -48,14 +48,16 @@ pConsUp pnil (p:ps) = PCon (Nm(":",prelude)) [p,pConsUp pnil ps]
 
 
 unitExp = ELit noPos LUnit
-consExp x y = EIn Star (EApp (EApp (ECon (Nm("Cons",prelude))) x) y)
-nilExp =  EIn Star (ECon (Nm("Nil",prelude)))
-listExp  = foldr consExp nilExp
+consExp loc x y = EIn Star (EApp (EApp (ECon (Nm("Cons",loc))) x) y)
+nilExp loc =  EIn Star (ECon (Nm("Nil",loc)))
+listExp loc = foldr (consExp loc) (nilExp loc)
 trueExp  = ECon (Nm("True",prelude))    -- EVar (Nm("True",prelude))
 falseExp = ECon (Nm("False",prelude))  -- EVar (Nm("False",prelude))
 
-
-
+-- can't match against lists, this implies use of 'out'
+consPat pos p1 p2 = (PCon (Nm("Cons",pos)) [p1,p2])
+nilPat pos = (PCon (Nm("Nil",pos)) [])
+  
 
 caseExp x ms = EApp (EAbs ElimConst ms) x
 ifExp x y z = caseExp x [(truePat,y),(falsePat,z)]
