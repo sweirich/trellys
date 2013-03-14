@@ -68,6 +68,7 @@ data Pat
    | PTuple [Pat]
    | PCon Name [Pat]
    | PWild SourcePos
+   | PAnn Pat Scheme -- (p:all x . T x a -> b) binds vars in p
 
 data Decl e 
    = Def SourcePos Pat e
@@ -90,6 +91,7 @@ patBinds (PLit pos _) ans = ans
 patBinds (PTuple ps) ans = foldr patBinds ans ps
 patBinds (PCon nm ps) ans = foldr patBinds ans ps
 patBinds (PWild pos) ans = ans
+patBinds (PAnn p t) ans = patBinds p ans
 
 patsBind ps ans = foldr patBinds ans ps
 ------------------------------------
@@ -221,6 +223,8 @@ instance Eq Pat where
   (PTuple xs) == (PTuple ys) = xs == ys
   (PWild _) == (PWild _) = True
   (PCon c xs) == (PCon d ys) = c==d && xs == ys
+  (PAnn p _) == q = p==q
+  p == (PAnn q _) = p==q
   _ == _ = False
   
 instance Eq Expr where
@@ -480,6 +484,7 @@ ppExpr p e =
        | infixp f -> PP.sep [(noParenOnApply p x),text f,noParenOnApply p y]
     (term@(EApp _ _)) -> ppSepBy (noParenOnApply p f : (map (parenExpr p) xs)) " "
       where (f,xs) = fromBinary term
+    (EAbs elim []) -> (text "\\ -> with no cases")
     (EAbs elim ms) -> ((text "\\" <> ppElim p elim) $$
                  (PP.nest 2 (PP.vcat (map (ppMatch p ppExpr) ms))))                 
     (ETuple ps) -> ppSepByParen (map (ppExpr p) ps) "," 
@@ -593,7 +598,7 @@ ppPat p pat =
     PVar v _ -> text (name v)
     PTuple ps -> ppSepByParen (map (ppPat p) ps) "," 
     PWild p -> text "_"
-    -- PSum j p -> PP.parens(text (show j) <+> ppPat p)
+    PAnn px t -> PP.parens(ppPat p px <> text ":" <> ppScheme p t)
     PCon (Nm(v,pos)) [] -> text v
     PCon (Nm(":",_)) (p1:ps) -> PP.parens $ ppPat p p1 <+> text  ":" <+> PP.hsep (map (ppPat p) ps)
     PCon (Nm(v,pos)) ps -> PP.parens $ text v <+> PP.hsep (map (ppPat p) ps)
@@ -699,7 +704,8 @@ ppTyp p (TyCon _ c k) = ppName c --  <> text"<" <> ppPolyK p k <> text">"
 ppTyp p (TyMu Star) = text "Mu[*]"
 ppTyp p (TyMu k) = text "Mu[" <> ppKind p k <> text "]"
 ppTyp p (TcTv (uniq,ptr,k)) = text("^T"++show uniq)
-ppTyp p (TyLift x) = PP.braces(ppTerm p x)
+ppTyp p (TyLift (Checked x)) = PP.braces(ppTExpr p x)
+ppTyp p (TyLift (Parsed x)) = text "P" <> PP.braces(ppExpr p x)
 ppTyp p (TyArr x y) =  PP.sep[parenTypArrow p x <+> text "->",PP.nest 1 (ppTyp p y)]
 ppTyp p (TyProof x y) = PP.parens (ppTyp p x <> text "==" <> (ppTyp p y))
 -- ppTyp p (TySyn n1 a1 xs1 b1) =  text "(syn " <> ppTyp p b1 <> text ")"  -- this cause infinite loop?
@@ -900,6 +906,12 @@ instance Show PolyKind where
 instance Show TypPat where
   show p = render(ppTypPat pi0 p)
 
+
+instance Show (Class (Kind, ()) (Typ, Kind) (TExpr, Typ)) where
+  show (Kind (k,())) = "K "++show k
+  show (Type (t,k)) =  "T "++ showT t++ ": "++show k
+  show (Exp (e,t))  =  "E "++ show e++": " ++ showT t
+  
 ----------------------------------------------------------------------
 -- for debugging when you need to see all the structure of a type
 
@@ -921,7 +933,8 @@ showT (TyArr s x) = "(TyArr "++showT s++ " -> "++showT x++")"
 showT (TySyn nm arity xs body) = "(TYSyn "++show nm++" "++show arity++
                                  plistf showT " [" xs "," "]="++showT body ++")"
 showT (TyMu k) = "Mu "++show k
-showT (TyLift x) = "{"++show x++"}"
+showT (TyLift (Parsed x)) = "Parsed{"++show x++"}"
+showT (TyLift (Checked x)) = "{"++show x++"}"
 showT (TyAll vs r) = "(TyAll ... "++show r++")"
 
 
@@ -1051,6 +1064,7 @@ patLoc (PTuple []) = noPos
 patLoc (PTuple ps) = patLoc (head ps)
 patLoc (PCon (Nm(c1,p)) ps) = p
 patLoc (PWild pos) = pos
+patLoc (PAnn p t) = patLoc p
 
 decLoc (Def pos pat exp) = pos
 decLoc (DataDec pos t args cs derivs) = pos

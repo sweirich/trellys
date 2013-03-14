@@ -30,8 +30,14 @@ class Loc t where
   coord t = (sourceName p,sourceLine p,sourceColumn p)
     where p = loc t
 
+instance Loc SourcePos where
+  loc x = x
+  
 near :: (Loc t) => t -> String
-near exp = "near "++show(loc exp)++"\n"
+near exp = f (loc exp)
+  where f p | isNoPos p = "\n"
+            | otherwise = "near "++show p++"\n"
+             
 
 prelude = newPos "Prelude" 0 0
 preline n = newPos "Prelude" n 0

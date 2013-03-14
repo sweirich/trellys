@@ -4,7 +4,7 @@ import Names
 import Syntax 
 import BaseTypes
 import Terms(applyE,expTuple,listExp,truePat,falsePat
-            ,patTuple,consExp,binop)
+            ,patTuple,consExp,nilExp,binop)
 import Value(preDefinedDeclStrings)
 
 -- import Types(listT,tunit,pairT,tarr,predefinedTyCon,kindOf
@@ -211,7 +211,7 @@ intLit = do{ c <- (signed Parser.natural); return (LInt (fromInteger c)) }
 strLit = do{ pos <- getPosition
            ; s <- Token.stringLiteral funlog
            ; let f c = ELit pos (LChar c)
-           ; return(listExp (map f s))}
+           ; return(listExp pos (map f s))}
  
 literal :: MParser Literal
 literal = Token.lexeme funlog
@@ -224,43 +224,31 @@ literal = Token.lexeme funlog
 
 simplePattern :: MParser Pat
 simplePattern =
-        tuplePattern
+        try annPat
+    <|> tuplePattern
     <|> (do { pos <- getPosition; x <- literal; return(PLit pos x)}) 
     <|> (do { pos <- getPosition; sym "_"; return (PWild pos)})
     <|> (do { nm <- conP; return(PCon nm []) })
- --   <|> listPattern  -- in mendelr this matches with In so must be forbidden
+ --   <|> listPattern  -- in mendler this matches with In so must be forbidden
     <|> patvariable
     <?> "simple pattern"
 
--- () (x)  (x,y,z)
+annPat = parenS typing
+  where typing = do { p <- pattern; sym ":"; t <- sch; return(PAnn p t)}
+        sch = try scheme <|> (do { r <- rhoP; return(Sch [] r)})
+
 tuplePattern = 
   do { xs <- parenS(sepBy pattern (commA))
      ; return(patTuple xs) 
-     }
-
-infixPattern =
-  do { p1 <- try conApp <|> simplePattern
-                    --  E.g. "(L x : xs)" should parse as ((L x) : xs) rather than (L(x:xs))
-     ; x <- sym ":"
-     ; pos <- getPosition; 
-     ; p2 <- pattern
-     ; return (PCon (Nm(x,pos)) [p1,p2])
      }
 
 conApp =
    (do { nm <- conP 
        ; ps <- many simplePattern
        ; return(PCon nm ps)})
-       
--- [2,3,4]  list pattersn imply use of 'out'
--- listPattern = 
---   do { xs <- brackets funlog (sepBy pattern (commA))
---      ; return(pConsUp patNil xs)
---      }
 
 pattern :: MParser Pat
-pattern = try infixPattern
-  <|> conApp
+pattern = conApp
   <|> simplePattern
   <?> "pattern"
 
@@ -284,7 +272,7 @@ prefix name = Prefix(do{ try (resOp name); exp2exp name })
 
 infiX nam assoc = 
    Infix (do{ pos <- getPosition; try (resOp nam); exp2exp2exp pos nam}) assoc
-  where exp2exp2exp loc ":" = return consExp
+  where exp2exp2exp loc ":" = do { p <- getPosition; return (consExp p)}
         exp2exp2exp loc "$" = return (\ x y -> EApp x y)
         exp2exp2exp loc nam = return (binop (Nm(nam,loc)))
 
@@ -353,22 +341,47 @@ parenExpression = try section <|> tuple
   where tuple = 
           do { xs <- parenS(sepBy expr (commA))
              ; return(expTuple xs)}                                
-                                                   
-                                     
--- [2,3,4]
+                                                  
+listParser:: (MParser x) -> (SourcePos -> x -> x -> x) -> (SourcePos -> x) -> MParser x
+listParser p cons nil = (try empty) <|> bracketS many
+  where empty = do { g <- getPosition; sym "["; sym "]"; return (nil g)}
+        last = (sym ";" >> p) <|> (do { loc <- getPosition; return(nil loc)})
+        one = do { x <- p; loc <- getPosition; return(x,loc)}
+        consWithPos (x,p) xs = cons p x xs
+        many = do { xs <- sepBy one (sym ",") 
+                  ; z <- last
+                  ; return(foldr consWithPos z xs) }
+
+-- [2,3,4] [x;xs] [x,3,x+5;zs]
 listExpression :: MParser Expr
---listExpression = 
---  do { xs <- brackets funlog (sepBy expr (commA))
---     ; return(listExp xs)}
-     
-listExpression = (try empty) <|> (do { sym "["; x <- expr; tail x })
-  where empty = do { sym "["; sym "]"; return (listExp [])}
+listExpression = listParser expr consExp nilExp
+                  
+-- [2,3,4]  list patterns imply use of 'out'
+-- listPattern = 
+--   do { xs <- brackets funlog (sepBy pattern (commA))
+--      ; return(pConsUp patNil xs)
+--      }
+-- Same with infix Cons
+-- infixPattern =
+--  do { p1 <- try conApp <|> simplePattern
+--                    --  E.g. "(L x : xs)" should parse as ((L x) : xs) rather than (L(x:xs))
+--     ; x <- sym ":"
+--     ; pos <- getPosition; 
+--     ; p2 <- pattern
+--     ; return (PCon (Nm(x,pos)) [p1,p2]) }                  
+                  
+
+{-
+-- This version parsed comprehensions, No longer used     
+listExpressionT = (try empty) <|> (do { sym "["; x <- expr; tail x })
+  where empty = do { loc <- getPosition; sym "["; sym "]"; return (listExp loc [])}
         tail x = more x -- <|> count x <|> comp x
-        more x = (sym "]" >> return(listExp [x])) <|>
+        more x = (do { loc <- getPosition; sym "]"; return(listExp loc[x])}) <|>
                  (do { xs <- many (sym "," >> expr)
+                     ; loc <- getPosition 
                      ; sym "]"
-                     ; return(listExp (x:xs))})
-{-                     
+                     ; return(listExp loc (x:xs))})
+                     
         count i = do { sym ".."; j <- expr; sym "]"
                      ; return(EComp(Range i j))}
         comp x = do { sym "|"
@@ -664,6 +677,7 @@ scheme = do { sym "forall"
   where kinding = fmap lift nameP <|> parenS colon
         colon = do { v <- nameP ; sym "::"; k <- kindP; return (v,Type k)}
         lift x = (x,Type Star)
+
 
 simpleRho = try (parenS scheme) <|> (do { t <- (fmap applyT (many1 simpleTypP)); return(Sch [] (Tau t))})
 
