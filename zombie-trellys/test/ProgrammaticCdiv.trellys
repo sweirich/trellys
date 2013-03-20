@@ -23,7 +23,8 @@ rec cdivP m = \n . case m [m_eq] of
   Succ m' -> let prog r [_] = cdivP (minus m n) n
              in Succ r
 
-cdivP_ex : (Nat@log) -> (Nat@log) -> (Nat@log) -> Type 0
+--Why the @log ? To match the definition of Exists
+cdivP_ex : Nat -> Nat -> (Nat@log) -> Type 0
 cdivP_ex = \m n v . cdivP m (Succ n) = v
 cdivP_ex_red : (m:Nat) -> (n:Nat) -> (v:Nat) -> (cdivP_ex m n v = (cdivP m (Succ n) = v))
 cdivP_ex_red = \m n v . join

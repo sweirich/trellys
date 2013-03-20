@@ -14,7 +14,7 @@ import Arithmetic
 import Logic
 
 -- Higher-order primitive recursion
--- --------------------------------
+-- --------------------------------n
 
 -- Higher-order primitive recursion / nat
 -- elimination. Cf. Vecters.recvec.

@@ -52,7 +52,7 @@ ind convert_id [n] = \i . case i [i_eq] of
 -- Now conversion is O(1).
 
 data Index' (n:Nat) : Type 0 where
-  MkIndex' of (m:Nat)  [ltT m n] 
+  MkIndex' of (m:Nat)  [ltT m n @log] 
 
 convert' : [n1:Nat] -> [n2:Nat] -> [ltT n1 n2 @log] -> (Index' n1 @log) -> Index' n2
 convert' = \[n1] [n2] [n1_lt_n2] i. case i [i_eq] of

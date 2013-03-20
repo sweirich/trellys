@@ -2,11 +2,11 @@
 module DeepMatchError6 where
 import Prelude 
 
-log data A : Type 0 where
+data A : Type 0 where
   A1 
   A2 of (x : A) (y : A)
 
-log data B : Type 0 where
+data B : Type 0 where
   B1 of (x : A) 
   B2 of (x : B) (y : B)
 

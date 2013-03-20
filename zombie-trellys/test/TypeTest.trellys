@@ -33,14 +33,9 @@ ilam_term = \ [x] . 1
 
 app_pi_term = lam_term 1
 
--- Explicit product where the argument type is only
--- wellformed programmatically.
-log prog_pi_type : Type 1
-prog_pi_type = (a : Type 0@prog) -> (a@prog) -> Nat
-
 -- In the P fragment we get impredicative types too.
 prog impred_prog_pi_type : Type 0
-impred_prog_pu_type = (a : Type 0@prog) -> (a@prog) -> Nat
+impred_prog_pu_type = (a : Type 1) -> (a@prog) -> Nat
 
 add : (x : Nat) -> (y:Nat) -> Nat
 ind add x = \y .
@@ -92,20 +87,20 @@ join_test = join 20
 -- val join_test_bug = add Zero Zero ^ Zero
 
 
-data Vector (a : Type 0@log) (n : Nat) : Type 0 where
+data Vector (a : Type 0) (n : Nat) : Type 0 where
    VNil  of [pf : n = 0] 
    VCons of [size : Nat]  [pf : Succ size = n] 
-            (x:a@log)  (xs : Vector a size@log)
+            (x:a@log)  (xs : Vector a size)
 
 
-head : (n : Nat) -> [a : Type 0@log] -> (v: Vector a (Succ n)@log) -> a
+head : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> a
 head = \ n [a] dis .
 		 case dis [y] of
        VNil [pf] -> contra pf
        VCons [sz] [pf] x xs -> x
 
 
-tail : (n : Nat) -> [a : Type 0@log] -> (v: Vector a (Succ n)@log) -> Vector a n
+tail : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> Vector a n
 tail = \ n [a] dis .
   case dis [diseq] of
     VNil [neq] -> contra neq

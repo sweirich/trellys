@@ -24,8 +24,7 @@ import Data.List (find)
 ---------------------------------------------------------------
 erase :: (Fresh m, Applicative m) => ATerm -> m ETerm
 erase (AVar x) = return $ EVar (translate x)
-erase (AFO a) = erase a
-erase (ASquash a) = erase a
+erase (AUniVar x _) = return $ EUniVar (translate x)
 erase (ACumul a i) = erase a
 erase (AType i) = return $ EType i
 erase (ATCon c indxs) = ETCon (translate c) <$> mapM erase indxs
@@ -42,9 +41,7 @@ erase (AApp Runtime a b ty) = EApp  <$> erase a <*> erase b
 erase (AApp Erased a b ty)  = EIApp <$> erase a
 erase (AAt a th) = EAt <$> erase a <*> pure th
 erase (AUnboxVal a) = erase a
-erase (ABoxLL a th) = erase a
-erase (ABoxLV a th) = erase a
-erase (ABoxP a th) = erase a
+erase (ABox a th) = erase a
 erase (AAbort _) = return EAbort
 erase (ATyEq a b) = ETyEq <$> erase a <*> erase b
 erase (AJoin a i b j) = return EJoin
@@ -76,10 +73,14 @@ erase (ASubstitutedFor a _) = erase a
 
 eraseMatch  :: (Fresh m, Applicative m) => AMatch -> m EMatch
 eraseMatch (AMatch c bnd) = do
-  (xeps, b) <- unbind bnd
+  (args, b) <- unbind bnd
   EMatch  (translate c)
-      <$> (bind (map (translate . fst) $ filter ((==Runtime).snd) xeps) <$> erase b)
+      <$> (bind <$> eraseTele args <*> erase b)
 
+eraseTele :: (Fresh m, Applicative m) => ATelescope -> m [EName]
+eraseTele AEmpty = return []
+eraseTele (ACons (unrebind-> ((x,_,Runtime), tele))) = (translate x:) <$> eraseTele tele
+eraseTele (ACons (unrebind-> ((x,_,Erased),  tele))) = eraseTele tele
 
 -- | Remove all completely-erased syntactic form, until we get to the first 
 --   constructor which shows up in the erased version.
@@ -88,13 +89,9 @@ eraseMatch (AMatch c bnd) = do
 -- But I really don't want this to live in a monad, and the elaboration algorithm
 -- does not introduce erased lets anywhere, so it should not be a problem.
 eraseToHead :: ATerm -> ATerm
-eraseToHead (AFO a) = eraseToHead a
-eraseToHead (ASquash a) = eraseToHead a
 eraseToHead (ACumul a i) = eraseToHead a
 eraseToHead (AUnboxVal a) = eraseToHead a
-eraseToHead (ABoxLL a th) = eraseToHead a
-eraseToHead (ABoxLV a th) = eraseToHead a
-eraseToHead (ABoxP a th) = eraseToHead a
+eraseToHead (ABox a th) = eraseToHead a
 eraseToHead (AConv a _ _ _) = eraseToHead a
 eraseToHead (ASubstitutedFor a _) = eraseToHead a
 eraseToHead a = a
@@ -116,6 +113,7 @@ join s1 s2 m n =
 -- Returns Nothing when the argument cannot reduce 
 cbvStep :: ETerm -> TcMonad (Maybe ETerm)
 cbvStep (EVar _)         = return Nothing
+cbvStep (EUniVar _)      = return Nothing
 cbvStep (ETCon c idxs)   = return Nothing
 cbvStep (EDCon c args)   = stepArgs [] args
   where stepArgs _       []         = return Nothing
@@ -227,8 +225,9 @@ cbvNSteps n tm =
 -- This is  used in a single place in the entire program, wish I could get rid of it.
 isValue :: (Fresh m, Applicative m) => Term -> m Bool
 isValue (Var _)            = return True
+isValue (UniVar _)         = return False
 isValue (TCon _ args)      = return True
-isValue (DCon _ args)      = allM (isValue . fst) args -- fixme: this is broken, params vs args.
+isValue (DCon _ args)      = allM (isValue . fst) args
 isValue (Type _)           = return True
 isValue (Arrow _ _)        = return True
 isValue (Lam _ _)          = return True
@@ -241,7 +240,6 @@ isValue (Join _ _)         = return True
 isValue Abort              = return False
 isValue (Ind ep _)         = return True
 isValue (Rec ep _)         = return True
-isValue (Case _ _)         = return False
 isValue (ComplexCase _)    = return False
 isValue (Let _ Erased a) = do
   (_,a') <- unbind a 
@@ -263,6 +261,7 @@ isValue (SubstitutedForA a _) = isEValue <$> erase a
 -- | checks if an erased term is a value.
 isEValue :: ETerm -> Bool
 isEValue (EVar _)         = True
+isEValue (EUniVar _)      = False
 isEValue (ETCon _ _)      = True
 isEValue (EDCon _ args)   = all isEValue args
 isEValue (EType _)        = True

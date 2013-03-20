@@ -42,7 +42,11 @@ instance Ord ATerm where
 deriving instance Ord Epsilon
 
 -- A convenient monad for recording an association between terms and constants.
-newtype NamingT t m a = NamingT (StateT (Bimap t Constant, [Constant]) m a)
+-- While we are at it, also store a set recording which constants represent unification variables ("touchable constants").
+newtype NamingT t m a = NamingT (StateT (Bimap t Constant,  --record the mapping
+                                         Set Constant,      --remember which constants are "touchable"
+                                         [Constant])        --supply of fresh constants
+                                        m a)
   deriving (Monad, MonadTrans, Functor, Applicative)
 
 instance Fresh m => Fresh (NamingT t m) where
@@ -50,14 +54,21 @@ instance Fresh m => Fresh (NamingT t m) where
 
 recordName :: (Monad m, Ord t) => t -> NamingT t m Constant
 recordName t = NamingT $ do
-                 (mapping, (c:cs)) <- get
+                 (mapping, touchable, (c:cs)) <- get
                  case BM.lookup t mapping of
-                   Nothing -> do put (BM.insert t c mapping, cs)
+                   Nothing -> do put (BM.insert t c mapping, touchable, cs)
                                  return c
                    Just c' -> return c'
 
-runNamingT :: (Monad m) => NamingT t m a -> [Constant] -> m (a, Bimap t Constant)
-runNamingT (NamingT m) constantSupply = liftM (second fst) $ runStateT m (BM.empty, constantSupply)
+markTouchable :: (Monad m) => Constant -> NamingT t m ()
+markTouchable c = NamingT $ do
+                   (mapping, touchable, supply) <- get
+                   put (mapping, S.insert c touchable, supply)
+
+runNamingT :: (Monad m) => NamingT t m a -> [Constant] -> m (a, Bimap t Constant, Set Constant)
+runNamingT (NamingT m) constantSupply = do
+  (a, (mapping, touchable, supply)) <- runStateT m (BM.empty, S.empty, constantSupply) 
+  return (a, mapping, touchable)
 
 type TermLabel = Bind [(AName,Epsilon)] ATerm
 
@@ -68,7 +79,7 @@ instance Ord TermLabel where
 
 -- This data type just records the operations that the congruence closure algorithm 
 -- performs. It is useful to construct this intermediate structure so that we don't have
--- to traverse the proof multiple times when e.g. pushing in Symm
+-- to traverse the proof multiple times when pushing in Symm
 data RawProof =
    --The first component is either the name of a variable from the context,
    -- or Nothing if an equality holds just by (join) after erasure.
@@ -258,8 +269,8 @@ simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[
 -- Final pass: now we can generate the Trellys Core proof terms.
 
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
-genProofTerm (AnnAssum NotSwapped (Just n,tyA,tyB)) =  uneraseTerm tyA tyB (AFO (AVar n))
-genProofTerm (AnnAssum Swapped (Just n,tyA,tyB)) = symmTerm tyA tyB (AFO (AVar n))
+genProofTerm (AnnAssum NotSwapped (Just n,tyA,tyB)) =  uneraseTerm tyA tyB (AVar n)
+genProofTerm (AnnAssum Swapped (Just n,tyA,tyB)) = symmTerm tyA tyB (AVar n)
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0
 genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0)
@@ -318,8 +329,7 @@ decompose True e avoid t | S.null (S.intersection avoid (fv t)) = do
   tell [(e, x, t)]
   return $ AVar x
 decompose _ _ avoid t@(AVar _) = return t
-decompose sub e avoid (AFO t) = AFO <$> (decompose True e avoid t)
-decompose sub e avoid (ASquash t) = ASquash <$> (decompose True e avoid t)
+decompose _ _ avoid t@(AUniVar _ _) = return t --todo: mark it as touchable.
 decompose sub e avoid (ACumul t l) = ACumul <$> (decompose True e avoid t) <*> pure l
 decompose _ _ avoid t@(AType _) = return t
 decompose sub e avoid (ATCon c args) = do
@@ -346,9 +356,7 @@ decompose _ e avoid (AApp ep t1 t2 ty) =
 decompose sub e avoid (AAt t th) =
   AAt <$> (decompose True e avoid t) <*> pure th
 decompose sub e avoid (AUnboxVal t) = AUnboxVal <$> (decompose True e avoid t)
-decompose sub e avoid (ABoxLL t th) = ABoxLL <$> (decompose True e avoid t) <*> pure th
-decompose sub e avoid (ABoxLV t th) = ABoxLV <$> (decompose True e avoid t) <*> pure th
-decompose sub e avoid (ABoxP t th)  = ABoxP <$> (decompose True e avoid t) <*> pure th
+decompose sub e avoid (ABox t th) = ABox <$> (decompose True e avoid t) <*> pure th
 decompose _ e avoid (AAbort t) = AAbort <$> (decompose True Erased avoid t)
 decompose _ e avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True e avoid t1) <*> (decompose True e avoid t2)
@@ -401,7 +409,7 @@ decomposeMatch :: (Monad m, Applicative m, Fresh m) =>
                   Epsilon -> Set AName -> AMatch -> WriterT [(Epsilon,AName,ATerm)] m AMatch
 decomposeMatch e avoid (AMatch c bnd) = do
   (args, t) <- unbind bnd
-  r <- (decompose True e (S.union (S.fromList (map fst args)) avoid) t)
+  r <- (decompose True e (S.union (binders args) avoid) t)
   return $ AMatch c (bind args r)
 
 -- | match is kind of the opposite of decompose: 
@@ -413,8 +421,7 @@ match :: (Applicative m, Monad m, Fresh m) =>
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
                       | otherwise     = return M.empty
-match vars (AFO t) (AFO t') = match vars t t'
-match vars (ASquash t) (ASquash t') = match vars t t'
+match vars (AUniVar _ _) (AUniVar _ _) = return M.empty
 match vars (ACumul t _) (ACumul t' _) = match vars t t'
 match vars (AType _) _ = return M.empty
 match vars (ATCon c params) (ATCon _ params') = 
@@ -436,9 +443,7 @@ match vars (AApp ep t1 t2 ty) (AApp ep' t1' t2' ty') =
    `mUnion` match vars ty ty'
 match vars (AAt t _) (AAt t' _) = match vars t t'
 match vars (AUnboxVal t) (AUnboxVal t') = match vars t t'
-match vars (ABoxLL t th) (ABoxLL t' th') = match vars t t'
-match vars (ABoxLV t th) (ABoxLV t' th') = match vars t t'
-match vars (ABoxP t th) (ABoxP t' th') = match vars t t'
+match vars (ABox t th) (ABox t' th') = match vars t t'
 match vars (AAbort t) (AAbort t') = match vars t t'
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
@@ -491,12 +496,18 @@ mUnion x y = M.union <$> x <*> y
 -- A monad for naming subterms and recording term-subterm equations.
 type DestructureT m a = WriterT [(RawProof, Equation TermLabel)] (NamingT ATerm m) a
 
+isAUniVar :: ATerm -> Bool
+isAUniVar (AUniVar _ _) = True
+isAUniVar _ = False
+
 -- Take a term to think about, and name each subterm in it as a seperate constant,
 -- while at the same time recording equations relating terms to their subterms.
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: (Monad m, Applicative m, Fresh m) => ATerm -> DestructureT m Constant
 genEqs t = do
   a <- lift $ recordName t
+  when (isAUniVar t) $
+    lift $ markTouchable a
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
   let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
   bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
@@ -513,10 +524,10 @@ genEqs t = do
              Left $ EqConstConst a (head bs))]
   return a
 
-runDestructureT :: (Monad m) => DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap ATerm Constant, a)
+runDestructureT :: (Monad m) => DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap ATerm Constant, Set Constant, a)
 runDestructureT x = do
-  ((a, eqs), bm) <- flip runNamingT constantSupply $ runWriterT x
-  return (eqs, bm, a)
+  ((a, eqs), bm, touchable) <- flip runNamingT constantSupply $ runWriterT x
+  return (eqs, bm, touchable, a)
  where constantSupply :: [Constant]
        constantSupply = map Constant [0..]  
 
@@ -531,24 +542,22 @@ processHyp (n,t1,t2) = do
 -- "Given a list of equations, please prove the other equation."
 prove :: (Fresh m, Applicative m, MonadIO m) => [(AName,ATerm,ATerm)] -> (ATerm, ATerm) -> m (Maybe ATerm)
 prove hyps (lhs, rhs) = do
-  (eqs, naming , (c1,c2))  <- runDestructureT $ do
-                              mapM_ processHyp hyps
-                              c1 <- genEqs lhs
-                              c2 <- genEqs rhs
-                              return $ (c1,c2)
+  (eqs, naming, touchable, (c1,c2))  <- runDestructureT $ do
+                                          mapM_ processHyp hyps
+                                          c1 <- genEqs lhs
+                                          c2 <- genEqs rhs
+                                          return $ (c1,c2)
 {-  liftIO $ do
     putStrLn $ "The available equations are:\n"
     putStrLn $ intercalate "\n" (map (render . disp) eqs)
     putStrLn $ "The equation to show is " ++ show c1 ++ " == " ++ show c2  -}
   let cmax = maximum (BM.keysR naming)
-  let mpf = runST $ do
-             st <- newState (Constant 0, cmax)
-             st <- propagate st eqs
-             isEqual c1 c2 (reprs st)
+  let mpf = flip evalStateT (newState (Constant 0, cmax)) $ do
+              propagate eqs
+              isEqual c1 c2 
   case mpf of
-    Nothing -> return Nothing
-    Just pf -> Just <$> (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof) pf 
-
+    [] -> return Nothing
+    pf:_ -> Just <$> (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof) pf 
 
 
 ---- Some misc. utility functions

@@ -15,8 +15,6 @@ axiom b  : btype
 axiom b1 : btype
 
 
--- (Don't know how to test FO.)
-
 --Todo, look more carefully at the elaborated term, this doesn't seem to test the right thing?
 log decompose_cumul : (atype = btype) -> ((atype : Type 4) = (btype : Type 4))
 decompose_cumul = \ p . _
@@ -31,7 +29,7 @@ log decompose_dcon_param : (atype = btype) -> (mkT [atype] = mkT [btype])
 decompose_dcon_param = \ p . _
 
 data T1 (a : Type 0) : Type 0 where
-  mkT1 of (x : a) [y : a]
+  mkT1 of (x : a @log) [y : a @log]
 
 log decompose_dcon_arg : (a = a1) -> (mkT1 [atype] a [a] = mkT1 [atype] a1 [a])
 decompose_dcon_arg = \p . _

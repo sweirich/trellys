@@ -42,8 +42,6 @@ instance Disp Term where
   disp = cleverDisp
 instance Disp ETerm where
   disp = cleverDisp
-instance Disp ATerm where
-  disp = cleverDisp
 instance Rep a => Disp (Name a) where
   disp = cleverDisp
 instance Disp Telescope where
@@ -51,6 +49,12 @@ instance Disp Telescope where
 instance Disp Pattern where 
   disp = cleverDisp
 instance Disp ComplexMatch where
+  disp = cleverDisp
+instance Disp ATerm where
+  disp = cleverDisp
+instance Disp ATelescope where
+  disp = cleverDisp
+instance Disp AConstructorDef where
   disp = cleverDisp
 
 -------------------------------------------------------------------------
@@ -143,13 +147,13 @@ instance Disp Decl where
         text "axiom"
     <+> disp th <+> disp n <+> text ":" <+> disp ty
 
-  disp (Data n params th lev constructors) =
-    hang (disp th <+> text "data" <+> disp n <+> disp params
+  disp (Data n params lev constructors) =
+    hang (text "data" <+> disp n <+> disp params
            <+> colon <+> text "Type" <+> text (show lev)
            <+> text "where")
            2 (vcat $ map disp constructors)
-  disp (AbsData t delta th lev) =
-        disp th <+> text "data" <+> disp t <+> disp delta <+> colon
+  disp (AbsData t delta lev) =
+        text "data" <+> disp t <+> disp delta <+> colon
     <+> text "Type" <+> text (show lev)
 
 instance Disp Goal where
@@ -174,6 +178,8 @@ instance Disp ModuleImport where
 
 instance Display Term where
   display (Var n) = display n
+
+  display (UniVar n) = return $ text ("?" ++ show n)
 
   display (isNumeral -> Just i) = display i
 
@@ -248,14 +254,6 @@ instance Display Term where
                     db]
      where
        tag = case th of {Logic -> empty; Program -> text "prog"}
-
-  display (Case d bnd) =
-    lunbind bnd $ \ (y, alts) -> do
-     dd <- display d
-     dy <- display y
-     dalts <- mapM display alts
-     return $ text "case" <+> dd <+> (brackets dy) <+> text "of" $$
-          (nest 2 $ vcat $  dalts)              
 
   display (ComplexCase bnd) =
     lunbind bnd $ \ (scruts,  alts) -> do
@@ -391,10 +389,9 @@ epParens Erased  l = Dd displays l
 
 instance Display ATerm where
   display (AVar v) = display v
-  display (AFO a) = do
+  display (AUniVar v a) = do
     da <- display a
-    return $ text "fo" <+> da
-  display (ASquash a) = display a
+    return $ text ("?" ++ show v) <+> colon <+> da
   display (ACumul a level) = display a
   display (AType level) = return $ text "Type" <+> int level
   display (AUnboxVal a) = do
@@ -429,13 +426,7 @@ instance Display ATerm where
   display (AAt a th) = do
     da <- display a
     return $ da <+> text "@" <+> disp th
-  display (ABoxLL a th) = do
-    da <- display a
-    return $ text "box" <+> aWraparg Runtime a da
-  display (ABoxLV a th) = do
-    da <- display a
-    return $ text "box" <+> aWraparg Runtime a da
-  display (ABoxP a th) = do
+  display (ABox a th) = do
     da <- display a
     return $ text "box" <+> aWraparg Runtime a da
   display (AAbort a) = do
@@ -522,33 +513,38 @@ instance Display AMatch where
   display (AMatch c bnd) = 
     lunbind bnd $ \(args, body) -> do
       dc <- display c
-      dargs <- mapM display args
+      dargs <- display args
       dbody <- display body
-
-      return $ dc <+> (hcat $ punctuate space dargs) <+> text "->" <+> dbody
+      return $ dc <+> dargs <+> text "->" <+> dbody
 
 instance Disp ADecl where
   disp (ASig x th ty) = 
     disp th <+> disp x <+> text ":" <+> disp ty
   disp (ADef x a) = do
     disp x <+> text "=" <+> disp a
-  disp (AData n params th level constructors) = 
-    hang (disp th <+> text "data" <+> disp n <+> disp params
+  disp (AData n params level constructors) = 
+    hang (text "data" <+> disp n <+> disp params
            <+> colon <+> text "Type" <+> int level
            <+> text "where")
          2
          (vcat $ map disp constructors)
-  disp (AAbsData n params th level) =
-    disp th <+> text "data" <+> disp th <+> disp params 
+  disp (AAbsData n params level) =
+    text "data" <+> disp params 
        <+> colon <+> text "Type" <+> int level
 
-instance Disp AConstructorDef where
-  disp (AConstructorDef c tele) = 
-    disp c <+> disp tele
-
-instance Disp ATelescope where
-  disp ts = hcat $ map dispEntry ts
-             where dispEntry (n, ty, ep) = mandatoryBindParens ep (disp n <+> colon <+> disp ty)
+instance Display AConstructorDef where
+  display (AConstructorDef c tele) = do
+                                       dtele <- display tele
+                                       dc <- display c
+                                       return $ dc <+> dtele
+instance Display ATelescope where
+  display AEmpty = return empty
+  display (ACons bnd) = do
+    let ((n, unembed->ty, ep), tele) = unrebind bnd
+    dn <- display n
+    dty <- display ty
+    dtele <- display tele
+    return $ mandatoryBindParens ep (dn <+> colon <+> dty) <+> dtele
 
 instance Disp [ADecl] where
   disp = vcat . map disp
@@ -559,6 +555,7 @@ instance Disp AModule where
 
 instance Display ETerm where
   display (EVar v) = display v
+  display (EUniVar n) = return $ text ("?" ++ show n)
   display (ETCon n args) = do
     dn <- display n
     dargs <- mapM display args
@@ -682,7 +679,7 @@ instance Disp Epsilon where
 instance Display a => Display (a, Epsilon) where
   display (t, ep) = bindParens ep <$> display t
 
-instance Display Telescope where
+instance Display Telescope where 
   display ts = do
     dts <- mapM dentry ts
     return $ hcat dts where
@@ -692,7 +689,6 @@ instance Display Telescope where
             dn <- display n
             dty <- display ty
             return (prns ep $ dn <+> colon <+> dty)
-
 
 instance Disp Theta where
   disp Logic = text "log"

@@ -5,19 +5,19 @@
 module BST where
 import Prelude
 
-data Ord (a:Type 0 @log) : Type 0 where
+data Ord (a:Type 0) : Type 0 where
  OrdDict of (lt : (a@log) -> (a@log) -> Bool  @log) 
             [refl : (x:a@log) -> lt x x = False  @log]
             [antisymm :  (x : a@log) -> (y : a@log) -> lt x y = False -> lt y x = False -> x = y @log]
             [trans :  (x:a@log) -> (y:a@log) -> (z:a@log) -> lt x y = True -> lt y z = True -> lt x z = True @log]
 
 -- Convenient (well, sort of) projection for the first component
-log ordLt : [a:Type 0@log] -> (Ord a) -> (a@log) -> (a@log) -> Bool
+log ordLt : [a:Type 0] -> (Ord a) -> (a@log) -> (a@log) -> Bool
 ordLt = \[a]. \order. case order [_] of
                      OrdDict lt [_] [_] [_] -> lt
 
 -- Restatements of the Ord laws in terms of the projection function
-ordLtRefl : [a:Type 0@log] -> (order: Ord a) -> (x: a@log) -> ordLt [a] order x x = False
+ordLtRefl : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> ordLt [a] order x x = False
 ordLtRefl = \[a].\order.\x.
   case order [_] of
     OrdDict lt [refl] [antisymm] [trans] -> 
@@ -25,7 +25,7 @@ ordLtRefl = \[a].\order.\x.
       let [_] = refl x in
       _
 
-ordLtAntiSymm : [a:Type 0@log] -> (order: Ord a) -> (x: a@log) -> (y: a@log) ->
+ordLtAntiSymm : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) ->
                   ordLt [a] order x y = False -> ordLt [a] order y x = False -> x = y
 ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
   case order [_] of
@@ -34,7 +34,7 @@ ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
       let [_] = antisymm x y h1 h2 in
       _
 
-ordLtTrans : [a:Type 0@log] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@log) ->
+ordLtTrans : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@log) ->
                   ordLt [a] order x y = True -> ordLt [a] order y z = True -> ordLt [a] order x z = True
 ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
   case order [_] of
@@ -43,7 +43,7 @@ ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
       let [_] = trans x y z h1 h2 in
       _
 
-data Tree (a:Type 0 @log) : Type 0 where
+data Tree (a:Type 0) : Type 0 where
   EmptyTree
   BranchTree of (_ : Tree a) (_ : a) (_ : Tree a)
 
@@ -51,12 +51,12 @@ data Tree (a:Type 0 @log) : Type 0 where
 -- stored in the nodes. But that doesn't work, because we need to define the 
 -- tree type before we can define the InTree predicate.
 
-data InTree (a:Type 0 @log) (x : a @log) (t : Tree a @log) : Type 0 where
+data InTree (a:Type 0) (x : a @log) (t : Tree a) : Type 0 where
   InHere  of (t1 : Tree a) (t2 : Tree a) (t = BranchTree [a] t1 x t2)
   InLeft  of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t1) (t = BranchTree [a] t1 y t2)
   InRight of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t2) (t = BranchTree [a] t1 y t2)
 
-data IsBST (a:Type 0 @log) (t : Tree a @log) (order : Ord a) : Type 0 where
+data IsBST (a:Type 0) (t : Tree a) (order : Ord a) : Type 0 where
   IsBSTEmpty of (t = EmptyTree [a])
   IsBSTBranch of (t1 : Tree a) (x : a@log) (t2 : Tree a) 
                  (t = BranchTree [a] t1 x t2)
@@ -65,7 +65,7 @@ data IsBST (a:Type 0 @log) (t : Tree a @log) (order : Ord a) : Type 0 where
                  (IsBST a t2 order)
                  ((y : a@log) -> (InTree a y t2 @log) -> ordLt [a] order x y = True)
 
-log member : [a:Type 0 @log] -> Ord a -> (x : a@log) -> (t : Tree a @log) -> Bool
+log member : [a:Type 0] -> Ord a -> (x : a@log) -> (t : Tree a) -> Bool
 member = \[a]. \order. \x. ind member t = 
   case t [t_eq] of 
     EmptyTree -> False
@@ -76,8 +76,8 @@ member = \[a]. \order. \x. ind member t =
                                        False -> True
 
 
-log member_In1 : (a:Type 0 @log) -> (order : Ord a) -> (x : a@log) -> (t : Tree a @log)
-                  ->  (InTree a x t @log)-> member [a] order x t = True
+log member_In1 : (a:Type 0) -> (order : Ord a) -> (x : a@log) -> (t : Tree a)
+                  ->  (InTree a x t)-> member [a] order x t = True
 member_In1 = \a.\order.\x. ind member_In1 t = \in_t.
   case in_t [_] of 
     InHere  t1 t2 t_eq -> 

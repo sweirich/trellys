@@ -1,13 +1,15 @@
-{-# LANGUAGE NamedFieldPuns, FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns, FlexibleContexts, ViewPatterns #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 -- | Utilities for managing a typechecking context.
 module Language.Trellys.Environment
   (
    Env,
+   UniVarBindings,
    getFlag,
    emptyEnv,
    lookupTy, lookupTyMaybe, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
+   lookupUniVar, setUniVar,
    getCtx, getLocalCtx, extendCtx, extendCtxTele, extendCtxs, extendCtxsGlobal,
    extendCtxMods,
    extendHints,
@@ -27,9 +29,12 @@ import Text.PrettyPrint.HughesPJ
 import Text.ParserCombinators.Parsec.Pos(SourcePos)
 import Control.Monad.Reader
 import Control.Monad.Error
+import Control.Monad.State
 
 import Data.List
 import Data.Maybe (listToMaybe, catMaybes)
+import Data.Map (Map)
+import qualified Data.Map as M
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
@@ -49,6 +54,8 @@ data Env = Env { ctx :: [ADecl],
                } 
   --deriving Show
 
+-- | Bindings of unification variables
+type UniVarBindings = Map AName ATerm
 
 -- | The initial environment.
 emptyEnv :: [Flag] -> Env
@@ -56,6 +63,20 @@ emptyEnv fs = Env { ctx = [] , globals = 0, hints = [], flags = fs, sourceLocati
 
 instance Disp Env where
   disp e = vcat [disp decl | decl <- ctx e]
+
+
+-- | Find the binding of a unification variable
+lookupUniVar :: (MonadState UniVarBindings m) => AName -> m (Maybe ATerm)
+lookupUniVar x = liftM (M.lookup x) get
+
+-- | Set the binding of a unification variable
+setUniVar :: (MonadState UniVarBindings m, MonadError Err m, MonadReader Env m) => 
+             AName -> ATerm -> m ()
+setUniVar x a = do
+  alreadyPresent <- liftM (M.member x) get
+  when alreadyPresent $
+    err [DS "internal error: tried to set an already bound unification variable", DD x]
+  modify (M.insert x a)
 
 -- | Determine if a flag is set
 getFlag :: (MonadReader Env m) => Flag -> m Bool
@@ -103,7 +124,7 @@ lookupDef v = do
 
 -- | Find a type constructor in the context
 lookupTCon :: (MonadReader Env m, MonadError Err m) 
-          => AName -> m (ATelescope,Theta,Int,Maybe [AConstructorDef])
+          => AName -> m (ATelescope,Int,Maybe [AConstructorDef])
 lookupTCon v = do
   g <- asks ctx
   scanGamma g
@@ -111,29 +132,29 @@ lookupTCon v = do
     scanGamma [] = do currentEnv <- asks ctx
                       err [DS "The type constructor", DD v, DS "was not found.",
                            DS "The current environment is", DD currentEnv]
-    scanGamma ((AData v' delta th lev cs):g) = 
+    scanGamma ((AData v' delta lev cs):g) = 
       if v == v' 
-        then return $ (delta,th,lev,Just cs) 
+        then return $ (delta,lev,Just cs) 
         else  scanGamma g
-    scanGamma ((AAbsData v' delta th lev):g) =
+    scanGamma ((AAbsData v' delta lev):g) =
       if v == v'
-         then return $ (delta,th,lev,Nothing)
+         then return $ (delta,lev,Nothing)
          else scanGamma g
     scanGamma (_:g) = scanGamma g
 
 -- | Find a data constructor in the context
 lookupDCon :: (MonadReader Env m, MonadError Err m) 
-          => AName -> m (AName,ATelescope,Theta,AConstructorDef)
+          => AName -> m (AName,ATelescope,AConstructorDef)
 lookupDCon v = do
   g <- asks ctx
   scanGamma g
   where
     scanGamma [] = err [DS "The data constructor", DD v, DS "was not found."]
-    scanGamma ((AData v' delta th lev cs):g) = 
+    scanGamma ((AData v' delta  lev cs):g) = 
         case find (\(AConstructorDef v'' tele) -> v''==v ) cs of
           Nothing -> scanGamma g
-          Just c -> return $ (v', delta, th, c)
-    scanGamma ((AAbsData v' delta th lev):g) = scanGamma g
+          Just c -> return $ (v', delta, c)
+    scanGamma ((AAbsData v' delta lev):g) = scanGamma g
     scanGamma (_:g) = scanGamma g
 
 -- | Extend the context with a new binding.
@@ -155,8 +176,9 @@ extendCtxsGlobal ds =
 
 -- | Extend the context with a telescope
 extendCtxTele :: (MonadReader Env m) => ATelescope -> Theta -> m a -> m a
-extendCtxTele bds th m = 
-  foldr (\(x,tm,_) -> extendCtx (ASig x th tm)) m bds
+extendCtxTele AEmpty th m = m
+extendCtxTele (ACons (unrebind -> ((x,unembed->ty,ep),tele))) th m = 
+  extendCtx (ASig x th ty) $ extendCtxTele tele th m
 
 -- | Extend the context with a module
 extendCtxMod :: (MonadReader Env m) => AModule -> m a -> m a
@@ -196,8 +218,8 @@ substDefs tm =
     substDef :: ATerm -> ADecl -> ATerm
     substDef m (ADef nm df)         = subst nm df m
     substDef m (ASig _ _ _)         = m
-    substDef m (AData _ _ _ _ _)    = m
-    substDef m (AAbsData _ _ _ _)   = m
+    substDef m (AData _ _ _ _)    = m
+    substDef m (AAbsData _ _ _)   = m
   in
     do defs <- getCtx
        return $ foldl' substDef tm defs

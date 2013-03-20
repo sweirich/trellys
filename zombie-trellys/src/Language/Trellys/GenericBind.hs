@@ -14,7 +14,7 @@ module Language.Trellys.GenericBind
   ,Bind,bind,unbind,unbind2,unbind3
   ,Embed,embed,unembed
   ,Rec
-  ,Rebind,rRebind,rebind -- ,reopen
+  ,Rebind,rRebind,unrebind,rebind
   ,Subst(..),SubstName(..) {--,  matchR1 --}
   ,lunbind, lfreshen
   ,unsafeUnbind
