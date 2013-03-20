@@ -14,7 +14,7 @@ import Language.Trellys.Options
 import Language.Trellys.Syntax hiding (moduleImports)
 import Language.Trellys.GenericBind
 
-import Text.Parsec hiding (State)
+import Text.Parsec hiding (State,Empty)
 import Text.Parsec.Expr(Operator(..),Assoc(..),buildExpressionParser)
 import qualified Language.Trellys.LayoutToken as Token
 
@@ -23,9 +23,7 @@ import Control.Monad.Reader hiding (join)
 import Control.Applicative ( (<$>), (<*>))
 import Control.Monad.Error hiding (join)
 
-import Data.Char
 import Data.List
-import Data.Set (Set)
 import qualified Data.Set as S
 
 {- current concrete syntax for the annotated language:
@@ -81,7 +79,7 @@ import qualified Data.Set as S
      | [x : A] D               erased cons
 
   declarations:
-
+9
     For logical declarations:
       foo : A
       foo = a
@@ -254,16 +252,6 @@ constructor =
              then return $ DCon i
              else fail "Expected a constructor, but a variable was found"
 
-tconstructor :: LParser TName
-tconstructor =
-  do i <- identifier
-     cnames <- get
-     if (i `S.member` tconNames cnames)
-       then return i
-       else if (i `S.member` dconNames cnames)
-             then fail "Expected a type constructor, but a data constructor was found."
-             else fail "Expected a constructor, but a variable was found"
-
 dconstructor :: LParser TName
 dconstructor =
   do i <- identifier
@@ -300,6 +288,12 @@ braces = Token.braces tokenizer
 natural :: LParser Integer
 natural = Token.natural tokenizer
 
+uniVar :: LParser Term
+uniVar = do
+  reservedOp "?"
+  n <- fresh (string2Name "")
+  return (UniVar n)
+
 commaSep1 :: LParser a -> LParser [a]
 commaSep1 = Token.commaSep1 tokenizer
 
@@ -335,12 +329,12 @@ importDef = do reserved "import" >>  (ModuleImport <$> importName)
 telescope :: LParser Telescope
 telescope = many teleBinding
   where
-    annot :: Epsilon -> LParser (TName,Term,Epsilon)
+    annot :: Epsilon -> LParser (TName, Term,Epsilon)
     annot ep = do
       (x,ty) <-    try ((,) <$> variableOrWild            <*> (colon >> expr))
                 <|>    ((,) <$> (fresh (string2Name "_")) <*> expr)
       return (x,ty,ep)
-    teleBinding :: LParser (TName,Term,Epsilon)
+    teleBinding :: LParser (TName, Term,Epsilon)
     teleBinding =
       (    parens (annot Runtime)
        <|> brackets (annot Erased)) <?> "binding"
@@ -358,7 +352,6 @@ decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef
 
 -- datatype declarations.
 dataDef = do
-  th <- option Logic $ theta
   reserved "data"
   name <- identifier
   params <- telescope
@@ -368,10 +361,10 @@ dataDef = do
   modify (\cnames -> cnames{ tconNames = S.insert name (tconNames cnames) })
   reserved "where"
   cs <- layout constructorDef (return ())
-  forM cs
+  forM_ cs
     (\(ConstructorDef _ cname _) ->
        modify (\cnames -> cnames{ dconNames = S.insert cname (dconNames cnames)}))
-  return $ Data name params th level cs
+  return $ Data name params level cs
 
 constructorDef = do
   pos <- getPosition
@@ -519,6 +512,7 @@ funapp = do
         app e1 (e2,ep)  =  App ep e1 e2
 
 factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
+                , uniVar <?> "a questionmark (?)"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
                 , lambda <?> "a lambda"
@@ -656,23 +650,6 @@ pattern =      try (PatCon <$> (embed <$> dconstructor) <*> many arg_pattern)
                                  (TCon c []) -> fail "expected a data constructor but a type constructor was found"
                                  _ -> error "internal error in atomic_pattern"
 
-simpleMatch :: LParser Match
-simpleMatch  =
-  do c <- dconstructor
-     bds <- many impOrExpBind
-     reservedOp "->"
-     body <- term
-     return $ Match c (bind bds body)
-
-simpleCaseExpr :: LParser Term
-simpleCaseExpr = do
-    reserved "case"
-    e <- factor
-    y <- brackets variableOrWild
-    reserved "of"
-    alts <- layout simpleMatch (return ())
-    return $ Case e (bind y alts)
-
 complexMatch :: LParser ComplexMatch
 complexMatch = 
   do pats <- sepBy1 pattern (reservedOp ",")
@@ -680,21 +657,14 @@ complexMatch =
      body <- term
      return $ ComplexMatch (bind pats body)
 
-complexCaseExpr :: LParser Term
-complexCaseExpr = do
+caseExpr :: LParser Term
+caseExpr = do
     reserved "case"
     scruts <- sepBy1 ((,) <$> (embed <$> factor) <*> (brackets variableOrWild))
                      (reservedOp ",")
     reserved "of"
     alts <- layout complexMatch (return ())
     return $ ComplexCase (bind scruts alts)
-
-caseExpr :: LParser Term
-caseExpr = do
-  flags <- ask
-  if Elaborate `elem` flags
-   then complexCaseExpr
-   else simpleCaseExpr
 
 -- conv e0 to [x.t] with e1
 -- XXX needs to be redone for contexts

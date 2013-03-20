@@ -3,10 +3,10 @@ module DeepMatchError1 where
 
 import Prelude
 
-log data C : Type 0 where
-  MkC of (f : Nat -> Nat)
+data C : Type 0 where
+  MkC of (f : Nat -> Nat @log)
 
-log data Foo : Type 0 where
+data Foo : Type 0 where
   MkFoo of
 
 log match_c : (C @log) -> Nat 

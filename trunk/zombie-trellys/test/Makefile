@@ -28,7 +28,7 @@ UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys
 # typecheck *quietly*
-TYPECHECK=$(TRELLYS) -e 1>/dev/null # 2>&1
+TYPECHECK=$(TRELLYS) 1>/dev/null # 2>&1
 
 .PHONY: pass fail todo_pass todo_fail todo
 

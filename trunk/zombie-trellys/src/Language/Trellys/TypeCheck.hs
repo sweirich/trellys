@@ -25,9 +25,10 @@ import qualified Language.Trellys.GenericBind as GB
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
-import Control.Applicative ((<$>))
+import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Reader hiding (join)
-import Control.Monad.Error hiding (join)
+import Control.Monad.Error  hiding (join)
+import Control.Monad.State  hiding (join)
 
 import qualified Generics.RepLib as RL
 
@@ -35,7 +36,6 @@ import Data.Maybe
 import Data.List
 import Data.Set (Set)
 import qualified Data.Set as S
-import Data.Map (Map)
 import qualified Data.Map as M
 
 {-
@@ -71,13 +71,14 @@ kcElab tm = do
     _       -> err [DD tm, DS "is not a well-formed type"]
 
 -- Check wellformedness of, and elaborate, each type in a telescope
-kcTele :: Telescope -> TcMonad (Theta, ATelescope)
-kcTele [] = return (Logic, [])
+kcTele :: Telescope -> TcMonad ATelescope
+kcTele [] = return AEmpty
 kcTele ((x,ty,ep):tele') = do
    ety <- kcElab ty
-   th <- aGetTh ety
-   (th', etele') <- extendCtx (ASig (translate x) th ety) $ kcTele tele'
-   return (max th th', (translate x,ety,ep):etele')
+   unless (isFirstOrder ety) $
+     err [DS "Each type in a telescope needs to be first-order, but", DD ty, DS "is not"]
+   etele' <- extendCtx (ASig (translate x) Program ety) $ kcTele tele'
+   return (ACons (rebind (translate x,embed ety,ep) etele'))
 
 -- | Type analysis
 ta :: Term -> ATerm -> TcMonad ATerm
@@ -90,6 +91,8 @@ ta (Pos p t) ty =
 ta (Paren a) ty = ta a ty
 
 ta tm (ASubstitutedFor ty x) = ta tm ty
+
+ta (UniVar x) ty = return (AUniVar (translate x) ty)
 
 -- rule T_join
 ta (Join s1 s2) (ATyEq a b) =
@@ -109,8 +112,8 @@ ta (OrdAx a) (ASmaller b1 b2) = do
      eaTh <- aGetTh ea
      unless (eaTh==Logic) $
        err [DS "The ordering proof", DD a, DS "should check at L but checks at P"]
-     case (eaTh, eraseToHead tyA) of
-       (Logic, ATyEq a1 cvs) ->
+     case eraseToHead tyA of
+       ATyEq a1 cvs ->
          case cvs of 
            (ADCon _ _ vs) -> do
              a1_eq_b2 <- a1 `aeqSimple` b2
@@ -127,10 +130,8 @@ ta (OrdAx a) (ASmaller b1 b2) = do
            _ -> err [DS "The right side of the equality supplied to ord ",
                      DS "must be a constructor application.",
                      DS "Here it is", DD cvs]
-       (Logic, _) -> err [DS "The argument to ord must be an equality proof.",
-                          DS "Here its type is", DD tyA]
-       (Program,_) -> err [DS "The proof argument to ord must check at L, but", DD a,
-                           DS "checks at P"]
+       _ -> err [DS "The argument to ord must be an equality proof.",
+                 DS "Here its type is", DD tyA]
 
 
 -- rule T_contra
@@ -157,9 +158,9 @@ ta (Contra a) b =  do
                    DS "two different constructor forms are equal.",
                    DS "Here it shows", DD tyA]
      (Logic,_) -> err [DS "The argument to contra must be an equality proof.",
-                       DS "Here its type is", DD tyA]
+                      DS "Here its type is", DD tyA]
      (Program,_) -> err [DS "The proof argument to contra must check at L, but", DD a,
-                         DS "checks at P"]
+                       DS "checks at P"]
 
 -- rule T_abort
 ta Abort tyA = 
@@ -170,10 +171,6 @@ ta Abort tyA =
 ta (Lam lep lbody) arr@(AArrow aep abody) = do
   -- Note that the arrow type is assumed to be kind-checked already.
 
-  --Need to do a substitution to pick the same x for both expression and type
-  (dumbvar, dumbbody) <- unbind lbody
-  ((x,unembed -> tyA),tyB) <- unbind abody
-  let body = subst dumbvar (Var (translate x)) dumbbody
 
   ((dumb_x,unembed -> tyA),dumb_tyB) <- unbind abody
   (x, body) <- unbind lbody
@@ -271,53 +268,6 @@ ta (Rec ep lbnd) arr@(AArrow aep abnd) = do
             DS "but here is:", DD a]
   return (ARec arr ep (bind (f,y) ea))
 
--- rule T_case
-ta (Case b bnd) tyA = do
-  -- premise 2, the return type must be well kinded, is assumed to be checked already.
-
-  (y,mtchs) <- unbind bnd
-
-  -- premises 1, 3 and 4: we check that the scrutinee is the element of some
-  -- datatype defined in the context
-  (eb,bty) <- ts b
-  (d,bbar,delta,cons) <- lookupDType b bty
-  th <- aGetTh eb
-
-  -- premises 4 and 5: we define a function to map over the
-  -- branches that checks each is OK (and elaborates it)
-  unless (length mtchs == length cons) $
-    err [DS "Wrong number of pattern match branches for datatype", DD d]
-  let taMatch :: Match -> TcMonad AMatch
-      taMatch (Match c cbnd) = do
-        dumbdeltai <- lookupDCon' (translate d) (translate c)
-        (deltai',ai) <- unbind cbnd
-        unless (length deltai' == length dumbdeltai) $
-          err [DS "wrong number of argument variables for constructor",
-               DD c, DS "in pattern match."]
-        unless (   map snd deltai'
-                == map (\(_,_,e) -> e) dumbdeltai) $
-           err [DS "wrong epsilons on argument variables for constructor",
-                DD c, DS "in pattern match."]
-        let deltai = aSwapTeleVars dumbdeltai (map (translate . fst) deltai')
-            subdeltai = simplSubsts (zip (aDomTele delta) bbar) deltai
-            eqtype = ATyEq eb (ADCon (translate c) bbar (map (\(x,_,ep) -> (AVar x, ep)) deltai))
-         -- premise 5
-        eai <- extendCtx (ASig (translate y) Logic eqtype) $
-                           extendCtxTele subdeltai th $ ta ai tyA
-        -- premise 6
-        aE <- erase eai
-        let yEs = translate y : map translate (aDomTeleMinus deltai)
-        let shouldBeNull = S.fromList yEs `S.intersection` fv aE
-        unless (S.null shouldBeNull) $
-          err [DS "The constructor argument(s) and/or scrutinee equality proof",
-               DD . S.toList $ shouldBeNull,
-               DS "should not appear in the erasure", DD aE,
-               DS "of the term", DD ai,
-               DS "because they bind compiletime variables."]
-        return $ AMatch (translate c) (bind (map (\(x,_,ep) -> (x,ep)) deltai) eai)         
-  emtchs <- mapM taMatch mtchs
-  return (ACase eb (bind (translate y) emtchs) tyA)
-
 ta (ComplexCase bnd) tyB = do
    (scruts, alts) <- unbind bnd
    let checkNumPats (ComplexMatch bnd1) = do
@@ -368,7 +318,7 @@ ta (Let th' ep bnd) tyB =
 ta (At ty th') (AType i) = do 
    ea <- ta ty (AType i)
    eaTh <- aGetTh ea
-   unless (eaTh <= th') $
+   unless (eaTh == Logic) $
      err [DD ty, DS "should check at L but checks at P"]
    return (AAt ea th')
 
@@ -378,9 +328,9 @@ ta a (AAt tyA th') = do
   eaTh <- aGetTh ea
   isVal <- isValue a
   case eaTh of
-    Logic                    -> return $ ABoxLL ea th'
-    Program | isVal          -> return $ ABoxLV ea th'
-    Program | th'==Program   -> return $ ABoxP  ea th'
+    Logic                   -> return $ ABox ea th'
+    Program | isVal          -> return $ ABox ea th'
+    Program | th'==Program   -> return $ ABox  ea th'
     _  -> err [DD a, DS "should check at L but checks at P"]
    
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
@@ -388,20 +338,17 @@ ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimp
 ta TrustMe ty = return (ATrustMe ty)
 
 ta InferMe (ATyEq ty1 ty2) = do
-  isElaborating <- getFlag Elaborate
-  unless isElaborating $
-    err [DS "Trying to typecheck an InferMe when not in elaboration mode"]
   context <- getTys
   let availableEqs = 
        catMaybes $ map (\(x,th,ty) ->  case eraseToHead ty of
-                                           ATyEq ty1 ty2 -> Just (x,ty1,ty2)
+                                           ATyEq tyLHS tyRHS -> Just (x,tyLHS,tyRHS)
                                            _ -> Nothing)
                        context
   pf <- prove availableEqs (ty1,ty2)
   case pf of
     Nothing -> do
       gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal (map (\(x,ty1,ty2) -> ASig x Logic (ATyEq ty1 ty2)) availableEqs) 
+      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> ASig x Logic (ATyEq tyLHS tyRHS)) availableEqs) 
                                                  (ATyEq ty1 ty2)),
            DS "The full local context is", DD gamma]
     Just p -> return p
@@ -418,17 +365,17 @@ ta a tyB = do
   --warn [DS "checking", DD a, DS ("i.e. " ++ show a), DS "against", DD tyB]
   (ea,tyA) <- ts a
   --warn [DS "got", DD tyA]
-  isElaborating <- getFlag Elaborate
+  noCoercions <- getFlag NoCoercions
   tyA_eq_tyB <- tyA `aeqSimple` tyB
   if (tyA_eq_tyB)
     then return ea   --already got the right type.
     else 
-     -- try to use a squash
-     case maybeSquash ea tyA tyB of
-       Just eaSquashed -> return eaSquashed     
+     -- try to use a cumul
+     case maybeCumul ea tyA tyB of
+       Just eaCumuled -> return eaCumuled
        Nothing ->
         -- try to insert an equality proof.
-        if isElaborating
+        if (not noCoercions)
          then do
            context <- getTys
            let availableEqs = catMaybes $ map (\(x,th,ty) -> case eraseToHead ty of
@@ -451,30 +398,48 @@ ta a tyB = do
                    DD tyB,  DS ("(" ++ show tyB ++ ")"),
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
                    DS "was inferred instead.",
-                   DS "(Not in elaboration mode, so no automatic coersion was attempted.)"]
+                   DS "(No automatic coersion was attempted.)"]
 
--- maybeSquash a tyA tyB
---  tries to insert a use of ASquash to change tyA to tyB
-maybeSquash :: ATerm -> ATerm -> ATerm -> Maybe ATerm
-maybeSquash a (eraseToHead -> AType l1) (eraseToHead -> AType l2) =
+-- maybeCumul a tyA tyB 
+-- tries to insert a use of ACulum to change tyA to tyB.
+maybeCumul :: ATerm -> ATerm -> ATerm -> Maybe ATerm
+maybeCumul a (eraseToHead -> AType l1) (eraseToHead -> AType l2) =
   if (l1 == l2)
     then Just a 
     else if (l1 < l2)
       then Just (ACumul a l2)
-      else Just (ACumul (ASquash a) l2)
-maybeSquash _ _ _ = Nothing
+      else Nothing
+maybeCumul _ _ _ = Nothing
 
 -- | Checks a list of terms against a telescope of types
 -- Returns list of elaborated terms.
 -- Precondition: the two lists have the same length.
+taLogicalTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [(ATerm,Epsilon)]
+taLogicalTele [] AEmpty = return []
+taLogicalTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
+  unless (ep1 == ep2) $
+    err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
+  et <- ta t ty
+  etTh <- aGetTh et
+  unless (etTh == Logic) $
+    err [DS "Each argument needs to check logically, but", DD t, DS "checks at P"]
+  eterms <- taLogicalTele terms (simplSubst x et tele')
+  return $ (et,ep1) : eterms
+taLogicalTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
+
+
+-- | Checks a list of terms against a telescope of types,
+-- with the proviso that each term needs to check at Logic.
+-- Returns list of elaborated terms.
+-- Precondition: the two lists have the same length.
 taTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [(ATerm,Epsilon)]
-taTele [] [] = return []
-taTele ((t,ep1):ts) ((x,ty,ep2):tele')  = do
+taTele [] AEmpty = return []
+taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   unless (ep1 == ep2) $
     err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
   et <- ta  t ty
-  ets <- taTele ts (simplSubst x et tele')
-  return $ (et,ep1) : ets
+  eterms <- taTele terms (simplSubst x et tele')
+  return $ (et,ep1) : eterms
 taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
 
@@ -524,9 +489,15 @@ ts tsTm =
       do ((x,unembed -> tyA), tyB) <- unbind body
          (etyA, tytyA) <- ts tyA
          etyATh <- aGetTh etyA
-         isFO <- isFirstOrder etyA
-         (etyB, tytyB) <- extendCtx (ASig (translate x) Program etyA) $ ts tyB
-         case (eraseToHead tytyA, eraseToHead tytyB, isFO) of
+         (etyB, etyBTh, tytyB) <- extendCtx (ASig (translate x) Program etyA) $ do 
+                                                                                  (etyB, tytyB) <- ts tyB
+                                                                                  etyBTh <- aGetTh etyB
+                                                                                  return (etyB, etyBTh, tytyB)
+         unless (etyATh == Logic) $
+            err [DS "domain of an arrow type must check logically, but", DD tyA, DS "checks at P"]
+         unless (etyBTh == Logic) $
+            err [DS "domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
+         case (eraseToHead tytyA, eraseToHead tytyB, isFirstOrder etyA) of
            (AType n, AType m, True)  -> return $ (AArrow  ep  (bind (translate x,embed etyA) etyB), AType (max n m))
            (AType _, AType _, False) ->  err [DD tyA, 
                                               DS  "can not be used as the domain of a function type, must specify either",
@@ -537,23 +508,24 @@ ts tsTm =
 
     -- Rules T_tcon and T_acon 
     ts' (TCon c args) =
-      do (delta, th', lev, _) <- lookupTCon (translate c)
-         unless (length args == length delta) $
+      do (delta, lev, _) <- lookupTCon (translate c)
+         unless (length args == aTeleLength delta) $
            err [DS "Datatype constructor", DD c, 
-                DS $ "should have " ++ show (length delta) ++
+                DS $ "should have " ++ show (aTeleLength delta) ++
                     "parameters, but was given", DD (length args)]
-         eargs <- taTele  args delta
+         eargs <- taLogicalTele args delta
          return (ATCon (translate c) (map fst eargs), (AType lev))
 
     -- Rule T_dcon
     ts' (DCon c args) = do
-         (tname, delta, th', AConstructorDef _ deltai) <- lookupDCon (translate c)
-         unless (length args == length delta + length deltai) $
+         (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
+         unless (length args == aTeleLength delta + aTeleLength deltai) $
            err [DS "Constructor", DD c,
-                DS $ "should have " ++ show (length delta) ++ " parameters and " ++ show (length deltai)
+                DS $ "should have " ++ show (aTeleLength delta) ++ " parameters and " ++ show (aTeleLength deltai)
                  ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
-         eparams <- map fst <$> taTele (take (length delta) args) (aSetTeleEps Erased delta)
-         eargs   <- taTele (drop (length delta) args) (substATele delta eparams deltai)
+         eparams <- map fst <$> taTele (take (aTeleLength delta) args) (aSetTeleEps Erased delta)
+         eargs   <- taTele (drop (aTeleLength delta) args) (substATele delta eparams deltai)
+         aKc (ATCon tname eparams)
          return $ (ADCon (translate c) eparams eargs, ATCon tname eparams)
 
     -- rule T_app
@@ -577,7 +549,7 @@ ts tsTm =
 
              -- check that the result kind is well-formed
              let b_for_x_in_B = simplSubst x eb tyB
-             aKcAny b_for_x_in_B
+             aKc b_for_x_in_B
              return (AApp ep ea eb b_for_x_in_B, b_for_x_in_B)
            _ -> err [DS "ts: expected arrow type, for term ", DD a,
                      DS ". Instead, got", DD tyArr]
@@ -592,7 +564,7 @@ ts tsTm =
     ts' (OrdTrans a b) = do
       (ea,tyA) <- ts a
       eaTh <- aGetTh ea
-      unless (eaTh==Logic) $
+      unless (eaTh == Logic) $
         err [DS "The ordering proof", DD a, DS "should check at L but checks at P"]
       (eb,tyB) <- ts b
       ebTh <- aGetTh eb
@@ -698,7 +670,7 @@ ts tsTm =
                       extendCtx (ASig (translate x) th' tyA) $
                         ts b
         -- premise 3
-        aKcAny tyB
+        aKc tyB
 
         -- premises 4 and 5
         bE <- erase eb
@@ -714,11 +686,12 @@ ts tsTm =
 
     -- T_at
     ts' (At tyA th') = do
-      (ea, s) <- ts tyA
+      (ea,s) <- ts tyA
       eaTh <- aGetTh ea
-      unless (eaTh <= th') $
-        err [DS "The type", DD tyA, DS "should check at L but checks at P"]
-      return (AAt ea th', s)
+      case (eaTh,eraseToHead s) of
+        (Logic, AType i) -> return (AAt ea th',s)
+        (Program,AType i) -> err [DS "Types should check at L, but", DD tyA, DS "checks at P"]
+        (_,_)             -> err [DS "Argument to @ should be a type, here it is", DD tyA, DS "which has type", DD s]
 
     -- Elaborating 'unfold' directives.
     ts' (Unfold n a) = do
@@ -732,22 +705,14 @@ ts tsTm =
                     DS "so check your spelling if you think you did annotate."]
 
 -- | Take an annotated term which typechecks at aTy, and try to
---   apply as many Unboxing/Firstorder rules as possible.
+--   apply as many Unboxing rules as possible.
 adjustTheta :: ATerm -> ATerm -> TcMonad (ATerm, ATerm)
 adjustTheta a aTy = do
   isVal <- isEValue <$> erase a
   if isVal 
     then case eraseToHead aTy of
       (AAt ty' th') -> adjustTheta (AUnboxVal a) ty'
-      _  -> do
-        aTh <- aGetTh a
-        if aTh == Logic
-          then return (a, aTy)
-          else do
-            isFo <- isFirstOrder aTy
-            if isFo
-               then return (AFO a, aTy)
-               else return (a, aTy)
+      _  -> return (a, aTy)
     else return (a, aTy)
 
 --------------------------------------------------------
@@ -845,39 +810,34 @@ tcEntry (Axiom n th ty) = do
                    ADef (translate n) (ATrustMe ety)]
 
 -- rule Decl_data
-tcEntry (Data t delta th lev cs) =
+tcEntry (Data t delta lev cs) =
   do -- The parameters of a datatype must all be Runtime.
      unless (all (\(_,_,ep) -> ep==Runtime) delta) $
        err [DS "All parameters to a datatype must be marked as relevant."]
      ---- Premise 1
-     (edeltaTh, edelta) <- kcTele delta
-     unless (edeltaTh <= th) $
-       err [DS "The telescope", DD delta, DS "is marked as L but checks at P"]
+     edelta <- kcTele delta
      ---- Premise 2: check that the telescope provided 
      ---  for each data constructor is wellfomed, and elaborate them
      ---  fixme: probably need to worry about universe levels also?
      let elabConstructorDef defn@(ConstructorDef pos d tele) =
             extendSourceLocation pos defn $ 
-              extendCtx (AAbsData (translate t) edelta th lev) $
-                extendCtxTele edelta th $ do
-                  (teleTh, etele) <- kcTele tele  --Fixme: need to use this teleTh also.
+              extendCtx (AAbsData (translate t) edelta lev) $
+                extendCtxTele edelta Program $ do
+                  etele <- kcTele tele
                   return (AConstructorDef (translate d) etele)
      ecs <- mapM elabConstructorDef cs
      -- Premise 3: check that types are strictly positive.
-     when (th == Logic) $
-       mapM_ (positivityCheck t) cs
+     mapM_ (positivityCheck t) cs
      -- Implicitly, we expect the constructors to actually be different...
      let cnames = map (\(ConstructorDef _ c _) -> c) cs
      unless (length cnames == length (nub cnames)) $
        err [DS "Datatype definition", DD t, DS"contains duplicated constructors" ]
      -- finally, add the datatype to the env and perform action m
-     return $ AddCtx [AData (translate t) edelta th lev ecs]
+     return $ AddCtx [AData (translate t) edelta lev ecs]
 
-tcEntry dt@(AbsData t delta th lev) = do
-  (edeltaTh, edelta) <- kcTele delta
-  unless (edeltaTh <= th) $
-    err [DS "The telescope", DD delta, DS "is marked as L but checks at P"]
-  return $ AddCtx [AAbsData (translate t) edelta th lev]
+tcEntry dt@(AbsData t delta lev) = do
+  edelta <- kcTele delta
+  return $ AddCtx [AAbsData (translate t) edelta lev]
 
 duplicateTypeBindingCheck :: TName -> Term -> TcMonad ()
 duplicateTypeBindingCheck n ty = do
@@ -896,27 +856,14 @@ duplicateTypeBindingCheck n ty = do
        in
          extendSourceLocation p ty $ err msg
 
-isFirstOrder :: ATerm -> TcMonad Bool
-isFirstOrder ty = isFirstOrder' S.empty ty
-  where
-    isFirstOrder' :: Set AName -> ATerm -> TcMonad Bool
-    isFirstOrder' _ (eraseToHead -> ATyEq _ _) = return True
-    isFirstOrder' _ (eraseToHead -> ASmaller _ _) = return True
-    isFirstOrder' _ (eraseToHead -> AAt _ _) = return True
-    isFirstOrder' s (eraseToHead -> ATCon d _) | d `S.member` s = return True
-    isFirstOrder' s (eraseToHead -> ATCon d _) = do
-      ent <- lookupTCon d
-      case ent of
-        (_,_,_,Nothing)  -> 
-          --An abstract datatype constructor. Maybe this is too conservative?
-          return False
-        (_,_,_,Just cons) -> 
-          -- Datatypes are FO if all components are. But in order to not get caught in an
-          -- infinite loop, we should probably give the constructor d the "benefit of the
-          -- doubt"  while doing so...
-          allM (\(AConstructorDef _ args) -> allM (\(_,ty,_) -> isFirstOrder' (S.insert d s) ty) args) cons 
-    isFirstOrder' _ (eraseToHead -> AAt _ _) = return True
-    isFirstOrder' _ _ = return False
+isFirstOrder :: ATerm -> Bool
+isFirstOrder (eraseToHead -> ATyEq _ _)    =  True
+isFirstOrder (eraseToHead -> ASmaller _ _) =  True
+isFirstOrder (eraseToHead -> AAt _ _)      =  True
+isFirstOrder (eraseToHead -> ATCon d _)    =  True
+isFirstOrder (eraseToHead -> AAt _ _)      =  True
+isFirstOrder (eraseToHead -> AType _)      = True
+isFirstOrder _ = False
     
 -- Positivity Check
 
@@ -939,8 +886,7 @@ occursPositive tName (Pos p ty) = do
     occursPositive tName ty 
 occursPositive tName (Paren ty) = occursPositive tName ty
 occursPositive tName (Arrow _ bnd) = do
- ((_,etyA), tyB) <- unbind bnd
- let tyA = unembed etyA
+ ((_,unembed->tyA), tyB) <- unbind bnd
  when (tName `S.member` (fv tyA)) $
     err [DD tName, DS "occurs in non-positive position"]
  occursPositive tName tyB
@@ -966,13 +912,13 @@ lookupDType :: Disp a => a -> ATerm -> TcMonad (AName, [ATerm], ATelescope, [ACo
 lookupDType b bty@(eraseToHead -> ATCon d params) = do
          ent <- lookupTCon d
          case ent of
-           (delta,_,_,Just cons) ->
-             do unless (length params == length delta) $
+           (delta,_,Just cons) ->
+             do unless (length params == aTeleLength delta) $
                    err [DS "Attempted to match against", DD b,
                         DS "with type", DD bty, DS "where", DD d,
                         DS "is applied to the wrong number of arguments."]
                 return (d, params, delta, cons)
-           (_,_,_,Nothing) ->
+           (_,_,Nothing) ->
               err [DS "Scrutinee ", DD b,
                    DS "is a member of an abstract datatype - you may not",
                    DS "pattern match on it."]
@@ -984,7 +930,7 @@ lookupDCon' :: AName -> AName -> TcMonad ATelescope
 lookupDCon' d c = do
   dDef <- lookupTCon d
   case dDef of 
-    (_,_,_,Just cons) -> 
+    (_,_,Just cons) -> 
        case find (\(AConstructorDef  c' _) -> c'==c) cons of
          Nothing -> err [DD c, DS "is not a constructor of type", DD d]
          Just (AConstructorDef _ deltai)  -> return deltai
@@ -1017,10 +963,7 @@ lookupDCon' d c = do
 simplUnboxBox :: Rep a => a -> a
 simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
   where simplUnboxBoxOnce :: ATerm -> ATerm 
-        simplUnboxBoxOnce (AUnboxVal (ABoxLL a Logic)) = a
-        simplUnboxBoxOnce (AUnboxVal (ABoxLL a Program)) = a
-        simplUnboxBoxOnce (AUnboxVal (ABoxLV a _)) = a
-        simplUnboxBoxOnce (AUnboxVal (ABoxP a _)) = a
+        simplUnboxBoxOnce (AUnboxVal (ABox a _)) = a
         simplUnboxBoxOnce a = a
 
 simplSubst :: Subst b a => Name b -> b -> a -> a
@@ -1029,22 +972,44 @@ simplSubst x b a = simplUnboxBox $ subst x b a
 simplSubsts :: Subst b a => [(Name b, b)] -> a -> a
 simplSubsts xs a =  simplUnboxBox $ substs xs a
 
+----------------------------------------
+-- Dealing with unification variables.
+----------------------------------------
+
+-- To zonk a term (this word comes from GHC) means to replace all occurances of 
+-- unification variables with their definitions.
+
+zonkTerm :: (Applicative m, MonadState UniVarBindings m) => ATerm -> m ATerm
+zonkTerm a = do
+  bindings <- get
+  return $ zonkTermWithBindings bindings a
+
+zonkTermWithBindings :: UniVarBindings -> ATerm -> ATerm
+zonkTermWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
+  where zonkTermOnce :: ATerm -> ATerm
+        zonkTermOnce (AUniVar x ty) = case M.lookup x bindings of
+                                        Nothing -> (AUniVar x ty)
+                                        Just a -> zonkTermWithBindings bindings a
+        zonkTermOnce a = a
+
+
 ---------------------------------------
 -- Some random utility functions
 ---------------------------------------
 
+--Todo: can this function be replaced with something from Unbound?
 freshATele :: (Functor m, Fresh m) => ATelescope -> m ATelescope
-freshATele [] = return []
-freshATele ((x,ty,ep):t) = do
+freshATele AEmpty = return AEmpty
+freshATele (ACons (unrebind->((x,ty,ep),t))) = do
    x' <- fresh x
    t' <- freshATele (subst x (AVar x') t)
-   return $ (x',ty,ep):t'
+   return $ ACons (rebind (x',ty,ep) t')
 
 -- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
 -- Precondition: bs and delta have the same lenght.
 substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
-substATele [] [] a = a
-substATele  ((x,ty,ep):tele) (b:bs) a = substATele tele bs (simplSubst x b a)
+substATele AEmpty [] a = a
+substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
 
 -------------------------------------
 -- Elaborating complex pattern matches
@@ -1063,7 +1028,6 @@ substATele  ((x,ty,ep):tele) (b:bs) a = substATele tele bs (simplSubst x b a)
 --
 --  Also, unlike haskell, we want to signal an error for non-exhaustive matches.
 -----------------------------------------
-
 
 
 {- Problems to be fixed:
@@ -1098,7 +1062,7 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any i
         buildCase ((AVar x,y):scruts) alts tyAlt)
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = do
   --Todo: handle the scrutinee=pattern equation y somehow?
-  alts' <- mapM (expandMatch s [] <=< matchPat) alts
+  alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
   buildCase scruts alts' tyAlt
 buildCase ((s,y):scruts) alts tyAlt = do
   (th,sTy) <- aTs s
@@ -1109,22 +1073,23 @@ buildCase ((s,y):scruts) alts tyAlt = do
                                            (PatCon (unembed -> c') _) -> (translate c')==c
                                            (PatVar _) -> True)
                            <$> mapM matchPat alts
-
+--        warn [DS $ "before freshing: " ++ show args]
         args' <- freshATele args --This may look silly, but we don't get it fresh for free.
-        newScruts <- mapM (\(x,_,_) -> ((AVar (translate x)), ) <$> (fresh $ string2Name "_")) args'
-        let newScrutTys = map (\(x,ty,_) -> (x,ty)) $ simplSubsts (zip (aDomTele delta) bbar) args'
+        newScruts <- mapM (\x -> ((AVar (translate x)), ) <$> (fresh $ string2Name "_")) (binders args' :: [AName])
+        let newScrutTys = simplSubsts (zip (binders delta) bbar) args'
+--        warn [DS $ "after: " ++ show newScrutTys]
         newAlts <- mapM (expandMatch s args') relevantAlts
-        let erasedVars = (S.fromList $ catMaybes $ map (\(x,ty,ep) -> if ep==Erased then Just x else Nothing) args')
+        let erasedVars = aTeleErasedVars args'
                          `S.union` (S.singleton (translate y))
-        newBody <- extendCtxs (reverse $ map (\(x,ty) -> ASig x th ty) newScrutTys) $ 
+        newBody <- extendCtxTele newScrutTys th $ 
                      extendCtx (ASig (translate y) Logic 
-                                     (ATyEq s (ADCon c bbar (map (\(x,_,ep)->(AVar x,ep)) args')))) $
+                                     (ATyEq s (ADCon c bbar (aTeleAsArgs args')))) $
                        buildCase (newScruts++scruts) newAlts tyAlt
         erasedNewBody <- erase newBody
         unless (S.null (S.map translate (fv erasedNewBody) `S.intersection` erasedVars)) $ do
           let (x:_) = S.toList (fv newBody `S.intersection` erasedVars)
           err [DS "The variable", DD x, DS "is marked erased and should not appear in the erasure of the case expression"]
-        return $ AMatch c (bind (map (\(x,_,ep) -> (x,ep)) args') newBody)
+        return $ AMatch c (bind newScrutTys newBody)
   ematchs <- bind (translate y) <$> mapM buildMatch cons
   return $ ACase s ematchs tyAlt
 
@@ -1138,15 +1103,15 @@ buildCase ((s,y):scruts) alts tyAlt = do
 
 expandMatch :: ATerm ->  ATelescope -> (Pattern, ComplexMatch) -> TcMonad ComplexMatch
 expandMatch s  args (PatCon (unembed -> c) newPats, ComplexMatch alt) = do
-  unless (length newPats == length args) $ 
-    err [DS "constructor", DD c, DS $ "should take " ++ show (length args) ++ " constructors,",
+  unless (length newPats == aTeleLength args) $ 
+    err [DS "constructor", DD c, DS $ "should take " ++ show (aTeleLength args) ++ " constructors,",
          DS "but the pattern", DD (PatCon (embed c) newPats), DS $ "has " ++ show (length newPats) ++ "."]
-  unless (map (\(_,_,ep)->ep) args == map snd newPats) $
+  unless (aTeleEpsilons args == map snd newPats) $
     err [DS "wrong epsilons on arguments in pattern", DD (PatCon (embed c) newPats)]
   (pats, body) <- unbind alt
   return $ ComplexMatch (bind (map fst newPats++pats) body)
 expandMatch s args (PatVar z, ComplexMatch alt) = do
-  newPats <- mapM (\(_,_,ep) -> do x <- fresh (string2Name  "_"); return (PatVar x, ep)) args
+  newPats <- mapM (\ep -> do x <- fresh (string2Name  "_"); return (PatVar x, ep)) (aTeleEpsilons args)
   (pats, body) <- unbind alt
   --Avoid introducing a let-binding in the case when the scrutinee is already a variable:
   case (eraseToHead s) of 

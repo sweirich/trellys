@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell, ScopedTypeVariables,
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
-    UndecidableInstances #-}
+    UndecidableInstances, ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | This module captures the base abstract syntax of Trellys core. It
@@ -14,6 +14,7 @@ import qualified Generics.RepLib as RL
 import Language.Trellys.GenericBind
 
 import Control.Monad.Writer
+import Control.Monad.State
 import Text.ParserCombinators.Parsec.Pos
 import Data.Maybe (fromMaybe)
 import Data.Map (Map)
@@ -66,6 +67,7 @@ deriving instance Show Term
 -- case expressions) and variables introduced by lambda abstractions
 -- and dependent products).
 data Term = Var TName    -- | variables
+          | UniVar TName  -- | unification variables
           | TCon TName [(Term,Epsilon)]   -- | type constructors (fully applied)
           | DCon TName [(Term,Epsilon)]   -- | term constructors (fully applied)
           | Type Int   -- | The 'Type' terminal
@@ -78,8 +80,6 @@ data Term = Var TName    -- | variables
           | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
           -- | Dependent functions: (x : A )_{ep} -> B
           | Arrow  Epsilon (Bind (TName, Embed Term) Term)
-          -- | A case expression. The first 'Term' is the case scrutinee.
-          | Case Term (Bind TName [Match])
           -- | A complex case expression (only present in the surface language, not the core).
           --   The (Embed Term)s are scrutinees, the TNames are the scrutinee-pattern equations.
           | ComplexCase (Bind [(Embed Term, TName)] [ComplexMatch])
@@ -219,8 +219,8 @@ newtype ModuleImport = ModuleImport MName
 data Decl = Sig  TName Theta Term
           | Axiom TName Theta Term
           | Def TName Term
-          | Data TName Telescope Theta Int [ConstructorDef]
-          | AbsData TName Telescope Theta Int
+          | Data TName Telescope Int [ConstructorDef]
+          | AbsData TName Telescope Int
   deriving (Show)
 
 
@@ -235,35 +235,10 @@ data Goal = Goal [ADecl] --available context
 -------------
 -- Telescopes
 -------------
--- | This definition of 'Telescope' should be replaced by the one from LangLib.
+
+-- Unlike the ATelescope definition, this datatype does not pay attention to 
+-- proper binding structure. It's convenient to be able to use ordinary list functions.
 type Telescope = [(TName,Term,Epsilon)]
-
--- | teleApp applies some term to all the variables in a telescope
-teleApp :: Term -> Telescope -> Term
-teleApp tm tms =
-  foldl (\a (nm,_,ep) -> App ep a (Var nm)) tm tms
-
-telePi :: Telescope -> Term -> Term
-telePi tele tyB =
-  foldr (\(n,tm,ep) ret -> Arrow ep (bind (n,embed tm) ret))
-        tyB tele
-
-domTele :: Telescope -> [TName]
-domTele = map (\(v,_,_) -> v)
-
-domTeleMinus :: Telescope -> [TName]
-domTeleMinus tele =
-  [n | (n,_,ep) <- tele, ep == Erased]
-
-swapTeleVars :: Telescope -> [TName] -> Telescope
-swapTeleVars [] [] = []
-swapTeleVars ((v,a,ep):tele) (v':vs) =
-  (v',a,ep):(subst v (Var v') $ swapTeleVars tele vs)
-swapTeleVars _ _ =
-  error "Internal error: lengths don't match in swapTeleVars"
-
-setTeleEps :: Epsilon -> Telescope -> Telescope
-setTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
 
 --------------
 -- Basic query and manipulation functions on source terms
@@ -358,8 +333,7 @@ deriving instance Show ATerm
 
 data ATerm = 
     AVar AName
-  | AFO ATerm
-  | ASquash ATerm
+  | AUniVar AName ATerm --the second ATerm is the type of the univar. Todo: Probably we should keep the context also.
   | ACumul ATerm Int
   | AType Int
   | ATCon AName [ATerm] 
@@ -372,9 +346,7 @@ data ATerm =
   | AApp Epsilon ATerm ATerm ATerm
   | AAt ATerm Theta
   | AUnboxVal ATerm
-  | ABoxLL ATerm Theta
-  | ABoxLV ATerm Theta
-  | ABoxP ATerm Theta
+  | ABox ATerm Theta
   | AAbort ATerm
   | ATyEq ATerm ATerm
   | AJoin ATerm Int ATerm Int
@@ -405,14 +377,14 @@ data ATerm =
 -}
           
 -- | A 'Match' represents a case alternative. The first 'AName' is the
--- constructor name, the rest of the 'AName's are pattern variables
+-- constructor name, the telescope are the pattern variables (together with their types).
 deriving instance Show AMatch
-data AMatch = AMatch AName (Bind [(AName, Epsilon)] ATerm)
+data AMatch = AMatch AName (Bind ATelescope ATerm)
 
 data ADecl = ASig     AName Theta ATerm       --Type
            | ADef     AName ATerm             --Term
-           | AData    AName ATelescope Theta Int [AConstructorDef]
-           | AAbsData AName ATelescope Theta Int
+           | AData    AName ATelescope Int [AConstructorDef]
+           | AAbsData AName ATelescope Int
   deriving (Show)
 
 data AConstructorDef = AConstructorDef AName ATelescope
@@ -427,35 +399,45 @@ data AModule = AModule { aModuleName :: MName,
 declname :: ADecl -> AName
 declname (ASig x _ _) = x
 declname (ADef x _) = x
-declname (AData x _ _ _ _) = x
-declname (AAbsData x _ _ _) = x
+declname (AData x _ _ _) = x
+declname (AAbsData x _ _) = x
 
 -------------
 -- Annotated Telescopes
 -------------
-type ATelescope = [(AName,ATerm,Epsilon)]
+data ATelescope = AEmpty
+                | ACons (Rebind (AName, Embed ATerm,Epsilon) ATelescope)
+  deriving Show
+ 
+aTeleLength :: ATelescope -> Int
+aTeleLength AEmpty = 0
+aTeleLength (ACons (unrebind->(_,tele))) = 1 + (aTeleLength tele)
 
-aTelePi :: ATelescope -> ATerm -> ATerm
-aTelePi tele tyB =
-  foldr (\(n,tm,ep) ret -> AArrow ep (bind (n,embed tm) ret))
-        tyB tele
+aAppendTele :: ATelescope -> ATelescope -> ATelescope
+aAppendTele AEmpty tele = tele
+aAppendTele (ACons (unrebind->(t,tele1))) tele2 =
+ ACons (rebind t (aAppendTele tele1 tele2))
 
-aDomTele :: ATelescope -> [AName]
-aDomTele = map (\(v,_,_) -> v)
+aTeleErasedVars :: ATelescope -> Set AName
+aTeleErasedVars AEmpty = S.empty
+aTeleErasedVars (ACons (unrebind->((x,_,ep),tele))) =
+  (if ep==Erased then S.singleton x else S.empty) 
+   `S.union` aTeleErasedVars tele
 
-aDomTeleMinus :: ATelescope -> [AName]
-aDomTeleMinus tele =
-  [n | (n,_,ep) <- tele, ep == Erased]
-
-aSwapTeleVars :: ATelescope -> [AName] -> ATelescope
-aSwapTeleVars [] [] = []
-aSwapTeleVars ((v,a,ep):tele) (v':vs) =
-  (v',a,ep):(subst v (AVar v') $ aSwapTeleVars tele vs)
-aSwapTeleVars _ _ =
-  error "Internal error: lengths don't match in swapTeleVars"
+aTeleEpsilons :: ATelescope -> [Epsilon]
+aTeleEpsilons AEmpty = []
+aTeleEpsilons (ACons (unrebind->((_,_,ep),tele))) =
+  ep : aTeleEpsilons tele
 
 aSetTeleEps :: Epsilon -> ATelescope -> ATelescope
-aSetTeleEps ep = map (\(x,ty,_) -> (x,ty,ep))
+aSetTeleEps ep AEmpty = AEmpty
+aSetTeleEps ep (ACons (unrebind -> ((x,ty,_),tele))) =
+  ACons (rebind (x,ty,ep) (aSetTeleEps ep tele))
+
+aTeleAsArgs :: ATelescope -> [(ATerm,Epsilon)]
+aTeleAsArgs AEmpty = []
+aTeleAsArgs (ACons (unrebind->((x,ty,ep),tele))) =
+  (AVar x,ep) : (aTeleAsArgs tele)
 
 ------------------------
 ------------------------
@@ -467,6 +449,7 @@ deriving instance Show ETerm
 
 -- ETerm for "erased" term
 data ETerm = EVar EName
+           | EUniVar EName 
            | ETCon EName [ETerm]
            | EDCon EName [ETerm]
            | EType Int
@@ -513,7 +496,7 @@ splitEApp e = splitEApp' e []
 
 $(derive [''Epsilon, ''Theta, ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
-         ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef])
+         ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope])
 
 
 instance Alpha Term
@@ -529,7 +512,8 @@ instance Subst Term Term where
 -- aterms should never contain term variables.
 instance Subst Term ATerm where
   isvar _ = Nothing
-instance Subst Term AMatch where
+instance Subst Term AMatch
+instance Subst Term ATelescope
 
 instance Subst Term Epsilon
 instance Subst Term Theta
@@ -541,6 +525,7 @@ instance Alpha ATerm
 instance Alpha AMatch
 instance Alpha ADecl
 instance Alpha AConstructorDef
+instance Alpha ATelescope
 
 instance Subst ATerm ATerm where
   isvar (AVar x) = Just (SubstName x)
@@ -548,7 +533,7 @@ instance Subst ATerm ATerm where
 instance Subst ATerm Epsilon
 instance Subst ATerm Theta
 instance Subst ATerm AMatch
-
+instance Subst ATerm ATelescope
 
 instance Alpha ETerm
 instance Alpha EMatch

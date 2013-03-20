@@ -44,11 +44,11 @@ fib_example = join
 --  follow the branching of the elaborated code, and that the right branch
 --  must be chosen when more than one could match.
 
-log data A : Type 0 where
+data A : Type 0 where
   A1 
   A2 of (x : A) (y : A)
 
-log data B : Type 0 where
+data B : Type 0 where
   B1 of (x : A) 
   B2 of (x : B) (y : B)
 
@@ -101,8 +101,8 @@ let_example = join
 
 -- It is ok to match a variable against a non-datatype.
 
-log data C : Type 0 where
-  MkC of (f : Nat -> Nat)
+data C : Type 0 where
+  MkC of (f : Nat -> Nat @log)
 
 log match_c : (C @log) -> Nat 
 match_c = \ x .
@@ -116,4 +116,3 @@ match_c_example = join
 {- We want tests covering:
    - failures from non-exhaustive matches.
 -}
-

@@ -3,26 +3,24 @@ module Language.Trellys.TypeMonad where
 
 import Language.Trellys.Error
 import Language.Trellys.Environment
-
 import Language.Trellys.GenericBind(FreshMT(..), runFreshMT)
 
-
+import qualified Data.Map as M
+import Control.Applicative
 import Control.Monad (liftM)
-import Control.Monad.Reader(ReaderT(..))
-import Control.Monad.Writer(WriterT(..))
+import Control.Monad.RWS.Lazy
 import Control.Monad.Error(ErrorT(..))
-
 
 -- The Monad that we will be using includes reader (for the
 -- environment), freshness state (for supporting locally-nameless
--- representations),  error (for error reporting), and IO (for e.g. 
--- warning messages).
-type TcMonad = FreshMT ((ReaderT Env (ErrorT Err IO)))
+-- representations), error (for error reporting), state (for the
+-- bindings of unification variables) and IO (for e.g.  warning
+-- messages).
+type TcMonad = FreshMT (RWST Env () UniVarBindings (ErrorT Err IO))
 
 runTcMonad :: Env -> TcMonad a -> IO (Either Err a)
 runTcMonad env m = runErrorT $
-             flip runReaderT env $
-             runFreshMT m
+                     fst <$> evalRWST (runFreshMT m) env (M.empty) 
 
 
 -- Here are some monadic utililty functions that should really be in

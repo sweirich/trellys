@@ -5,8 +5,7 @@ import Prelude
 -- Examples supplied by Chris.
 
 data Corner1 : Type 0 where
-  C of (((let x [x_eq] = Corner1 in x)@log) -> Nat)
-
+  C of (((let x [x_eq] = Corner1 in x)@log) -> Nat @log)
 
 -- Corner case 2 involves mutual recursion, which we don't support.
 
@@ -24,21 +23,20 @@ ignoreType = \ _ . Nat
 axiom log idType : Type 0 -> Type 0
 
 data Corner5 : Type 0 where
-  C of (idType Corner5)
-
+  C of (idType Corner5 @log)
 
 -- Tim's Examples
 data False : Type 0 where
      {}
 
 data Id (a : Type 0) : Type 0 where
-  IdC of (x : a)
+  IdC of (x : a @log)
 
 data BadId : Type 0 where
-  NBad of (f : Id ((b : BadId) -> False))
+  NBad of (f : Id ((b : BadId) -> False) @ log)
 
 data Bad : Type 0 where
-  CBad of (f:((b:Bad) -> False))
+  CBad of (f:((b:Bad) -> False) @ log)
 
 not_bad : (b : Bad) -> False
 
@@ -48,9 +46,8 @@ inconsistent : False
 
 inconsistent = not_bad (CBad not_bad)
 
-
 data Ok : Type 0 where
-  COk of ((((b:Ok)@prog) -> False)@prog)
+  COk of (f: ((b:Ok@prog) -> False)@prog)
 
 prog still_ok : (b : Ok @prog) -> False
 
