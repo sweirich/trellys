@@ -108,7 +108,7 @@ syntax (Fixpoint s : xs) = Syn s
 
 ------------------------------------------------------------------
 
-data Variance = Pos | Neg | Both 
+data Variance = Pos | Neg | Both deriving Show
 
 flipVar Pos = Neg
 flipVar Neg = Pos
@@ -187,7 +187,7 @@ data Value m where
    VFun :: Typ -> (Value m -> Value m) -> Value m
    VFunM :: Integer -> (forall a . Value m -> (Value m -> m a) -> m a) -> Value m
    VTuple :: [Value m] -> Value m
-   VCon :: MuSyntax -> Arity -> String -> [Value m] -> Value m
+   VCon :: MuSyntax -> Arity -> Rho -> String -> [Value m] -> Value m
    VIn:: Kind -> Value m -> Value m
    VInverse:: Value m -> Value m
    VCode:: TExpr -> Value m
@@ -207,7 +207,7 @@ instance (Eq a,Eq b,Eq c) => Eq (Class a b c) where
 instance Eq (Value m) where
   (VBase _ x) == (VBase _ y) = x==y
   (VTuple xs) == (VTuple ys) = xs == ys
-  (VCon _ a1 i x) == (VCon _ a2 j y) = a1==a2 && i==j && x==y
+  (VCon _ a1 _ i x) == (VCon _ a2 _ j y) = a1==a2 && i==j && x==y
   (VFunM i f) == (VFunM j g) = i==j
   (VIn _ x) == (VIn _ y) = x==y
   (VInverse x) == (VInverse y) = x==y  
@@ -331,8 +331,8 @@ isTExprList (TECon (Syn "nil") (Nm("Nil",_)) _ 0) =
    Just (0,[])
 isTExprList x = Nothing -- trace ("Not a TList: "++show x) Nothing
 
-isValueList (VIn _ (VCon _ 0 "Nil" [])) = return []
-isValueList (VIn _ (VCon _ 2 "Cons" [x,xs])) =
+isValueList (VIn _ (VCon _ 0 _ "Nil" [])) = return []
+isValueList (VIn _ (VCon _ 2 _ "Cons" [x,xs])) =
   do { ys <- isValueList xs; return(x:ys)}
 isValueList _ = Nothing  
 
@@ -565,7 +565,7 @@ ppTExpr p e =
     
     (TEIn k x) -> PP.sep[text "(In$"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
-       where f (tele,ps,body) = PP.nest 2(PP.sep[PP.brackets(PP.sep (ppKArgs p tele))
+       where f (tele,ps,body) = PP.nest 2(PP.sep[PP.brackets(PP.sep (PP.punctuate (text ",") (ppKArgs p tele)))
                                                 ,PP.sep (map (ppPat p) ps) <+> text "="
                                                 ,PP.nest 2 (ppTExpr p body)])
     (AppTyp e ts) -> ppTExpr p e <> PP.brackets(ppSepBy (map (ppTyp p) ts) ",")
@@ -579,6 +579,7 @@ ppTExpr p e =
        PP.braces(PP.vcat[ppTExpr p e1,text "=",ppTExpr p e2])
                                        
     (Emv (uniq,ptr,k)) -> text("^E"++show uniq)
+    (CSP (nm,i,VCode (TEVar name _))) | nm==name -> text(show name)
     (CSP (nm,i,v)) -> text("`"++show nm++"'"++show i)
     (TEAnn a e) -> text (show a) <+> ppTExpr p e    
     
@@ -598,7 +599,7 @@ ppPat p pat =
     PVar v _ -> text (name v)
     PTuple ps -> ppSepByParen (map (ppPat p) ps) "," 
     PWild p -> text "_"
-    PAnn px t -> PP.parens(ppPat p px <> text ":" <> ppScheme p t)
+    PAnn px t -> PP.parens(ppPat p px <> text ":" <+> ppScheme p t)
     PCon (Nm(v,pos)) [] -> text v
     PCon (Nm(":",_)) (p1:ps) -> PP.parens $ ppPat p p1 <+> text  ":" <+> PP.hsep (map (ppPat p) ps)
     PCon (Nm(v,pos)) ps -> PP.parens $ text v <+> PP.hsep (map (ppPat p) ps)
@@ -782,13 +783,13 @@ ppValue p (VTuple []) = text "()"
 ppValue p (VTuple [x]) = error ("Value tuple with one element in ppValue")
 ppValue p (VTuple xs) = 
   PP.parens(PP.fsep (ppSepByF (ppValue p) "," xs))  
-ppValue p (VCon uniq arity name []) = text name
-ppValue p (VCon uniq arity name xs) = 
+ppValue p (VCon uniq arity rho name []) = text name
+ppValue p (VCon uniq arity rho name xs) = 
     PP.parens(PP.fsep (text name :(ppSepByF (ppValue p) " " xs))) 
 ppValue p (VIn k x) | printChoice "In" p = PP.parens(PP.sep [text "In",ppValue p x])
 ppValue p (v@(VIn k _)) | Just vs <- isValueList v = ppVList (ppValue p) vs
-ppValue p (VIn k (VCon (Syn d) arity c [])) = text("`"++d)
-ppValue p (VIn k (VCon (Syn d) arity c vs)) = 
+ppValue p (VIn k (VCon (Syn d) arity _ c [])) = text("`"++d)
+ppValue p (VIn k (VCon (Syn d) arity _ c vs)) = 
    PP.parens(PP.sep(text ("`"++d) : map (ppValue p) vs))
 ppValue p (VIn k x) = PP.parens(PP.sep [text "In",ppValue p x])
 ppValue p (VInverse x) = PP.parens(PP.sep [text "Inverse",ppValue p x])
@@ -915,6 +916,8 @@ instance Show (Class (Kind, ()) (Typ, Kind) (TExpr, Typ)) where
 ----------------------------------------------------------------------
 -- for debugging when you need to see all the structure of a type
 
+
+
 showK Star = "Star"
 showK (Karr x y) = "(Karr "++showK x++" "++showK y++")"
 showK (Tarr x y) = "(Tarr "++showT x++" "++showK y++")"
@@ -922,19 +925,23 @@ showK (Kname s) = "(Kname "++show s++")"
 showK (Kvar (uniq,ptr)) = "^K"++show uniq
 
 showT (TyVar s k) = "(TyVar "++show s++" "++show k++")"
-showT (TyCon (Syn m) s k) = "(Con "++show s++" "++show k++" muSyn="++ m++")"
-showT (TyCon None s k) = "(Con "++show s++" "++show k ++ ")"
+showT (TyCon (Syn m) s k) = "(TyCon "++show s++" "++
+                              -- show k++
+                              " muSyn="++ m++")"
+showT (TyCon None s k) = "(TyCon "++show s++" "++
+                           -- show k ++ 
+                           ")"
 showT (TyTuple Star xs) = plistf showT "(Tuple* " xs "," ")"
 showT (TyTuple _ xs) = plistf showT "(Tuple# " xs "," ")"
 showT (TcTv (uniq,ptr,k)) = "(Tv "++show uniq++" "++show k++")"
-showT (TyApp f x) = "("++showT f++ " "++showT x++")"
+showT (TyApp f x) = "(App "++showT f++ " "++showT x++")"
 showT (TyProof s x) = "(TyProof "++showT s++ " "++showT x++")"
 showT (TyArr s x) = "(TyArr "++showT s++ " -> "++showT x++")"
 showT (TySyn nm arity xs body) = "(TYSyn "++show nm++" "++show arity++
                                  plistf showT " [" xs "," "]="++showT body ++")"
-showT (TyMu k) = "Mu "++show k
+showT (TyMu k) = "Mu " -- ++show k
 showT (TyLift (Parsed x)) = "Parsed{"++show x++"}"
-showT (TyLift (Checked x)) = "{"++show x++"}"
+showT (TyLift (Checked x)) = "{"++showTE x++"}"
 showT (TyAll vs r) = "(TyAll ... "++show r++")"
 
 
@@ -943,7 +950,27 @@ showR (Rarr s x) = "(Rarr "++showS s++ " "++showR x++")"
 
 
 showS (Sch vs r) = "(Sch ... "++showR r++")"
-  
+
+parenss x = "("++x++")"
+
+showTE (TELit p l) = show l
+showTE (TEVar nm sch) = parenss("Var "++show nm)
+showTE (TECon (Syn s) nm rh arity) = parenss("Con "++show s++" "++show nm++" "++show rh++" "++show arity)
+showTE (TECon None nm rh arity) = parenss("Con "++show nm++" "++show rh++" "++show arity)
+showTE (TEApp f x) = parenss("App "++showTE f++" "++showTE x)
+showTE (TEIn k z) = parenss("In "++
+                            -- show k++" "++
+                            showTE z)
+showTE (Emv (u,p,t)) = parenss("EMV "++show u)
+showTE (CSP (nm,i,v)) = parenss("CSP "++show nm++" "++show i++" "++show v)
+showTE other = "{|"++show other++"|}"
+
+showE (ELit p l) = show l
+showE (EVar nm) = parenss("Var "++show nm)
+showE (ECon nm) = parenss("Con "++show nm)
+showE (EApp f x) = parenss("App "++show f++" "++show x)
+showE (EIn k z) = parenss("In "++show k++" "++show z)
+showE other = "{|"++show other++"|}"
 
 ------------------------------------------------------------------
 -- Defining Infix and Prefix operators
@@ -1118,6 +1145,8 @@ maybeT x = TyApp tmaybe x
 applyT [] = tunit
 applyT [t] = t
 applyT (t:s:ts) = applyT (TyApp t s : ts)
+
+aaa = TyVar (Nm("aaa",prelude)) Star
 
 
 tMu      = TyMu Star   -- TyCon None (pre "Mu")      (PolyK [] (Karr (Karr Star Star) Star))

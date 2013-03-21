@@ -1,7 +1,7 @@
 module Names(Name(..),Loc(..),SourcePos,newPos,name,bestPos
             ,ppName,noPos,toName,near,prelude,preline,augment
             ,plist,plistf,insert,pad,insertBy,dropWhite
-            , nameSupply,pre,strings) where
+            , nameSupply,pre,strings,relocate) where
 
 import Data.Char(isSpace)
 import Text.Parsec.Pos(SourcePos,newPos,sourceLine,sourceColumn,sourceName)
@@ -42,6 +42,7 @@ near exp = f (loc exp)
 prelude = newPos "Prelude" 0 0
 preline n = newPos "Prelude" n 0
 
+relocate (Nm(s,_)) pos = (Nm(s,pos))
 ---------------------------------------
 newtype Name = Nm (String,SourcePos)
 

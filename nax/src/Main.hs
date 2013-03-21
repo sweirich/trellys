@@ -23,7 +23,7 @@ import Value
 import Eval 
 import Types(zonkRho,zonkScheme,zonkExp,zonk,zonkKind,zonkD
             ,generalizeRho)
-import TypeCheck(Frag(..),NameContents(..),addTable,elab,inferExpT,tvsEnv,nullFrag,wellFormedType,browseFrag)
+import TypeCheck(Frag(..),NameContents(..),VARRole(..),addTable,elab,inferExpT,tvsEnv,nullFrag,wellFormedType,browseFrag)
 import Monads(FIO,runFIO,handle,fio
              ,showFail
              ,writeln
@@ -39,6 +39,7 @@ test = run "../test/ListLike.nax"
 zap = run "../test/collapseLang3.nax"
 hoas = run "../test/HOAS.nax"
 msf = run "../test/betterMSFcata.nax"
+utype = run "../test/usingTypings.nax"
 
 evalDecs :: [Decl TExpr] -> VEnv -> IO (VEnv)
 evalDecs [] env = return env
@@ -48,7 +49,7 @@ initialEnvs :: FIO (Frag, VEnv)
 initialEnvs = 
       do { let acc (env,ds) d = do { (e2,d2) <- elab False env d; return(e2,d2:ds)}
                frag1 = nullFrag{values=rtSub}
-               env1 = (foldr (\ ((n,uniq,v),(nm,sch)) e -> addTable EVAR (nm,Left(TEVar nm sch,sch)) e) frag1 smartPrims,[])
+               env1 = (foldr (\ ((n,uniq,v),(nm,sch)) e -> addTable EVAR (nm,Normal(TEVar nm sch,sch)) e) frag1 smartPrims,[])
          ; (envTC,tdecls) <- foldM acc env1 decls
          ; fio (resetnext (index+1))
          ; envRT <- fio (evalDecs (reverse tdecls)  -- foldM acc, reverses list order
@@ -56,7 +57,7 @@ initialEnvs =
          ; return(envTC,envRT) }
   where pairsRT = map fst smartPrims 
         rtSub = map f smartPrims
-        f (x@(nm,n,v),typecheck) = (nm,Exp(CSP x))
+        f (x@(nm,n,v),typecheck) = (nm,Exp (CSP x))
         (_nm,index,v) = last pairsRT
         decls = parseWithName "predefined" (layout decl (return ())) (unlines preDefinedDeclStrings)
 

@@ -23,6 +23,13 @@ data E: (* -> *) -> * -> * where
   Pair: r a -> r b -> E r (a,b)
     deriving fixpoint Exp
 
+data V : (* -> *) -> * -> * where
+  Vnat : Int -> V r Int
+  Vfun : (r a -> r b) -> V r (a -> b)
+  Vpair: (r a) -> (r b)  -> V r (a,b)
+    deriving fixpoint Val
+
+
 data Id x = MkId x
 unId (MkId x) = x 
 
@@ -58,11 +65,6 @@ id = abs (\x -> x)
 --------------------------------------------------------
 -- Embedding in a type indexed Value
 
-data V : (* -> *) -> * -> * where
-  Vnat : Int -> V r Int
-  Vfun : (r a -> r b) -> V r (a -> b)
-  Vpair: (r a) -> (r b)  -> V r (a,b)
-    deriving fixpoint Val
 
 x= 55
 -- axiom unVfun : Val (a -> b) -> Val a -> Val b

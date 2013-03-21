@@ -324,9 +324,10 @@ unify loc message x y = do { x1 <- prune x; y1 <- prune y
         f (TcTv x) t = unifyVar loc message x t
         f t (TcTv x) = unifyVar loc message x t 
         f (TyLift (Checked e)) (TyLift (Checked g)) = 
-            do { enf <- normform e
+            do { -- writeln ("\nNormalizing "++show e++", "++show g);
+                 enf <- normform e
                ; gnf <- normform g
-               -- ; writeln ("\nNormalizing "++show e++", "++show g)
+              
                ; unifyExp loc message enf gnf }
         f (TyLift (Parsed e)) _ = error ("unchecked term in type inside unify: "++show e)
         f _ (TyLift (Parsed e)) = error ("unchecked term in type inside unify: "++show e)
@@ -347,7 +348,7 @@ unifyVar loc message (x@(u1,r1,k)) t =
      ; if (any same ptrs) 
           then (matchErr loc (("\nOccurs check "++show (TcTv x)++":"++show k++" in "++show t) : message)  (TcTv x) t)
           else return ()
-     -- ; writeln ("Before Check "++show t++ " binds to var "++show(TcTv x))          
+     -- ; writeln ("Before Check "++show t++ " binds to var "++show(TcTv x)++" with kind "++show k)          
      ; check loc message t k 
      ; fio(writeIORef r1 (Just t))
      ; return ()
@@ -381,7 +382,7 @@ kindOf t = do { x <- prune t; f x }
 
        
 check :: SourcePos -> [String] -> Typ -> Kind -> FIO ()
-check loc message typ kind = -- writeln("\nCHECKING "++show typ++": "++show kind) >>
+check loc message typ kind =  -- writeln("\nCHECKING "++showT typ++": "++show kind) >>
   case typ of
     TyVar s k -> unifyK loc (("Checking "++show s++"::"++show kind++".\nIt has kind "++show k++" instead.") : message) k kind
     TyApp f (TyLift (Checked exp)) -> 
@@ -901,6 +902,7 @@ getVarsExpr t = do { x <- pruneE t; f x }
                         ; getVarsTele tele trip1 }
              ; foldM (accumBy free2) trip3 ms  } 
         f (TELet _ _) = error ("No getVarsExp for (ELet _ _) yet")
+        f (CSP (nm,uniq,VCode (v@(TEVar name sch)))) | nm == name = getVarsExpr v
         f (CSP _) = return([],[])
         f (ContextHole x y ) = 
           do { trip1 <- getVarsExpr x 
@@ -966,6 +968,17 @@ getVarsRho (Rarr s r) =
 
 getVarsScheme (Sch bound r) = 
     do { vs <- getVarsRho r; getVarsTele bound vs }
+
+-- Gets the vars in the annotations of a pattern
+getVarsAnnPat (PAnn p schm) = 
+  do {trip1 <- getVarsAnnPat p
+     ; trip2 <- getVarsScheme schm
+     ; unionW trip1 trip2}
+getVarsAnnPat (PTuple ps) = foldM (accumBy getVarsAnnPat) ([],[]) ps
+getVarsAnnPat (PCon c ps) = foldM (accumBy getVarsAnnPat) ([],[]) ps
+getVarsAnnPat (PWild pos) = return([],[])
+getVarsAnnPat (PVar _ _) = return([],[])
+getVarsAnnPat (PLit pos lit) = return([],[])
  
 getVarsTele:: Telescope -> Vars -> FIO Vars      
 getVarsTele [] ans = return ans
@@ -993,7 +1006,8 @@ orderTele outOfOrderTele =
           case lookup nm table of
             Just names -> names
             Nothing -> []
-            
+
+
 -------------------------------------------------------------
 
 -- PM is a "Pointer Map"  Mapping mutable vars to the things they abstract
@@ -1408,51 +1422,53 @@ typeOf x = do { r <- checkExp x
                  (Rarr _ _) -> fail("Poly type in typeOf: "++show x)}
 
 checkExp :: TExpr -> FIO Rho
-checkExp (TELit loc x) = return(Tau(fst(inferLit x)))
-checkExp (TEVar v sch) = do {(rho,ts) <- instantiate sch; return rho}
-checkExp (TECon mu c rho arity) = return rho
-checkExp (e@(TEApp fun arg)) =
-     do { (fun_ty) <- checkExp fun
-        ; (arg_ty, res_ty, p) <- unifyFunT (loc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
-        ; let message = ["\nTyping the application: ("++show e++") where\n   "++show fun++": "++show fun_ty]
-        ; case arg_ty of
-           Sch [] argRho -> do { x <- checkExp arg                                               
-                               ; morepolyRRT (loc arg) ["arg more polymorphic than expected"] x argRho
-                               ; return res_ty }                                                              
-           sigma -> do { ty <- checkExp arg  
-                       ; (sig,sub) <- generalizeRho [] ty  -- The [] is NOT RIGHT
-                       ; sigma2 <- zonkScheme sigma >>= alpha
-                       ; let m2 =("\nThe argument: "++show arg++
-                                  "\nis expected to be polymorphic\n  "++ show sigma2++"\n  "++show sig):message
-                       ; morepolySST (loc arg) m2 sig sigma2
-                       ; return res_ty } }  
-checkExp (e@(TEAbs elim cls)) =   
-   fail ("Not yet in checkExp (TEAbs __): "++show e)
-checkExp (TETuple xs) =
-  do { let f term = checkExp term >>= unTau
-           unTau (Tau t) = return t
-           unTau x = error "Polymorphic tuple"
-     ; xs2 <- mapM f xs   
-     ; return(Tau(TyTuple Star xs2)) } 
-checkExp (e@(TELet d b)) =   
-   fail ("Not yet in checkExp (TELet __): "++show e)  
-checkExp (TEIn k x) =   
-  do { (dom,rng) <- inType k
-     ; Tau x2 <- checkExp x 
-     ; unify noPos ["Checking In expr"++ show (TEIn k x)] dom x2
-     ; return (Tau rng)}
-checkExp (e@(TECast p x)) =  fail ("Not yet in checkExp (TECast_ _): "++show e)  
-checkExp (e@(ContextHole x y)) =  fail ("Illegal ContextHole in checkExp: "++show e)  
-checkExp (e@(TEMend tag elim x ms)) = 
-   fail ("Not yet in checkExp (TEMend _ _ _ _): "++show e)  
-checkExp (e@(AppTyp t ts)) = checkExp t
-   -- fail ("Not yet in checkExp (AppTyp _ _): "++show e) 
-checkExp (e@(AbsTyp tele t)) = checkExp t
-   -- fail ("Not yet in checkExp (AbsTyp _ _): "++show e) 
-checkExp (Emv (uniq,ptr,t)) = return(Tau t) 
-checkExp (CSP _) = freshRho Star
-checkExp (TEAnn a x) = checkExp x
--- checkExp other = error ("Not yet in check Exp: "++show other)
+checkExp x = do { -- writeln("\nEnter checkExp "++showTE x); 
+                  checkE x } 
+  where checkE (TELit loc x) = return(Tau(fst(inferLit x)))
+        checkE (TEVar v sch) = do {(rho,ts) <- instantiate sch; return rho}
+        checkE (TECon mu c rho arity) = return rho
+        checkE (e@(TEApp fun arg)) =
+             do { (fun_ty) <- checkExp fun
+                ; (arg_ty, res_ty, p) <- unifyFunT (loc fun) ["\n2 While checking that "++show fun++" is a function, applied to "++show arg] fun_ty
+                ; let message = ["\nTyping the application: ("++show e++") where\n   "++show fun++": "++show fun_ty]
+                ; case arg_ty of
+                   Sch [] argRho -> do { x <- checkExp arg                                               
+                                       ; morepolyRRT (loc arg) ["arg more polymorphic than expected"] x argRho
+                                       ; return res_ty }                                                              
+                   sigma -> do { ty <- checkExp arg  
+                               ; (sig,sub) <- generalizeRho [] ty  -- The [] is NOT RIGHT
+                               ; sigma2 <- zonkScheme sigma >>= alpha
+                               ; let m2 =("\nThe argument: "++show arg++
+                                          "\nis expected to be polymorphic\n  "++ show sigma2++"\n  "++show sig):message
+                               ; morepolySST (loc arg) m2 sig sigma2
+                               ; return res_ty } }  
+        checkE (e@(TEAbs elim cls)) =   
+           fail ("Not yet in checkExp (TEAbs __): "++show e)
+        checkE (TETuple xs) =
+          do { let f term = checkExp term >>= unTau
+                   unTau (Tau t) = return t
+                   unTau x = error "Polymorphic tuple"
+             ; xs2 <- mapM f xs   
+             ; return(Tau(TyTuple Star xs2)) } 
+        checkE (e@(TELet d b)) =   
+           fail ("Not yet in checkExp (TELet __): "++show e)  
+        checkE (TEIn k x) =   
+          do { (dom,rng) <- inType k
+             ; Tau x2 <- checkExp x 
+             ; unify noPos ["Checking In expr"++ show (TEIn k x)] dom x2
+             ; return (Tau rng)}
+        checkE (e@(TECast p x)) =  fail ("Not yet in checkExp (TECast_ _): "++show e)  
+        checkE (e@(ContextHole x y)) =  fail ("Illegal ContextHole in checkExp: "++show e)  
+        checkE (e@(TEMend tag elim x ms)) = 
+           fail ("Not yet in checkExp (TEMend _ _ _ _): "++show e)  
+        checkE (e@(AppTyp t ts)) = checkExp t
+           -- fail ("Not yet in checkExp (AppTyp _ _): "++show e) 
+        checkE (e@(AbsTyp tele t)) = checkExp t
+           -- fail ("Not yet in checkExp (AbsTyp _ _): "++show e) 
+        checkE (Emv (uniq,ptr,t)) = return(Tau t) 
+        checkE (CSP _) = freshRho Star
+        checkE (TEAnn a x) = checkExp x
+        -- checkExp other = error ("Not yet in check Exp: "++show other)
 
 
 -- In *           : f (Mu * f) -> Mu * f
@@ -1694,7 +1710,7 @@ eqSubb pos env (TSym x) = liftM TSym (eqSubb pos env x)
 
 unifyT:: SourcePos -> [String] -> Variance -> Typ -> Typ -> FIO(TEqual)
 unifyT loc mess variance x y = do { x1 <- prune x; y1 <- prune y
-                   --  ; writeln("\nUnify "++show variance++" "++show x1++" =?= "++show y1)
+                       -- ; writeln("\nUnify "++show x1++near loc++"   "++showT x1++" =?=\n   "++showT y1)
                        ; f x1 y1 } where 
   f (t1@(TyVar n k)) (TyVar n1 k1) | n==n1 =
       do { unifyK noPos mess k k1; return(tRefl t1)}
@@ -1777,11 +1793,11 @@ morepolySRT loc mess sigma1 rho2 =
 
 morepolyRRT:: SourcePos -> [String] -> Rho -> Rho -> FIO TEqual
 morepolyRRT loc mess x y = f x y where
-  f (Rarr a b) x = do{(m,n,p1) <- unifyFunT loc mess x
+  f (Rarr a b) x = do{(m,n,p1) <- unifyFunT loc ("In morepolyRRT 1" : mess) x
                      ; p2 <- morepolyRRT loc mess b n
                      ; p3 <- morepolySST loc mess m a 
                      ; return(tComp (tArrCong (tSym p3) p2) p1)}
-  f x (Rarr m n) = do{(a,b,p1) <- unifyFunT loc mess x
+  f x (Rarr m n) = do{(a,b,p1) <- unifyFunT loc ("In morepolyRRT 2" : mess) x
                      ; p2 <- morepolyRRT loc mess b n
                      ; p3 <- morepolySST loc mess m a
                      ; return(tComp p1 (tArrCong (tSym p3) p2))}
