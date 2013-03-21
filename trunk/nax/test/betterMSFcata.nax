@@ -1,4 +1,9 @@
 
+(thisShouldNot :forall a . a -> a -> a) = \ x -> \ y -> x
+
+(thisShouldFail :forall a  b c . a -> b -> c) = \ x -> \ y -> x
+
+{-
 data T r = Integer | Arr r r deriving fixpoint Ty
 
 data Trm: (* -> {Ty} -> *) -> * -> {Ty} -> * where
@@ -11,6 +16,8 @@ axiom test : Term Int {`integer} -> Term a {`integer}
 
 f x = mcata{axy {txy} . Int} x with
         rcall (Tabs f) = 7
+        
+-}        
 {-
 Term ans i = mu[* -> {Ty} -> *] Trm ans i   
 

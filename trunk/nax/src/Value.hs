@@ -101,10 +101,10 @@ instance Typable (Value m) where
 
 ---
 instance Encoding Bool m where
-    to True = (VCon (conkey "True") 0 "True" [])
-    to False = (VCon (conkey "False") 0 "False"  [])
-    from (VCon _ 0 "True" []) = True
-    from (VCon _ 0 "False" []) = False
+    to True = (VCon (conkey "True") 0 (Tau tbool) "True" [])
+    to False = (VCon (conkey "False") 0 (Tau tbool) "False"  [])
+    from (VCon _ 0 _ "True" []) = True
+    from (VCon _ 0 _ "False" []) = False
     from v = error ("Value not Bool: "++(show v))
 
 instance Typable Bool where
@@ -112,10 +112,10 @@ instance Typable Bool where
 
 ---
 instance Encoding a m => Encoding (Maybe a) m where
-    to Nothing = VCon (conkey "Nothing") 0 "Nothing" []
-    to (Just x) = VCon (conkey "Just") 1 "Just" [to x]
-    from (VCon _ 0 "Nothing" []) = Nothing
-    from (VCon _ 1 "Just" [x]) = (Just (from x))
+    to (x@Nothing) = VCon (conkey "Nothing") 0 (Tau(encodingTyp x)) "Nothing" []
+    to (Just x) = VCon (conkey "Just") 1 (Tau(maybeT (encodingTyp x))) "Just" [to x]
+    from (VCon _ 0 _ "Nothing" []) = Nothing
+    from (VCon _ 1 _ "Just" [x]) = (Just (from x))
     from v = error ("Value not a Maybe type: "++show v)
 
 instance Typable a => Typable (Maybe a) where
@@ -123,10 +123,10 @@ instance Typable a => Typable (Maybe a) where
        
 ---
 instance (Encoding a m,Encoding b m) => Encoding (Either a b) m where
-    to (Right x) =  (VCon (conkey "Right") 1 "Right" [to x])
-    to (Left x) =   (VCon (conkey "Left") 1 "Left" [to x])
-    from (VCon _ 1 "Left" [x]) = Left(from x)
-    from (VCon _ 1 "Right" [x]) = Right(from x)
+    to (zz@(Right x)) =  (VCon (conkey "Right") 1 (Tau (encodingTyp zz)) "Right" [to x])
+    to (zz@(Left x)) =   (VCon (conkey "Left") 1 (Tau (encodingTyp zz)) "Left" [to x])
+    from (VCon _ 1 _ "Left" [x]) = Left(from x)
+    from (VCon _ 1 _ "Right" [x]) = Right(from x)
     from v = error ("Value not an Either type: "++show v)
 
 instance (Typable a,Typable b) => Typable (Either a b) where
@@ -149,11 +149,11 @@ instance Typable a => Typable [a]  where
 listVal vs = foldr cons nil vs
   where -- cons (VBase (LChar c)) (VCon 0 "[]" []) = VBase(LString [c])
         -- cons (VBase (LChar c)) (VBase(LString cs)) = VBase(LString (c:cs))
-        cons x xs = VIn Star (VCon (conkey "Cons") 2 "Cons" [x,xs])
-        nil = VIn Star (VCon (conkey "Nil") 0 "Nil" [])  
+        cons x xs = VIn Star (VCon (conkey "Cons") 2 (Tau (encodingTyp xs)) "Cons" [x,xs])
+        nil = VIn Star (VCon (conkey "Nil") 0 (Tau (encodingTyp nil)) "Nil" [])  
 
-isIntList (VIn k (VCon _ 0 "Nil" [])) = return []
-isIntList (VIn k (VCon _ 2 "Cons" [VBase noPos (LInt x),xs])) =
+isIntList (VIn k (VCon _ 0 _ "Nil" [])) = return []
+isIntList (VIn k (VCon _ 2 _ "Cons" [VBase noPos (LInt x),xs])) =
   do { ys <- isIntList xs; return(x:ys)}
 isIntList _ = Nothing 
 
@@ -287,19 +287,19 @@ injectBBB str n f = (triple,(name,scheme))
         scheme = Sch [] (Tau(encodingTyp f))
 
         v0 (VCode x) = VFun tbool (e1 x)
-        v0 (VCon _ 0 "True" []) = VFun tbool (v1 True)
-        v0 (VCon _ 0 "False" []) = VFun tbool (v1 False)
+        v0 (VCon _ 0 _ "True" []) = VFun tbool (v1 True)
+        v0 (VCon _ 0 _ "False" []) = VFun tbool (v1 False)
         v0 v = error (str++" applied to non Bool: "++show v)
 
         v1 True (VCode x) = VCode(applyTE[fexp,trueTExp,x])
         v1 False(VCode x) = VCode(applyTE[fexp,falseTExp,x])        
-        v1 n (VCon _ 0 "True" []) = to(f n True)
-        v1 n (VCon _ 0 "False" []) = to(f n False)       
+        v1 n (VCon _ 0 _ "True" []) = to(f n True)
+        v1 n (VCon _ 0 _ "False" []) = to(f n False)       
         v1 n v = error ("("++str++" "++show n++") applied to non Bool: "++show v)
 
         e1 x (VCode y) = VCode(applyTE[fexp,x,y]) 
-        e1 x (VCon _ 0 "True" [])  = VCode(applyTE[fexp,x,trueTExp])
-        e1 x (VCon _ 0 "False" []) = VCode(applyTE[fexp,x,falseTExp])
+        e1 x (VCon _ 0 _ "True" [])  = VCode(applyTE[fexp,x,trueTExp])
+        e1 x (VCon _ 0 _ "False" []) = VCode(applyTE[fexp,x,falseTExp])
         e1 x v = error ("("++str++" "++show x++") applied to non Bool: "++show v)
         
 injectIIB :: String -> Int -> (Int -> Int -> Bool) -> ((Name,Integer,Value IO),(Name,Scheme))
@@ -329,8 +329,8 @@ notInfo n = (triple,(name,scheme))
         name = Nm("not",preline n)
         scheme = Sch [] (Tau(encodingTyp not))  
         v0 (VCode x) = VCode(applyTE[fexp,x])
-        v0 (VCon _ 0 "True" []) =  to False
-        v0 (VCon _ 0 "False" []) = to True
+        v0 (VCon _ 0 _ "True" []) =  to False
+        v0 (VCon _ 0 _ "False" []) = to True
         v0 v = error ("not applied to non Bool: "++show v)
                 
 trueTExp = TECon None (toName "True") (Tau tbool) 0 

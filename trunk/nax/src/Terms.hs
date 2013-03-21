@@ -75,7 +75,7 @@ abstract (p:ps) body = EAbs ElimConst [(p,abstract ps body)]
 
 binop nm e1 e2 = applyE [EVar nm,e1,e2]
 
-isTruth (VCon _ 0 "True" []) = True
+isTruth (VCon _ 0 _ "True" []) = True
 isTruth _ = False
 
 unLit (VBase pos x) = x

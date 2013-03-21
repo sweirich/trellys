@@ -57,7 +57,7 @@ match s p v = help s p v where
   help s (PLit pos c) v = if v==(VBase pos c) then Just s else Nothing
   help s (PTuple ps) (VTuple vs) | (length ps==length vs)= thread s ps vs
   -- help s (PSum j x) (VSum i v) | i==j = match s x v
-  help s (PCon (Nm(c,_)) ps) (VCon i arity d vs) | (c==d) = thread s ps vs
+  help s (PCon (Nm(c,_)) ps) (VCon i arity _ d vs) | (c==d) = thread s ps vs
   help s p v = Nothing
 
 thread :: Sub m -> [Pat] -> [Value m] -> Maybe (Sub m)
@@ -70,7 +70,7 @@ thread s (p:ps) (v:vs) =
 
 evalMVar:: [(Name,Integer,Value m)] -> Name -> [(Name,Integer,Value m)] -> IO(Integer,Value m)
 evalMVar all nm [] = 
-     fail (near nm++"Variable not found: "++show (name nm) ++
+     fail (near nm++"Variable not found: "++show (name nm) ++ " in runtime environment."++
             plistf (\(nm,_,v) -> show nm++":"++show v) "\n  " (take 6 all) "\n  " "")
 evalMVar all nm ((name,uniq,v):more) =
   if nm==name then return (uniq,v) else evalMVar all nm more
@@ -95,20 +95,20 @@ apply g y fun arg k =
         
 app tag (VFunM n vf) x k = vf x k
 app tag (VFun ty g) x k = k(g x)
-app tag (VCon i arity c vs) v k | arity > length vs = k(VCon i arity c (vs ++ [v]))
+app tag (VCon i arity r c vs) v k | arity > length vs = k(VCon i arity r c (vs ++ [v]))
 app tag (VCode fun) v k = do { arg <- reify Nothing v; k(VCode(TEApp fun arg))}
 app tag nonfun x k = fail ("A nonfunction ("++show nonfun++") in function position.\nArising from the operator "++tag)
 
 
 -- ???: what is 'C'?
 evalC:: TExpr -> VEnv -> (Value IO -> IO a) -> IO a
-evalC exp env k =   -- println ("Entering eval: "++ show exp) >> 
+evalC exp env k =   -- putStrLn ("Entering eval: "++ show exp) >> 
                     heval exp env k where 
   heval:: TExpr -> VEnv -> (Value IO -> IO a) -> IO a                    
   heval (TELit loc x) env k = k(VBase loc x)
   heval (TEVar nm sch) env k = 
      do { (uniq,v) <- evalMVar (rtbindings env) nm (rtbindings env); k v}
-  heval (TECon mu c rho arity) env k = k(VCon mu arity (name c) [])
+  heval (TECon mu c rho arity) env k = k(VCon mu arity rho (name c) [])
   heval (TEApp f x) env k = 
      evalC f env (\ v1 -> evalC x env (\ v2 -> apply f x v1 v2 k))
   heval (TEAbs elim ms) env k = do { i <- nextinteger; k(VFunM i (trymatching elim env ms ms))}
@@ -321,8 +321,8 @@ reify  n x  = help n x  where
       ; body <- reify n result
       ; return(TEAbs (ElimConst) [(PVar name (Just ty),body)])}
   help n (VTuple xs) = liftM TETuple (mapM (reify n) xs)
-  help n (VCon mu arity c vs) = liftM (econ con) (mapM (reify n) vs)
-   where con = TECon mu (toName c) (Tau tunit) arity
+  help n (VCon mu arity rho c vs) = liftM (econ con) (mapM (reify n) vs)
+   where con = TECon mu (toName c) rho arity
          econ e [] = e
          econ e (x:xs) = econ (TEApp e x) xs
   help n (VIn kind x) = liftM (TEIn kind) (reify n x)
@@ -335,16 +335,18 @@ reify  n x  = help n x  where
 -- replaced with their CSP constants
 
 normform :: TExpr -> FIO TExpr 
-normform x = fio (evalC x closedEnv (reify 0))
+normform x = normalizeInEnv closedEnv x  -- fio (evalC x closedEnv (reify 0))
   where closedEnv = VEnv [] []
+
+normalizeInEnv env x = fio(evalC x env (reify 0))
 
 -------------------------------------------------------------------
 -- evaluating declarations extends the environment
 
 evalDecC :: VEnv -> Decl TExpr -> (VEnv -> IO a) -> IO a 
 evalDecC env (d@(Axiom p nm t)) k = 
-    k (env{ctbindings = (nm,Type t):(ctbindings env)
-          ,rtbindings = (nm,-675,error("Call to Axiom "++show nm)):(rtbindings env)})
+    k (env{ -- ctbindings = (nm,Type t):(ctbindings env),
+           rtbindings = (nm,-675,error("Call to Axiom "++show nm)):(rtbindings env)})
 evalDecC env (d@(Def _ pat exp)) k = 
    -- println ("\n\nDefining: "++show d++"\nIn environment\n"++ browse (Just 10) env) >>
    evalC exp env ((maybe (fail "no Match") k =<<) . matchM env pat)

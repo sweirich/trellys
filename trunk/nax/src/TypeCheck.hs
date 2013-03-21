@@ -13,7 +13,7 @@ import Monads(FIO,fio,handleM,handleMM,fresh,freshName)
 import Control.Monad(foldM,when,liftM,liftM2)
 import Data.IORef(newIORef,readIORef,writeIORef,IORef)
 import qualified Data.Map as DM
-import Eval(normform)
+-- import Eval(normalizeInEnv)
 import Parser(parseExpr)
 
 
@@ -50,15 +50,21 @@ extract (Infer ref) =
 data Frag = Frag 
             { lambnd::   [(Name,Scheme)]   -- Used for generalization, holds all variables in the environment
             , existbnd:: [Name]            -- Existentially bound type variables when pattern matching
-            , values:: [(Name, Class Kind Typ TExpr)] 
-                       -- Runtime values for things 
-                       -- previously defined stored as CSP expressions
-                       -- There should be no Kind or Typ things stored in here
+            , values:: [(Name,Class Kind Typ TExpr)] 
+                       -- Every time evalDecC is called (at the toplevel loop)
+                       -- The runtime value of things declared are added to
+                       -- the value part of the Frag, so typechecking future
+                       -- declarations can look up the values associated with
+                       -- backtick names in types such as (Vector Int {`succ n})
+            , scopednames:: [Class Name Name Name]
+                       -- typings on patterns, such as (\ (x::[a]) -> ...)
+                       -- introduced scoped variables (like 'a') that might
+                       --  appear in terms in the scope of the variable 'x'.
             , ppinfo :: PI
             , table:: DM.Map Name NameContents
             }
          
-nullFrag = Frag [] [] [] pi0 tyConTable
+nullFrag = Frag [] [] [] [] pi0 tyConTable
 
 ------------------------------------------------------------------------------
 -- There are 5 kinds of Names: Kind, Type, Exp, TyCon, and ECon names
@@ -70,15 +76,22 @@ nullFrag = Frag [] [] [] pi0 tyConTable
 -- TyCon (MuSyntax,Polykind) or a 
 -- ECon -- A scheme and (ExpSynonym transformer or a MuSyntax)
 
+data VARRole 
+  = Normal (TExpr,Scheme)                                  -- x 
+  | InSyntax (String,Int,SourcePos -> [Expr] -> FIO Expr)  -- succ in: succ x --> In [*] (Succ x)
+  | TermIndex (Name,Integer,Typ)                                   -- x in: \ (v:Vector a {`succ x}) -> 4
+
 data NameContents 
   = KVAR Kind
   | TYVAR Typ
-  | EVAR (Either (TExpr,Scheme) (String,Int,SourcePos -> [Expr] -> FIO Expr))
+  | EVAR VARRole -- (Either (TExpr,Scheme) (String,Int,SourcePos -> [Expr] -> FIO Expr))
   | TYCON1 (MuSyntax,PolyKind)
   | TYCON2 (String,Int,SourcePos -> [Typ] -> FIO Typ)
   | ECON (Scheme,String,MuSyntax)
   
 addTable f (nm,x) frag = frag{table= DM.insert nm (f x) (table frag)}
+
+
 
 defined frag nm = 
   case DM.lookup nm (table frag) of
@@ -92,8 +105,9 @@ namePositions frag nm = DM.foldrWithKey acc [] (table frag)
 instance Show NameContents where
   show (KVAR k) = "Kind "++show k
   show (TYVAR t) = "Type "++show t
-  show (EVAR (Left sch)) = "Expr "++show sch
-  show (EVAR (Right (nm,n,f))) = "'In' syntax with arity "++show n++plistf id ". " (nm:take n strings) " " " = "++show comp 
+  show (EVAR (Normal sch)) = "Expr "++show sch
+  show (EVAR (TermIndex (nm,uniq,t))) = "Term index ("++show uniq++") "++show nm++": "++show t
+  show (EVAR (InSyntax (nm,n,f))) = "'In' syntax with arity "++show n++plistf id ". " (nm:take n strings) " " " = "++show comp      
    where comp = f noPos (map ty (take n nameSupply))
          ty nm = EVar nm
   show (TYCON1 (mu,k)) = "TypeCon "++show k++sh mu
@@ -118,7 +132,8 @@ nameToTele frag clname =
              f (nm,x) = show nm++" = "++show x
     (Kind nm,Just(KVAR k)) -> return (nm,Kind ())
     (Type nm,Just(TYVAR t)) -> do { k <- kindOf t; k2 <- zonkKind k; return(nm,Type k2)}
-    (Exp nm,Just(EVAR(Left(_,sch)))) -> 
+    (Exp nm,Just(EVAR (TermIndex(_,uniq,t)))) -> return(nm,Exp t)
+    (Exp nm,Just(EVAR(Normal(_,sch)))) -> 
         do { (rho,_) <- instantiate sch
            ; case rho of
               Tau t -> do { t2 <- zonk t; return(nm,Exp t2)}
@@ -132,21 +147,24 @@ addSyn f frag = frag{ppinfo = push f (ppinfo frag)}
 
 showFrag n frag = do { writeln "\nshowFrag\nTypes ="; mapM_ f (take n (DM.toList (table frag))) }
   where f (nm,t) = writeln(show nm++": "++show t)
+
+showScoped s frag = writeln(s++plistf show " " (scopednames frag) "," "")
+addScope classNm frag = return (frag{scopednames = classNm:(scopednames frag)})
        
 data BindMode = LamBnd | LetBnd  
 
 addTermVar var sigma LamBnd frag =  
-        addTable EVAR (var,Left (TEVar var sigma,sigma)) (frag{lambnd = ((var,sigma):(lambnd frag))})
-addTermVar var sigma LetBnd frag = addTable EVAR (var,Left(TEVar var sigma,sigma)) frag
+        addTable EVAR (var,Normal(TEVar var sigma,sigma)) (frag{lambnd = ((var,sigma):(lambnd frag))})
+addTermVar var sigma LetBnd frag = addTable EVAR (var,Normal(TEVar var sigma,sigma)) frag
 
  
 addExQuant xs frag = frag{existbnd = (xs++ existbnd frag)}  
 
 addMulti [] frag = frag
 addMulti ((m@(nm,Exp (term@(TEVar _ sch)))):more) frag = 
-   addMulti more (addTable EVAR (nm,Left(term,sch)) frag)     
+   addMulti more (addTable EVAR (nm,Normal(term,sch)) frag)
 addMulti ((m@(nm,Exp (term@(Emv(u,ptr,ty))))):more) frag = 
-   addMulti more (addTable EVAR (nm,Left(term,Sch [] (Tau ty))) frag)        
+   addMulti more (addTable EVAR (nm,Normal(term,Sch [] (Tau ty))) frag)
 addMulti ((m@(nm,Type t)):more) frag =
    addMulti more (addTable TYVAR (nm,t) frag)
 addMulti ((m@(nm,Kind k)):more) frag =
@@ -154,6 +172,23 @@ addMulti ((m@(nm,Kind k)):more) frag =
 addMulti (m:more) frag =  
    addMulti more (frag)
 
+
+-- when a programmer annotates a pattern with a type
+-- ie like  (x:forall a. x -> Vector a {`succ x})
+-- the free term variables ('x' above) must be added
+-- as 'TermIndex' variables, not 'Normal' variables.
+-- This is the only case where addAnnMulti differs from addMulti
+addAnnMulti [] frag = return frag
+addAnnMulti (m:ms) frag =
+  do frag2 <- case m of
+               (nm,Exp (term@(TEVar _ (Sch [] (Tau t))))) -> 
+                 do { uniq <- fio(nextinteger)
+                    ; addScope (Exp nm) (addTable EVAR (nm,TermIndex(nm,uniq,t)) frag) }
+               (nm,Type t) -> addScope (Type nm) (addTable TYVAR (nm,t) frag)
+               (nm,Kind k) -> addScope (Kind nm) (addTable KVAR (nm,k) frag)  
+               _ -> return frag
+     addAnnMulti ms frag2
+   
                   
 browseFrag:: String -> Frag -> String     
 browseFrag n frag = plistf g "\n" tableL "\n" "\nDONE"
@@ -253,7 +288,10 @@ mismatch mess expected actual nm =
 
 univ (Kind nm) = do { return(nm,Kind (Kname nm))}
 univ (Type nm) = do { k <- freshKind; t <- freshType k; return(nm,Type (TyVar nm k))}
-univ (Exp nm) =  do { k <- freshKind; t <- freshType k; return(nm,Exp (TEVar nm (mono t)))}
+univ (Exp nm) =  
+   do { k <- freshKind
+      ; t <- freshType k
+      ; return(nm,Exp (TEVar nm (mono t)))}
 
 wfGadtKind:: SourcePos -> [String] -> Frag -> Kind -> FIO(Kind,[(Name, Class Kind Typ TExpr)])
 wfGadtKind pos mess frag k = 
@@ -283,7 +321,8 @@ wfKind i pos mess frag k = do { x <- pruneK k; f x }
             case DM.lookup nm (table frag) of
               Just (TYVAR t) -> fail(mismatch mess "kind" "type" nm)
               Just (KVAR k) -> return k
-              Just (EVAR(Left(e,sch))) -> fail(mismatch mess "type" "expression" nm)
+              Just (EVAR(Normal(e,sch))) -> fail(mismatch mess "type" "expression" nm)
+              Just (EVAR(TermIndex(e,u,sch))) -> fail(mismatch mess "type" "expression" nm)              
               other -> fail(notInScope mess "type" nm 5 frag)     
     
 -- When we see a parsed TyCon object, it might stand for either a real
@@ -331,7 +370,8 @@ wellFormedType i pos mess frag typ = do { x <- prune typ
            case DM.lookup nm (table frag) of
               Just (TYVAR t) -> do { k <- kindOf t; return(t,k) }
               Just (KVAR k) -> fail(mismatch mess "type" "kind" nm)
-              Just (EVAR(Left(e,sch))) -> fail(mismatch mess "type" "expression" nm)
+              Just (EVAR(Normal(e,sch))) -> fail(mismatch mess "type" "expression" nm)
+              Just (EVAR(TermIndex(e,u,sch))) -> fail(mismatch mess "type" "expression" nm)              
               other -> fail(notInScope mess "type" nm 5 frag)     
         f (typ@(TyApp _ _)) | Just (nm,f,xs) <- expandTypSyn frag typ [] =
           do { t2 <- f (loc typ) xs
@@ -390,13 +430,13 @@ wellFormedType i pos mess frag typ = do { x <- prune typ
 
 wellFormedTerm :: Int -> t -> [String] -> Frag -> Term -> FIO (TExpr, Typ)
 wellFormedTerm i pos message frag (Checked texp) = 
-   do { ty <- typeOf texp; return(texp,ty)}
+   do { -- writeln("\nEnter wellFormedTerm checked "++near texp ++show texp);
+        ty <- typeOf texp; return(texp,ty)}
 wellFormedTerm i pos message frag (Parsed term) =
    do { -- writeln(replicate i ' '++"Enter WFTerm Parsed "++show term);
+        -- terms need to have their free variables be replaced by CSP constants?
         let trans msg = unlines (msg:message)
       ; (rho,term2) <- handleM (inferExpT frag term) trans
-      ; zz <- getVarsE term
-      ; ww <- getVarsExpr term2
       ; (term,typ) <- case rho of
                 Tau t -> return(term2,t)
                 (Rarr (Sch [] (Tau dom)) (Tau rng)) -> return(term2,TyArr dom rng)
@@ -439,32 +479,6 @@ freshPairs pos mess frag ((nm,Type k):more) =
            frag2 = addMulti [pair1] frag  
      ; (frag3,ans,sub) <- freshPairs pos mess frag2 more
      ; return(frag3,(nm2,Type k2):ans,pair2:sub)}
-
-{-   --  Old version used with rhoSubb in wellFormed Scheme
-
-wellFormedScheme:: Int -> SourcePos -> [String] -> Frag -> Scheme -> FIO Scheme
-wellFormedScheme i pos mess frag (Sch [] rho) = liftM monoR (wellFormedRho (i+1) pos mess frag rho)
-wellFormedScheme i pos mess frag (Sch vs rho) = 
-  do { (frag2,vs2,sub) <- freshPairs pos mess frag vs
-     -- ; writeln("JUst before rhoSubb "++show vs++show rho++show sub)
-     ; rho2 <- rhoSubb pos ([],sub,[]) rho
-     ; rho3 <- wellFormedRho (i+1) pos mess frag2 rho2  -- old version
-     ; return(Sch vs2 rho3)}
-
--- telescoping
-freshPairs:: SourcePos -> [String] -> Frag -> Telescope -> FIO (Frag,Telescope,[(Name,Class Kind Typ TExpr)])
-freshPairs pos mess frag [] = return (frag,[],[]) 
-freshPairs pos mess frag ((nm,Type k):more) =   
-  do { k2 <- wfKind 0 pos mess frag k
-     ; nm2 <- freshName nm
-     ; let pair1 = (nm2,Type(TyVar nm2 k2))
-           pair2 = (nm,Type(TyVar nm2 k2))
-           frag2 = addMulti [pair1] frag  
-     ; (frag3,ans,sub) <- freshPairs pos mess frag2 more
-     ; return(frag3,(nm2,Type k2):ans,pair2:sub)}
--}
-
-
 
 
 generalizeK:: SourcePos -> Frag -> Kind -> FIO PolyKind
@@ -516,18 +530,23 @@ tcLit loc x@(LUnit) expect = zap loc x (Tau tunit) expect
 -- zap pos term rho expect  ----> p  means  rho => expect
 zap :: Show term => SourcePos -> term -> Rho -> Expected Rho -> FIO(term,TEqual)
 zap loc term rho (Check r) = do { p <- morepolyRRT loc message rho r; return (term,p) }
-  where message = ["\nChecking that term '"++show term++"' has type '"++show r++"'"]
+  where message = ["\nChecking that term '"++show term++"' has type '"++show r++"'"++"\nwhen its really has type '"++show rho++"'."]
 zap loc term rho (Infer r) = do { a <- zonkRho rho; fio(writeIORef r a); return(term,TRefl (rhoToTyp a)) }
 
 
 -------------------------------------------
 
-inferPat :: SourcePos -> Frag -> Pat -> FIO(Rho,Frag,Pat)
+inferPat :: SourcePos -> Frag -> Pat -> FIO(Scheme,Frag,Pat)
+inferPat pos k (PAnn p s) = 
+  do { sch <- wellFormedScheme 0 pos [] k s
+     ; (k2,p2) <- bindPat (loc p) k sch p
+     ; sch2 <- zonkScheme sch
+     ; return(sch2,k2,p2)}
 inferPat pos k pat =
   do { rho <- freshRho Star
-     ; (k2,p2) <- bindPat pos k (monoR rho) pat
+     ; (k2,p2) <- bindPat (loc pat) k (monoR rho) pat
      ; rho2 <- zonkRho rho
-     ; return (rho2,k2,p2)}
+     ; return (monoR rho2,k2,p2)}
 
 bindPat :: SourcePos -> Frag -> Scheme -> Pat -> FIO(Frag,Pat)
 bindPat pos k sigma pat =  
@@ -552,11 +571,13 @@ bindPat pos k sigma pat =
              ; (ps2,k2) <- bindPats pos2 k pairs
              ; return(addExQuant vs k2,PCon c ps2)  }      
       (PWild p) -> return(k,PWild p)    
+
+-- bindPatList :: SourcePos -> Frag -> [(Pat, Scheme)] -> FIO ([Pat], Frag)
                    
-bindPats env k [] = return([],k)
-bindPats env k ((pat,scheme):more) = 
-  do { (frag1,p) <- bindPat env k scheme pat
-     ; (ps,frag2) <- bindPats env frag1 more
+bindPats pos k [] = return([],k)
+bindPats pos k ((pat,scheme):more) = 
+  do { (frag1,p) <- bindPat pos k scheme pat
+     ; (ps,frag2) <- bindPats pos frag1 more
      ; return(p:ps,frag2) }
 
 constrRange loc c [] rho pairs =
@@ -572,23 +593,33 @@ okRange c (Tau t) = help t
 okRange c rho = fail ("\nNon tau type: "++show rho++" as range of constructor: "++ show c)
 
  
-              
+checkBindings loc frag0 pats rho =
+  do { (ptrs,names) <- foldM (accumBy getVarsAnnPat) ([],[]) pats
+     ; checkBs loc frag0 pats rho }
+
+
 checkBs
   ::    SourcePos
      -> Frag
      -> [Pat]
      -> Rho
      -> FIO (Frag, [Pat], [Scheme], Rho)
-checkBs loc frag0 [] result = return(frag0,[],[],result) 
-checkBs loc frag0 (p:ps) rho =
-  do { (dom,rng,equalProof) <- unifyFunT loc ["\nChecking lambda patterns "++show (p:ps)++ " are a function"] rho
-     ; (frag1,p1) <- bindPat loc frag0 dom p
-     ; (frag2,ps2,ts,rng3) <- checkBs loc frag1 ps rng
+checkBs pos frag0 [] result = return(frag0,[],[],result) 
+checkBs pos frag0 (p:ps) rho =
+  do { (dom,rng,equalProof) <- unifyFunT (loc p) ["\nChecking lambda patterns "++show (p:ps)++ " are a function"] rho
+     ; (frag1,p1) <- bindPat (loc p) frag0 dom p
+     ; (frag2,ps2,ts,rng3) <- checkBs pos frag1 ps rng
      ; return(frag2,p1:ps2,dom:ts,rng3)
      }
 
-
-inferBs :: SourcePos -> Frag -> [Pat] -> FIO ([Rho], Frag, [Pat])
+inferBindings loc frag0 pats =
+  do { (ptrs,names) <- foldM (accumBy getVarsAnnPat) ([],[]) pats
+     ; writeln("Free names = "++show names)
+     ; binders <- mapM univ names
+     ; frag1 <- addAnnMulti binders frag0
+     ; inferBs loc frag1 pats }
+     
+inferBs :: SourcePos -> Frag -> [Pat] -> FIO ([Scheme], Frag, [Pat])
 inferBs env k [] = return([],k,[])
 inferBs env k (p:ps) =
   do { (rho,k2,p2) <- inferPat env k p
@@ -634,14 +665,18 @@ expandExprSyn env x xs =
         (EFree nm) -> help nm
         other -> Nothing
   where help nm = case DM.lookup nm (table env) of
-                    Just(EVAR(Right(str,arity,f))) -> Just(nm,f,xs)
+                    Just(EVAR(InSyntax(str,arity,f))) -> Just(nm,f,xs)
                     other -> Nothing
 
 -------------------------------------------------
 lookupVar :: Name -> Frag -> FIO(Scheme,TExpr)
 lookupVar (nm@(Nm(_,loc))) frag = 
     case DM.lookup nm (table frag) of 
-      Just(EVAR (Left(term,scheme))) -> do { sc2 <- zonkScheme scheme; return(sc2,term) }
+      Just(EVAR (Normal(term,scheme))) -> do { sc2 <- zonkScheme scheme; return(sc2,term) }
+      Just(EVAR (TermIndex(name,uniq,t))) -> 
+         do { uniq <- fio(nextinteger)
+            ; let sch = mono t
+            ; return(sch,CSP(name,uniq,VCode(TEVar nm sch)))}
       Just(ECON(sch,str,mu)) -> do {sc2 <- zonkScheme sch; return(sc2,TEVar nm sc2)}
       Just(other) -> fail("\n"++show loc++" term variable: "++show nm++" used in wrong context.\n   "++show other)
       Nothing -> fail message 
@@ -649,7 +684,7 @@ lookupVar (nm@(Nm(_,loc))) frag =
                   -- ++ browseFrag (Just 4) frag++"\n..."
 
 typeLamClause env t (pat,exp) =
-     do { (frag,[pat2],ts,result) <- checkBs (expLoc exp) env [pat] t
+     do { (frag,[pat2],ts,result) <- checkBindings (expLoc exp) env [pat] t
         ; e2 <- typeExpT frag exp (Check result)
         ; escapeCheck exp t frag 
         ; return(pat2,e2) 
@@ -766,6 +801,9 @@ wellFormedElim i pos env ElimConst = return(ElimConst,Star)
 wellFormedElim i pos env (elim@(ElimFun ts body)) = 
   do { varsBody <- getVars body
      ; (ptrs,names) <- foldM (accumBy getVars) varsBody ts 
+     ; writeln("\nWellFormedElim "++show elim++" "++show names)
+     ; showScoped "\nScope in eliminator" env
+     
      ; namesToBind <- mapM univ names -- FIX ME??
                       
                
@@ -832,7 +870,7 @@ generalizeS pos env (s@(Sch us rho)) =
 mess c = ["While checking the well formedness of the type of constructor "++show c]
 
 
-
+{-
 
 freeNames :: Frag -> Vars -> [Class Name Name Name]
 freeNames frag (ptrs,names) = filter p names
@@ -843,24 +881,25 @@ freeNames frag (ptrs,names) = filter p names
                      Just(EVAR(Right _)) -> False
                      Just(ECON _) -> False  -- throw away names bound in scope                     
                      other  -> True
+-}
 
 --------------------------------------------------------------------
 -- functions that extend the "table" part of a frag
 -- these are all called by "elab" below that extends
 -- the environment for each new Decl
 
-bindPolyPat env free rho (PVar nm _) = (env2,PVar nm (Just (TyAll free (rhoToTyp rho))))
-  where env2 = addTable EVAR (nm,Left (TEVar nm (Sch free rho),Sch free rho)) env
-bindPolyPat env free rho (p@(PWild loc)) = (env,p)
-bindPolyPat env free rho (p@(PLit loc i)) = (env,p)
-bindPolyPat env free (Tau (TyTuple _ ts)) (PTuple ps) = (env4,PTuple qs)
+bindPolyPat env (Sch free rho) (PVar nm _) = (env2,PVar nm (Just (TyAll free (rhoToTyp rho))))
+  where env2 = addTable EVAR (nm,Normal(TEVar nm (Sch free rho),Sch free rho)) env
+bindPolyPat env sch (p@(PWild loc)) = (env,p)
+bindPolyPat env sch (p@(PLit loc i)) = (env,p)
+bindPolyPat env (Sch free (Tau (TyTuple _ ts))) (PTuple ps) = (env4,PTuple qs)
   where (env4,qs) = all env (map Tau ts) ps
         all env [] [] = (env,[])
         all env (t:ts) (p:ps) = (env3,q:qs)
-              where (env2,q) = (bindPolyPat env free t p)
+              where (env2,q) = (bindPolyPat env (Sch free t) p)
                     (env3,qs) = all env2 ts ps
         all env _ _ = error ("Tuple pattern binding has bad type")
-bindPolyPat env free _ p = (env,p)
+bindPolyPat env _ p = (env,p)
 
 addData (mu@None) t polyk cs env = env2
   where env1 = addTable TYCON1 (t,(mu,polyk)) env
@@ -868,7 +907,7 @@ addData (mu@None) t polyk cs env = env2
 addData (mu@(Syn r)) t polyk cs env = env4
   where env1 = addTable TYCON1 (t,(mu,polyk)) env
         env2 = foldr (\(c,arity,sch) e -> addTable ECON (c,(sch,lowercase c,Syn(lowercase c))) e) env1 cs
-        env3 = foldr (\(c,arity,sch) e -> addTable EVAR (lowerName c,Right(constrMacro polyk arity c (lowercase c))) e) env2 cs
+        env3 = foldr (\(c,arity,sch) e -> addTable EVAR (lowerName c,InSyntax(constrMacro polyk arity c (lowercase c))) e) env2 cs
         env4 = addTable TYCON2 (tyConMacro t r polyk) env3
 
 lowercase (Nm(z:zs,pos)) = (toLower z: zs)
@@ -960,18 +999,20 @@ elab toplevel env (d@(DataDec pos tname args cs derivs)) =
 elab toplevel env (d@(Def loc p e)) =
   do { if toplevel then write ((show p)++", ") else return()
      -- ; let vars = patBinds p [] 
-     ; ([rho],env2,[pat2]) <- inferBs loc env [p]
-     ; (rho2,exp2) <- inferExpT env e
-     ; p1 <- morepolyRRT loc ["?"] rho rho2
+     ; ([scheme1@(Sch vs rho4)],env2,[pat2]) <- inferBindings loc env [p]
+     ; (rho,exp2) <- inferExpT env e
      ; free <- tvsEnv env
-     ; (Sch vs rho3,sub) <- generalizeRho free rho2
+     ; (scheme2,sub) <- generalizeRho free rho
+     ; let mess = "The type of the pattern, "++show pat2++"\n   "++
+                  show scheme1++"\nis too polymorphic for the infered type\n   "++show scheme2++
+                  "\nof the expression\n   "++show e
+     ; (p1) <- morepolySST loc [mess] scheme2 scheme1
      ; let subst = (sub,[],[]) 
      ; p2 <- eqSubb loc subst p1
      ; exp3 <- expSubb loc subst exp2
-     
-     -- ; writeln ("ELAB "++show free++show rho2++", "++show rho3++"; "++show (length sub)++"\n  "++show www++"\n  "++show p2)
+
      ; exp4 <- zonkExp (teCast (tGen vs p2) exp3)  -- zonkExp (abstractTyp vs exp3)
-     ; let (env2,pat3) = bindPolyPat env vs rho3 pat2
+     ; let (env2,pat3) = bindPolyPat env scheme1 pat2
      ; return(env2,Def loc pat3 exp4) }
 
 elab toplevel env (Axiom pos nm t) = 
@@ -982,7 +1023,7 @@ elab toplevel env (Axiom pos nm t) =
      ; (ty,k) <- wellFormedType 0 pos ["Checking kind in Axiom "++show nm] env2 t 
     
      ; tele <- binderToTelescope binders
-     ; let (env3,_) =  bindPolyPat env tele (Tau ty) (PVar nm Nothing)
+     ; let (env3,_) =  bindPolyPat env (Sch tele (Tau ty)) (PVar nm Nothing)
      
      ; return(env3,Axiom pos nm t)
      }
@@ -993,15 +1034,14 @@ elab toplevel env (FunDec fpos f _ clauses) =
      ; typ <- freshRho Star
      ; let checkClause env typ (ps,body) = 
              do { let pos = case ps of { (p:ps) -> loc p; [] -> fpos}
-                ; (rhos,env2,ps2) <- inferBs pos env ps 
-                -- ; writeln("\nEntering inferExp in clause "++show body++" for "++show f)
+                ; (schemes,env2,ps2) <- inferBindings pos env ps 
                 ; (rng,body2) <- inferExpT env2 body
                 ; rng2 <- zonkRho rng
                 -- ; writeln("Body type is: "++show rng2)
                 ; let -- nvars = sum(map (\ p -> length(patBinds p [])) ps)
                       m = (show pos ++"\nWhile checking\n"++plistf show "" ps " " ""++
                            " -> "++show body)
-                ; p <- morepolyRRT pos [m] typ (toRho (map monoR rhos) rng) 
+                ; p <- morepolyRRT fpos [m] typ (toRho schemes rng) 
                 ; return(ps2,teCast p body2)}
      ; clauses2 <- mapM (checkClause env typ) clauses
      ; t2 <- zonkRho typ
@@ -1013,7 +1053,7 @@ elab toplevel env (FunDec fpos f _ clauses) =
                          ; e2 <- expSubb (locL fpos ps) subst e
                          ; return(ps2,e2)}
      ; cls3 <- mapM g clauses2
-     ; let env2 = addTable EVAR (Nm(f,fpos),Left(TEVar (Nm(f,fpos)) sig,sig)) env
+     ; let env2 = addTable EVAR (Nm(f,fpos),Normal(TEVar (Nm(f,fpos)) sig,sig)) env
      ; return(env2,FunDec fpos f vs cls3)
      }
      
@@ -1103,17 +1143,17 @@ toRho (t:ts) range = arr t (toRho ts range)
 
 --  macroName x1 x2 x3 = In[k] (ConstrName x1 x2 x3)
 constrMacro kind arity cname mname = (mname,arity,f)
-  where body k xs = return(EIn k (applyE (ECon cname : xs)))
+  where body pos k xs = return(EIn k (applyE (ECon (relocate cname pos) : xs)))
         f pos xs = 
            do { monokind <- instanK noPos kind
               ; let (kind2,_before,after) = runcount "T" monokind
-              ; body2 <- (body kind2 xs)
+              -- ; body2 <- (body pos kind2 xs)
               ; case compare (length xs) arity of
-                  EQ -> (body kind2 xs)
+                  EQ -> (body pos kind2 xs)
                   LT -> do { let names = take (arity - length xs) nameSupply
                                  abstract [] x = x
                                  abstract (n:ns) x = EAbs ElimConst [(PVar n Nothing,abstract ns x)]                            
-                           ; body2 <- body kind2 (xs++ map EVar names)
+                           ; body2 <- body pos kind2 (xs++ map EVar names)
                            ; return(abstract names body2)}
                   GT -> (fail ("\n"++show pos++"\nConstructor function synonym: "++show mname++
                                "\nshould be applied to "++show arity++" arg(s). "++
@@ -1212,7 +1252,8 @@ typeExpT env (e@(EVar _)) expect
           ; typeExpT env e2 expect}
 typeExpT env (e@(EVar (v@(Nm(s,loc))))) expectRho =
      do { (polyk,exp) <- lookupVar v env
-        ; let mess = "\nChecking the variable:\n   "++show e++": "++show polyk++"\nhas expected type:\n   "++show expectRho
+        ; let mess = "\nChecking the variable:\n   "++show e++": "++
+                     show polyk++"\nhas expected type:\n   "++show expectRho
         ; (ts,p) <- morepolySExpectR_ loc [mess] polyk expectRho
         ; return (teCast p exp) } -- (applyTyp exp ts)}  
 typeExpT env (e@(EFree nm)) expect 
@@ -1223,6 +1264,7 @@ typeExpT env (e@(EFree nm)) expectRho =
      do { (polyk,exp) <- lookupVar nm env
         ; let mess = "\nChecking the variable:\n   "++show e++": "++show polyk++"\nhas expected type:\n   "++show expectRho
         ; (ts,p) <- morepolySExpectR_ (loc nm) [mess] polyk expectRho
+        -- ; writeln("\ntypeExpT EFRee "++show e++show (values env))
         ; case lookup nm (values env) of
             Just(Exp t) -> return (teCast p t)
             Nothing -> fail("\n"++near nm++"Variable marked as bound in the global environment: "++show nm++" is not n scope.")
@@ -1240,24 +1282,21 @@ typeExpT env (e@(EApp _ _)) expect
      = do { e2 <- f (loc e) xs
           ; typeExpT env e2 expect}
 typeExpT env (e@(EAnn CheckT x)) expect = 
-     do { writeln("\nChecking\n   "++show x)
+     do { writeln("\n"++near x++"Enter Type Checking Breakpoint\n   "++show x)
         ; writeln ("Expected Type\n   "++show expect)
         ; interAct env expect
         ; typeExpT env x expect }
 typeExpT env (e@(EApp fun arg)) expect =
      do { (fun_ty,f) <- inferExpT env fun
-        -- ; writeln ("\ntypExp  f="++show f++": "++show fun_ty++" location = "++show (loc arg))
-        ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc fun) ["\nWhile checking that "++show fun++" is a function"] fun_ty
+        ; (arg_ty, res_ty,p1) <- unifyFunT (expLoc arg) ["\n1 While checking that "++show fun++" is a function "++near arg] fun_ty
         ; let cast (e@(TECon mu nm rho n)) = e  -- Don't cast a monomorphic Constructor
               cast e = teCast p1 e
         ; let mkTrans i t msg = do { ft <- zonkRho fun_ty; tt <- zonkScheme t; ex <- zonkExpRho expect;
-                                     return(unlines [msg,near arg++"\n"++show i++" Infering the type of  the application\n   "++show e++
-                                       "\nthe function  '"++show fun++"'  has type\n   "++show ft++
-                                       "\nthe argument  '"++show arg++"'  has type\n   "++ show tt++
-                                       "\nthe expected type\n   "++show ex])}
+                                     return(unlines [msg,"Infering the type of  the application\n   "++show e++
+                                       "\nthe function '"++show fun++"'  has type\n   "++show ft++
+                                       "\nthe argument '"++show arg++"' was not consistent."])}
         ; case arg_ty of
-           Sch [] argRho -> do { -- writeln("arg = "++show arg++": "++show argRho);
-                                 x <- handleMM (typeExpT env arg (Check argRho))
+           Sch [] argRho -> do { x <- handleMM (typeExpT env arg (Check argRho))
                                                (mkTrans 0 arg_ty)
                                ; tt <- zonkRho argRho
                                ; m1 <- mkTrans 1 arg_ty ""
@@ -1287,9 +1326,9 @@ typeExpT env (EAbs elim ms) (Check t) =
 typeExpT env (EAbs elim ((pat,exp):ms)) (Infer ref) =
   do { (elim2,_) <- typeElim env elim
      -- ; writeln ("\nEntering type lambda (Infer ref)")
-     ; ([dom],env2,[pat2]) <- inferBs (expLoc exp) env [pat]
+     ; ([dom],env2,[pat2]) <- inferBindings (expLoc exp) env [pat]
      ; (rng,exp2) <- inferExpT env2 exp 
-     ; let expected = (Rarr (monoR dom) rng)
+     ; let expected = (Rarr dom rng)
      ; fio(writeIORef ref expected)
      ; pairs <- mapM (typeLamClause env expected) ms
      ; return(TEAbs elim2 ((pat2,exp2):pairs)) }
@@ -1312,12 +1351,12 @@ typeExpT env (term@(EIn k x)) expect =
      ; return (teCast p1 (TEIn kind x2))}  
 typeExpT env (term@(EMend tag elim x ms)) expect =
   do { (elim2,k) <- wellFormedElim 0 (loc x) env elim
-     -- ; writeln("\nELIM = "++show elim2++" with kind "++show k)
      ; f <- freshType (Karr k k)
      ; (Type (r@(TyVar rname rkind))) <- existTyp (Nm("r",loc x)) (Type k)
      ; (ops,input,output) <- elimTypes (loc x) tag k f r elim2   
+     ; i2 <- zonk input
      ; x2 <- typeExpT env x (Check(Tau input))
-     ; ms2 <- mapM (\ m -> typeOperClause rname rkind env env ops m []) ms 
+     ; ms2 <- mapM (\ m -> typeOperClause rname rkind env env ops m []) ms
      ; p1 <- morepolyRExpectR_ (loc x) 
              ["Checking the return type of the mendler operator:\n"++show term] 
              (Tau output) expect   
