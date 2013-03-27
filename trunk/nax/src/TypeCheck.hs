@@ -17,7 +17,7 @@ import qualified Data.Map as DM
 import Parser(parseExpr)
 
 
-import Data.List(unionBy,union,nub,find,(\\),isInfixOf)
+import Data.List(unionBy,union,nub,find,intersect,(\\),isInfixOf)
 import Data.Char(toLower)
 import UniqInteger(nextinteger)
 import Text.PrettyPrint.HughesPJ(Doc,text,int,(<>),(<+>),($$),($+$)
@@ -159,36 +159,6 @@ addTermVar var sigma LetBnd frag = addTable EVAR (var,Normal(TEVar var sigma,sig
 
  
 addExQuant xs frag = frag{existbnd = (xs++ existbnd frag)}  
-
-addMulti [] frag = frag
-addMulti ((m@(nm,Exp (term@(TEVar _ sch)))):more) frag = 
-   addMulti more (addTable EVAR (nm,Normal(term,sch)) frag)
-addMulti ((m@(nm,Exp (term@(Emv(u,ptr,ty))))):more) frag = 
-   addMulti more (addTable EVAR (nm,Normal(term,Sch [] (Tau ty))) frag)
-addMulti ((m@(nm,Type t)):more) frag =
-   addMulti more (addTable TYVAR (nm,t) frag)
-addMulti ((m@(nm,Kind k)):more) frag =
-   addMulti more (addTable KVAR (nm,k) frag)   
-addMulti (m:more) frag =  
-   addMulti more (frag)
-
-
--- when a programmer annotates a pattern with a type
--- ie like  (x:forall a. x -> Vector a {`succ x})
--- the free term variables ('x' above) must be added
--- as 'TermIndex' variables, not 'Normal' variables.
--- This is the only case where addAnnMulti differs from addMulti
-addAnnMulti [] frag = return frag
-addAnnMulti (m:ms) frag =
-  do frag2 <- case m of
-               (nm,Exp (term@(TEVar _ (Sch [] (Tau t))))) -> 
-                 do { uniq <- fio(nextinteger)
-                    ; addScope (Exp nm) (addTable EVAR (nm,TermIndex(nm,uniq,t)) frag) }
-               (nm,Type t) -> addScope (Type nm) (addTable TYVAR (nm,t) frag)
-               (nm,Kind k) -> addScope (Kind nm) (addTable KVAR (nm,k) frag)  
-               _ -> return frag
-     addAnnMulti ms frag2
-   
                   
 browseFrag:: String -> Frag -> String     
 browseFrag n frag = plistf g "\n" tableL "\n" "\nDONE"
@@ -292,6 +262,47 @@ univ (Exp nm) =
    do { k <- freshKind
       ; t <- freshType k
       ; return(nm,Exp (TEVar nm (mono t)))}
+
+addMulti [] frag = frag
+addMulti ((m@(nm,Exp (term@(TEVar _ sch)))):more) frag = 
+   addMulti more (addTable EVAR (nm,Normal(term,sch)) frag)
+addMulti ((m@(nm,Exp (term@(Emv(u,ptr,ty))))):more) frag = 
+   addMulti more (addTable EVAR (nm,Normal(term,Sch [] (Tau ty))) frag)
+addMulti ((m@(nm,Type t)):more) frag =
+   addMulti more (addTable TYVAR (nm,t) frag)
+addMulti ((m@(nm,Kind k)):more) frag =
+   addMulti more (addTable KVAR (nm,k) frag)   
+addMulti (m:more) frag =  
+   addMulti more (frag)
+
+
+
+-- when a programmer annotates a pattern with a type
+-- ie like  (x:forall a. x -> Vector a {`succ x})
+-- the free Exp variables ('x' above) must be added
+-- as 'TermIndex' variables, not 'Normal' variables.
+-- And all variables must be added to the scope.
+
+freshClass (Kind nm) = do { k <- freshKind; return(nm,Kind k)}
+freshClass (Type nm) = do { k <- freshKind; t <- freshType k; return(nm,Type t)}
+freshClass (Exp nm) =  
+   do { k <- freshKind
+      ; t <- freshType k
+      ; e <- freshExp t
+      ; return(nm,Exp (TEVar nm (mono t))) }
+      
+addAnnMulti [] frag = return frag
+addAnnMulti (m:ms) frag =
+  do frag2 <- case m of
+               (nm,Exp (term@(TEVar _ (Sch [] (Tau t))))) -> 
+                 do { uniq <- fio(nextinteger)
+                    ; addScope (Exp nm) (addTable EVAR (nm,TermIndex(nm,uniq,t)) frag) }
+               (nm,Type t) -> addScope (Type nm) (addTable TYVAR (nm,t) frag)
+               (nm,Kind k) -> addScope (Kind nm) (addTable KVAR (nm,k) frag)  
+               _ -> return frag
+     addAnnMulti ms frag2
+   
+
 
 wfGadtKind:: SourcePos -> [String] -> Frag -> Kind -> FIO(Kind,[(Name, Class Kind Typ TExpr)])
 wfGadtKind pos mess frag k = 
@@ -405,7 +416,7 @@ wellFormedType i pos mess frag typ = do { x <- prune typ
              ; (x2,kx) <- call x
              ; unifyK pos mess kx kf
              ; return(TyProof f2 x2,Star)}
-        f (TyMu k) =
+        f (TyMu k Nothing) =
           do { let m = ("\nChecking wff (Mu "++show k++")"):mess
              -- ; k <- freshKind -- want kinds inferred
              -- Howver the commented line above does not work
@@ -413,7 +424,8 @@ wellFormedType i pos mess frag typ = do { x <- prune typ
              --  I think we must only consider TyMu in its fully applied form
              --  or do something else
              ; (k2,newvs) <- wfGadtKind pos m frag k -- kind checking
-             ; return(TyMu k2,Karr (Karr k2 k2) k2) }
+             ; return(TyMu k2 Nothing,Karr (Karr k2 k2) k2) }
+        f (TyMu k (Just t)) = error ("No Mu* in wellFormedType yet")
         f (TcTv (x@(uniq,ptr,k))) = return (TcTv x,k)   
         f (TyLift t) = fail ("Lifted type in non application argument position: "++show t)
 {-        
@@ -612,10 +624,18 @@ checkBs pos frag0 (p:ps) rho =
      ; return(frag2,p1:ps2,dom:ts,rng3)
      }
 
-inferBindings loc frag0 pats =
+inferBindings inDefDecl loc frag0 pats =
   do { (ptrs,names) <- foldM (accumBy getVarsAnnPat) ([],[]) pats
-     ; writeln("Free names = "++show names)
-     ; binders <- mapM univ names
+
+     ; let inScope = scopednames frag0
+           unbound = names \\ inScope
+     ; when (not(null unbound) && inDefDecl)  -- all type variables must be bound in a Def
+            (fail ("\nError "++near pats++
+                   "The variables "++plistf showClass "" unbound "," " "++
+                   "in pattern typing\n   "++plistf show "" pats " " ""++
+                   "\nare not bound."))
+            
+     ; binders <- mapM freshClass names
      ; frag1 <- addAnnMulti binders frag0
      ; inferBs loc frag1 pats }
      
@@ -794,23 +814,35 @@ typeElim env (e@(ElimFun ns t)) =
       ; k <- zonkKind(teleKind tele)
       -- ; writeln ("\nTypeELIM "++show e++"\n  names bound = "++show namesToBind++ ": "++ show k)
       ; return(ElimFun tele t3,k)}
-      
-    
+
+-- an eliminator like { {i} . (Nat' {i},a) }  
+-- binds "i" in the body (Nat' {i},a) and 
+-- expects other variables, like "a" to be in scope.
+
+warn s = do { writeln (s++"\n\npress any key to continue ... ")
+            ; fio (getChar)
+            ; return ()}
+   
 wellFormedElim:: Int -> SourcePos -> Frag -> Elim [Typ] -> FIO (Elim (Telescope,[Class (Kind,())(Typ,Kind)(TExpr,Typ) ]),Kind)
 wellFormedElim i pos env ElimConst = return(ElimConst,Star)
 wellFormedElim i pos env (elim@(ElimFun ts body)) = 
-  do { varsBody <- getVars body
-     ; (ptrs,names) <- foldM (accumBy getVars) varsBody ts 
-     ; writeln("\nWellFormedElim "++show elim++" "++show names)
-     ; showScoped "\nScope in eliminator" env
-     
-     ; namesToBind <- mapM univ names -- FIX ME??
-                      
-               
-     ; let env2 = addMulti namesToBind env
-     -- ; writeln("\nTYPEELIM "++show namesToBind)
-     -- ; showFrag 120 env2
-     
+  do { (_,bodyNames) <- getVars body
+     ; (_,argNames) <- foldM (accumBy getVars) ([],[]) ts 
+     ; let inScope = scopednames env
+           freeInBody = bodyNames \\ argNames
+           shadow = argNames `intersect` inScope
+           notBound = freeInBody \\ inScope           
+     ; when (not(null shadow))
+            (warn ("\nWarning: The variables "++plistf showClass "" shadow "," " "++
+                      "\nbound in the index transformer\n  "++show elim++
+                      "\nshadow variables used in explicit typings."))
+     ; when (not(null notBound))                      
+            (warn ("\nWarning: "++near body++"The variables "++plistf showClass "" notBound "," " "++
+                   "\nfrom the body of the index transformer\n  "++show elim++
+                   "\nwhich are not in scope, are universally quantified."))
+     ; bodyNamesToBind <- mapM univ (argNames ++ notBound)
+     ; let env2 = addMulti bodyNamesToBind env
+      
      ; let message x t = ["Checking wellformedness of"++x++"elim arg: "++show t]
            wft (TyLift e) = fmap Exp(wellFormedTerm (i+1) pos (message " lifted " e) env2 e)
            wft t          = fmap Type(wellFormedType (i+1) pos (message " " t)        env2 t)
@@ -820,7 +852,7 @@ wellFormedElim i pos env (elim@(ElimFun ts body)) =
      ; let acc (Type(t,k)) ans = Karr k ans
            acc (Exp(e,t)) ans  = Tarr t ans
            acc (Kind(k,())) ans = ans
-     ; tele <- binderToTelescope namesToBind >>= zonkTele
+     ; tele <- binderToTelescope bodyNamesToBind >>= zonkTele
      ; kind <- zonkKind (foldr acc k2 pairs)
      ; body3 <- zonk body2
      ; pairs2 <- mapM zonkCL pairs
@@ -999,7 +1031,7 @@ elab toplevel env (d@(DataDec pos tname args cs derivs)) =
 elab toplevel env (d@(Def loc p e)) =
   do { if toplevel then write ((show p)++", ") else return()
      -- ; let vars = patBinds p [] 
-     ; ([scheme1@(Sch vs rho4)],env2,[pat2]) <- inferBindings loc env [p]
+     ; ([scheme1@(Sch vs rho4)],env2,[pat2]) <- inferBindings True loc env [p]
      ; (rho,exp2) <- inferExpT env e
      ; free <- tvsEnv env
      ; (scheme2,sub) <- generalizeRho free rho
@@ -1011,7 +1043,10 @@ elab toplevel env (d@(Def loc p e)) =
      ; p2 <- eqSubb loc subst p1
      ; exp3 <- expSubb loc subst exp2
 
-     ; exp4 <- zonkExp (teCast (tGen vs p2) exp3)  -- zonkExp (abstractTyp vs exp3)
+     ; exp4 <- zonkExp (teCast (tGen vs p2) exp3) 
+     ; sch <- zonkScheme scheme1
+     ; sch2 <- zonkScheme scheme2
+     ; writeln("elab DEF "++show scheme1++"\n  "++show sch++"\n   "++show sch2)
      ; let (env2,pat3) = bindPolyPat env scheme1 pat2
      ; return(env2,Def loc pat3 exp4) }
 
@@ -1034,7 +1069,7 @@ elab toplevel env (FunDec fpos f _ clauses) =
      ; typ <- freshRho Star
      ; let checkClause env typ (ps,body) = 
              do { let pos = case ps of { (p:ps) -> loc p; [] -> fpos}
-                ; (schemes,env2,ps2) <- inferBindings pos env ps 
+                ; (schemes,env2,ps2) <- inferBindings False pos env ps 
                 ; (rng,body2) <- inferExpT env2 body
                 ; rng2 <- zonkRho rng
                 -- ; writeln("Body type is: "++show rng2)
@@ -1128,7 +1163,7 @@ tyConMacro tname rname (polyk@(PolyK tele k)) = (augment tname rname (", syntax 
         build tType xs = 
           do { k5 <- instanK noPos (PolyK tele k4)
              ; let muarg = applyT (tType : take before xs)
-             ; return(applyT ((TyMu k5): muarg : (drop before xs)))}
+             ; return(applyT ((tyMu k5): muarg : (drop before xs)))}
         typ x = TyVar x Star       
         args = take (before+after) nameSupply
         str = rname++plistf show " " args " " " = "++show(build showType (map typ args))
@@ -1326,7 +1361,7 @@ typeExpT env (EAbs elim ms) (Check t) =
 typeExpT env (EAbs elim ((pat,exp):ms)) (Infer ref) =
   do { (elim2,_) <- typeElim env elim
      -- ; writeln ("\nEntering type lambda (Infer ref)")
-     ; ([dom],env2,[pat2]) <- inferBindings (expLoc exp) env [pat]
+     ; ([dom],env2,[pat2]) <- inferBindings False (expLoc exp) env [pat]
      ; (rng,exp2) <- inferExpT env2 exp 
      ; let expected = (Rarr dom rng)
      ; fio(writeIORef ref expected)
@@ -1378,12 +1413,12 @@ elimTypes pos tag k f r elim =
      ; ts <- return(map namepart args)  
       
      ; output <- tySubb pos subst ans
-     ; input <- tySubb pos subst (expand(TyApp (TyMu k) f) ts)
+     ; input <- tySubb pos subst (expand(TyApp (tyMu k) f) ts)
  
      ; let caller = Sch xs (Tau(arrT (expand r ts) ans))
            out = Sch xs (Tau(expand (arrT r (TyApp f r)) ts))
-           cast = Sch xs (Tau(expand(arrT r (TyApp (TyMu k) f)) ts))
-           uncast = Sch xs (Tau(expand(arrT (TyApp (TyMu k) f) r) ts))           
+           cast = Sch xs (Tau(expand(arrT r (TyApp (tyMu k) f)) ts))
+           uncast = Sch xs (Tau(expand(arrT (TyApp (tyMu k) f) r) ts))           
            inverse = Sch xs (Tau(arrT ans (expand r ts)))
            struct =  Sch xs (Tau(arrT (expand(TyApp f r) ts) ans))          
            

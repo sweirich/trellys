@@ -46,7 +46,9 @@ matchT vars (pat,typ) env =
        do { env2 <- matchT vars (x,m) env; matchT vars (y,n) env2}  
     (TySyn nm arity xs x,y) -> matchT vars (x,y) env
     (y,TySyn nm arity xs x) -> matchT vars (y,x) env
-    (TyMu k1,TyMu k2) -> matchK vars (k1,k2) env
+    (TyMu k1 Nothing,TyMu k2 Nothing) -> matchK vars (k1,k2) env
+    (TyMu k1 (Just t1),TyMu k2 (Just t2)) -> 
+       do { env1 <- matchK vars (k1,k2) env; matchT vars (t1,t2) env1 }
     (TcTv(u1,p1,k1),TcTv(u2,p2,k2)) | u1==u2 -> return env
     (TyLift (Checked e1),TyLift (Checked e2)) -> matchE vars (e1,e2) env
     (TyAll vs t,TyAll ys s) -> error ("No TyAll in matchT yet")
@@ -319,7 +321,9 @@ unify loc message x y = do { x1 <- prune x; y1 <- prune y
            do { unify loc message x a; unify loc message y b }   
         f (TySyn n1 a1 xs1 b1) x = unify loc message  b1 x
         f y (TySyn n2 a2 xs2 b2) = unify loc message y b2
-        f (TyMu k1) (TyMu k2) = unifyK loc message k1 k2
+        f (TyMu k1 Nothing) (TyMu k2 Nothing) = unifyK loc message k1 k2
+        f (TyMu k1 (Just t1)) (TyMu k2 (Just t2)) = 
+          do { unifyK loc message k1 k2; unify loc message t1 t2 }
         f (TcTv (u1,r1,k1)) (TcTv (u2,r2,k2)) | r1==r2 = return ()
         f (TcTv x) t = unifyVar loc message x t
         f t (TcTv x) = unifyVar loc message x t 
@@ -367,7 +371,7 @@ kindOf t = do { x <- prune t; f x }
         f (TyProof _ _) = return Star
         f (TyArr _ _) = return(Karr Star (Karr Star Star))
         f (TySyn nm arity args body) = kindOf body
-        f (TyMu k) = return (Karr (Karr k k) k)
+        f (TyMu k _) = return (Karr (Karr k k) k)
         f (TyApp f arg) = 
            do { t2 <- kindOf f
               ; case t2 of 
@@ -414,8 +418,12 @@ check loc message typ kind =  -- writeln("\nCHECKING "++showT typ++": "++show ki
          ; check loc message y k1
          ; let m = "Checking the proof "++show typ++" has kind *"
          ; unifyK loc (m:message) kind Star }
-    TyMu k -> unifyK loc (m:message) kind (Karr (Karr k k) k)
+    TyMu k Nothing -> unifyK loc (m:message) kind (Karr (Karr k k) k)
       where m = "Checking (Mu "++show k++") has kind "++ show kind
+    TyMu k (Just t) -> 
+      do { let m = "Checking (Mu* "++show k++") has kind "++ show kind  
+         ; unifyK loc (m:message) kind (Karr (Karr k k) k)
+         ; check loc message t Star } 
     TyLift (zz@(Checked exp)) -> 
        error ("Lifted term as type in non application arg position: "++show zz)
     TcTv (uniq,ptr,k) -> unifyK loc (("Checking t"++show uniq++" has kind "++ show kind) : message) k kind
@@ -532,7 +540,10 @@ zonk t = do { x <- prune t; f x}
         f (TyArr x y) = liftM2 TyArr (zonk x) (zonk y)
         f (TySyn nm arity xs body) =
             liftM2 (TySyn nm arity) (mapM zonk xs) (zonk body)
-        f (TyMu k) = liftM TyMu (zonkKind k)
+        f (TyMu k Nothing) = liftM tymu (zonkKind k)
+            where tymu k = TyMu k Nothing
+        f (TyMu k (Just t)) = liftM2 tymu (zonkKind k) (zonk t)
+            where tymu k t = TyMu k (Just t)
         f (TyLift (Checked e)) = liftM (TyLift . Checked) (zonkExp e)
         f (TyLift (Parsed e)) = return(TyLift (Parsed e)) -- liftM (TyLift . Parsed) (zonkE e)                      
         f (TyCon syn c k) = do { k1 <- zonkPolyK k; return(TyCon syn c k) }
@@ -951,7 +962,11 @@ getVars t = do { x <- prune t; f x }
         f (TySyn nm arity xs body) = 
           do { trip3 <- getVars body
              ; foldM (accumBy getVars) trip3 xs }
-        f (TyMu k) = getVarsKind k
+        f (TyMu k Nothing) = getVarsKind k
+        f (TyMu k (Just t)) = 
+          do { p1 <- getVarsKind k
+             ; p2 <- getVars t
+             ; unionW p1 p2 }
         f (TyLift (Checked e)) = getVarsExpr e 
         f (TyLift (Parsed e)) = getVarsE e
 --         f (TyLift (Pattern p)) = return([],map Exp (patBinds p []))
@@ -1199,7 +1214,11 @@ tbinds (t,env) = do { t2 <- prune t; help t2 } where
      do { (ts2,env2) <- threadM tbinds (ts,env)
         ; (b2,env3) <- tbinds (b,env2)
         ; return(TySyn nm arity ts2 b2,env3) }
-  help (TyMu k) = do { (k2,env2) <- kbinds (k,env); return(TyMu k2,env2)}
+  help (TyMu k Nothing) = do { (k2,env2) <- kbinds (k,env); return(TyMu k2 Nothing,env2)}
+  help (TyMu k (Just t)) = 
+    do { (k2,env2) <- kbinds (k,env)
+       ; (t2,env3) <- tbinds (t,env2)
+       ; return(TyMu k2 (Just t2),env3)}
   help (TcTv x) = return(TcTv x,env)
   help (TyLift (Checked e)) = do { (e2,env2) <- ebinds (e,env); return(TyLift (Checked e2),env2)}
   help (TyLift e) = fail("Unchecked term in tbinds: "++show e)
@@ -1377,7 +1396,10 @@ tySubb loc (env@(ptrs,names,tycons)) x = do { a <- prune x; f a }
         f (TyProof x y) = liftM2 TyProof (sub x) (sub y)
         f (TyArr x y) = liftM2 TyArr (sub x) (sub y)
         f (TySyn nm arity xs body) = liftM2 (TySyn nm arity) (mapM sub xs) (sub body)
-        f (TyMu k) = liftM TyMu (kindSubb loc env k)        
+        f (TyMu k Nothing) = liftM tymu (kindSubb loc env k)        
+            where tymu k = TyMu k Nothing
+        f (TyMu k (Just t)) = liftM2 tymu (kindSubb loc env k) (sub t)
+            where tymu k t = TyMu k (Just t)
         f (TyLift (Checked e)) = liftM (TyLift . Checked) (expSubb loc env e)
         f (TyLift (Parsed e)) = liftM (TyLift . Parsed) (eSubb loc env e)        
         f (TcTv (uniq,ptr,k)) = 
@@ -1480,7 +1502,7 @@ inType :: Kind -> FIO (Typ, Typ)
 inType k = help k k []
   where help all Star ts =  
           do { f <- freshType (Karr all all)
-             ; let muF = TyApp (TyMu all) f 
+             ; let muF = TyApp (TyMu all Nothing) f 
              ; return(applyT(f : muF : ts),applyT (muF : ts)) }
         help all (Karr k1 k2) ts = 
           do { t <- freshType k1
@@ -1550,7 +1572,10 @@ subTyp env x = do { a <- prune x; f a }
         f (TyProof x y) = liftM2 TyProof (sub x) (sub y)
         f (TyArr x y) = liftM2 TyArr (sub x) (sub y)
         f (TySyn nm arity xs body) = liftM2 (TySyn nm arity) (mapM sub xs) (sub body)
-        f (TyMu k) = liftM TyMu (subKind env k)        
+        f (TyMu k Nothing) = liftM tymu (subKind env k) 
+            where tymu k = TyMu k Nothing
+        f (TyMu k (Just t)) = liftM2 tymu (subKind env k) (sub t)
+            where tymu k t = TyMu k (Just t)
         f (TyLift (Checked e)) = fail ("Checked expression in syntax macro expansion: "++show e)
         f (TyLift (Parsed e)) = liftM (TyLift . Parsed) (subExpr env e)
         f (TcTv (uniq,ptr,k)) = liftM (\ k -> TcTv(uniq,ptr,k)) (subKind env k)
@@ -1733,7 +1758,11 @@ unifyT loc mess variance x y = do { x1 <- prune x; y1 <- prune y
            ; return(tProof p1 p2)}
   f (TySyn n1 a1 xs1 b1) x = unifyT loc mess variance b1 x
   f y (TySyn n2 a2 xs2 b2) = unifyT loc mess variance y b2 
-  f (t@(TyMu k1)) (TyMu k2) = unifyK loc mess k1 k2 >> return(tRefl t)
+  f (t@(TyMu k1 Nothing)) (TyMu k2 Nothing) = unifyK loc mess k1 k2 >> return(tRefl t)
+  f (t@(TyMu k1 (Just t1))) (TyMu k2 (Just t2)) =
+      error ("No Mu* in unifyT yet")
+      -- unifyK loc mess k1 k2 >> return(tRefl t)
+
   f (TyArr x y) (TyArr a b) = 
       do { c1 <- unifyT loc mess (flipVar variance ) x a
          ; c2 <- unifyT loc mess variance y b

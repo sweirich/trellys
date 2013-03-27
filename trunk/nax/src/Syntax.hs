@@ -140,7 +140,7 @@ data Typ
    | TyProof Typ Typ
    | TyArr Typ Typ
    | TySyn Name Int [Typ] Typ
-   | TyMu Kind
+   | TyMu Kind (Maybe Typ)
    | TcTv (Uniq,Pointer Typ,Kind)
    | TyLift Term
    | TyAll Telescope Typ
@@ -160,19 +160,6 @@ data Rho
    | Rarr Scheme Rho
    
 data Scheme = Sch Telescope Rho
-
---------------
--- Type patterns
-
-data BinTag = Arrow | Proof | Apply
-
-data TypPat 
-   = TPVar Name
-   | TPCon Name
-   | TPBin BinTag TypPat TypPat
-   | TPTuple [TypPat]
-   | TPMu Kind
-   | TPLift Pat
 
 type Tele t = [(t,Class () Kind Typ)]
 type Telescope = Tele Name
@@ -282,7 +269,8 @@ equalTyp (TyTuple k2 xs) (TyTuple k1 ys) = all xs ys
         all (x:xs) (y:ys) = equalTyp x y && all xs ys
 equalTyp (x@(TyCon _ s k1)) (y@(TyCon _ t k2)) = s==t 
 equalTyp (TyProof x y) (TyProof m n) = x==m && y==n 
-equalTyp (TyMu k1) (TyMu k2) = k1==k2
+equalTyp (TyMu k1 Nothing) (TyMu k2 Nothing) = k1==k2
+equalTyp (TyMu k1 (Just x1)) (TyMu k2 (Just x2)) = k1==k2 && x1==x2
 equalTyp (TcTv (u1,r1,k1)) (TcTv (u2,r2,k2)) = r1==r2
 equalTyp (TyLift x) (TyLift m) = x==m    
 equalTyp (TyArr x y) (TyArr a b) = equalTyp x a && equalTyp y b
@@ -394,16 +382,18 @@ printChoice x p =
    Just b -> b
    Nothing -> False
 
-pi0 = PI [] [("Mu",False),("In",False),("Cast",False),("PatType",False)] -- [listSyn,natSyn] []
+pi0 = PI [] [("Mu",False),("In",False),("Cast",False),("PatType",False),("ClauseType",False)] -- [listSyn,natSyn] []
 
-pi1 = PI [] [("Mu",True),("In",True),("Cast",False),("PatType",False)]
+pi1 = PI [] [("Mu",True),("In",True),("Cast",False),("PatType",False),("ClauseType",False)]
 
 
-listSyn (typ@(TyApp (TyMu Star) (TyApp (TyCon _ (Nm("L",_)) k) x))) = Just(TySyn (toName "List") 1 [x] typ)
+listSyn (typ@(TyApp (TyMu Star Nothing) (TyApp (TyCon _ (Nm("L",_)) k) x))) = Just(TySyn (toName "List") 1 [x] typ)
 listSyn _ = Nothing
 
-natSyn (typ@(TyApp (TyMu Star)(TyCon _ (Nm("N",_)) k))) = Just(TySyn (toName "Nat") 0 [] typ)
+natSyn (typ@(TyApp (TyMu Star Nothing)(TyCon _ (Nm("N",_)) k))) = Just(TySyn (toName "Nat") 0 [] typ)
 natSyn _ = Nothing
+
+tyMu k = TyMu k Nothing
 
 
 
@@ -450,14 +440,6 @@ noParenTExprApply p x = parenTExpr p x
 
 parenTypArrow p (w@(TyArr x y)) = PP.parens (ppTyp p w)
 parenTypArrow p w = ppTyp p w
-
-partenTExprArrow p (w@(TPBin Arrow x y)) = PP.parens (ppTypPat p w)
-partenTExprArrow p w = ppTypPat p w
-
-needsTParens (TPTuple _) = False 
-needsTParens (TPBin Arrow _ _) = True
-needsTParens (TPBin Apply _ _) = True
-needsTParens _ = False
 
 needsParens (TyTuple k _) = False 
 needsParens (TyApp (TyCon _ (Nm("[]",_)) _) x) = False
@@ -565,7 +547,9 @@ ppTExpr p e =
     
     (TEIn k x) -> PP.sep[text "(In$"<>PP.brackets(parensKindQ p k),parenTExpr p x]<>text ")"
     (TEMend s elim exp ms) -> PP.vcat ((text s <> ppElim p elim <+> ppTExpr p exp <+> text "where"): map f ms)
-       where f (tele,ps,body) = PP.nest 2(PP.sep[PP.brackets(PP.sep (PP.punctuate (text ",") (ppKArgs p tele)))
+       where g True tele = PP.brackets(PP.sep (PP.punctuate (text ",") (ppKArgs p tele)))
+             g False tele = PP.empty
+             f (tele,ps,body) = PP.nest 2(PP.sep[ g (printChoice "ClauseType" p) tele
                                                 ,PP.sep (map (ppPat p) ps) <+> text "="
                                                 ,PP.nest 2 (ppTExpr p body)])
     (AppTyp e ts) -> ppTExpr p e <> PP.brackets(ppSepBy (map (ppTyp p) ts) ",")
@@ -574,7 +558,8 @@ ppTExpr p e =
                  ->  PP.parens(PP.vcat[text "cast "
                                       ,PP.nest 3 (ppTEqual p c)
                                       ,ppTExpr p t]) 
-    (TECast c t) -> text"CAST " <> ppTExpr p t                                      
+    (TECast c t) -> -- text"CAST " <>
+                    ppTExpr p t                                      
     (ContextHole e1 e2) ->
        PP.braces(PP.vcat[ppTExpr p e1,text "=",ppTExpr p e2])
                                        
@@ -665,6 +650,9 @@ ppClass p kf tf ef (Kind k) = text "K" <+> kf p k
 ppClass p kf tf ef (Type t) = text "T" <+> tf p t
 ppClass p kf tf ef (Exp  e) = text "E" <+> ef p e
 
+showClass (Kind k) = show k
+showClass (Type t) = show t
+showClass (Exp e) = show e
 --------------------------------------------
 -- Kind
 
@@ -702,8 +690,9 @@ ppTyp p (TyApp f x) = (ppTyp p f) <+> (ppTyp p x)
 ppTyp p (TyTuple k ts) = bracket(PP.cat (PP.punctuate PP.comma (map (ppTyp p) ts)))
   where bracket = case k of { Star -> PP.parens; _ -> PP.braces}
 ppTyp p (TyCon _ c k) = ppName c --  <> text"<" <> ppPolyK p k <> text">"
-ppTyp p (TyMu Star) = text "Mu[*]"
-ppTyp p (TyMu k) = text "Mu[" <> ppKind p k <> text "]"
+ppTyp p (TyMu Star Nothing) = text "Mu[*]"
+ppTyp p (TyMu k Nothing) = text "Mu[" <> ppKind p k <> text "]"
+ppTyp p (TyMu k (Just t)) = text "Mu[" <> ppKind p k <> text ";" <> ppTyp p t <> text "]"
 ppTyp p (TcTv (uniq,ptr,k)) = text("^T"++show uniq)
 ppTyp p (TyLift (Checked x)) = PP.braces(ppTExpr p x)
 ppTyp p (TyLift (Parsed x)) = text "P" <> PP.braces(ppExpr p x)
@@ -722,7 +711,7 @@ ppTheta :: PI -> Theta -> Doc
 ppTheta _ = text . show
 
 
-shorthand p (TyApp (TyMu k) args) ts | not(printChoice "Mu" p) = g args ts
+shorthand p (TyApp (TyMu k Nothing) args) ts | not(printChoice "Mu" p) = g args ts
    where g (TyCon (Syn l) c k) ts = return(toName l,ts)
          g (TyApp f t) ts = g f (t:ts)
          g _ ts = Nothing
@@ -730,19 +719,6 @@ shorthand p (TyApp f t) ts = shorthand p f (t:ts)
 shorthand p x ts = Nothing
 
 ------------------------------------------------------------------------
--- Type Patterns:  TypPat
-
-ppTypPat:: PI -> TypPat -> Doc
-ppTypPat p (TPVar n) = ppName n
-ppTypPat p (TPCon nm) = ppName nm
-ppTypPat p (TPBin Arrow x y) = PP.sep[partenTExprArrow p x <+> text "->",PP.nest 1 (ppTypPat p y)]
-ppTypPat p (TPBin Proof x y) = PP.parens (ppTypPat p x <> text "==" <> (ppTypPat p y))
-ppTypPat p (TPBin Apply f x) | needsTParens x = (ppTypPat p f) <+> (PP.parens (ppTypPat p x))
-ppTypPat p (TPBin Apply f x) = (ppTypPat p f) <+> (ppTypPat p x)
-ppTypPat p (TPTuple ts) = PP.parens(PP.cat (PP.punctuate PP.comma (map (ppTypPat p) ts)))
-ppTypPat p (TPMu k) = text "Mu[" <> ppKind p k <> text "]"
-ppTypPat p (TPLift pat) = braces(ppPat p pat)
-
 
 -----------------------------------------------------------
 -- Rho and Scheme
@@ -904,9 +880,6 @@ instance Show Literal where
   
 instance Show PolyKind where
   show p = render(ppPolyK pi0 p)
-instance Show TypPat where
-  show p = render(ppTypPat pi0 p)
-
 
 instance Show (Class (Kind, ()) (Typ, Kind) (TExpr, Typ)) where
   show (Kind (k,())) = "K "++show k
@@ -939,7 +912,8 @@ showT (TyProof s x) = "(TyProof "++showT s++ " "++showT x++")"
 showT (TyArr s x) = "(TyArr "++showT s++ " -> "++showT x++")"
 showT (TySyn nm arity xs body) = "(TYSyn "++show nm++" "++show arity++
                                  plistf showT " [" xs "," "]="++showT body ++")"
-showT (TyMu k) = "Mu " -- ++show k
+showT (TyMu k Nothing) = "Mu " -- ++show k
+showT (TyMu k (Just t)) = "Mu* " -- ++show k
 showT (TyLift (Parsed x)) = "Parsed{"++show x++"}"
 showT (TyLift (Checked x)) = "{"++showTE x++"}"
 showT (TyAll vs r) = "(TyAll ... "++show r++")"
@@ -1018,20 +992,6 @@ mapMDecl f g (Axiom p n t) = return(Axiom p n t)
 mapDecl f x = runIdentity (mapMDecl (return . f) return x)
       
 
-toPat:: Typ -> TypPat
-toPat (TyVar n k) = TPVar n
-toPat (TyApp x y) = TPBin Apply (toPat x) (toPat y)
-toPat (TyTuple _ xs) = TPTuple (map toPat xs)
-toPat (TyCon _ n _) = TPCon n
-toPat (TyProof x y) = TPBin Proof (toPat x) (toPat y)
-toPat (TyArr x y) = TPBin Arrow (toPat x) (toPat y)
-toPat (TySyn nm i xs t) = toPat t
-toPat (TyMu k) = TPMu k
--- toPat (TyLift(Pattern p)) = TPLift p
-toPat (TyAll bs v) = error ("No TyAll in toPat yet")
-toPat (TyLift x) = error ("Non pattern in TyLift in Type Pattern context: "++show x)
-
- 
 ----------------------------------------------
 -- locations 
 ----------------------------------------------
@@ -1049,14 +1009,17 @@ instance Loc Typ where
   loc = typLoc
 instance Loc (Elim [Name]) where
   loc = elimLoc  
-  
+instance Loc a => Loc [a] where
+  loc [] = noPos
+  loc (x:xs) = bestPos (loc x) (loc xs)
 
 typLoc (TyVar n k) = loc n
 typLoc (TyApp x y) = bestPos (typLoc x) (typLoc y)
 typLoc (TyTuple k xs) = foldr bestPos noPos (map typLoc xs)
 typLoc (TyCon _ (Nm(_,p)) _) = p
 typLoc (TyProof x y) = bestPos (typLoc x) (typLoc y)
-typLoc (TyMu k) = kindLoc k
+typLoc (TyMu k Nothing) = kindLoc k
+typLoc (TyMu k (Just t)) = bestPos (kindLoc k) (typLoc t)
 typLoc (TcTv (u,p,k)) = kindLoc k
 typLoc (TyLift (Parsed x)) = loc x
 typLoc (TyLift (Checked x)) = loc x
@@ -1149,7 +1112,7 @@ applyT (t:s:ts) = applyT (TyApp t s : ts)
 aaa = TyVar (Nm("aaa",prelude)) Star
 
 
-tMu      = TyMu Star   -- TyCon None (pre "Mu")      (PolyK [] (Karr (Karr Star Star) Star))
+tMu      = TyMu Star Nothing  -- TyCon None (pre "Mu")      (PolyK [] (Karr (Karr Star Star) Star))
 tL       = TyCon None (pre "L")       (PolyK [] (Karr Star  (Karr Star Star)))
 tset     = TyCon None (pre "Set")     (PolyK [] (Karr Star  Star))
 -- tpair    = TyCon None (pre "(,)")     (PolyK [] (Karr Star (Karr Star Star)))
@@ -1166,7 +1129,7 @@ tunit    = TyCon None (pre "()")      (PolyK [] Star)
 tio      = TyCon None (pre "IO")      (PolyK [] (Karr Star Star))
 tstring = listT tchar
 
-nat = (TyApp (TyMu Star) (TyCon (Syn "Nat") (toName "N") (PolyK [] (Karr Star Star))))
+nat = (TyApp (tyMu Star) (TyCon (Syn "Nat") (toName "N") (PolyK [] (Karr Star Star))))
 
 ta = TyVar (pre "a") Star
 tb = TyVar (pre "b") Star
@@ -1241,7 +1204,8 @@ pureSubTyp env (TyCon mu c k) = TyCon mu c (pureSubPoly env k)
 pureSubTyp env (TyProof f x) = TyProof (pureSubTyp env f) (pureSubTyp env x)
 pureSubTyp env (TyArr f x) = TyArr (pureSubTyp env f) (pureSubTyp env x)
 pureSubTyp env (TySyn nm n ts t) = TySyn nm n (map (pureSubTyp env) ts) (pureSubTyp env t)
-pureSubTyp env (TyMu k) = TyMu (pureSubKind env k)
+pureSubTyp env (TyMu k Nothing) = TyMu (pureSubKind env k) Nothing
+pureSubTyp env (TyMu k (Just t)) = TyMu (pureSubKind env k) (Just(pureSubTyp env t))
 pureSubTyp env (TcTv (uniq,ptr,k)) = TcTv (uniq,ptr,pureSubKind env k)
 pureSubTyp env (TyLift e) = TyLift (pureSubTerm env e)
 pureSubTyp env (x@(TyAll vs t)) =  error ("No TyAll inpureSubTyp yet: "++show x)
@@ -1393,4 +1357,56 @@ nosplit (Emv _) = True
 nosplit (CSP _) = True
 nosplit (ContextHole _ _) = False
 
- 
+{-
+--------------
+-- Type patterns
+
+data BinTag = Arrow | Proof | Apply
+
+data TypPat 
+   = TPVar Name
+   | TPCon Name
+   | TPBin BinTag TypPat TypPat
+   | TPTuple [TypPat]
+   | TPMu Kind
+   | TPLift Pat
+   
+-- Type Patterns:  TypPat
+
+ppTypPat:: PI -> TypPat -> Doc
+ppTypPat p (TPVar n) = ppName n
+ppTypPat p (TPCon nm) = ppName nm
+ppTypPat p (TPBin Arrow x y) = PP.sep[partenTExprArrow p x <+> text "->",PP.nest 1 (ppTypPat p y)]
+ppTypPat p (TPBin Proof x y) = PP.parens (ppTypPat p x <> text "==" <> (ppTypPat p y))
+ppTypPat p (TPBin Apply f x) | needsTParens x = (ppTypPat p f) <+> (PP.parens (ppTypPat p x))
+ppTypPat p (TPBin Apply f x) = (ppTypPat p f) <+> (ppTypPat p x)
+ppTypPat p (TPTuple ts) = PP.parens(PP.cat (PP.punctuate PP.comma (map (ppTypPat p) ts)))
+ppTypPat p (TPMu k) = text "Mu[" <> ppKind p k <> text "]"
+ppTypPat p (TPLift pat) = braces(ppPat p pat)
+
+partenTExprArrow p (w@(TPBin Arrow x y)) = PP.parens (ppTypPat p w)
+partenTExprArrow p w = ppTypPat p w
+
+
+needsTParens (TPTuple _) = False 
+needsTParens (TPBin Arrow _ _) = True
+needsTParens (TPBin Apply _ _) = True
+needsTParens _ = False
+
+
+instance Show TypPat where
+  show p = render(ppTypPat pi0 p)
+
+toPat:: Typ -> TypPat
+toPat (TyVar n k) = TPVar n
+toPat (TyApp x y) = TPBin Apply (toPat x) (toPat y)
+toPat (TyTuple _ xs) = TPTuple (map toPat xs)
+toPat (TyCon _ n _) = TPCon n
+toPat (TyProof x y) = TPBin Proof (toPat x) (toPat y)
+toPat (TyArr x y) = TPBin Arrow (toPat x) (toPat y)
+toPat (TySyn nm i xs t) = toPat t
+toPat (TyMu k Nothing) = TPMu k
+-- toPat (TyLift(Pattern p)) = TPLift p
+toPat (TyAll bs v) = error ("No TyAll in toPat yet")
+toPat (TyLift x) = error ("Non pattern in TyLift in Type Pattern context: "++show x)   
+-} 

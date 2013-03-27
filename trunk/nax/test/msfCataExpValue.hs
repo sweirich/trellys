@@ -33,6 +33,9 @@ data V r where
   VAbs :: (r -> r) -> V r
   VPair :: r -> r -> V r
 
+
+-- mu[k] F
+-- mu[k,t] F
 -- Fix point operator for HOAS
 
 data Fix f a = In (f (Fix f a)) | Inv a
@@ -126,6 +129,7 @@ msfprim :: (forall r .  (r a -> a) ->
             (forall a . Fix f a) -> a
 msfprim phi x = msfprim2 phi x
 
+lift :: (t1 -> Fix t t1) -> Fix t t1 -> Fix t t1
 lift f (Inv x) = f x
 lift f x = x
 

@@ -638,7 +638,12 @@ typT p = fmap arrow (sepBy1 (fmap applyT (many1 (simpleT p))) (sym "->"))
         arrow (x:xs) = arrT x (arrow xs)
         
 
-muT p = do { keyword "Mu"; k <- bracketS(kindT p); return(TyMu k)}
+muT p = do { keyword "Mu"; (k,mt) <- bracketS(stuff p); return(TyMu k mt)}
+  where stuff p = do { k <- kindT p
+                     ; mt <- (do { sym ";"; t <- typT p; return(Just t)}) <|>
+                             (return Nothing)
+                     ; return(k,mt)}
+
 inP = do { keyword "In"; k <- bracketS kindP ; return(EIn k)}
 
 firstOrderT p = muApp <|> tyConApp 
