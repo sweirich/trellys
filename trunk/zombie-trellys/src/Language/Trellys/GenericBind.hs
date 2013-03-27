@@ -6,7 +6,7 @@ module Language.Trellys.GenericBind
   (Fresh(..),LFresh(..),Alpha(..)
   ,FreshM, runFreshM, FreshMT(..), runFreshMT
   {-- ,AlphaCtx --}
-  ,Name,AnyName(..),rName
+  ,Name(..),AnyName(..),rName
   ,translate
   ,name2Integer,name2String,integer2Name,string2Name,makeName
   ,binders,patfv,fv,fvAny,swaps
@@ -18,7 +18,6 @@ module Language.Trellys.GenericBind
   ,Subst(..),SubstName(..) {--,  matchR1 --}
   ,lunbind, lfreshen
   ,unsafeUnbind
-
   ,Rep
 
 --  ,subst,substs -- only for Nominal
@@ -33,6 +32,7 @@ module Language.Trellys.GenericBind
 import Data.Set (Set)
 
 import Unbound.LocallyNameless hiding (fv)
+import Unbound.LocallyNameless.Name (Name(..))
 import qualified Unbound.LocallyNameless as LN
 import Unbound.LocallyNameless.Ops(unsafeUnbind)
 

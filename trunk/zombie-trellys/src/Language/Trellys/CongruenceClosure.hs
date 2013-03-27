@@ -1,10 +1,11 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, FlexibleInstances, FlexibleContexts,
+              TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
- Constant(..), EqConstConst(..), EqBranchConst(..), Equation, 
+ Constant(..), EqConstConst(..), EqBranchConst(..), Equation, WantedEquation(..),
  Proof(..),
-  newState, propagate, reprs, isEqual
+  newState, propagate, reprs, unify, proofs, bindings
 ) where
 
 {- This module mostly implements the algorithm from
@@ -31,9 +32,6 @@ import qualified Data.Set as S
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Lazy
 
-import Language.Trellys.GenericBind (Name)
-
-
 newtype Constant = Constant Int
   deriving (Eq, Ord, Enum, Ix, Num)
 
@@ -48,17 +46,17 @@ data EqBranchConst label = EqBranchConst label [Constant] Constant
   deriving (Eq,Show)
 -- wanted equations a = b
 data WantedEquation = WantedEquation Constant Constant
+  deriving (Eq,Ord,Show)
 
 type Equation label = Either EqConstConst (EqBranchConst label)
 
 
-type CName = Name Constant
-
 -- Information we keep about a given equivalence class of constants
 data ClassInfo proof = ClassInfo {
   classMembers  :: Set Constant,                  -- All elements in the class
+  classVars     :: Set (CName proof,Constant),    -- All variables that are elements of the class; also remember which c they come from.
   classApps     :: Set (Label proof, [Constant]), -- All applications that are elements of the class
-  essentialVars :: Set CName       -- variables that occur _inside_ _all_ members of the class
+  essentialVars :: Set (CName proof)              -- variables that occur _inside_ _all_ members of the class
 }
 
 instance Show (ClassInfo proof) where
@@ -71,6 +69,7 @@ classSize cls = S.size (classMembers cls)
 combineInfo :: (Proof proof) => ClassInfo proof -> ClassInfo proof -> ClassInfo proof
 combineInfo a b =
   ClassInfo (S.union (classMembers a) (classMembers b))
+            (S.union (classVars a) (classVars b))
             (S.union (classApps a) (classApps b))
             (S.intersection (essentialVars a) (essentialVars b))
 
@@ -80,8 +79,9 @@ type Reprs proof = Map Constant (Either (proof, Constant) (ClassInfo proof))
 type ExplainedEquation proof = (proof, Equation (Label proof))
 type ExplainedEqBranchConst proof = (proof, EqBranchConst (Label proof))
 
-class (Ord (Label proof)) => Proof proof where
+class (Ord (Label proof), Ord (CName proof)) => Proof proof where
   type Label proof
+  type CName proof   --names for unification variables
 
   refl :: Constant -> proof
   symm :: proof -> proof
@@ -91,15 +91,19 @@ class (Ord (Label proof)) => Proof proof where
 data ProblemState proof = ProblemState {
   -- union-find structure mapping constants to their representative.
   reprs :: Reprs proof,
-  -- maps c to list of equations a1@a2=b such that ai related to c.
+
+  -- maps c to list of equations l(a1..an)=b such that some ai is related to c.
   uses :: Map Constant [(proof, EqBranchConst (Label proof))],
+
   -- maps (l, (b1..bn)) to the input equation (l(a1..an)=a) with (bi..bn) representatives of (ai..an).
   --  If as |-> (ps, q,  bs=b) then:
   --   pi : bi = ai
   --   q  : bs = b.
   lookupeq :: Map ((Label proof),[Constant]) ([proof], proof, EqBranchConst (Label proof)),
 
-  unboundVars :: Set Constant  --Set of variables that can still be assigned.
+  unboundVars :: Set (CName proof),           --Set of variables that can still be assigned.
+  bindings    :: Map (CName proof) Constant,  --Assignment to unification variables
+  proofs      :: Map WantedEquation proof
 }
 
 -- Most unification functions live inside a monad:
@@ -110,11 +114,12 @@ type UniM proof a = StateT (ProblemState proof) [] a
 setRepr :: Constant -> (Either (proof, Constant) (ClassInfo proof)) -> UniM proof ()
 setRepr c val = modify (\st -> st{ reprs = M.insert c val (reprs st) })
 
--- Add an equation to the uses table.
---addUse :: Constant -> (proof, EqBranchConst (Label proof)) -> UniM proof ()
---addUse c = undefined
+giveBinding :: Proof proof => (CName proof) -> Constant -> UniM proof ()
+giveBinding x val = modify (\st -> st{ bindings = M.insert x val (bindings st), 
+                                       unboundVars = S.delete x (unboundVars st) })
 
--- Add an equation to the lookupeq table.
+giveProof :: WantedEquation -> proof -> UniM proof ()
+giveProof e p = modify (\st -> st{ proofs  = M.insert e p (proofs st) })
 
 -- Returns the representative of x.
 find :: (Proof proof) => Constant -> UniM proof Constant
@@ -146,15 +151,6 @@ findExplainInfo x = do
            return (p,x',info)
     Right info  -> return (refl x, x, info)
 
--- If a and b are in the same equivalence class return a proof of that, otherwise return Nothing. 
-isEqual :: (Proof proof) => Constant -> Constant  -> UniM proof proof
-isEqual a b = do
-  (p, a') <- findExplain a 
-  (q, b') <- findExplain b
-  if a' == b' 
-   then return $ (trans p (symm q))
-   else lift []
-
 -- Returns the old representative of the smaller class.
 union :: Proof proof => Constant -> Constant -> proof -> UniM proof Constant
 union x y p = do
@@ -170,6 +166,12 @@ union x y p = do
            setRepr x' (Right $ (xinfo `combineInfo` yinfo))
            return y'
 
+-- Add an application term to the equivalence class of a constant
+recordApplication :: Proof proof => Constant -> (Label proof, [Constant]) -> UniM proof ()
+recordApplication a app = do
+  (_,a',ia) <- findExplainInfo a
+  setRepr a' (Right $ ia{ classApps = S.insert app (classApps ia)})
+
 -- propagate takes a list of given equations, and constructs the congruence
 -- closure of those equations.
 propagate :: Proof proof => [ExplainedEquation proof] -> UniM proof ()
@@ -183,6 +185,7 @@ propagate ((p, Left (EqConstConst a b)):eqs) = do
    else 
       propagate eqs
 propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
+  recordApplication a (l,as)
   (ps, as') <- findExplains as
   lookupeqs <- gets lookupeq
   case M.lookup (l, as') lookupeqs of
@@ -201,15 +204,80 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
       propagate eqs
 propagate [] = return ()
 
+
+-- If an equation is already in the congruence closure we can discard it.
+unifyDelete :: Proof proof => WantedEquation -> UniM proof ()
+unifyDelete  (WantedEquation a b) = do
+  (p, a', ia) <- findExplainInfo a
+  (q, b', ib) <- findExplainInfo b
+  if a' == b'  --todo, replace with guard
+   then do
+           giveProof (WantedEquation a b) (trans p (symm q))
+           return ()
+   else
+        lift []
+
+-- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
+unifyBind :: Proof proof => WantedEquation -> UniM proof ()
+unifyBind (WantedEquation a b) = do
+  (_, _, ia) <- findExplainInfo a
+  (_, _, ib) <- findExplainInfo b
+  unbounds <- gets unboundVars
+  let candidates = [ (x,c) | (x,c) <- (S.toList $ classVars ia), 
+                             (x `S.member` unbounds), 
+                             not (x `S.member` (essentialVars ib)) ]
+  if not (null candidates) 
+    then do
+      let (x,c):_ = candidates    --If there are several variables, we don't care which one gets picked.
+      giveBinding x b
+      propagate [(refl c, Left $ EqConstConst c b)]
+      --Now the equation ought to be trivial:
+      unifyDelete (WantedEquation a b)
+    else 
+      lift []
+
+-- If both sides of the equation are applications headed by the same label, try to unify the args.
+unifyDecompose :: Proof proof => WantedEquation -> UniM proof ()
+unifyDecompose (WantedEquation a b) = do
+  (p, _, ia) <- findExplainInfo a
+  (q, _, ib) <- findExplainInfo b
+  (fa, as) <- lift $ S.toList $ classApps ia
+  (fb, bs) <- lift $ S.toList $ classApps ib
+  guard (fa == fb)
+  unify $ zipWith WantedEquation as bs
+  -- Now the equation should be trivial:
+  unifyDelete (WantedEquation a b)
+  return ()
+
 -- Unify takes a list of wanted equations, and makes assignments to unification
 -- variables to make all the equations true.
 unify :: Proof proof => [WantedEquation] -> UniM proof ()
-unify = undefined
+unify [] = return ()
+unify (WantedEquation a b : wanted) = do
+  unifyDelete (WantedEquation a b)
+   `mplus`
+   unifyBind (WantedEquation a b)
+   `mplus` 
+   (do unifyBind (WantedEquation b a) ; unifyDelete (WantedEquation a b))
+   `mplus`
+   unifyDecompose (WantedEquation a b)
+  unify wanted
 
-newState :: (Constant,Constant) -> ProblemState proof
-newState (i0,i1) =
-  ProblemState { reprs = M.fromList [ (c, Right $ singletonClass c) | c <- [i0 .. i1] ] ,
+-- The list contains all the constants in the state, together with
+--   * if the contant itself represents a variable, the name of the variable.
+--   * the set of all variables that occurs in the term that the constant represents.
+newState :: Proof proof => [(Constant,Maybe (CName proof), Set (CName proof))] -> ProblemState proof
+newState constants  =
+  ProblemState { reprs = M.fromList (map singletonClass constants) ,
                  uses = M.empty,
                  lookupeq = M.empty,
-                 unboundVars = S.empty }
- where singletonClass c = ClassInfo (S.singleton c)  S.empty S.empty
+                 unboundVars = touchable,
+                 bindings = M.empty,
+                 proofs = M.empty}
+ where singletonClass (c,mx,evars) = (c, Right $ ClassInfo (S.singleton c) 
+                                                           (case mx of 
+                                                              Nothing -> S.empty
+                                                              Just x -> S.singleton (x, c))
+                                                           S.empty 
+                                                           evars)
+       touchable = S.unions (map (\(_,_,evars) -> evars) constants)

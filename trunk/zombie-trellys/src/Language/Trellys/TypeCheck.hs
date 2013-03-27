@@ -25,7 +25,7 @@ import qualified Language.Trellys.GenericBind as GB
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
-import Control.Applicative (Applicative, (<$>))
+import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
 import Control.Monad.State  hiding (join)
@@ -56,7 +56,13 @@ import qualified Data.Map as M
   that term typecheck. So these two functions also implicitly compute th.
 
   In both functions, the context (gamma) is an implicit argument
-  encapsulated in the TcMonad.  -}
+  encapsulated in the TcMonad.  
+
+  We maintain the following invariants wrt zonking:
+    - The type argument of ta is already zonked when ta is called.
+    - The values returned by ta and ts are zonked before they are returned.
+    - The types in gamma are not yet zonked.
+  -}
 
 
 -- | kind check, for check = synthesis ?
@@ -93,6 +99,8 @@ ta (Paren a) ty = ta a ty
 ta tm (ASubstitutedFor ty x) = ta tm ty
 
 ta (UniVar x) ty = return (AUniVar (translate x) ty)
+  --currently all univars in the source program are distinct, 
+  -- so we don't have to check for a binding of x.
 
 -- rule T_join
 ta (Join s1 s2) (ATyEq a b) =
@@ -112,21 +120,23 @@ ta (OrdAx a) (ASmaller b1 b2) = do
      eaTh <- aGetTh ea
      unless (eaTh==Logic) $
        err [DS "The ordering proof", DD a, DS "should check at L but checks at P"]
+     zb1 <- zonkTerm b1
+     zb2 <- zonkTerm b2
      case eraseToHead tyA of
        ATyEq a1 cvs ->
          case cvs of 
            (ADCon _ _ vs) -> do
-             a1_eq_b2 <- a1 `aeqSimple` b2
+             a1_eq_b2 <- a1 `aeqSimple` zb2
              unless (a1_eq_b2) $
                err [DS "The left side of the equality supplied to ord ",
-                    DS "should be", DD b2, 
+                    DS "should be", DD zb2, 
                     DS "Here it is", DD a1]
-             anySubterm <- anyM (\ (ai,_) -> ai `aeqSimple` b1) vs
+             anySubterm <- anyM (\ (ai,_) -> ai `aeqSimple` zb1) vs
              unless anySubterm $
                 err [DS "The right side of the equality supplied to ord ",
-                     DS "should be a constructor application involving", DD b1,
+                     DS "should be a constructor application involving", DD zb1,
                      DS "Here it is", DD cvs]
-             return (AOrdAx ea b1)
+             return (AOrdAx ea zb1)
            _ -> err [DS "The right side of the equality supplied to ord ",
                      DS "must be a constructor application.",
                      DS "Here it is", DD cvs]
@@ -153,7 +163,8 @@ ta (Contra a) b =  do
                  err [DS "The equality proof", DD tyA,
                       DS "isn't necessarily contradictory because the",
                       DS "constructors are applied to non-values."]
-               return (AContra ea b)
+               zb <- zonkTerm b
+               return (AContra ea zb)
          _ -> err [DS "The equality proof supplied to contra must show",
                    DS "two different constructor forms are equal.",
                    DS "Here it shows", DD tyA]
@@ -193,7 +204,8 @@ ta (Lam lep lbody) arr@(AArrow aep abody) = do
   when (lep == Erased && xE `S.member` fv bodyE) $
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
-  return (ALam arr lep (bind (translate x) ebody))
+  zarr <- zonkTerm arr
+  return (ALam zarr lep (bind (translate x) ebody))
 
 -- rules T_ind1 and T_ind2
 ta (Ind ep lbnd) arr@(AArrow aep abnd) = do
@@ -237,7 +249,8 @@ ta (Ind ep lbnd) arr@(AArrow aep abnd) = do
        unless (isEValue aE) $
               err [DS "The body of an implicit ind must be a value",
                    DS "but here is:", DD a]
-  return (AInd arr ep (bind (f,y) ea))
+  zarr <- zonkTerm arr
+  return (AInd zarr ep (bind (f,y) ea))
 
 -- rules T_rec1 and T_rec2
 ta (Rec ep lbnd) arr@(AArrow aep abnd) = do
@@ -266,7 +279,8 @@ ta (Rec ep lbnd) arr@(AArrow aep abnd) = do
     unless (isEValue aE) $
        err [DS "ta : The body of an implicit rec must be a value",
             DS "but here is:", DD a]
-  return (ARec arr ep (bind (f,y) ea))
+  zarr <- zonkTerm arr
+  return (ARec zarr ep (bind (f,y) ea))
 
 ta (ComplexCase bnd) tyB = do
    (scruts, alts) <- unbind bnd
@@ -276,11 +290,12 @@ ta (ComplexCase bnd) tyB = do
            err [ DS $"Each branch should have " ++ show (length scruts) ++ " patterns, but",
                  DD (ComplexMatch bnd1), DS $ "has " ++ show (length pats) ++  "."]
    mapM_ checkNumPats alts
-   escruts <- mapM (\(s, eq) -> do
+   escruts <- mapM (\(s, eq) -> do                       
                        (es, sTy) <- ts (unembed s)
                        return (es, eq))
                    scruts
-   buildCase escruts alts tyB
+   ztyB <- zonkTerm tyB
+   buildCase escruts alts ztyB
 
 -- implements the checking version of T_let1 and T_let2
 ta (Let th' ep bnd) tyB =
@@ -312,7 +327,8 @@ ta (Let th' ep bnd) tyB =
       err [DS "The variables bound in an implicit let are not allowed to",
            DS "appear in the erasure of the body, but here", DD x,
            DS "appears in the erasure of", DD b]
-    return (ALet ep (bind (translate x, translate y, embed ea) eb))
+    zea <- zonkTerm ea
+    return (ALet ep (bind (translate x, translate y, embed zea) eb))
 
 -- rule T_At
 ta (At ty th') (AType i) = do 
@@ -344,11 +360,12 @@ ta InferMe (ATyEq ty1 ty2) = do
                                            ATyEq tyLHS tyRHS -> Just (x,tyLHS,tyRHS)
                                            _ -> Nothing)
                        context
-  pf <- prove availableEqs (ty1,ty2)
+  zavailableEqs <- mapM (\(x,tyLHS,tyRHS) -> (x,,) <$> zonkTerm tyLHS <*> zonkTerm tyRHS) availableEqs
+  pf <- prove zavailableEqs (ty1,ty2)
   case pf of
     Nothing -> do
       gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> ASig x Logic (ATyEq tyLHS tyRHS)) availableEqs) 
+      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> ASig x Logic (ATyEq tyLHS tyRHS)) zavailableEqs) 
                                                  (ATyEq ty1 ty2)),
            DS "The full local context is", DD gamma]
     Just p -> return p
@@ -366,12 +383,13 @@ ta a tyB = do
   (ea,tyA) <- ts a
   --warn [DS "got", DD tyA]
   noCoercions <- getFlag NoCoercions
-  tyA_eq_tyB <- tyA `aeqSimple` tyB
-  if (tyA_eq_tyB)
+  ztyB <- zonkTerm tyB
+  tyA_eq_ztyB <- tyA `aeqSimple` ztyB
+  if (tyA_eq_ztyB)
     then return ea   --already got the right type.
     else 
      -- try to use a cumul
-     case maybeCumul ea tyA tyB of
+     case maybeCumul ea tyA ztyB of
        Just eaCumuled -> return eaCumuled
        Nothing ->
         -- try to insert an equality proof.
@@ -382,9 +400,10 @@ ta a tyB = do
                                                                ATyEq ty1 ty2 -> Just (x, ty1, ty2)
                                                                _ -> Nothing)
                                               context
-           let theGoal = (Goal (map (\(x,ty1,ty2) -> ASig x Logic (ATyEq ty1 ty2)) availableEqs) 
-                                                 (ATyEq tyA tyB))
-           pf <- prove availableEqs (tyA,tyB)
+           zavailableEqs <- mapM (\(x,tyLHS,tyRHS) -> (x,,) <$> zonkTerm tyLHS <*> zonkTerm tyRHS) availableEqs
+           let theGoal = (Goal (map (\(x,ty1,ty2) -> ASig x Logic (ATyEq ty1 ty2)) zavailableEqs) 
+                                                 (ATyEq tyA ztyB))
+           pf <- prove zavailableEqs (tyA,ztyB)
            case pf of 
              Nothing ->
                err [DS "When checking term", DD a, DS "against type",
@@ -393,9 +412,9 @@ ta a tyB = do
                     DS "I was unable to prove:", DD theGoal]
              Just p -> do
                          x <- fresh (string2Name "x")
-                         return $ AConv ea [(p,Runtime)] (bind [x] (AVar x)) tyB
+                         zonkTerm $ AConv ea [(p,Runtime)] (bind [x] (AVar x)) ztyB
          else err [DS "When checking term", DD a, DS "against type",
-                   DD tyB,  DS ("(" ++ show tyB ++ ")"),
+                   DD ztyB,  DS ("(" ++ show ztyB ++ ")"),
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
                    DS "was inferred instead.",
                    DS "(No automatic coersion was attempted.)"]
@@ -414,12 +433,15 @@ maybeCumul _ _ _ = Nothing
 -- | Checks a list of terms against a telescope of types
 -- Returns list of elaborated terms.
 -- Precondition: the two lists have the same length.
+--
+-- Unlike ta, here the telescope is not assumed to already be zonked.
 taLogicalTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [(ATerm,Epsilon)]
 taLogicalTele [] AEmpty = return []
 taLogicalTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   unless (ep1 == ep2) $
     err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
-  et <- ta t ty
+  zty <- zonkTerm ty
+  et <- ta t zty
   etTh <- aGetTh et
   unless (etTh == Logic) $
     err [DS "Each argument needs to check logically, but", DD t, DS "checks at P"]
@@ -432,12 +454,15 @@ taLogicalTele _ _ = error "Internal error: taTele called with unequal-length arg
 -- with the proviso that each term needs to check at Logic.
 -- Returns list of elaborated terms.
 -- Precondition: the two lists have the same length.
+--
+-- Unlike ta, here the telescope is not assumed to already be zonked.
 taTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [(ATerm,Epsilon)]
 taTele [] AEmpty = return []
 taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   unless (ep1 == ep2) $
     err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
-  et <- ta  t ty
+  zty <- zonkTerm ty
+  et <- ta  t zty
   eterms <- taTele terms (simplSubst x et tele')
   return $ (et,ep1) : eterms
 taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
@@ -467,8 +492,7 @@ ts tsTm =
     {- Variables are special, because both the intro and elimination
        rules for @ always apply, so without loss of generality we can
        eagerly apply unbox to the type we looked up from the
-       context. While we are at it, we apply as well.
-       
+       context. While we are at it, we apply as well.       
 
        Note/todo/wontfix: currently T_unboxVal and T_fo are only ever
        applied to variables in the surface language, not other kinds
@@ -477,7 +501,8 @@ ts tsTm =
      -}
     ts' (Var y) =
       do (th',ty) <- lookupTy (translate y)
-         (adjust_y, adjust_ty) <- adjustTheta (AVar (translate y)) ty
+         zty <- zonkTerm ty
+         (adjust_y, adjust_ty) <- adjustTheta (AVar (translate y)) zty
          return (adjust_y, adjust_ty)
 
     -- Rule T_type
@@ -525,8 +550,9 @@ ts tsTm =
                  ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
          eparams <- map fst <$> taTele (take (aTeleLength delta) args) (aSetTeleEps Erased delta)
          eargs   <- taTele (drop (aTeleLength delta) args) (substATele delta eparams deltai)
-         aKc (ATCon tname eparams)
-         return $ (ADCon (translate c) eparams eargs, ATCon tname eparams)
+         zeparams <- mapM zonkTerm eparams
+         aKc (ATCon tname zeparams)
+         return $ (ADCon (translate c) zeparams eargs, ATCon tname zeparams)
 
     -- rule T_app
     ts' tm@(App ep a b) =
@@ -547,10 +573,13 @@ ts tsTm =
                unless (ebTh==Logic) $
                  err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
 
+             zea <- zonkTerm ea
+             ztyB <- zonkTerm tyB
+
              -- check that the result kind is well-formed
-             let b_for_x_in_B = simplSubst x eb tyB
+             let b_for_x_in_B = simplSubst x eb ztyB
              aKc b_for_x_in_B
-             return (AApp ep ea eb b_for_x_in_B, b_for_x_in_B)
+             return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
            _ -> err [DS "ts: expected arrow type, for term ", DD a,
                      DS ". Instead, got", DD tyArr]
 
@@ -558,7 +587,8 @@ ts tsTm =
     ts' (Smaller a b) = do
       (ea,_) <- ts a
       (eb,_) <- ts b
-      return $ (ASmaller ea eb, AType 0)
+      zea <- zonkTerm ea
+      return $ (ASmaller zea eb, AType 0)
 
     -- rule T_ordtrans
     ts' (OrdTrans a b) = do
@@ -569,14 +599,16 @@ ts tsTm =
       (eb,tyB) <- ts b
       ebTh <- aGetTh eb
       unless (ebTh== Logic) $
-        err [DS "The ordering proof", DD b, DS "should check at L but checks at P"]  
-      case (eraseToHead tyA, eraseToHead tyB) of 
+        err [DS "The ordering proof", DD b, DS "should check at L but checks at P"]
+      zea <- zonkTerm ea
+      ztyA <- zonkTerm tyA
+      case (eraseToHead ztyA, eraseToHead tyB) of 
         (ASmaller a1 a2, ASmaller b1 b2) -> do
           a2_eq_b1 <- a2 `aeqSimple` b1
           unless (a2_eq_b1) $
             err [DS "The middle terms of the inequalities given to ordtrans must match, ",
                  DS "but here they are", DD a2, DS "and", DD b1]
-          return $ (AOrdTrans ea eb, ASmaller a1 b2)
+          return $ (AOrdTrans zea eb, ASmaller a1 b2)
         _ -> err [DS "The arguments to ordtrans must be proofs of <, ",
                   DS "here they have types", DD tyA, DS "and", DD tyB]
 
@@ -584,13 +616,16 @@ ts tsTm =
     ts' (TyEq a b) = do
       (ea,_) <- ts a
       (eb,_) <- ts b
-      return $ (ATyEq ea eb, AType 0)
+      zea <- zonkTerm ea
+      return $ (ATyEq zea eb, AType 0)
 
     -- rule T_conv
     -- Elaborating this is complicated, because we use two different strategies for the Runtime and Erased
     -- elements of as. For Runtime elements we synthesize a type and and elaborated term in one go.
     -- For Erased ones, we substitute them into the template c, elaborate the template, and then dig out the 
     -- elaborated a from the elaborated template.
+
+--Todo: zonking. This is slightly involved, since there are many subterms.
     ts' (Conv b as bnd) =
       do (xs,c) <- unbind bnd
          let chkTy (pf,Runtime) x = do
@@ -642,7 +677,8 @@ ts tsTm =
     ts' (Ann a tyA) =
       do etyA <- kcElab tyA
          ea <- ta a etyA
-         return (ea, etyA)
+         zetyA <- zonkTerm etyA
+         return (ea, zetyA)
 
     -- pass through SubstitutedFor
     ts' (SubstitutedFor a x) =
@@ -652,7 +688,8 @@ ts tsTm =
     -- pass through SubstitutedForA
     ts' (SubstitutedForA ea x) = do
       (th, eaTy) <- aTs ea
-      return (ASubstitutedFor ea (translate x), eaTy)
+      zea <- zonkTerm ea
+      return (ASubstitutedFor zea (translate x), eaTy)
 
     -- the synthesis version of rules T_let1 and T_let2
     ts' (Let th' ep bnd) =
@@ -682,7 +719,9 @@ ts tsTm =
           err [DS "The variables bound in an implicit let are not allowed to",
                DS "appear in the erasure of the body, but here", DD x,
                DS "appears in the erasure of", DD b]
-        return (ALet ep (bind (translate x, translate y,embed ea) eb), tyB)
+
+        zea <- zonkTerm ea
+        return (ALet ep (bind (translate x, translate y,embed zea) eb), tyB)
 
     -- T_at
     ts' (At tyA th') = do
@@ -925,17 +964,6 @@ lookupDType b bty@(eraseToHead -> ATCon d params) = do
 lookupDType b bty = err [DS "Scrutinee ", DD b,
                          DS "must be a member of a datatype, but is not. It has type", DD bty]
 
--- | (lookupDCon' d c) finds the arguments of constructor c, which should be one of the constructors of d.
-lookupDCon' :: AName -> AName -> TcMonad ATelescope
-lookupDCon' d c = do
-  dDef <- lookupTCon d
-  case dDef of 
-    (_,_,Just cons) -> 
-       case find (\(AConstructorDef  c' _) -> c'==c) cons of
-         Nothing -> err [DD c, DS "is not a constructor of type", DD d]
-         Just (AConstructorDef _ deltai)  -> return deltai
-    _ -> err [DD c, DS "is not a constructor of type", DD d]
-
 --------------------------------------
 -- Simplifying substitution
 --------------------------------------
@@ -971,27 +999,6 @@ simplSubst x b a = simplUnboxBox $ subst x b a
 
 simplSubsts :: Subst b a => [(Name b, b)] -> a -> a
 simplSubsts xs a =  simplUnboxBox $ substs xs a
-
-----------------------------------------
--- Dealing with unification variables.
-----------------------------------------
-
--- To zonk a term (this word comes from GHC) means to replace all occurances of 
--- unification variables with their definitions.
-
-zonkTerm :: (Applicative m, MonadState UniVarBindings m) => ATerm -> m ATerm
-zonkTerm a = do
-  bindings <- get
-  return $ zonkTermWithBindings bindings a
-
-zonkTermWithBindings :: UniVarBindings -> ATerm -> ATerm
-zonkTermWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
-  where zonkTermOnce :: ATerm -> ATerm
-        zonkTermOnce (AUniVar x ty) = case M.lookup x bindings of
-                                        Nothing -> (AUniVar x ty)
-                                        Just a -> zonkTermWithBindings bindings a
-        zonkTermOnce a = a
-
 
 ---------------------------------------
 -- Some random utility functions
@@ -1044,6 +1051,8 @@ substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (s
 -- precondition: scrutineeTys has the same length as scrutinees, and all the pattern lists have the same length 
 -- as scrutinees.
 --
+-- The scrutinees and the branch-type are zonked before buildCase is called.
+--
 --            scrutinee  equation-name    branches          branch-type
 buildCase :: [(ATerm,    TName)]       -> [ComplexMatch] -> ATerm        -> TcMonad ATerm
 buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
@@ -1056,10 +1065,11 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any i
   x <- fresh (string2Name "_scrutinee")
   x_eq <- fresh (string2Name "_")
   (th,sTy) <- aTs s
+  ztyAlt <- zonkTerm tyAlt
   (ALet Runtime . bind (x, x_eq, embed s)) <$>
     (extendCtx (ASig x th sTy) $
       extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $
-        buildCase ((AVar x,y):scruts) alts tyAlt)
+        buildCase ((AVar x,y):scruts) alts ztyAlt)
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = do
   --Todo: handle the scrutinee=pattern equation y somehow?
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
@@ -1073,25 +1083,26 @@ buildCase ((s,y):scruts) alts tyAlt = do
                                            (PatCon (unembed -> c') _) -> (translate c')==c
                                            (PatVar _) -> True)
                            <$> mapM matchPat alts
---        warn [DS $ "before freshing: " ++ show args]
         args' <- freshATele args --This may look silly, but we don't get it fresh for free.
         newScruts <- mapM (\x -> ((AVar (translate x)), ) <$> (fresh $ string2Name "_")) (binders args' :: [AName])
         let newScrutTys = simplSubsts (zip (binders delta) bbar) args'
---        warn [DS $ "after: " ++ show newScrutTys]
         newAlts <- mapM (expandMatch s args') relevantAlts
         let erasedVars = aTeleErasedVars args'
                          `S.union` (S.singleton (translate y))
+        ztyAlt <- zonkTerm tyAlt
         newBody <- extendCtxTele newScrutTys th $ 
                      extendCtx (ASig (translate y) Logic 
                                      (ATyEq s (ADCon c bbar (aTeleAsArgs args')))) $
-                       buildCase (newScruts++scruts) newAlts tyAlt
+                       buildCase (newScruts++scruts) newAlts ztyAlt
         erasedNewBody <- erase newBody
         unless (S.null (S.map translate (fv erasedNewBody) `S.intersection` erasedVars)) $ do
           let (x:_) = S.toList (fv newBody `S.intersection` erasedVars)
           err [DS "The variable", DD x, DS "is marked erased and should not appear in the erasure of the case expression"]
-        return $ AMatch c (bind newScrutTys newBody)
+        znewScrutTys <- zonkTele newScrutTys
+        return $ AMatch c (bind znewScrutTys newBody)
   ematchs <- bind (translate y) <$> mapM buildMatch cons
-  return $ ACase s ematchs tyAlt
+  ztyAlt <- zonkTerm tyAlt
+  return $ ACase s ematchs ztyAlt
 
 -- | expandMatch scrut args (pat, alt) 
 -- adjusts the ComplexMatch 'alt'
