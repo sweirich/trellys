@@ -15,4 +15,5 @@ data Flag = PickyEq
           | NoCoercions
           | Reduce
           | LibDir FilePath
+          | SecondPass   --used internally, when we re-check the elaborated core term. 
   deriving (Eq,Show,Read)

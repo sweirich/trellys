@@ -18,7 +18,7 @@ import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
 import Control.Applicative 
-import Control.Monad.Writer.Lazy  hiding( (<>) )
+import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.ST
 import Control.Monad.State.Lazy
 import Data.Maybe (isJust,fromJust)

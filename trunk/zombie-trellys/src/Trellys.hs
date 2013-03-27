@@ -49,7 +49,7 @@ main = do
                         putStrLn "Elaboration pass successful. Writing elaborated terms."
                         writeAModules prefixes defs 
                         putStrLn "Typechecking the elaborated terms."
-                        result <- runTcMonad (emptyEnv flags) (aTcModules defs)
+                        result <- runTcMonad (emptyEnv (SecondPass:flags)) (aTcModules defs)
                         case  result of
                           Left typeError -> do
                                   putStrLn "Internal error, elaborated term fails type check:"
