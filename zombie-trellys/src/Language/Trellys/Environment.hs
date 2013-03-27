@@ -64,7 +64,6 @@ emptyEnv fs = Env { ctx = [] , globals = 0, hints = [], flags = fs, sourceLocati
 instance Disp Env where
   disp e = vcat [disp decl | decl <- ctx e]
 
-
 -- | Find the binding of a unification variable
 lookupUniVar :: (MonadState UniVarBindings m) => AName -> m (Maybe ATerm)
 lookupUniVar x = liftM (M.lookup x) get

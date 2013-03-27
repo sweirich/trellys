@@ -16,6 +16,7 @@ import Control.Applicative
 import qualified Generics.RepLib as RL
 
 import Language.Trellys.Error
+import Language.Trellys.Options
 import Language.Trellys.Environment -- (Env, err, lookupTy, lookupTCon, lookupDCon, extendCtx)
 import Language.Trellys.GenericBind
 import Language.Trellys.Syntax
@@ -40,9 +41,12 @@ coreErr msg = do
 aTs :: ATerm -> TcMonad (Theta, ATerm)
 aTs (AVar x) = maybeUseFO (AVar x) =<< (lookupTy x)
 
--- todo, reject this if we are in the second type checking phase.
--- todo, the Logic is probably wrong, need to to something smarter.
-aTs (AUniVar x ty) = return (Logic,ty)
+aTs (AUniVar x ty) = do 
+  secondPass <- getFlag SecondPass
+  if secondPass
+    then coreErr [DS "Encountered an uninstantiated unification variable", DD x, DS "of type", DD ty]
+    -- todo, the Logic is probably wrong, maybe need to to something smarter.
+    else return (Logic,ty)
 
 aTs (ACumul a j) = do
  (th, aTy) <- aTs a
