@@ -9,7 +9,7 @@ module Language.Trellys.Environment
    getFlag,
    emptyEnv,
    lookupTy, lookupTyMaybe, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
-   lookupUniVar, setUniVar,
+   lookupUniVar, setUniVar, setUniVars,
    getCtx, getLocalCtx, extendCtx, extendCtxTele, extendCtxs, extendCtxsGlobal,
    extendCtxMods,
    extendHints,
@@ -77,6 +77,12 @@ setUniVar x a = do
   when alreadyPresent $
     err [DS "internal error: tried to set an already bound unification variable", DD x]
   modify (M.insert x a)
+
+-- | Set multiple unification variables at once.
+setUniVars :: (MonadState UniVarBindings m, MonadError Err m, MonadReader Env m) => 
+             UniVarBindings -> m ()
+setUniVars bnds =
+  mapM_ (uncurry setUniVar) (M.toList bnds)
 
 -- | Determine if a flag is set
 getFlag :: (MonadReader Env m) => Flag -> m Bool

@@ -1,0 +1,52 @@
+module Append where
+
+import Prelude
+import Vectors
+import Arithmetic
+
+plus0 : [n:Nat] -> n = plus 0 n
+plus0 = \[n] . join 3
+
+plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
+plusSucc = \[n] [m] . join 42
+
+append : [a: Type 0] -> [n:Nat] -> [m:Nat] -> (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append = \[a] . ind app [n] = \[m] . \xs ys .
+  case xs [p] of
+    VNil [neq] ->
+      let _ = (join : m = plus 0 m) in 
+      ys
+    VCons [n'] [neq] x xs' -> 
+      let _ = (join : Succ (plus n' m) = plus (Succ n') m) in
+      VCons [a] [Succ (plus n' m)] [plus n' m] [_] x (app [n'] [ord neq] [m] xs' ys)
+
+
+appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
+                   -> (xs:Vector a i) -> (ys:Vector a j) -> (zs:Vector a k)
+                   -> append [a] [(plus i j)] [k] (append [a] [i] [j] xs ys) zs
+                    = append [a] [i] [(plus j k)] xs (append [a] [j] [k] ys zs)
+
+appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
+  case xs [xseq] of
+    VNil [ieq] ->  
+      let _ = (join : append [a] [i] [j] (VNil [a] [i] [ieq]) ys
+                      = ys) in     
+      let _ = (join : append [a] [i] [plus j k] (VNil [a] [i] [ieq]) (append [a] [j] [k] ys zs)
+                      = append [a] [j] [k] ys zs) in
+      _
+
+    VCons [i'] [ieq] x xs' ->
+      let ih [p] = aa [i'] [ord ieq] [j] [k] xs' ys zs in
+      let unfold_append = (join :
+			     append [a] [plus i j] [k] (append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys) zs
+                             = VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [(join : Succ (plus (plus i' j) k) = Succ (plus (plus i' j) k))] x 
+                                 (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
+      let unfold_append' = (join :
+                             append [a] [i] [plus j k] (VCons [a] [i] [i'] [ieq] x xs') (append [a] [j] [k] ys zs)
+                             = VCons [a] [Succ (plus i' (plus j k))] [plus i' (plus j k)] [(join : Succ (plus i' (plus j k)) =  Succ (plus i' (plus j k)))] x
+                                 (append [?] [?] [?] xs' (append [?] [?] [?] ys zs))) in
+
+      _
+
+
+

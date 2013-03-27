@@ -4,19 +4,21 @@
     UndecidableInstances, OverlappingInstances, TypeSynonymInstances, 
     TupleSections, TypeFamilies #-}
 
-module Language.Trellys.EqualityReasoning (prove) where
+module Language.Trellys.EqualityReasoning (prove, zonkTerm, zonkTele) where
 
 import Generics.RepLib hiding (Arrow,Con,Refl)
 import qualified Generics.RepLib as RL
 import Language.Trellys.GenericBind 
 
+import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
+import Language.Trellys.Environment(UniVarBindings, setUniVars)
 import Language.Trellys.OpSem(erase)
 import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
 import Control.Applicative 
-import Control.Monad.Writer.Lazy
+import Control.Monad.Writer.Lazy  hiding( (<>) )
 import Control.Monad.ST
 import Control.Monad.State.Lazy
 import Data.Maybe (isJust,fromJust)
@@ -32,7 +34,7 @@ import qualified Data.Bimap as BM
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ as PP
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
 
 instance Eq ATerm where
   (==) = aeq
@@ -42,32 +44,31 @@ instance Ord ATerm where
 deriving instance Ord Epsilon
 
 -- A convenient monad for recording an association between terms and constants.
--- While we are at it, also store a set recording which constants represent unification variables ("touchable constants").
-newtype NamingT t m a = NamingT (StateT (Bimap t Constant,  --record the mapping
-                                         Set Constant,      --remember which constants are "touchable"
-                                         [Constant])        --supply of fresh constants
+-- While we are at it, also record what free unification variables various terms have.
+newtype NamingT t m a = NamingT (StateT (--record the mapping
+                                         Bimap t Constant,
+                                         --list of already allocated constants, and they unification variables.
+                                         [(Constant,Maybe AName,Set AName)],
+                                         --supply of fresh constants
+                                         [Constant]) 
                                         m a)
   deriving (Monad, MonadTrans, Functor, Applicative)
 
 instance Fresh m => Fresh (NamingT t m) where
   fresh = lift . fresh
 
-recordName :: (Monad m, Ord t) => t -> NamingT t m Constant
-recordName t = NamingT $ do
-                 (mapping, touchable, (c:cs)) <- get
-                 case BM.lookup t mapping of
-                   Nothing -> do put (BM.insert t c mapping, touchable, cs)
-                                 return c
-                   Just c' -> return c'
+recordName :: (Monad m, Ord t) => t -> Maybe AName -> Set AName -> NamingT t m Constant
+recordName t x evars = 
+    NamingT $ do
+               (mapping, allocated, (c:cs)) <- get
+               case BM.lookup t mapping of
+                 Nothing -> do put (BM.insert t c mapping, (c,x,evars):allocated, cs)
+                               return c
+                 Just c' -> return c'
 
-markTouchable :: (Monad m) => Constant -> NamingT t m ()
-markTouchable c = NamingT $ do
-                   (mapping, touchable, supply) <- get
-                   put (mapping, S.insert c touchable, supply)
-
-runNamingT :: (Monad m) => NamingT t m a -> [Constant] -> m (a, Bimap t Constant, Set Constant)
+runNamingT :: (Monad m) => NamingT t m a -> [Constant] -> m (a, Bimap t Constant, [(Constant,Maybe AName, Set AName)])
 runNamingT (NamingT m) constantSupply = do
-  (a, (mapping, touchable, supply)) <- runStateT m (BM.empty, S.empty, constantSupply) 
+  (a, (mapping, touchable, supply)) <- runStateT m (BM.empty, [], constantSupply) 
   return (a, mapping, touchable)
 
 type TermLabel = Bind [(AName,Epsilon)] ATerm
@@ -91,8 +92,11 @@ data RawProof =
  | RawCong TermLabel [RawProof]
   deriving Show
 
+$(derive [''RawProof])
+
 instance Proof RawProof where
   type Label RawProof = TermLabel
+  type CName RawProof = AName
   refl _ = RawRefl
   symm = RawSymm
   trans = RawTrans 
@@ -314,6 +318,37 @@ orEps Erased _ = Erased
 orEps _ Erased = Erased
 orEps Runtime Runtime = Runtime
 
+----------------------------------------
+-- Dealing with unification variables.
+----------------------------------------
+
+-- | To zonk a term (this word comes from GHC) means to replace all occurances of 
+-- unification variables with their definitions.
+zonkTerm :: (Applicative m, MonadState UniVarBindings m) => ATerm -> m ATerm
+zonkTerm a = do
+  bindings <- get
+  return $ zonkWithBindings bindings a
+
+zonkTele :: (Applicative m, MonadState UniVarBindings m) => ATelescope -> m ATelescope
+zonkTele tele = do
+  bindings <- get
+  return $ zonkWithBindings bindings tele
+
+zonkWithBindings :: Rep a => UniVarBindings -> a -> a
+zonkWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
+  where zonkTermOnce :: ATerm -> ATerm
+        zonkTermOnce (AUniVar x ty) = case M.lookup x bindings of
+                                        Nothing -> (AUniVar x ty)
+                                        Just a -> zonkWithBindings bindings a
+        zonkTermOnce a = a
+
+
+-- | Gather all unification variables that occur in a term.
+uniVars :: ATerm -> Set AName 
+uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere) 
+  where uniVarsHere (AUniVar x _)   = S.singleton x
+        uniVarsHere  _ = S.empty
+
 -- 'decompose False avoid t' returns a new term 's' where each immediate
 -- subterm of 't' that does not mention any of the variables in 'avoid'
 -- has been replaced by a fresh variable. The mapping of the
@@ -329,7 +364,7 @@ decompose True e avoid t | S.null (S.intersection avoid (fv t)) = do
   tell [(e, x, t)]
   return $ AVar x
 decompose _ _ avoid t@(AVar _) = return t
-decompose _ _ avoid t@(AUniVar _ _) = return t --todo: mark it as touchable.
+decompose _ _ avoid t@(AUniVar _ _) = return t
 decompose sub e avoid (ACumul t l) = ACumul <$> (decompose True e avoid t) <*> pure l
 decompose _ _ avoid t@(AType _) = return t
 decompose sub e avoid (ATCon c args) = do
@@ -505,9 +540,10 @@ isAUniVar _ = False
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: (Monad m, Applicative m, Fresh m) => ATerm -> DestructureT m Constant
 genEqs t = do
-  a <- lift $ recordName t
-  when (isAUniVar t) $
-    lift $ markTouchable a
+  let mx = case t of 
+              (AUniVar x _) -> Just (translate x)
+              _             -> Nothing
+  a <- lift $ recordName t mx (S.map translate (uniVars t))
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
   let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
   bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
@@ -524,10 +560,11 @@ genEqs t = do
              Left $ EqConstConst a (head bs))]
   return a
 
-runDestructureT :: (Monad m) => DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap ATerm Constant, Set Constant, a)
+runDestructureT :: (Monad m) => 
+                   DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap ATerm Constant, [(Constant,Maybe AName,Set AName)], a)
 runDestructureT x = do
-  ((a, eqs), bm, touchable) <- flip runNamingT constantSupply $ runWriterT x
-  return (eqs, bm, touchable, a)
+  ((a, eqs), bm, allocated) <- flip runNamingT constantSupply $ runWriterT x
+  return (eqs, bm, allocated, a)
  where constantSupply :: [Constant]
        constantSupply = map Constant [0..]  
 
@@ -540,9 +577,9 @@ processHyp (n,t1,t2) = do
          Left $ EqConstConst a1 a2)]
 
 -- "Given a list of equations, please prove the other equation."
-prove :: (Fresh m, Applicative m, MonadIO m) => [(AName,ATerm,ATerm)] -> (ATerm, ATerm) -> m (Maybe ATerm)
+prove :: [(AName,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
 prove hyps (lhs, rhs) = do
-  (eqs, naming, touchable, (c1,c2))  <- runDestructureT $ do
+  (eqs, naming, allocated, (c1,c2))  <- runDestructureT $ do
                                           mapM_ processHyp hyps
                                           c1 <- genEqs lhs
                                           c2 <- genEqs rhs
@@ -551,20 +588,25 @@ prove hyps (lhs, rhs) = do
     putStrLn $ "The available equations are:\n"
     putStrLn $ intercalate "\n" (map (render . disp) eqs)
     putStrLn $ "The equation to show is " ++ show c1 ++ " == " ++ show c2  -}
-  let cmax = maximum (BM.keysR naming)
-  let mpf = flip evalStateT (newState (Constant 0, cmax)) $ do
+  let sts = flip execStateT (newState allocated) $ do
               propagate eqs
-              isEqual c1 c2 
-  case mpf of
+              unify [WantedEquation c1 c2]
+  case sts of
     [] -> return Nothing
-    pf:_ -> Just <$> (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof) pf 
-
+    st:_ -> 
+       let bndgs = M.map (naming BM.!>)  (bindings st)
+           pf = (proofs st) M.! (WantedEquation c1 c2) in
+        do
+         liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
+         setUniVars bndgs
+         tm <- (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof . zonkWithBindings bndgs) pf
+         --liftIO $ putStrLn $ "Generated proof term " ++ (render (disp tm)) ++ " that is to say " ++ show tm
+         return $ Just tm
 
 ---- Some misc. utility functions
 
 firstM :: Monad m => (a -> m b) -> (a,c) -> m (b,c)
 firstM = runKleisli . first . Kleisli
-
 
 instance Disp (RawProof, Equation TermLabel) where 
   disp (p, eq) = disp p <+> text ":" <+> disp eq

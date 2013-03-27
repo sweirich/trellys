@@ -4,7 +4,7 @@ TORUN=$1
 EXPECTED=$2
 
 echo -n "${TORUN}: "
-./trellys -e "${TORUN}" | grep "${EXPECTED}" > /dev/null
+./trellys "${TORUN}" | grep "${EXPECTED}" > /dev/null
 RESULT=${PIPESTATUS[*]}
 
 case "${RESULT}" in

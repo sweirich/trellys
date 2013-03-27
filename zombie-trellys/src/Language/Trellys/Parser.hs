@@ -378,7 +378,7 @@ sigDef = do
   th <- option Logic $ theta
   n <- try (variable >>= \v -> colon >> return v)
   ty <- expr
-  return $ axOrSig n th ty
+  return $ axOrSig n th ty 
 
 valDef = do
   n <- try (do {n <- variable; reservedOp "="; return n})
