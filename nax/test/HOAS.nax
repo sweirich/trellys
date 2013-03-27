@@ -135,6 +135,15 @@ reif x = msfcata{{t} . Term{t}} x with
              call inv (Vfun' f) = tabs (\ t -> call (f (inv t)))
     
 -- axiom unVfun' : Val' {`arr a b} -> Val' {a} -> Val' {b}
+{- mprsi has a type like this
+ forall j .
+  ( (forall r i . r i -> ans i) ->                -- call   
+    (forall r i . (i < j) => r i -> mu F i) ->    -- cast   
+    (forall r i . (i < j) => mu F i -> r i) ->    -- uncast 
+    (forall r . F r j -> ans j) )
+  -> mu F j -> ans j
+-}  
+
 
 unVfun' x = mprsi{ {`arr a b} . Val' {a} -> Val' {b}} x with
               call cast uncast (Vfun' f) = \ x -> cast(f(uncast x))

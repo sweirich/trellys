@@ -148,6 +148,7 @@ pCom (tcEnv,rtEnv) more =
     "Mu" -> return (adjust "Mu" tcEnv,rtEnv)
     "Cast" -> return(adjust "Cast" tcEnv,rtEnv)
     "PatType" -> return(adjust "PatType" tcEnv,rtEnv)
+    "ClauseType" -> return(adjust "ClauseType" tcEnv,rtEnv)
     "" -> mapM f choices >> return (tcEnv,rtEnv)
     tag -> putStrLn("Unknown printng feature '"++ tag++"'") >> return (tcEnv,rtEnv)
   where choices = pChoices pi
