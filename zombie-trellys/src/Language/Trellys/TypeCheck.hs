@@ -446,7 +446,8 @@ taLogicalTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  =
   unless (etTh == Logic) $
     err [DS "Each argument needs to check logically, but", DD t, DS "checks at P"]
   eterms <- taLogicalTele terms (simplSubst x et tele')
-  return $ (et,ep1) : eterms
+  zet <- zonkTerm et
+  return $ (zet,ep1) : eterms
 taLogicalTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
 
@@ -464,7 +465,8 @@ taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   zty <- zonkTerm ty
   et <- ta  t zty
   eterms <- taTele terms (simplSubst x et tele')
-  return $ (et,ep1) : eterms
+  zet <- zonkTerm et
+  return $ (zet,ep1) : eterms
 taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
 
@@ -541,7 +543,7 @@ ts tsTm =
          eargs <- taLogicalTele args delta
          return (ATCon (translate c) (map fst eargs), (AType lev))
 
-    -- Rule T_dcon
+    -- Rule D | _dcon
     ts' (DCon c args) = do
          (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
          unless (length args == aTeleLength delta + aTeleLength deltai) $
