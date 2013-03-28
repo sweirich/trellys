@@ -95,9 +95,5 @@ getOptions argv =
                      \searched for module name, is used."
 
                      ++ "\n\n" ++ paragraphFill
-                     "The --elaborate option requires \
-                     \that the files M.trellys begins with \"module M where\"."
-
-                     ++ "\n\n" ++ paragraphFill
                      "The main module FILE can be a file name ending in \".trellys\", \
                      \or a plain module name."

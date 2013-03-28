@@ -87,10 +87,9 @@ data RawProof =
    RawAssumption (Maybe AName, ATerm, ATerm)  
  | RawRefl
  | RawSymm RawProof
- | ATerm RawProof
  | RawTrans RawProof RawProof
  | RawCong TermLabel [RawProof]
-  deriving Show
+  deriving (Show,Eq)
 
 $(derive [''RawProof])
 
@@ -102,12 +101,36 @@ instance Proof RawProof where
   trans = RawTrans 
   cong = RawCong 
 
+-- ********** ASSOCIATION PHASE 
+-- In a first pass, we associate all uses of trans to the right, which
+-- lets us simplify subproofs of the form (trans h (trans (symm h) p))
+-- to just p. (This is done by the rawTrans helper function).
+-- This is important because such ineffecient proofs are
+-- often introduced by the union-find datastructure.
+
+associateProof :: RawProof -> RawProof
+associateProof (RawAssumption h) = RawAssumption h
+associateProof RawRefl = RawRefl
+associateProof (RawSymm p) = RawSymm (associateProof p)
+associateProof (RawTrans p q) = rawTrans (associateProof p) (associateProof q)
+associateProof (RawCong l ps) = RawCong l (map associateProof ps)
+
+-- This is a smart constructor for RawTrans
+rawTrans :: RawProof -> RawProof -> RawProof
+rawTrans RawRefl p = p
+rawTrans (RawTrans p q) r = maybeCancel p (rawTrans q r)
+  where maybeCancel :: RawProof -> RawProof -> RawProof
+        maybeCancel p           (RawTrans (RawSymm q) r) | p==q = r
+        maybeCancel (RawSymm p) (RawTrans q r)           | p==q = r
+        maybeCancel p q = RawTrans p q
+rawTrans p q = RawTrans p q
+
 -- ********** SYMMETRIZATION PHASE
--- In a first pass we simplify the RawProofs into this datatype, which gets rid of
+-- Next we simplify the RawProofs into this datatype, which gets rid of
 -- the Symm constructor by pushing it up to the leaves of the tree.
 
 data Orientation = Swapped | NotSwapped
-  deriving Show
+  deriving (Show,Eq)
 data Raw1Proof =
    Raw1Assumption Orientation (Maybe AName, ATerm, ATerm)
  | Raw1Refl
@@ -210,12 +233,6 @@ checkProof tyA tyB Refl = return $ AnnRefl tyA tyB
 checkProof tyA tyB (Cong template ps)  =  do
   subAs <- match (map (\(x,_)->x) ps) template tyA
   subBs <- match (map (\(x,_)->x) ps) template tyB
-  {- liftIO $ do
-    putStrLn $ "About to look up" ++ show  ps
-    putStrLn $ "matched" ++ render (disp template) ++ " against " ++ (render (disp tyA))
-    putStrLn $ "got " ++ show subAs
-    putStrLn $ "matched" ++ render (disp template) ++ " against " ++ (render (disp tyB))
-    putStrLn $ "got " ++ show subBs -}
   subpfs <- mapM (\(x,mp) -> let subA = fromJust $ M.lookup x subAs
                                  subB = fromJust $ M.lookup x subBs
                              in case mp of 
@@ -262,6 +279,8 @@ simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (sim
 simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[]) ps 
                                     in (AnnCong template' ps')
   where simplCong (t, acc) [] = (t, reverse acc)
+        simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
+           simplCong (subst x tyA t, acc) ps
         simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
            simplCong (subst x tyA t, acc) ps
         simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs)):ps) =
@@ -599,8 +618,13 @@ prove hyps (lhs, rhs) = do
         do
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
          setUniVars bndgs
-         tm <- (genProofTerm <=< return . simplProof <=< checkProof lhs rhs <=< fuseProof . symmetrizeProof . zonkWithBindings bndgs) pf
-         --liftIO $ putStrLn $ "Generated proof term " ++ (render (disp tm)) ++ " that is to say " ++ show tm
+         tm <- (genProofTerm 
+                  <=< return . simplProof
+                  <=< checkProof lhs rhs 
+                  <=< fuseProof 
+                  . symmetrizeProof 
+                  . associateProof 
+                  . zonkWithBindings bndgs) pf
          return $ Just tm
 
 ---- Some misc. utility functions

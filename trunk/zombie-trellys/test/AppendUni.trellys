@@ -42,8 +42,8 @@ appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
                              = VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [(join : Succ (plus (plus i' j) k) = Succ (plus (plus i' j) k))] x 
                                  (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
       let unfold_append' = (join :
-                             append [a] [i] [plus j k] (VCons [a] [i] [i'] [ieq] x xs') (append [a] [j] [k] ys zs)
-                             = VCons [a] [Succ (plus i' (plus j k))] [plus i' (plus j k)] [(join : Succ (plus i' (plus j k)) =  Succ (plus i' (plus j k)))] x
+                             append [?] [?] [?] (VCons [?] [?] [?] [ieq] x xs') (append [?] [?] [?] ys zs)
+                             = VCons [?] [?] [?] [(join : Succ (plus i' (plus j k)) =  Succ (plus i' (plus j k)))] x
                                  (append [?] [?] [?] xs' (append [?] [?] [?] ys zs))) in
 
       _
