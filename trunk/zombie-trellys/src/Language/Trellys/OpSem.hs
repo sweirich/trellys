@@ -98,16 +98,18 @@ eraseToHead a = a
 
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
-join s1 s2 m n =
-  do m' <- cbvNSteps s1 m
-     n' <- cbvNSteps s2 n
-     let joined = m' `aeq` n'
-     unless joined $
-       warn [DS "Join failure:",
-             DD m, DS ("reduces in "++show s1++" steps to"), DD m',
-             DS "and",
-             DD n, DS ("reduces in "++show s2++" steps to"), DD n']
-     return joined
+join s1 s2 m n = do
+  --m' <- cbvNSteps s1 m
+  --n' <- cbvNSteps s2 n
+  m' <- parNSteps s1 m
+  n' <- parNSteps s2 n
+  let joined = m' `aeq` n'
+  unless joined $
+    warn [DS "Join failure:",
+          DD m, DS ("reduces in "++show s1++" steps to"), DD m',
+          DS "and",
+          DD n, DS ("reduces in "++show s2++" steps to"), DD n']
+  return joined
 
 -- | Small-step semantics.
 -- Returns Nothing when the argument cannot reduce 
@@ -220,6 +222,103 @@ cbvNSteps n tm =
          Nothing -> return tm
          Just tm' -> cbvNSteps (n - 1) tm'
 
+-- | Parallel-reduction small-step semantics.
+-- 
+-- This reduces zero or more redexes inside a term. 
+-- As is standard for parallel reduction relations, it does not try
+--  to find further redexes in the subterms of a redex.
+--
+-- Unlike a standard parallel recuction relation, once it goes under a
+-- binder it only reduces lambdas and case-expressions, not ind
+-- expressions.  This decreases the risk of unfolding a term
+-- indefinitely.  The boolean argument tracks whether we are under a
+-- binder, when deep==True we don't unfold ind/rec.
+--
+parStep :: Bool -> ETerm -> TcMonad ETerm
+parStep deep a@(EVar _)       = return a
+parStep deep a@(EUniVar _)    = return a
+parStep deep (ETCon c idxs)   = ETCon c <$> mapM (parStep deep) idxs
+parStep deep (EDCon c args)   = EDCon c <$> mapM (parStep deep) args
+parStep deep a@(EType _)      = return a
+parStep deep (EArrow ep a bnd) = do
+  (x,b) <- unbind bnd
+  EArrow ep <$> (parStep True a) <*> (bind x <$> parStep True b)
+parStep deep (ELam bnd)       = do
+  (x,b) <- unbind bnd
+  ELam <$> (bind x <$> parStep True b)
+parStep deep (EILam b)         = EILam <$> parStep True b
+parStep deep (EApp EAbort _)   = return EAbort
+-- Note: for correctness, need a value restriction on b here,
+--  and in the corresponding cases for RecPlus and IndPlus
+parStep deep  (EApp (ELam bnd) b) = do
+  (x,body) <- unbind bnd
+  return $ subst x b body
+parStep False (EApp a@(ERecPlus bnd) b) = do
+  ((f,x),body) <- unbind bnd
+  return $ subst f a $ subst x b body
+parStep False (EApp a@(EIndPlus bnd) b) = do
+  ((f,x),body) <- unbind bnd
+  x' <- fresh (string2Name "x")
+  return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
+parStep deep (EApp a b) = EApp <$> parStep deep a <*> parStep deep b
+parStep deep  (EIApp (EILam body)) = return body
+parStep False (EIApp a@(ERecMinus bnd)) = do
+  (f,body) <- unbind bnd
+  return $ subst f a $ body
+parStep False (EIApp a@(EIndMinus bnd)) = do
+   (f,body) <- unbind bnd
+   return $ subst f (EILam (EILam (EIApp a))) $ body
+parStep deep (EIApp a) = EIApp <$> parStep deep a
+parStep deep (ETyEq a b)     = ETyEq <$> parStep deep a <*> parStep deep b
+parStep deep a@EJoin         = return a
+parStep deep a@EAbort        = return a 
+parStep deep a@EContra       = return a
+parStep deep (ERecPlus bnd)  = do
+  ((f,x), b) <- unbind bnd
+  ERecPlus <$> (bind (f,x) <$> parStep True b)
+parStep deep (ERecMinus bnd)  = do
+  (f,b) <- unbind bnd
+  ERecMinus <$> (bind f <$> parStep True b)
+parStep deep (EIndPlus bnd)    = do
+  ((f,x), b) <- unbind bnd
+  EIndPlus <$> (bind (f,x) <$> parStep True b)
+parStep deep (EIndMinus bnd)  = do
+  (f,b) <- unbind bnd
+  EIndMinus <$> (bind f <$> parStep True b)
+parStep deep (ECase EAbort mtchs) = return EAbort
+-- Todo: need a value-restriction for correctness.
+parStep deep a@(ECase (EDCon c args) mtchs) = 
+  case find (\(EMatch c' _) -> c' == c) mtchs of
+    Nothing  -> return a  --This should probably never happen?
+    Just (EMatch c' bnd) ->
+        do (delta,mtchbody) <- unbind bnd
+           if (length delta /= length args) 
+             then return a
+             else return $ substs (zip delta args) mtchbody
+parStep deep (ECase a mtchs) = 
+  ECase <$> parStep deep a <*> mapM parStepMatch mtchs
+  where parStepMatch (EMatch c bnd) = do (xs,b) <- unbind bnd
+                                         EMatch c <$> (bind xs <$> parStep True b)
+parStep deep (ESmaller a b) = ESmaller <$> parStep deep a <*> parStep deep b
+parStep deep a@EOrdAx = return a
+parStep deep (ELet EAbort bnd) = return EAbort
+parStep deep (ELet v bnd) | isEValue v = do
+   (x,b) <- unbind bnd
+   return $ subst x v b
+parStep deep (ELet a bnd) = do
+   (x,b) <- unbind bnd
+   ELet <$> parStep deep a <*> (bind x <$> parStep True b)
+parStep deep (EAt a th) = EAt <$> parStep deep a <*> pure th
+parStep deep a@ETrustMe = return a
+
+-- takes up to n steps
+parNSteps :: Int -> ETerm -> TcMonad ETerm
+parNSteps 0 a = return a
+parNSteps n a = do 
+ a' <- parStep False a 
+ if (a `aeq` a')
+  then return a 
+  else parNSteps (n-1) a'
 
 -- | isValue checks to see if a term is a value
 -- This is  used in a single place in the entire program, wish I could get rid of it.
