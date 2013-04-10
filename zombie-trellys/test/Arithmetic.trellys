@@ -71,7 +71,7 @@ ind minus_same_zero n =
     case n [n_eq] of
       Zero -> (join : minus 0 0 = 0)
       Succ pred ->
-        let _ = (join : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+        let _ = (join 10 : (minus (Succ pred) (Succ pred)) = minus pred pred) in
           minus_same_zero pred [ord n_eq]
 
 -- n - 0 = n
@@ -87,8 +87,10 @@ ind lemma_minus_plus_id m = \n .
   case m [m_eq] of
      Zero -> let _ = (join : n = plus 0 n) in
               lemma_minus_zero_id n
-     Succ m' -> let _ = (join : minus (plus (Succ m') n) (Succ m')
-                                = minus (plus m' n) m') in
+     Succ m' ->  let _ = (join : (plus (Succ m') n) = Succ (plus m' n)) in
+                 let [plus_m'_n] = plus m' n in
+                 let _ = (join : minus (Succ plus_m'_n) (Succ m')
+                                = minus plus_m'_n m') in
                  (lemma_minus_plus_id m' [ord m_eq] n)
 
 -- m*(n+1) / n = m
@@ -98,11 +100,17 @@ ind div_mult m = \n .
   case m [m_eq] of
     Zero -> (join : div (mult Zero (Succ n)) n = Zero)
                -- (S m' * S n) / n = (let r = ((n + (m' * S n)) - n) / n in S r)
-    Succ m' -> let _    = (join: div (mult (Succ m') (Succ n)) n =
-                                      (let prog r [_] = div (minus (plus n (mult m' (Succ n))) n) n
-                                       in Succ r))
+    Succ m' -> let _    = (join: mult (Succ m') (Succ n) =
+                                 (plus (Succ n) (mult m' (Succ n)))) 
+               in let [mult_m'_Sn] = mult m' (Succ n)
+               in let _ = (join: plus (Succ n) mult_m'_Sn
+	                       = Succ (plus n mult_m'_Sn))
+               in let [plus_n__mult_m'_Sn] = plus n mult_m'_Sn
+               in let _ = (join: div (Succ plus_n__mult_m'_Sn) n =
+                                 (let prog r [_] = div (minus plus_n__mult_m'_Sn n) n
+                                  in Succ r))
                in let _ = lemma_minus_plus_id n (mult m' (Succ n))
-               in let _ = div_mult m' [ord m_eq] n
+               in let IH= div_mult m' [ord m_eq] n
                in let _ = (join : (let prog r [_] = m' in Succ r) = Succ m')
                in (_ : (div (mult m (Succ n)) n = m))
 
@@ -110,13 +118,21 @@ plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (p
 plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
-    Zero -> (join : plus (plus 0 j) k = plus 0 (plus j k))
+    Zero ->  let   [plus_j_k] = plus j k 
+             in let _ =  (join : plus 0 plus_j_k = plus_j_k)
+             in let _ =  (join : plus 0 j = j)
+             in (_ : plus (plus 0 j) k = plus 0 (plus j k))
                -- associate `plus` in `Succ` of the inductive case: S ((i'+j)+k) = S (i'+(j+k))
     Succ i' -> let ih = pa i' [ord ieq] j k
                -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
-               in let e2 = (join : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
+               in let _  = (join : plus (Succ i') j = Succ (plus i' j))
+               in let [plus_i'_j] = plus i' j
+               in let _  = (join : plus (Succ plus_i'_j) k = Succ (plus plus_i'_j k))
+--               in let e2 = (_ : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
                -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
-               in let e3 = (join : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
+               in let [plus_j_k] = plus j k
+               in let _ = (join : plus (Succ i') plus_j_k = Succ (plus i' plus_j_k))
+--               in let e3 = (_ : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
                -- move the `Succ` inside both sides
                in (_ : (plus (plus i j) k) = (plus i (plus j k)))
 

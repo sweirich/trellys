@@ -410,7 +410,14 @@ ta a tyB = do
                     DD tyB, DS "the distinct type", DD tyA,
                     DS "was inferred instead.",
                     DS "I was unable to prove:", DD theGoal]
-             Just p -> do
+             Just p -> do 
+                    -- If the two types contained unification variables they may be identical now,
+                    -- in which case we do not need to insert a conversion after all.
+                    zztyA <- zonkTerm tyA
+                    zztyB <- zonkTerm ztyB
+                    if (zztyA `aeq` zztyB)
+                      then zonkTerm ea
+                      else do
                          x <- fresh (string2Name "x")
                          zonkTerm $ AConv ea [(p,Runtime)] (bind [x] (AVar x)) ztyB
          else err [DS "When checking term", DD a, DS "against type",
@@ -502,9 +509,9 @@ ts tsTm =
        language.
      -}
     ts' (Var y) =
-      do (th',ty) <- lookupTy (translate y)
+      do (th,ty) <- lookupTy (translate y)
          zty <- zonkTerm ty
-         (adjust_y, adjust_ty) <- adjustTheta (AVar (translate y)) zty
+         (_, adjust_y, adjust_ty) <- adjustTheta th (AVar (translate y)) zty
          return (adjust_y, adjust_ty)
 
     -- Rule T_type
@@ -747,14 +754,14 @@ ts tsTm =
 
 -- | Take an annotated term which typechecks at aTy, and try to
 --   apply as many Unboxing rules as possible.
-adjustTheta :: ATerm -> ATerm -> TcMonad (ATerm, ATerm)
-adjustTheta a aTy = do
+adjustTheta :: Theta -> ATerm -> ATerm -> TcMonad (Theta, ATerm, ATerm)
+adjustTheta th a aTy = do
   isVal <- isEValue <$> erase a
   if isVal 
     then case eraseToHead aTy of
-      (AAt ty' th') -> adjustTheta (AUnboxVal a) ty'
-      _  -> return (a, aTy)
-    else return (a, aTy)
+      (AAt ty' th') -> adjustTheta th' (AUnboxVal a) ty'
+      _  -> return (th, a, aTy)
+    else return (th, a, aTy)
 
 --------------------------------------------------------
 -- Using the typechecker for decls and modules and stuff
@@ -1076,8 +1083,9 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = d
   --Todo: handle the scrutinee=pattern equation y somehow?
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
   buildCase scruts alts' tyAlt
-buildCase ((s,y):scruts) alts tyAlt = do
-  (th,sTy) <- aTs s
+buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
+  (th_unadjusted, sTy_unadjusted) <- aTs s_unadjusted
+  (th,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
   let buildMatch :: AConstructorDef -> TcMonad AMatch
       buildMatch (AConstructorDef c args) = do
@@ -1126,7 +1134,6 @@ expandMatch s  args (PatCon (unembed -> c) newPats, ComplexMatch alt) = do
 expandMatch s args (PatVar z, ComplexMatch alt) = do
   newPats <- mapM (\ep -> do x <- fresh (string2Name  "_"); return (PatVar x, ep)) (aTeleEpsilons args)
   (pats, body) <- unbind alt
-  --Avoid introducing a let-binding in the case when the scrutinee is already a variable:
   case (eraseToHead s) of 
     AVar x ->
       return $ ComplexMatch (bind (map fst newPats++pats) (simplSubst z (Var (translate x)) body))

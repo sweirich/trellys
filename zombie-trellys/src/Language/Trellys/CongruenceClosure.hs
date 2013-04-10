@@ -8,7 +8,7 @@ module Language.Trellys.CongruenceClosure(
   newState, propagate, reprs, unify, proofs, bindings
 ) where
 
-{- This module mostly implements the algorithm from
+{- This module mostly follows two papers. The congruence closure part is based on
      Robert Nieuwenhuis and Albert Oliveras, "Fast Congruence Closure and Extensions",
      Information and Computation, 205(4):557-580, April 2007.  
    Compared to that paper the main differences are:
@@ -17,6 +17,12 @@ module Language.Trellys.CongruenceClosure(
     - the associated equality proofs are stored directly on the Union-Find edges, instead of
       in an associated "proof forest". (The algoritm will run faster, but the proof terms will
       be bigger than optimal).
+
+   The rigid E-unification part is based on
+     Jean Goubalt, "A Rule-based Algorithm for Rigid E-Unification".
+   However, compared to that paper, only a subset of the rules are currently implemented, namely
+   the deterministic ones (i.e. the ones that do not involve nondeterministic search): Norm, Delete,
+   Decomp, and Bind.
  -}
 
 import Prelude hiding (pi)
@@ -205,17 +211,29 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
 propagate [] = return ()
 
 
+-- Take a computation that can succeed in multiple ways, and only
+--  consider the first way that works.
+cut :: UniM p a -> UniM p a
+cut m = StateT $ 
+          \s -> take 1 (runStateT m s)
+
+-- Nondeterministically choose between two computations. If the first
+-- one suceeds, then commit to that choice and don't try the second.
+mplusCut :: UniM p a -> UniM p a -> UniM p a
+mplusCut m1 m2 = StateT $
+                 \s -> let r1 = runStateT m1 s
+                           r2 = runStateT m2 s
+                        in
+                          if not (null r1) then r1 else r2
+
+
 -- If an equation is already in the congruence closure we can discard it.
 unifyDelete :: Proof proof => WantedEquation -> UniM proof ()
 unifyDelete  (WantedEquation a b) = do
   (p, a', ia) <- findExplainInfo a
   (q, b', ib) <- findExplainInfo b
-  if a' == b'  --todo, replace with guard
-   then do
-           giveProof (WantedEquation a b) (trans p (symm q))
-           return ()
-   else
-        lift []
+  guard (a' == b')
+  giveProof (WantedEquation a b) (trans p (symm q))
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
 unifyBind :: Proof proof => WantedEquation -> UniM proof ()
@@ -226,15 +244,12 @@ unifyBind (WantedEquation a b) = do
   let candidates = [ (x,c) | (x,c) <- (S.toList $ classVars ia), 
                              (x `S.member` unbounds), 
                              not (x `S.member` (essentialVars ib)) ]
-  if not (null candidates) 
-    then do
-      let (x,c):_ = candidates    --If there are several variables, we don't care which one gets picked.
-      giveBinding x b
-      propagate [(refl c, Left $ EqConstConst c b)]
-      --Now the equation ought to be trivial:
-      unifyDelete (WantedEquation a b)
-    else 
-      lift []
+  guard $ not (null candidates) 
+  let (x,c):_ = candidates    --If there are several variables, we don't care which one gets picked.
+  giveBinding x b
+  propagate [(refl c, Left $ EqConstConst c b)]
+  --Now the equation ought to be trivial:
+  unifyDelete (WantedEquation a b)
 
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
 unifyDecompose :: Proof proof => WantedEquation -> UniM proof ()
@@ -255,11 +270,11 @@ unify :: Proof proof => [WantedEquation] -> UniM proof ()
 unify [] = return ()
 unify (WantedEquation a b : wanted) = do
   unifyDelete (WantedEquation a b)
-   `mplus`
+   `mplusCut`
    unifyBind (WantedEquation a b)
-   `mplus` 
+   `mplusCut` 
    (do unifyBind (WantedEquation b a) ; unifyDelete (WantedEquation a b))
-   `mplus`
+   `mplusCut`
    unifyDecompose (WantedEquation a b)
   unify wanted
 

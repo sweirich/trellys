@@ -3,7 +3,7 @@ module Logic where
 import Prelude -- for Void
 
 data And (xT:Type 0) (yT:Type 0) : Type 0 where
-  And of (x:xT@log) (y:yT@log)
+  Conj of (x:xT@log) (y:yT@log)
 
 data Or (xT:Type 0) (yT:Type 0) : Type 0 where
   InL of (x:xT@log)

@@ -4,7 +4,7 @@
     UndecidableInstances, OverlappingInstances, TypeSynonymInstances, 
     TupleSections, TypeFamilies #-}
 
-module Language.Trellys.EqualityReasoning (prove, zonkTerm, zonkTele) where
+module Language.Trellys.EqualityReasoning (prove, uneraseTerm, zonkTerm, zonkTele) where
 
 import Generics.RepLib hiding (Arrow,Con,Refl)
 import qualified Generics.RepLib as RL
@@ -216,7 +216,8 @@ data AnnotProof =
   | AnnRefl ATerm ATerm
   | AnnCong ATerm [(AName,ATerm,ATerm,Maybe AnnotProof)]
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
-  
+ deriving Show
+
 -- [synthProof B p] takes a SynthProof of A=B and returns A and the corresponding AnnotProof
 synthProof :: (Applicative m, Fresh m) => ATerm -> SynthProof -> m (ATerm,AnnotProof)
 synthProof tyB (AssumTrans NotSwapped h@(n,tyA,tyC) p) = do
@@ -292,7 +293,7 @@ simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[
 -- Final pass: now we can generate the Trellys Core proof terms.
 
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
-genProofTerm (AnnAssum NotSwapped (Just n,tyA,tyB)) =  uneraseTerm tyA tyB (AVar n)
+genProofTerm (AnnAssum NotSwapped (Just n,tyA,tyB)) = return $ AVar n
 genProofTerm (AnnAssum Swapped (Just n,tyA,tyB)) = symmTerm tyA tyB (AVar n)
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0
@@ -321,10 +322,14 @@ transTerm tyA tyB tyC p q = do
 
 -- From (tyA=tyB) conclude (tyA=tyB), but in a way that only uses the
 -- hypothesis in an erased position.
-uneraseTerm :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
+uneraseTerm :: (Fresh m,Applicative m) => ATerm -> ATerm -> ATerm -> m ATerm
 uneraseTerm tyA tyB p = do
   x <- fresh (string2Name "x")
-  return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
+  -- As an optimization, if the proof term already has no free unerased variables we can just use it as-is.
+  pErased <- erase p
+  if S.null (fv pErased :: Set EName)
+    then return p
+    else return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symmTerm :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
@@ -616,7 +621,22 @@ prove hyps (lhs, rhs) = do
        let bndgs = M.map (naming BM.!>)  (bindings st)
            pf = (proofs st) M.! (WantedEquation c1 c2) in
         do
+
+         let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
+         let symmetrized = symmetrizeProof zonkedAssociated
+         fused <- fuseProof symmetrized
+         checked <- checkProof lhs rhs fused
+         let simplified = simplProof checked
+
+{-
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
+         liftIO $ putStrLn $ "Proof is: \n" ++ show pf
+         liftIO $ putStrLn $ "Associated: \n" ++ show zonkedAssociated
+         liftIO $ putStrLn $ "Symmetrized: \n" ++ show symmetrized
+         liftIO $ putStrLn $ "Fused: \n" ++ show fused
+         liftIO $ putStrLn $ "Checked: \n" ++ show checked
+         liftIO $ putStrLn $ "Simplified: \n" ++ show simplified
+-}
          setUniVars bndgs
          tm <- (genProofTerm 
                   <=< return . simplProof

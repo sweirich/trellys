@@ -403,8 +403,8 @@ instance Display ATerm where
     return $ dn <+> hsep dparams
   display (ADCon n params args) = do
     dn <- display n
-    dparams <- mapM (\a -> aWraparg Runtime a <$> display a) params
-    dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> display a) args
+    dparams <- mapM (\a -> aWraparg Runtime a <$> (brackets <$> (display a))) params
+    dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> (bindParens ep <$> (display a))) args
     return $ dn <+> hsep dparams <+> hsep dargs
   display (AArrow ep bnd) = 
     lunbind bnd $ \((n, unembed -> a), b) -> do 
@@ -448,9 +448,10 @@ instance Display ATerm where
       dxs <- mapM display xs
       dtemplate <- display template
       dty <- display ty
-      return $ text "conv" <+> da <+> text "by" <+> hsep dpfs
-               <+> text "at" <+> hsep dxs <+> text "." <+> dtemplate
-               <+> colon <+> dty
+      return $ text "conv" <+> da
+                $$ nest 2 (text "by" <+> hsep dpfs)
+                $$ nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate)
+                $$ nest 2 (colon <+> dty)
   display (AContra a aTy) = do
     da <- display a
     daTy <- display aTy
@@ -473,27 +474,29 @@ instance Display ATerm where
       dn <- display n
       dm <- display m
       dbody <- display body
-      return $ parens (text "ind" <+> dn <+> brackets dm 
+      return $ parens (text "ind" <+> dn <+> bindParens ep dm 
                          <+> text ":" <+> dty
-                         <+> text "." <+> dbody)
+                         <+> text "."
+                        $$ nest 2 dbody)
   display (ARec ty ep bnd) = 
     lunbind bnd $ \((n,m), body) -> do
       dty <- display ty
       dn <- display n
       dm <- display m
       dbody <- display body
-      return $ parens (text "rec" <+> dn <+> brackets dm 
+      return $ parens (text "rec" <+> dn <+> bindParens ep dm 
                          <+> text ":" <+> dty
-                         <+> text "." <+> dbody)
+                         <+> text "."
+                        $$ nest 2 dbody)
   display (ALet  ep bnd) = 
     lunbind bnd $ \((n,m, unembed -> a), b) -> do 
       dn <- display n
       dm <- display m
       da <- display a
       db <- display b
-      return $ sep [text "let" <+> dn <+> brackets dm <+> text "="
-                     <+> da <+> text "in",
-                     db]
+      return $ text "let" <+> dn <+> brackets dm <+> text "="
+                     <+> da <+> text "in"
+                $$ nest 2 db
   display (ACase a bnd ty) =
     lunbind bnd $ \(n,mtchs) -> do
       da <- display a
@@ -550,8 +553,8 @@ instance Disp [ADecl] where
   disp = vcat . map disp
 
 instance Disp AModule where
-  disp m = text "module" <+> disp (aModuleName m) <+> text "where" $$
-           disp (aModuleEntries m)
+  disp m = text "module" <+> disp (aModuleName m) <+> text "where"
+             $$ (vcat $ punctuate (text "\n") (map disp (aModuleEntries m)))
 
 instance Display ETerm where
   display (EVar v) = display v
