@@ -20,7 +20,7 @@ import Control.Arrow (first, second, Kleisli(..), runKleisli)
 import Control.Applicative 
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.ST
-import Control.Monad.State.Lazy
+import Control.Monad.State.Strict
 import Data.Maybe (isJust,fromJust)
 import qualified Data.Set as S
 import Data.Set (Set)
