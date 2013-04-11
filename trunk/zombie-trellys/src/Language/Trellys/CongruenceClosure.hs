@@ -36,7 +36,7 @@ import Data.Set (Set)
 import qualified Data.Set as S
 
 import Control.Monad.Trans
-import Control.Monad.Trans.State.Lazy
+import Control.Monad.Trans.State.Strict
 
 newtype Constant = Constant Int
   deriving (Eq, Ord, Enum, Ix, Num)

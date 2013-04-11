@@ -218,16 +218,15 @@ extendHints h = local (\m@(Env {hints = hs}) -> m { hints = h:hs })
 
 -- | substitute all of the defs through a term
 substDefs :: MonadReader Env m => ATerm -> m ATerm
-substDefs tm =
-  let
-    substDef :: ATerm -> ADecl -> ATerm
-    substDef m (ADef nm df)         = subst nm df m
-    substDef m (ASig _ _ _)         = m
-    substDef m (AData _ _ _ _)    = m
-    substDef m (AAbsData _ _ _)   = m
-  in
-    do defs <- getCtx
-       return $ foldl' substDef tm defs
+substDefs tm = do
+  ctx <- getCtx
+  let defs = getDefs ctx
+  return $ substs defs tm
+ where getDefs ((ADef x a):ctx) =
+           let defs = getDefs ctx 
+           in ((x, substs defs a) : defs)
+       getDefs (_:ctx) = getDefs ctx
+       getDefs [] = []
 
 -- Throw an error
 err :: (Disp a, MonadError Err m, MonadReader Env m) => a -> m b
