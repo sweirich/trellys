@@ -158,8 +158,7 @@ instance Disp Decl where
 
 instance Disp Goal where
   disp (Goal ctx statement) = 
-   foldr ($+$) empty (map disp ctx)
-   --foldr ($+$) empty (map (text . show) ctx)
+   foldr ($+$) empty (map dispAssumption ctx)
    $+$ text "========================================="
    $+$ disp statement
 {-
@@ -168,6 +167,7 @@ instance Disp Goal where
    $+$ text "========================================="
    $+$ text (show statement)
 -}
+   where dispAssumption (a, aTy) = disp a <+> colon <+> disp aTy
 
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
@@ -589,6 +589,7 @@ instance Display ETerm where
        let wrapf = case f of
                      EVar _     -> id
                      EApp _ _   -> id
+                     EIApp _    -> id
                      _          -> parens
        let wrapx = case x of
                      EVar _     -> id

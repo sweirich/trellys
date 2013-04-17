@@ -354,21 +354,19 @@ ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimp
 ta TrustMe ty = return (ATrustMe ty)
 
 ta InferMe (ATyEq ty1 ty2) = do
-  context <- getTys
-  let availableEqs = 
-       catMaybes $ map (\(x,th,ty) ->  case eraseToHead ty of
-                                           ATyEq tyLHS tyRHS -> Just (x,tyLHS,tyRHS)
-                                           _ -> Nothing)
-                       context
-  zavailableEqs <- mapM (\(x,tyLHS,tyRHS) -> (x,,) <$> zonkTerm tyLHS <*> zonkTerm tyRHS) availableEqs
-  pf <- prove zavailableEqs (ty1,ty2)
+  availableEqs <- getAvailableEqs
+  pf <- prove availableEqs (ty1,ty2)
   case pf of
     Nothing -> do
       gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> ASig x Logic (ATyEq tyLHS tyRHS)) zavailableEqs) 
+      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> (x, (ATyEq tyLHS tyRHS))) availableEqs)
                                                  (ATyEq ty1 ty2)),
            DS "The full local context is", DD gamma]
-    Just p -> return p
+    Just p -> do
+       pE <- erase p
+       if (S.null (fv pE :: Set EName))
+         then zonkTerm p
+         else zonkTerm =<< (uneraseTerm ty1 ty2 p)       
 
 ta InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
 
@@ -396,21 +394,17 @@ ta a tyB = do
         if (not noCoercions)
          then do
            context <- getTys
-           let availableEqs = catMaybes $ map (\(x,th,ty) -> case eraseToHead ty of
-                                                               ATyEq ty1 ty2 -> Just (x, ty1, ty2)
-                                                               _ -> Nothing)
-                                              context
-           zavailableEqs <- mapM (\(x,tyLHS,tyRHS) -> (x,,) <$> zonkTerm tyLHS <*> zonkTerm tyRHS) availableEqs
-           let theGoal = (Goal (map (\(x,ty1,ty2) -> ASig x Logic (ATyEq ty1 ty2)) zavailableEqs) 
-                                                 (ATyEq tyA ztyB))
-           pf <- prove zavailableEqs (tyA,ztyB)
+           availableEqs <- getAvailableEqs
+           let theGoal = (Goal (map (\(x,ty1,ty2) -> (x, (ATyEq ty1 ty2))) availableEqs) 
+                               (ATyEq tyA ztyB))
+           pf <- prove availableEqs (tyA,ztyB)
            case pf of 
              Nothing ->
                err [DS "When checking term", DD a, DS "against type",
                     DD tyB, DS "the distinct type", DD tyA,
                     DS "was inferred instead.",
                     DS "I was unable to prove:", DD theGoal]
-             Just p -> do 
+             Just p -> do
                     -- If the two types contained unification variables they may be identical now,
                     -- in which case we do not need to insert a conversion after all.
                     zztyA <- zonkTerm tyA
@@ -1009,16 +1003,32 @@ simplSubst x b a = simplUnboxBox $ subst x b a
 simplSubsts :: Subst b a => [(Name b, b)] -> a -> a
 simplSubsts xs a =  simplUnboxBox $ substs xs a
 
+-------------------------------------------------------
+-- Dig through the context and get out all equations.
+-------------------------------------------------------
+
+-- Note, the returned value is already zonked
+getAvailableEqs :: TcMonad [(ATerm, ATerm, ATerm)]
+getAvailableEqs = do
+  context <- getTys
+  catMaybes <$> mapM (\(x,th,ty) -> do
+                         zty <- zonkTerm ty
+                         (th',a,ty') <- adjustTheta th (AVar x) zty
+                         case eraseToHead ty' of
+                           ATyEq tyLHS tyRHS -> return $ Just (a,tyLHS,tyRHS)
+                           _ -> return $ Nothing)
+                     context
+
 ---------------------------------------
 -- Some random utility functions
 ---------------------------------------
 
 --Todo: can this function be replaced with something from Unbound?
-freshATele :: (Functor m, Fresh m) => ATelescope -> m ATelescope
-freshATele AEmpty = return AEmpty
-freshATele (ACons (unrebind->((x,ty,ep),t))) = do
-   x' <- fresh x
-   t' <- freshATele (subst x (AVar x') t)
+freshATele :: (Functor m, Fresh m) => String -> ATelescope -> m ATelescope
+freshATele _ AEmpty = return AEmpty
+freshATele prefix (ACons (unrebind->((x,ty,ep),t))) = do
+   x' <- fresh (string2Name (prefix ++ (name2String x)))
+   t' <- freshATele prefix (subst x (AVar x') t)
    return $ ACons (rebind (x',ty,ep) t')
 
 -- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
@@ -1093,7 +1103,7 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
                                            (PatCon (unembed -> c') _) -> (translate c')==c
                                            (PatVar _) -> True)
                            <$> mapM matchPat alts
-        args' <- freshATele args --This may look silly, but we don't get it fresh for free.
+        args' <- freshATele "_pat_" args --This may look silly, but we don't get it fresh for free.
         newScruts <- mapM (\x -> ((AVar (translate x)), ) <$> (fresh $ string2Name "_")) (binders args' :: [AName])
         let newScrutTys = simplSubsts (zip (binders delta) bbar) args'
         newAlts <- mapM (expandMatch s args') relevantAlts

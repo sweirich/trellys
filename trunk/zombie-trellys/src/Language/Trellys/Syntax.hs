@@ -50,6 +50,7 @@ instance Ord Theta where
   _ <= Program = True
   _ <= _ = False
 
+deriving instance Ord Epsilon
 
 ------------------------------
 ------------------------------
@@ -229,7 +230,7 @@ data ConstructorDef = ConstructorDef SourcePos TName Telescope
   deriving (Show)
 
 -- | Goals (in the Coq sense), just used for pretty-printing so far.
-data Goal = Goal [ADecl] --available context
+data Goal = Goal [(ATerm,ATerm)] --available context
                  ATerm   --type to be proven.
 
 -------------
@@ -545,3 +546,14 @@ instance Subst ETerm ETerm where
 instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
 instance Subst ETerm Theta
+
+
+instance Eq ETerm where
+  (==) = aeq
+instance Ord ETerm where
+  compare = acompare
+
+instance Eq ATerm where
+  (==) = aeq
+instance Ord ATerm where
+  compare = acompare

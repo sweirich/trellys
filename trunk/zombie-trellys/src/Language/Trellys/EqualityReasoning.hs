@@ -35,13 +35,7 @@ import qualified Data.Bimap as BM
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
-
-instance Eq ATerm where
-  (==) = aeq
-instance Ord ATerm where
-  compare = acompare
-
-deriving instance Ord Epsilon
+import Debug.Trace
 
 -- A convenient monad for recording an association between terms and constants.
 -- While we are at it, also record what free unification variables various terms have.
@@ -82,9 +76,10 @@ instance Ord TermLabel where
 -- performs. It is useful to construct this intermediate structure so that we don't have
 -- to traverse the proof multiple times when pushing in Symm
 data RawProof =
-   --The first component is either the name of a variable from the context,
+   --The first component is either Just a proof term which the type elaborator constructed
+   -- (usually just a variable, sometimes unbox applied to a variable),
    -- or Nothing if an equality holds just by (join) after erasure.
-   RawAssumption (Maybe AName, ATerm, ATerm)  
+   RawAssumption (Maybe ATerm, ATerm, ATerm) 
  | RawRefl
  | RawSymm RawProof
  | RawTrans RawProof RawProof
@@ -132,7 +127,7 @@ rawTrans p q = RawTrans p q
 data Orientation = Swapped | NotSwapped
   deriving (Show,Eq)
 data Raw1Proof =
-   Raw1Assumption Orientation (Maybe AName, ATerm, ATerm)
+   Raw1Assumption Orientation (Maybe ATerm, ATerm, ATerm)
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
  | Raw1Cong TermLabel [Raw1Proof]
@@ -157,7 +152,7 @@ symmetrizeProof (RawSymm (RawCong l ps)) = Raw1Cong l (map (symmetrizeProof . Ra
 -- while a CheckProof doesn't.
 
 data SynthProof =
-    AssumTrans Orientation (Maybe AName,ATerm,ATerm) CheckProof
+    AssumTrans Orientation (Maybe ATerm,ATerm,ATerm) CheckProof
   deriving Show
 data CheckProof =
     Synth SynthProof
@@ -212,7 +207,7 @@ fuseProofs ((x,Erased):xs) ps =  do
 -- Having normalized the proof, in the next phase we annotate it by all the subterms involved.
 
 data AnnotProof = 
-    AnnAssum Orientation (Maybe AName,ATerm,ATerm)
+    AnnAssum Orientation (Maybe ATerm,ATerm,ATerm)
   | AnnRefl ATerm ATerm
   | AnnCong ATerm [(AName,ATerm,ATerm,Maybe AnnotProof)]
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
@@ -293,8 +288,8 @@ simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[
 -- Final pass: now we can generate the Trellys Core proof terms.
 
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
-genProofTerm (AnnAssum NotSwapped (Just n,tyA,tyB)) = return $ AVar n
-genProofTerm (AnnAssum Swapped (Just n,tyA,tyB)) = symmTerm tyA tyB (AVar n)
+genProofTerm (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
+genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symmTerm tyA tyB a
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0
 genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0)
@@ -593,15 +588,24 @@ runDestructureT x = do
        constantSupply = map Constant [0..]  
 
 -- Given an assumed equation between subterms, name all the intermediate terms, and also add the equation itself.
-processHyp :: (Monad m, Applicative m, Fresh m) => (AName, ATerm, ATerm) -> DestructureT m ()
+processHyp :: (Monad m, Applicative m, Fresh m) => (ATerm, ATerm, ATerm) -> DestructureT m ()
 processHyp (n,t1,t2) = do
   a1 <- genEqs t1
   a2 <- genEqs t2
   tell [(RawAssumption (Just n,t1,t2), 
          Left $ EqConstConst a1 a2)]
 
+traceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
+traceFun naming msg (WantedEquation c1 c2) =
+        trace (msg ++ " "    ++ (render (parens (disp (naming BM.!> c1))))
+                   ++ " == " ++ (render (parens (disp (naming BM.!> c2)))))
+
+noTraceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
+noTraceFun naming msg eq = id
+
+
 -- "Given a list of equations, please prove the other equation."
-prove :: [(AName,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
+prove :: [(ATerm,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
 prove hyps (lhs, rhs) = do
   (eqs, naming, allocated, (c1,c2))  <- runDestructureT $ do
                                           mapM_ processHyp hyps
@@ -614,7 +618,7 @@ prove hyps (lhs, rhs) = do
     putStrLn $ "The equation to show is " ++ show c1 ++ " == " ++ show c2  -}
   let sts = flip execStateT (newState allocated) $ do
               propagate eqs
-              unify [WantedEquation c1 c2]
+              unify (noTraceFun naming) S.empty [WantedEquation c1 c2]
   case sts of
     [] -> return Nothing
     st:_ -> 

@@ -14,7 +14,7 @@ module Language.Trellys.Environment
    extendCtxMods,
    extendHints,
    extendSourceLocation, getSourceLocation,
-   substDefs,
+   getDefs, substDefs,
    err, warn
   ) where
 
@@ -216,17 +216,25 @@ getSourceLocation = asks sourceLocation
 extendHints :: (MonadReader Env m) => AHint -> m a -> m a
 extendHints h = local (\m@(Env {hints = hs}) -> m { hints = h:hs })
 
+getDefs :: MonadReader Env m => m [(AName,ATerm)]
+getDefs = do
+  ctx <- getCtx
+  return $ filterDefs ctx
+ where filterDefs ((ADef x a):ctx) = (x,a) : filterDefs ctx
+       filterDefs (_:ctx) = filterDefs ctx
+       filterDefs [] = []
+
 -- | substitute all of the defs through a term
 substDefs :: MonadReader Env m => ATerm -> m ATerm
 substDefs tm = do
   ctx <- getCtx
-  let defs = getDefs ctx
-  return $ substs defs tm
- where getDefs ((ADef x a):ctx) =
-           let defs = getDefs ctx 
+  return $ substs (expandDefs ctx) tm
+ where expandDefs ((ADef x a):ctx) =
+           let defs = expandDefs ctx 
            in ((x, substs defs a) : defs)
-       getDefs (_:ctx) = getDefs ctx
-       getDefs [] = []
+       expandDefs (_:ctx) = expandDefs ctx
+       expandDefs [] = []
+
 
 -- Throw an error
 err :: (Disp a, MonadError Err m, MonadReader Env m) => a -> m b

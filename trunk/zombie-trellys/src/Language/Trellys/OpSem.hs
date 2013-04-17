@@ -9,6 +9,7 @@ module Language.Trellys.OpSem
   (makeModuleEnv, join, isEValue, isAValue, isValue, erase, eraseToHead, cbvStep, cbvNSteps)
 where
 
+import Language.Trellys.Options
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.Environment
@@ -18,6 +19,9 @@ import Language.Trellys.GenericBind
 import Control.Applicative 
 import Control.Monad hiding (join)
 import Data.List (find)
+import Data.Map (Map)
+import qualified Data.Map as M
+import qualified Generics.RepLib as RL
 
 ---------------------------------------------------------------
 -- Erasing core terms. 
@@ -96,19 +100,36 @@ eraseToHead (AConv a _ _ _) = eraseToHead a
 eraseToHead (ASubstitutedFor a _) = eraseToHead a
 eraseToHead a = a
 
+-- Tries to undo the effect of substDefs. This is slow, but it's only
+-- called when printing the error message for join failure.
+unsubstDefsWith :: (Map ETerm EName) -> ETerm -> ETerm
+unsubstDefsWith invdefs = RL.everywhere (RL.mkT unsubstDefsOnce)
+  where unsubstDefsOnce m =
+          case M.lookup m invdefs of
+            Just x  -> EVar x
+            Nothing -> m           
+
+getInvDefs :: TcMonad (Map ETerm EName)
+getInvDefs = do
+  defs <- getDefs
+  M.fromList <$> (mapM (\(x,a) -> (,) <$> erase a <*> pure (translate x)) defs)
+
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
 join s1 s2 m n = do
-  --m' <- cbvNSteps s1 m
-  --n' <- cbvNSteps s2 n
-  m' <- parNSteps s1 m
-  n' <- parNSteps s2 n
+  useParallelReduction <- getFlag UseParallelReduction
+  let nsteps = if useParallelReduction then parNSteps else cbvNSteps
+  m' <- nsteps s1 m
+  n' <- nsteps s2 n
   let joined = m' `aeq` n'
-  unless joined $
+  unless joined $ do
+    invDefs <- getInvDefs
     warn [DS "Join failure:",
-          DD m, DS ("reduces in "++show s1++" steps to"), DD m',
+          DD m, DS ("reduces in "++show s1++" steps to"), 
+          DD (unsubstDefsWith invDefs m'),
           DS "and",
-          DD n, DS ("reduces in "++show s2++" steps to"), DD n']
+          DD n, DS ("reduces in "++show s2++" steps to"), 
+          DD (unsubstDefsWith invDefs n')]
   return joined
 
 -- | Small-step semantics.
