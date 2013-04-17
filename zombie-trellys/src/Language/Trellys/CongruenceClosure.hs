@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, FlexibleInstances, FlexibleContexts,
-              TemplateHaskell #-}
+              TemplateHaskell ,
+    RankNTypes #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
@@ -226,18 +227,20 @@ mplusCut m1 m2 = StateT $
                         in
                           if not (null r1) then r1 else r2
 
+type Tracer = forall a. String -> WantedEquation -> a -> a
 
 -- If an equation is already in the congruence closure we can discard it.
-unifyDelete :: Proof proof => WantedEquation -> UniM proof ()
-unifyDelete  (WantedEquation a b) = do
+unifyDelete :: Proof proof => Tracer -> WantedEquation -> UniM proof ()
+unifyDelete tracer  (WantedEquation a b) = do
   (p, a', ia) <- findExplainInfo a
   (q, b', ib) <- findExplainInfo b
   guard (a' == b')
   giveProof (WantedEquation a b) (trans p (symm q))
+  tracer "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
-unifyBind :: Proof proof => WantedEquation -> UniM proof ()
-unifyBind (WantedEquation a b) = do
+unifyBind :: Proof proof => Tracer -> WantedEquation -> UniM proof ()
+unifyBind tracer (WantedEquation a b) = do
   (_, _, ia) <- findExplainInfo a
   (_, _, ib) <- findExplainInfo b
   unbounds <- gets unboundVars
@@ -249,34 +252,40 @@ unifyBind (WantedEquation a b) = do
   giveBinding x b
   propagate [(refl c, Left $ EqConstConst c b)]
   --Now the equation ought to be trivial:
-  unifyDelete (WantedEquation a b)
+  unifyDelete tracer (WantedEquation a b)
+  tracer "Bound" (WantedEquation a b) (return ())
 
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
-unifyDecompose :: Proof proof => WantedEquation -> UniM proof ()
-unifyDecompose (WantedEquation a b) = do
+unifyDecompose :: Proof proof => Tracer -> Set WantedEquation -> WantedEquation -> UniM proof ()
+unifyDecompose tracer visited (WantedEquation a b) = do
   (p, _, ia) <- findExplainInfo a
   (q, _, ib) <- findExplainInfo b
   (fa, as) <- lift $ S.toList $ classApps ia
   (fb, bs) <- lift $ S.toList $ classApps ib
   guard (fa == fb)
-  unify $ zipWith WantedEquation as bs
-  -- Now the equation should be trivial:
-  unifyDelete (WantedEquation a b)
-  return ()
+  tracer "About to Decompose" (WantedEquation a b) $ do
+    unify tracer (S.insert (WantedEquation a b) visited) (zipWith WantedEquation as bs)
+    -- Now the equation should be trivial:
+    unifyDelete tracer (WantedEquation a b)
+    return ()
+  tracer "Decomposed" (WantedEquation a b) (return ())
 
 -- Unify takes a list of wanted equations, and makes assignments to unification
 -- variables to make all the equations true.
-unify :: Proof proof => [WantedEquation] -> UniM proof ()
-unify [] = return ()
-unify (WantedEquation a b : wanted) = do
-  unifyDelete (WantedEquation a b)
-   `mplusCut`
-   unifyBind (WantedEquation a b)
-   `mplusCut` 
-   (do unifyBind (WantedEquation b a) ; unifyDelete (WantedEquation a b))
-   `mplusCut`
-   unifyDecompose (WantedEquation a b)
-  unify wanted
+-- It also tracks a set of "visited" equations (think depth-first-search) in order to
+-- not get stuck in a loop.
+unify :: Proof proof => Tracer -> Set WantedEquation -> [WantedEquation] -> UniM proof ()
+unify tracer visited [] = return ()
+unify tracer visited (WantedEquation a b : wanted) = do
+           guard (not (S.member (WantedEquation a b) visited))
+           unifyDelete tracer (WantedEquation a b)
+            `mplusCut`
+            unifyBind tracer (WantedEquation a b)
+            `mplusCut` 
+            (do unifyBind tracer (WantedEquation b a) ; unifyDelete tracer (WantedEquation a b))
+            `mplusCut`
+            unifyDecompose tracer visited (WantedEquation a b)
+           unify tracer visited wanted
 
 -- The list contains all the constants in the state, together with
 --   * if the contant itself represents a variable, the name of the variable.

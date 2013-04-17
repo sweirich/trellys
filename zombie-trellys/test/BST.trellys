@@ -45,11 +45,11 @@ ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
 
 data Tree (a:Type 0) : Type 0 where
   EmptyTree
-  BranchTree of (_ : Tree a) (_ : a) (_ : Tree a)
+  BranchTree of (_ : Tree a) (_ : a@log) (_ : Tree a)
 
 -- An alternative idea might be to try to keep the BST-ness of the tree as proofs 
 -- stored in the nodes. But that doesn't work, because we need to define the 
--- tree type before we can define the InTree predicate.
+-- tree type before we can define the InTree predicate (or we'd need induction-recursion).
 
 data InTree (a:Type 0) (x : a @log) (t : Tree a) : Type 0 where
   InHere  of (t1 : Tree a) (t2 : Tree a) (t = BranchTree [a] t1 x t2)
@@ -61,9 +61,9 @@ data IsBST (a:Type 0) (t : Tree a) (order : Ord a) : Type 0 where
   IsBSTBranch of (t1 : Tree a) (x : a@log) (t2 : Tree a) 
                  (t = BranchTree [a] t1 x t2)
                  (IsBST a t1 order)
-                 ((y : a@log) -> (InTree a y t1 @log) -> ordLt [a] order y x = True)
+                 ((y : a@log) -> (InTree a y t1 @log) -> ordLt [a] order y x = True @log)
                  (IsBST a t2 order)
-                 ((y : a@log) -> (InTree a y t2 @log) -> ordLt [a] order x y = True)
+                 ((y : a@log) -> (InTree a y t2 @log) -> ordLt [a] order x y = True @log)
 
 log member : [a:Type 0] -> Ord a -> (x : a@log) -> (t : Tree a) -> Bool
 member = \[a]. \order. \x. ind member t = 
@@ -77,17 +77,17 @@ member = \[a]. \order. \x. ind member t =
 
 
 log member_In1 : (a:Type 0) -> (order : Ord a) -> (x : a@log) -> (t : Tree a)
-                  ->  (InTree a x t)-> member [a] order x t = True
+                  ->  (InTree a x t) -> member [a] order x t = True
 member_In1 = \a.\order.\x. ind member_In1 t = \in_t.
   case in_t [_] of 
     InHere  t1 t2 t_eq -> 
       let _ = (ordLtRefl [a] order x) in
-{-      let _ = (join : member [a] order x (BranchTree [a] t1 x t2) = 
-                      ((case (ordLt [a] order x x) [_] of
+      let _ = (join : member [a] order x (BranchTree [a] t1 x t2)
+                    = ((case (ordLt [a] order x x) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order x x) [_] of
                                      True -> member [a] order x t2
-                                     False -> True) : Bool)) in -}
+                                     False -> True) : Bool)) in
           TRUSTME
     InLeft  t1 y t2 in_t1 t_eq -> TRUSTME
     InRight t1 y t2 in_t2 t_eq -> TRUSTME

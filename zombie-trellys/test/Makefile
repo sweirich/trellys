@@ -37,7 +37,7 @@ all: pass fail
 clean:
 	rm *.trellys-elaborated
 
-pass: $(foreach p,$(PASS),$(p).pass)
+pass: $(foreach p,$(PASS),$(p).pass) RLE.pass-parallel
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"
@@ -70,6 +70,11 @@ todo: todo_pass todo_fail
 %.pass:	%.trellys
 	@echo -n "$<: "
 	@if ! $(TYPECHECK) $<; then echo "failed (should pass)" >&2; else echo; fi
+
+
+%.pass-parallel:	%.trellys
+	@echo -n "$<: "
+	@if ! $(TYPECHECK) --parallel $<; then echo "failed (should pass)" >&2; else echo; fi
 
 %.fail: %.trellys
 	@echo -n "$<: "

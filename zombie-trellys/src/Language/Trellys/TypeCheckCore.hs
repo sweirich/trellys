@@ -173,7 +173,8 @@ aTs (AConv a prfs bnd ty) = do
                               case eraseToHead pfTy of
                                 ATyEq a1 a2 -> return (a1, a2)
                                 _           -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
-                                                        DD pfTy]
+                                                        DD pfTy,
+                                                        DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
               processPrf x (ATyEq a1 a2, Erased) = do
                               when (translate x `S.member` runtimeVars) $
                                    coreErr [DS "AConv not erased var"]
