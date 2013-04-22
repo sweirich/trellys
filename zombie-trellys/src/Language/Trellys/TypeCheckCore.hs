@@ -78,7 +78,7 @@ aTs (ADCon c idxs args) = do
   aKc (ATCon (translate tyc) idxs)
   return (th, ATCon (translate tyc) idxs)
 
-aTs  (AArrow ep bnd) = do
+aTs  (AArrow ex ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
   fo <- isEFirstOrder <$> (erase a)
   unless fo $ do
@@ -90,10 +90,10 @@ aTs  (AArrow ep bnd) = do
     (_, AType _) -> coreErr [DS "domain of an arrow should be a type, but here is", DD tya]
     (_, _) -> coreErr [DS "range of an arrow should be a type, but here is", DD tyb]
 
-aTs (ALam (eraseToHead -> (AArrow epTy bndTy))  ep bnd) = do
+aTs (ALam (eraseToHead -> (AArrow ex epTy bndTy))  ep bnd) = do
   unless (epTy == ep) $
     coreErr [DS "ALam ep"]
-  aKc (AArrow epTy bndTy)  
+  aKc (AArrow ex epTy bndTy)  
   Just ((x , unembed -> aTy), bTy , _, b) <- unbind2 bndTy bnd
   (th, bTy') <- extendCtx (ASig x Program aTy) $ aTs b
   bTyEq <- aeq <$> (erase bTy) <*> (erase bTy')
@@ -102,8 +102,8 @@ aTs (ALam (eraseToHead -> (AArrow epTy bndTy))  ep bnd) = do
     bTyErased' <- erase bTy'
     coreErr [DS "ALam annotation mismatch, function body was annotated as", DD bTyErased,
              DS "but checks at", DD bTyErased',
-             DS "The full annotation was", DD (AArrow epTy bndTy)]
-  return $ (th, AArrow epTy bndTy)
+             DS "The full annotation was", DD (AArrow ex epTy bndTy)]
+  return $ (th, AArrow ex epTy bndTy)
 
 aTs (ALam ty _ _) = coreErr [DS "ALam malformed annotation, should be an arrow type but is", DD ty]
 
@@ -112,7 +112,7 @@ aTs (AApp ep a b ty) = do
   (thb, tyB) <- aTs b
   aKc ty
   case eraseToHead tyA of
-    AArrow ep' bnd -> do
+    AArrow _ ep' bnd -> do
       unless (ep == ep') $
         coreErr [DS "AApp ep mismatch"]
       when (ep == Erased && thb == Program) $
@@ -210,6 +210,25 @@ aTs (AContra a ty) = do
       return (Logic, ty)
     _ -> coreErr [DS "AContra not equality"]
    
+aTs (AInjDCon a i) = do
+  aTy <- aTsLogic a
+  case eraseToHead aTy of
+     ATyEq (ADCon c _ args) (ADCon c' _ args') -> do
+       unless (c == c') $
+         coreErr [DS "AInjDCon: the term", DD a, 
+                  DS "should prove an equality where both sides are headed by the same data constructor, but in ", DD aTy, DS "the constructors are not equal"]
+       eargs <- mapM (erase . fst) args
+       eargs' <- mapM (erase . fst) args'
+       unless (all isEValue eargs && all isEValue eargs') $
+         coreErr [DS "AInjDCon: not all constructor arguments in", DD aTy, DS "are values."]
+       unless (length args == length args') $
+         coreErr [DS "AInjDCon: the two sides of", DD aTy, DS "have different numbers of arguments"]
+       unless (i < length args) $
+         coreErr [DS "AInjDCon: the index", DD i, DS "is out of range"]
+       return (Logic, ATyEq (fst (args !! i)) (fst (args' !! i)))
+     _ -> coreErr [DS "AInjDCon: the term", DD a, 
+                   DS"should prove an equality of datatype constructors, but it has type", DD aTy]
+
 aTs (ASmaller a b)  = do
   _ <- aTs a
   _ <- aTs b
@@ -236,10 +255,10 @@ aTs (AOrdTrans a b) = do
        return $ (Logic, ASmaller t1 t3')
     _ -> coreErr [DS "The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
-aTs (AInd (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
+aTs (AInd (eraseToHead -> (AArrow ex epTy bndTy)) ep bnd) = do
   unless (epTy == ep) $
     coreErr [DS "AInd ep"]
-  aKc (AArrow epTy bndTy)
+  aKc (AArrow ex epTy bndTy)
   ((y, unembed -> aTy), bTy) <-unbind bndTy
   ((f,dumby), dumbb) <- unbind bnd
   let b = subst dumby (AVar y) dumbb
@@ -251,8 +270,10 @@ aTs (AInd (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
                DS "is marked erased, but it appears in an unerased position in the body", DD erasedB]
   x <- fresh (string2Name "x")
   z <- fresh (string2Name "z")
-  let fTy =  AArrow ep (bind (x, embed aTy)
-                       (AArrow Erased (bind (z, embed (ASmaller (AVar x) (AVar y)))
+  let fTy =  AArrow Explicit
+                    ep 
+                    (bind (x, embed aTy)
+                    (AArrow Explicit Erased (bind (z, embed (ASmaller (AVar x) (AVar y)))
                                             (subst y (AVar x) bTy))))
   bTy' <- extendCtx (ASig y Logic aTy) $
             extendCtx (ASig f Logic fTy) $
@@ -260,14 +281,14 @@ aTs (AInd (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
   bTyEq <- aeq <$> erase bTy <*> erase bTy'
   unless bTyEq $
     coreErr [DS "AInd should have type", DD bTy, DS "but has type", DD bTy']
-  return $ (Logic, AArrow epTy bndTy)
+  return $ (Logic, AArrow ex epTy bndTy)
 
 aTs (AInd ty _ _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs (ARec (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
+aTs (ARec (eraseToHead -> (AArrow ex epTy bndTy)) ep bnd) = do
   unless (epTy == ep) $
     coreErr [DS "AInd ep"]
-  aKc (AArrow epTy bndTy)
+  aKc (AArrow ex epTy bndTy)
   ((y, unembed -> aTy), bTy) <- unbind bndTy
   ((f,dumby), dumbb) <- unbind bnd
   let b = subst dumby (AVar y) dumbb
@@ -277,12 +298,12 @@ aTs (ARec (eraseToHead -> (AArrow epTy bndTy)) ep bnd) = do
       coreErr [DS "ARec Erased var"]
   (th',  bTy') <-
     extendCtx (ASig y Logic aTy) $
-      extendCtx (ASig f Logic (AArrow epTy bndTy)) $
+      extendCtx (ASig f Logic (AArrow ex epTy bndTy)) $
         aTs b
   bTyEq <- aeq <$> erase bTy <*> erase bTy'
   unless bTyEq $
     coreErr [DS "ARec annotation mismatch"]
-  return $ (Program, AArrow epTy bndTy)
+  return $ (Program, AArrow ex epTy bndTy)
   
 aTs (ARec ty _ _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
 
@@ -483,7 +504,6 @@ aTcEntries (d@(AData t delta lvl constructors) : rest) = do
 aTcEntries (d@(AAbsData t delta lvl) : rest)  = do 
   aKcTele delta
 
-
 aPositivityCheck:: (Fresh m, MonadError Err m, MonadReader Env m) =>
                    AName -> AConstructorDef -> m ()
 aPositivityCheck x (AConstructorDef cName args)  = aPositivityCheckTele args
@@ -495,7 +515,7 @@ aPositivityCheck x (AConstructorDef cName args)  = aPositivityCheckTele args
 
 aOccursPositive  :: (Fresh m, MonadError Err m, MonadReader Env m) => 
                    AName -> ATerm -> m ()
-aOccursPositive x (AArrow _ bnd) = do
+aOccursPositive x (AArrow _ _ bnd) = do
  ((_,unembed->tyA), tyB) <- unbind bnd
  when (x `S.member` (fv tyA)) $
     err [DD x, DS "occurs in non-positive position"]

@@ -80,7 +80,7 @@ data Term = Var TName    -- | variables
           -- | A let expression (bound name, equality name, value)
           | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
           -- | Dependent functions: (x : A )_{ep} -> B
-          | Arrow  Epsilon (Bind (TName, Embed Term) Term)
+          | Arrow  Explicitness Epsilon (Bind (TName, Embed Term) Term)
           -- | A complex case expression (only present in the surface language, not the core).
           --   The (Embed Term)s are scrutinees, the TNames are the scrutinee-pattern equations.
           | ComplexCase (Bind [(Embed Term, TName)] [ComplexMatch])
@@ -101,6 +101,8 @@ data Term = Var TName    -- | variables
           | Conv Term [(Term,Epsilon)] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
+          -- If a proves (c a1 .. an)=(c b1 .. bn),  then (injectivity a i) proves ai=bi
+          | InjDCon Term Int
           -- | The @abort@ expression.
           | Abort
           -- | Recursive Definitions
@@ -255,47 +257,12 @@ isAVar :: ATerm -> Bool
 isAVar (AVar _) = True
 isAVar _        = False
 
-isType :: Term -> Maybe Int
-isType (Pos _ t)  = isType t
-isType (Paren t)  = isType t
-isType (SubstitutedFor t x) = isType t
-isType (Type n)   = Just n
-isType _          = Nothing
-
 isTyEq :: Term -> Maybe (Term, Term)
 isTyEq (Pos _ t) = isTyEq t
 isTyEq (Paren t) = isTyEq  t
 isTyEq (SubstitutedFor t x) = isTyEq t
 isTyEq (TyEq ty0 ty1) = Just (delPosParenDeep ty0, delPosParenDeep ty1)
 isTyEq _ = Nothing
-
-isSmaller :: Term -> Maybe (Term, Term)
-isSmaller (Pos _ t) = isSmaller t
-isSmaller (Paren t) = isSmaller t
-isSmaller (SubstitutedFor t x) = isSmaller t
-isSmaller (Smaller a b) = Just (delPosParenDeep a, delPosParenDeep b)
-isSmaller _ = Nothing 
-
-isArrow :: Term -> Maybe (Epsilon, Bind (TName, Embed Term) Term)
-isArrow (Pos _ t)      = isArrow t
-isArrow (Paren t)      = isArrow t
-isArrow (SubstitutedFor t x) = isArrow t
-isArrow (Arrow ep bnd) = Just (ep,bnd)
-isArrow _              = Nothing
-
-isAt :: Term -> Maybe (Term, Theta)
-isAt (Pos _ t) = isAt t
-isAt (Paren t) = isAt t
-isAt (SubstitutedFor t x) = isAt t
-isAt (At t th) = Just (t, th)
-isAt _         = Nothing
-
-isTCon :: Term -> Maybe (TName, [(Term,Epsilon)])
-isTCon (Pos _ t) = isTCon t
-isTCon (Paren t) = isTCon t
-isTCon (SubstitutedFor t x) = isTCon t
-isTCon (TCon c args) = Just (c, args)
-isTCon _ = Nothing
 
 isNumeral :: Term -> Maybe Int
 isNumeral (Pos _ t) = isNumeral t
@@ -306,19 +273,6 @@ isNumeral (DCon c [(t,Runtime)]) | c==string2Name "Succ" =
   do n <- isNumeral t ; return (n+1)
 isNumeral _ = Nothing
 
--- splitApp makes sure a term is an application and returns the
--- two pieces
-splitApp :: Term -> (Term, [(Term,Epsilon)])
-splitApp e = splitApp' e []
-  where
-    splitApp' (App ep t0 t1) acc = splitApp' t0 ((t1,ep):acc)
-    splitApp' (Paren tm) acc = splitApp' tm acc
-    splitApp' (Pos _ tm) acc = splitApp' tm acc
-    splitApp' t acc = (t, acc)
-
-multiApp :: Term -> [(Term,Epsilon)] -> Term
-multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
-
 ---------------------------------------
 ---------------------------------------
 -- Annotated Core Language
@@ -328,6 +282,16 @@ multiApp = foldl (\tm1 (tm2,ep) -> App ep tm1 tm2)
 type AName = Name ATerm
 
 deriving instance Show ATerm
+
+-- Infered vs Explicit arguments. 
+-- Defining a special-case Alpha instance means that aeq/acompare will not
+-- look at these annotations, but one can still distinguish them by pattern-matching.
+data Explicitness = Explicit | Inferred
+  deriving Show
+
+instance Alpha Explicitness where
+   aeq' c _ _  = True
+   acompare' c _ _  = EQ
 
 -- | ATerm are annotated terms.
 --   Given an environment, we can synthesize an unannotated (erased) term, a type, and a theta.
@@ -340,7 +304,7 @@ data ATerm =
   | ATCon AName [ATerm] 
   | ADCon AName [ATerm] [(ATerm,Epsilon)]
   -- ET_arrow and ET_arrowImpred
-  | AArrow   Epsilon (Bind (AName, Embed ATerm) ATerm)
+  | AArrow  Explicitness Epsilon (Bind (AName, Embed ATerm) ATerm)
   -- ET_lamPlus and ET_lamMinus. The first ATerm is the (pi) type of the entire lambda.
   | ALam ATerm  Epsilon (Bind AName ATerm)
   -- ET_appPlus and ET_appMinus. The last expression is the type of the entire application:
@@ -353,6 +317,7 @@ data ATerm =
   | AJoin ATerm Int ATerm Int
   -- The last term is the type of the entire case-expression
   | AConv ATerm [(ATerm,Epsilon)] (Bind [AName] ATerm) ATerm
+  | AInjDCon ATerm Int
   -- First ATerm is proof, second is the type annotation.
   | AContra ATerm ATerm
   | ASmaller ATerm ATerm
@@ -495,7 +460,7 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Term, ''Match, ''ComplexMatch, 
+$(derive [''Epsilon, ''Theta, ''Explicitness, ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
          ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope])
 
@@ -506,6 +471,7 @@ instance Alpha ComplexMatch
 instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
+
 instance Subst Term Term where
   isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
@@ -517,6 +483,7 @@ instance Subst Term AMatch
 instance Subst Term ATelescope
 
 instance Subst Term Epsilon
+instance Subst Term Explicitness
 instance Subst Term Theta
 instance Subst Term Match
 instance Subst Term ComplexMatch
@@ -532,6 +499,7 @@ instance Subst ATerm ATerm where
   isvar (AVar x) = Just (SubstName x)
   isvar _ = Nothing
 instance Subst ATerm Epsilon
+instance Subst ATerm Explicitness
 instance Subst ATerm Theta
 instance Subst ATerm AMatch
 instance Subst ATerm ATelescope
@@ -545,8 +513,8 @@ instance Subst ETerm ETerm where
 
 instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
+instance Subst ETerm Explicitness
 instance Subst ETerm Theta
-
 
 instance Eq ETerm where
   (==) = aeq

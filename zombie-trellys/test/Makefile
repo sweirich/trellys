@@ -14,7 +14,7 @@ SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
 PASS=Prelude Arithmetic Arithmetic-old Vectors LetRebind Trees Append2 \
-     Append2-old TypeTest NatElimination \
+     Append2-old AppendUni TypeTest NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
@@ -37,7 +37,7 @@ all: pass fail
 clean:
 	rm *.trellys-elaborated
 
-pass: $(foreach p,$(PASS),$(p).pass) RLE.pass-parallel
+pass: $(foreach p,$(PASS),$(p).pass) RLE.pass-parallel BST.pass-parallel
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"

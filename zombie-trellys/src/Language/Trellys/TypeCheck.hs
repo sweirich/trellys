@@ -25,10 +25,10 @@ import qualified Language.Trellys.GenericBind as GB
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
-import Control.Applicative (Applicative, (<$>), (<*>))
+import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
-import Control.Monad.State  hiding (join)
+--import Control.Monad.State  hiding (join)
 
 import qualified Generics.RepLib as RL
 
@@ -179,7 +179,7 @@ ta Abort tyA =
   return (AAbort tyA)
 
 -- Rules T_lam1 and T_lam2
-ta (Lam lep lbody) arr@(AArrow aep abody) = do
+ta (Lam lep lbody) arr@(AArrow ex aep abody) = do
   -- Note that the arrow type is assumed to be kind-checked already.
 
 
@@ -208,7 +208,7 @@ ta (Lam lep lbody) arr@(AArrow aep abody) = do
   return (ALam zarr lep (bind (translate x) ebody))
 
 -- rules T_ind1 and T_ind2
-ta (Ind ep lbnd) arr@(AArrow aep abnd) = do
+ta (Ind ep lbnd) arr@(AArrow ex aep abnd) = do
   -- Note that the the arrow type is assumed to by kind-checked already.
 
   unless (ep == aep) $
@@ -228,8 +228,8 @@ ta (Ind ep lbnd) arr@(AArrow aep abnd) = do
       smallerType = ASmaller (AVar x)
                              (AVar y)
 
-      tyC = AArrow ep (bind (x, embed tyA) 
-                        (AArrow Erased (bind (z, embed smallerType) xTyB)))
+      tyC = AArrow ex ep (bind (x, embed tyA) 
+                         (AArrow Explicit Erased (bind (z, embed smallerType) xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
   (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
                  extendCtx (ASig y Logic tyA) $ do
@@ -253,7 +253,7 @@ ta (Ind ep lbnd) arr@(AArrow aep abnd) = do
   return (AInd zarr ep (bind (f,y) ea))
 
 -- rules T_rec1 and T_rec2
-ta (Rec ep lbnd) arr@(AArrow aep abnd) = do
+ta (Rec ep lbnd) arr@(AArrow ex aep abnd) = do
   -- Note that the arrow type is assumed to be already type checked.
 
   unless (ep == aep) $
@@ -309,7 +309,6 @@ ta (Let th' ep bnd) tyB =
     unless (eaTh <= th') $
       err [DS (show y ++ " was marked as " ++ show th' ++ " but"), DD a, DS "checks at P"]
 
-    localCtx <- getLocalCtx
     -- premise 2
     (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
                  extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $ do
@@ -377,9 +376,7 @@ ta (SubstitutedFor a x) tyA = do
 
 -- rule T_chk
 ta a tyB = do
-  --warn [DS "checking", DD a, DS ("i.e. " ++ show a), DS "against", DD tyB]
   (ea,tyA) <- ts a
-  --warn [DS "got", DD tyA]
   noCoercions <- getFlag NoCoercions
   ztyB <- zonkTerm tyB
   tyA_eq_ztyB <- tyA `aeqSimple` ztyB
@@ -401,7 +398,8 @@ ta a tyB = do
            case pf of 
              Nothing ->
                err [DS "When checking term", DD a, DS "against type",
-                    DD tyB, DS "the distinct type", DD tyA,
+                    DD tyB,  DS ("(" ++ show tyB ++ ")"),
+                    DS "the distinct type", DD tyA, DS ("(" ++ show tyA ++"("),
                     DS "was inferred instead.",
                     DS "I was unable to prove:", DD theGoal]
              Just p -> do
@@ -465,6 +463,7 @@ taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
     err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
   zty <- zonkTerm ty
   et <- ta  t zty
+  --Fixme: need to check that erased arguments are logical.
   eterms <- taTele terms (simplSubst x et tele')
   zet <- zonkTerm et
   return $ (zet,ep1) : eterms
@@ -513,7 +512,7 @@ ts tsTm =
 
 
     -- Rule T_pi
-    ts' (Arrow ep body) =
+    ts' (Arrow ex ep body) =
       do ((x,unembed -> tyA), tyB) <- unbind body
          (etyA, tytyA) <- ts tyA
          etyATh <- aGetTh etyA
@@ -526,7 +525,7 @@ ts tsTm =
          unless (etyBTh == Logic) $
             err [DS "domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
          case (eraseToHead tytyA, eraseToHead tytyB, isFirstOrder etyA) of
-           (AType n, AType m, True)  -> return $ (AArrow  ep  (bind (translate x,embed etyA) etyB), AType (max n m))
+           (AType n, AType m, True)  -> return $ (AArrow ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
            (AType _, AType _, False) ->  err [DD tyA, 
                                               DS  "can not be used as the domain of a function type, must specify either",
                                               DD (At tyA Logic), DS "or", DD (At tyA Program)]
@@ -540,7 +539,7 @@ ts tsTm =
          unless (length args == aTeleLength delta) $
            err [DS "Datatype constructor", DD c, 
                 DS $ "should have " ++ show (aTeleLength delta) ++
-                    "parameters, but was given", DD (length args)]
+                    " parameters, but was given", DD (length args)]
          eargs <- taLogicalTele args delta
          return (ATCon (translate c) (map fst eargs), (AType lev))
 
@@ -559,9 +558,10 @@ ts tsTm =
 
     -- rule T_app
     ts' tm@(App ep a b) =
-      do (ea,tyArr) <- ts a
+      do (eaPreinst, tyPreinst) <- ts a
+         (ea,tyArr) <- instantiateInferreds eaPreinst tyPreinst        
          case eraseToHead tyArr of
-           AArrow epArr bnd -> do
+           AArrow ex epArr bnd -> do
              ((x,tyA),tyB) <- unbind bnd
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
@@ -676,6 +676,13 @@ ts tsTm =
 
          return (AConv eb eas (bind exs ec) ecA2, ecA2)
 
+-- Datatype injectivity. This is rough-and-ready, since it will be merged into the 
+-- congruence closure implementation rather than being exposed in the surface language.
+    ts' (InjDCon a i) =
+      do (ea,_) <- ts a
+         (_, ty) <- aTs (AInjDCon ea i)
+         return (AInjDCon ea i, ty)
+
     -- rule T_annot
     ts' (Ann a tyA) =
       do etyA <- kcElab tyA
@@ -756,6 +763,16 @@ adjustTheta th a aTy = do
       (AAt ty' th') -> adjustTheta th' (AUnboxVal a) ty'
       _  -> return (th, a, aTy)
     else return (th, a, aTy)
+
+-- | Take a term which perhaps has an inferred arrow type (that is, (x1:A1)=>...(xn:An)=>B), 
+-- and replace the xs with unification variables.
+instantiateInferreds :: ATerm -> ATerm -> TcMonad (ATerm,ATerm)
+instantiateInferreds a (eraseToHead -> AArrow Inferred ep bnd) = do
+  ((x,unembed->aTy),bTy) <- unbind bnd
+  u <- AUniVar <$> (fresh (string2Name "")) <*> (pure aTy)
+  let bTy' = subst x u bTy
+  instantiateInferreds (AApp ep a u bTy') bTy'
+instantiateInferreds a aTy = return (a, aTy)
 
 --------------------------------------------------------
 -- Using the typechecker for decls and modules and stuff
@@ -927,7 +944,7 @@ occursPositive tName (Pos p ty) = do
   extendSourceLocation p ty $
     occursPositive tName ty 
 occursPositive tName (Paren ty) = occursPositive tName ty
-occursPositive tName (Arrow _ bnd) = do
+occursPositive tName (Arrow _ _ bnd) = do
  ((_,unembed->tyA), tyB) <- unbind bnd
  when (tName `S.member` (fv tyA)) $
     err [DD tName, DS "occurs in non-positive position"]
@@ -1036,6 +1053,7 @@ freshATele prefix (ACons (unrebind->((x,ty,ep),t))) = do
 substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
 substATele AEmpty [] a = a
 substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
+substATele _ _ _ = error "internal error: substATele called with unequal-length arguments"
 
 -------------------------------------
 -- Elaborating complex pattern matches
