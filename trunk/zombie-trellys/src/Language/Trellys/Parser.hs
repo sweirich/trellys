@@ -20,7 +20,7 @@ import qualified Language.Trellys.LayoutToken as Token
 
 import Control.Monad.State.Lazy hiding (join)
 import Control.Monad.Reader hiding (join)
-import Control.Applicative ( (<$>), (<*>))
+import Control.Applicative ( (<$>), (<*>), (<*), (*>))
 import Control.Monad.Error hiding (join)
 
 import Data.List
@@ -213,6 +213,7 @@ trellysStyle = Token.LanguageDef
                   ,"erased"
                   ,"termcase"
                   ,"TRUSTME"
+                  , "injectivity"
                   ]
                , Token.reservedOpNames =
                  ["!","?","\\",":",".",",","<", "=", "+", "-", "^", "()", "_", "@"]
@@ -285,8 +286,8 @@ parens = Token.parens tokenizer
 brackets = Token.brackets tokenizer
 braces = Token.braces tokenizer
 
-natural :: LParser Integer
-natural = Token.natural tokenizer
+natural :: LParser Int
+natural = fromInteger <$> Token.natural tokenizer
 
 uniVar :: LParser Term
 uniVar = do
@@ -357,7 +358,7 @@ dataDef = do
   params <- telescope
   colon
   reserved "Type"
-  level <- fromInteger <$> natural
+  level <- natural
   modify (\cnames -> cnames{ tconNames = S.insert name (tconNames cnames) })
   reserved "where"
   cs <- layout constructorDef (return ())
@@ -385,13 +386,11 @@ valDef = do
   val <- expr
   return $ Def n val
 
--- recursive nat definitions
 indDef = do
   r@(Ind _ b) <- ind
   let ((n,_),_) = unsafeUnbind b
   return $ Def n r
 
--- recursive definitions
 recDef = do
  r@(Rec _ b) <- rec
  let ((n,_),_) = unsafeUnbind b
@@ -433,6 +432,11 @@ trustme = do reserved "TRUSTME"; return TrustMe
 inferme :: LParser Term
 inferme = do reservedOp "_" ; return InferMe
 
+injectivity :: LParser Term
+injectivity = do
+  reserved "injectivity"
+  InjDCon <$> factor <*> natural
+
 ordax :: LParser Term
 ordax = 
   do reserved "ord"
@@ -446,8 +450,8 @@ ordtrans =
 join :: LParser Term
 join =
   do reserved "join"
-     s1 <- optionMaybe (fromInteger <$> natural)
-     s2 <- optionMaybe (fromInteger <$> natural)
+     s1 <- optionMaybe natural
+     s2 <- optionMaybe natural
      case (s1,s2) of
        (Nothing,Nothing) -> return $ Join 100 100
        (Just n,Nothing)  -> return $ Join n n
@@ -458,7 +462,7 @@ join =
 unfold :: LParser Term
 unfold = 
   do reserved "unfold"
-     s <- optionMaybe (fromInteger <$> natural)
+     s <- optionMaybe natural
      e <- expr
      case s of
        Nothing -> return $ Unfold 100 e
@@ -482,12 +486,13 @@ compound = do
     Pos p <$> (buildExpressionParser table term)
   where table = [[ifix  AssocLeft "<" Smaller],
                  [ifix  AssocLeft "=" TyEq],
-                 [ifixM AssocRight "->" mkArrow]
+                 [ifixM AssocRight "->" (mkArrow Explicit), 
+                  ifixM AssocRight "=>" (mkArrow Inferred)]
                 ]
         ifix  assoc op f = Infix (reservedOp op >> return f) assoc
         ifixM assoc op f = Infix (reservedOp op >> f) assoc
-        mkArrow  = do x <- fresh (string2Name "_")
-                      return $ \tyA tyB -> Arrow Runtime (bind (x,embed tyA) tyB)
+        mkArrow ex  = do x <- fresh (string2Name "_")
+                         return $ \tyA tyB -> Arrow ex Runtime (bind (x,embed tyA) tyB)
 
 -- A "term" is either a function application or a constructor
 -- application.  Breaking it out as a seperate category both
@@ -525,6 +530,7 @@ factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
                 , convExpr  <?> "a conv"
                 , ordax     <?> "ord"
                 , ordtrans  <?> "ordtrans"
+                , injectivity <?> "injectivity"
                 , join      <?> "join"
                 , termCase  <?> "a termcase"
                 , trustme   <?> "TRUSTME"
@@ -545,8 +551,7 @@ impOrExpBind = impBind <|> expBind
 typen :: LParser Term
 typen =
   do reserved "Type"
-     n <- fromInteger <$> natural
-     return $ Type n
+     Type <$> natural
 
 
 -- Lambda abstractions have the syntax '\x . e' There is no type annotation
@@ -599,9 +604,10 @@ impProd :: LParser Term
 impProd =
   do (x,tyA) <- brackets (try ((,) <$> variableOrWild <*> (colon >> expr))
                           <|> ((,) <$> (fresh (string2Name "_")) <*> expr))
-     reservedOp "->"
+     ex <- (try (reservedOp "->" >> return Explicit) 
+            <|> (reservedOp "=>" >> return Inferred))
      tyB <- compound
-     return $ Arrow Erased  (bind (x,embed tyA) tyB)
+     return $ Arrow ex Erased  (bind (x,embed tyA) tyB)
 
 --FIXME: add wildcard
 
@@ -612,8 +618,12 @@ expProdOrAnnotOrParens :: LParser Term
 expProdOrAnnotOrParens =
   let
     -- afterBinder picks up the return type of a pi
-    afterBinder :: LParser Term
-    afterBinder = reservedOp "->" >> compound
+    afterBinder :: LParser (Explicitness, Term)
+    afterBinder = do
+                    ex <- (try (reservedOp "->" >> return Explicit))
+                            <|> (reservedOp "=>" >> return Inferred)
+                    rest <- compound
+                    return (ex,rest)
 
     -- before binder parses an expression in parens
     -- If it doesn't involve a colon, you get (Right tm)
@@ -630,8 +640,8 @@ expProdOrAnnotOrParens =
        case bd of
          Left (Var x,a) ->
            option (Ann (Var x) a)
-                  (do b <- afterBinder
-                      return $ Arrow Runtime (bind (x,embed a) b))
+                  (do (ex,b) <- afterBinder
+                      return $ Arrow ex Runtime (bind (x,embed a) b))
          Left (a,b) -> return $ Ann a b
          Right a    -> return $ Paren a
 

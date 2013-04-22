@@ -200,12 +200,14 @@ instance Display Term where
 
   display (Type n) = return $ text "Type" <+> (text $ show n)
 
-  display (Arrow ep bnd) = do
+  display (Arrow ex ep bnd) = do
      lunbind bnd $ \((n,a), b) -> do
         da <- display (unembed a)
         dn <- display n
         db <- display b
-        return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) <+> text "->" <+> db
+        return $ (mandatoryBindParens ep $ dn  <+> colon <+> da) 
+                 <+> text (case ex of { Explicit -> "->" ; Inferred -> "=>" })
+                 <+> db
 
   display (Lam ep b) =
     lunbind b $ \(n, body) -> do
@@ -306,6 +308,9 @@ instance Display Term where
   display (Contra ty)  = do
      dty <- display ty
      return $ text "contra" <+> dty
+  display (InjDCon t i) = do
+     dt <- display t
+     return $ text "injectivity" <+> dt <+> text (show i)
   display  Abort       = return $ text "abort"
   display (Ann a b)    = do
     da <- display a
@@ -406,13 +411,14 @@ instance Display ATerm where
     dparams <- mapM (\a -> aWraparg Runtime a <$> (brackets <$> (display a))) params
     dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> (bindParens ep <$> (display a))) args
     return $ dn <+> hsep dparams <+> hsep dargs
-  display (AArrow ep bnd) = 
+  display (AArrow ex ep bnd) = 
     lunbind bnd $ \((n, unembed -> a), b) -> do 
       dn <- display n
       da <- display a
       db <- display b
       return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
-               <+> text "->" <+> db
+                 <+> text (case ex of { Explicit ->  "->" ; Inferred -> "=>" })
+                 <+> db
   display (ALam ty ep bnd) = 
     lunbind bnd $ \(n, body) -> do
       dty <- display ty     
@@ -456,6 +462,9 @@ instance Display ATerm where
     da <- display a
     daTy <- display aTy
     return $ text "contra" <+> da <+> text ":" <+> daTy
+  display (AInjDCon a i) = do
+    da <- display a 
+    return $ text "injectivity" <+> da <+> text (show i)
   display (ASmaller a b) = do
     da <- display a
     db <- display b

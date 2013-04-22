@@ -33,7 +33,7 @@ erase (ACumul a i) = erase a
 erase (AType i) = return $ EType i
 erase (ATCon c indxs) = ETCon (translate c) <$> mapM erase indxs
 erase (ADCon c indxs args) = EDCon (translate c) <$> mapM (erase . fst) (filter ((==Runtime) . snd) args)
-erase (AArrow ep bnd) = do
+erase (AArrow ex ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
   EArrow ep <$> erase a <*> (bind (translate x) <$> erase b)
 erase (ALam _ ep bnd) = do
@@ -51,6 +51,7 @@ erase (ATyEq a b) = ETyEq <$> erase a <*> erase b
 erase (AJoin a i b j) = return EJoin
 erase (AConv a _ _ _) = erase a
 erase (AContra a ty) = return EContra
+erase (AInjDCon a i) = return EJoin
 erase (ASmaller a b) = ESmaller <$> erase a <*> erase b
 erase (AOrdAx _ _) = return EOrdAx
 erase (AOrdTrans _ _) = return EOrdAx
@@ -349,7 +350,7 @@ isValue (UniVar _)         = return False
 isValue (TCon _ args)      = return True
 isValue (DCon _ args)      = allM (isValue . fst) args
 isValue (Type _)           = return True
-isValue (Arrow _ _)        = return True
+isValue (Arrow _ _ _)      = return True
 isValue (Lam _ _)          = return True
 isValue (App _ _ _)        = return False
 isValue (Smaller _ _)      = return True
@@ -367,6 +368,7 @@ isValue (Let _ Erased a) = do
 isValue (Let _ _ _)        = return False
 isValue (Conv a _ _)       = isValue a
 isValue (Contra _)         = return False
+isValue (InjDCon _ _)      = return True
 isValue (Ann a _)          = isValue a
 isValue (Paren a)          = isValue a
 isValue (Pos _ a)          = isValue a

@@ -10,14 +10,14 @@ data List (a : Type 0) : Type 0 where
   Nil
   Cons of (x : a@log) (xs : List a)
 
-map : [a : Type 0] -> [b : Type  0] -> (f : (x:a@log) -> b @log) ->
+map : [a : Type 0] => [b : Type  0] => (f : (x:a@log) -> b @log) ->
       (xs : List a) -> List b
 map = \ [a] [b] f . ind map xs = 
   case xs [xs_eq] of
     Nil -> Nil [b] 
     Cons x xs -> Cons [b] (f x) (map xs [ord xs_eq])
 
-append : [a:Type 0] -> (List a) -> (List a) -> List a
+append : [a:Type 0] => (List a) -> (List a) -> List a
 append = \[a]. ind append xs = \ys.
   case xs [xs_eq] of
     Nil -> ys
@@ -27,25 +27,25 @@ concat : [a:Type 0] -> List (List a) -> List a
 concat = \ [a] . ind concat xss =
   case xss [xss_eq] of
     Nil -> Nil [a]
-    Cons xs xss -> append [a] xs (concat xss [ord xss_eq])
+    Cons xs xss -> append xs (concat xss [ord xss_eq])
 
-concatMap : [a : Type 0] -> [b : Type  0] -> (f : (x:a@log) -> List b @log) ->
+concatMap : [a : Type 0] => [b : Type  0] => (f : (x:a@log) -> List b @log) ->
       (xs : List a) -> List b
-concatMap = \[a] [b] f xs . concat [b] (map [a] [List b] f xs)
+concatMap = \[a] [b] f xs . concat [b] (map f xs)
 
-replicate : [a : Type 0] -> Nat -> (a@log) -> List a
+replicate : [a : Type 0] => Nat -> (a@log) -> List a
 replicate = \[a] . ind replicate n = \ x .
   case n [neq] of 
     Zero -> Nil [a]
     Succ n -> Cons [a] x (replicate n [ord neq] x)
 
-length : [a:Type 0] -> (List a) -> Nat
+length : [a:Type 0] => (List a) -> Nat
 length = \[a]. ind length xs =
   case xs [xs_eq] of
     Nil -> Zero
     Cons x xs -> Succ (length xs [ord xs_eq])
 
-nth : [a : Type 0] -> Nat -> (List a) -> (default : a@log) -> a
+nth : [a : Type 0] => Nat -> (List a) -> (default : a@log) -> a
 nth = \[a]. ind nth n = \xs default.
  case xs [_] of
    Nil -> default
@@ -53,14 +53,14 @@ nth = \[a]. ind nth n = \xs default.
                    Zero -> x
                    Succ n' -> nth n' [ord n_eq] xs' default
 
-nth_safe : [a : Type 0] -> (n : Nat) -> (xs : List a) -> [safe : lt n (length [a] xs) = True] -> a
+nth_safe : [a : Type 0] => (n : Nat) -> (xs : List a) -> [safe : lt n (length xs) = True] -> a
 nth_safe = \[a]. ind nth_safe n = \xs [safe].
   case xs [_] of 
-   Nil -> let _ = (join : lt n (length [a] (Nil [a])) = False) in
+   Nil -> let _ = (join : lt n (length (Nil [a])) = False) in
             contra (_ : True = False)
    Cons x xs' -> case n [n_eq] of 
                   Zero -> x
-                  Succ n' ->  let _ = (join : length [a] (Cons [a] x xs')  = Succ (length [a] xs')) 
+                  Succ n' ->  let _ = (join : length (Cons [a] x xs')  = Succ (length  xs')) 
                               in
-                                 nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length [a] xs') safe]
+                                 nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]
 
