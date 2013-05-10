@@ -54,6 +54,27 @@ mcata:: (forall r . (r -> a) -> f r -> a) ->
         (Fix0 f -> a)
 mcata phi (In0 x) = phi (mcata phi) x
 
+
+
+
+type Lex f g = (forall r s. (r -> Fix0 g) -> 
+                            (s -> Fix0 g -> Fix0 g) ->
+                            (f s) ->
+                            (g r) -> 
+                            Fix0 g)
+
+lexcata:: Lex f g -> Fix0 f -> Fix0 g -> Fix0 g  
+lexcata phi (In0 x) (In0 y) = phi (lexcata phi (In0 x))
+                                  (lexcata phi)
+                                  x y
+                                  
+ack n m = lexcata phi n m
+  where phi:: Lex N N
+        phi inner outer _ Z = zero
+        phi inner outer Z (S m) = suc (inner m)
+        phi inner outer (S n) (S m) = outer n (inner m)
+        
+
 zero = In0 Z
 suc n = In0(S n)
 one = suc zero 
@@ -124,6 +145,8 @@ data Fix f a = In (f (Fix f a)) | Inv a
 
 -- Fix point operator for First order data
 
+
+-- lexcata:: 
 
 
 ------------------------------------------------------------
