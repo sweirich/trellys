@@ -332,11 +332,6 @@ symmTerm tyA tyB p = do
   x <- fresh (string2Name "x")
   return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
 
-orEps :: Epsilon -> Epsilon -> Epsilon
-orEps Erased _ = Erased
-orEps _ Erased = Erased
-orEps Runtime Runtime = Runtime
-
 ----------------------------------------
 -- Dealing with unification variables.
 ----------------------------------------
@@ -456,6 +451,14 @@ decompose _ e avoid (ACase t1 bnd ty) = do
   r1 <- decompose True e avoid t1
   rs <- mapM (decomposeMatch e (S.insert x avoid)) ms
   return (ACase r1 (bind x rs) ty')
+decompose _ e avoid (ADomEq a) =
+  ADomEq <$> decompose True e avoid a
+decompose _ e avoid (ARanEq a b) =
+  ARanEq <$> decompose True e avoid a <*> decompose True e avoid b
+decompose _ e avoid (AAtEq a) =
+  AAtEq <$> (decompose True e avoid a)
+decompose _ e avoid (ANthEq i a) =
+  ANthEq i <$> decompose True e avoid a
 decompose _ _ avoid (ATrustMe t) = 
   ATrustMe <$> (decompose True Erased avoid t)
 decompose _ e avoid (ASubstitutedFor t x) =
@@ -536,7 +539,11 @@ match vars (ACase t1 bnd ty) (ACase t1' bnd' ty') = do
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
     `mUnion`  match vars t1 t1'
     `mUnion`  match vars ty ty'
-match vars (ATrustMe t) (ATrustMe t') = match vars t t'
+match vars (ADomEq t)     (ADomEq t')      = match vars t t'
+match vars (ARanEq t1 t2) (ARanEq t1' t2') = match vars t1 t1' `mUnion` match vars t2 t2'
+match vars (AAtEq  t)     (AAtEq  t')      = match vars t t'
+match vars (ANthEq _ t)   (ANthEq _ t')    = match vars t t'
+match vars (ATrustMe t)   (ATrustMe t')    = match vars t t'
 match vars (ASubstitutedFor t _) (ASubstitutedFor t' _) = match vars t t'
 match _ t t' = error $ "internal error: match called on non-matching terms "
                        ++ show t ++ " and " ++ show t' ++ "."

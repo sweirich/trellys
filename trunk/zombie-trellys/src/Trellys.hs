@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Main where
+module Trellys where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax (moduleEntries)
@@ -9,6 +9,7 @@ import Language.Trellys.TypeMonad (runTcMonad)
 import Language.Trellys.TypeCheck (tcModules)
 import Language.Trellys.TypeCheckCore (aTcModules)
 import Language.Trellys.OpSem
+import Language.Trellys.AOpSem
 import Language.Trellys.Environment
  
 import Text.PrettyPrint.HughesPJ (render, text, fsep)

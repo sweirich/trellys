@@ -33,6 +33,11 @@ type MName = Name ()
 data Epsilon = Runtime | Erased
                deriving (Eq,Show,Read)
 
+orEps :: Epsilon -> Epsilon -> Epsilon
+orEps Erased _ = Erased
+orEps _ Erased = Erased
+orEps Runtime Runtime = Runtime
+
 -- | Theta annotates whether a term is classified "Logic" (total) or "Program"
 -- (general). The constructor names should be
 data Theta = Logic  -- ^ Proof terms
@@ -332,6 +337,11 @@ data ATerm =
   | ALet Epsilon (Bind (AName, AName, Embed ATerm) ATerm)
    -- the final ATerm is the type of the entire match.
   | ACase ATerm (Bind AName [AMatch]) ATerm
+   -- Decomposing equalities
+  | ADomEq ATerm
+  | ARanEq ATerm ATerm
+  | AAtEq ATerm
+  | ANthEq Int ATerm
    -- the ATerm is the ascribed type
   | ATrustMe ATerm
   | ASubstitutedFor ATerm AName
@@ -404,6 +414,61 @@ aTeleAsArgs :: ATelescope -> [(ATerm,Epsilon)]
 aTeleAsArgs AEmpty = []
 aTeleAsArgs (ACons (unrebind->((x,ty,ep),tele))) =
   (AVar x,ep) : (aTeleAsArgs tele)
+
+--------------------------------------
+-- Simplifying substitution
+--------------------------------------
+
+{- Suppose that somewhere inside a typing derivation we have
+   (AUnboxVal x) for some variable x, and then want to substitute
+   (ABox a) for x, where a is some non-value expression.  If we just
+   constructed the derivation (AUnboxVal (ABox a)) it would violate
+   the value restriction of Unbox.
+
+   This case is actually very common for the regularity premise of the
+   function application rule. In the case when a function
+   argument has an @-type, we implicitly use Unbox to check that the
+   function type is well-kinded, and also implicitly use Box at the
+   call site to give the argument the right type. So it's
+   important to do something about this.
+
+   Here, I define a function to simplify away such Unbox-Box pairs.
+
+   Probably one should try harder than this, but more sophisticated 
+   simplifications would require type information.
+ -}
+
+
+simplUnboxBox :: Rep a => a -> a
+simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
+  where simplUnboxBoxOnce :: ATerm -> ATerm 
+        simplUnboxBoxOnce (AUnboxVal (ABox a _)) = a
+        simplUnboxBoxOnce a = a
+
+simplSubst :: Subst b a => Name b -> b -> a -> a
+simplSubst x b a = simplUnboxBox $ subst x b a
+
+simplSubsts :: Subst b a => [(Name b, b)] -> a -> a
+simplSubsts xs a =  simplUnboxBox $ substs xs a
+
+---------------------------------------
+-- Some random utility functions
+---------------------------------------
+
+--Todo: can this function be replaced with something from Unbound?
+freshATele :: (Functor m, Fresh m) => String -> ATelescope -> m ATelescope
+freshATele _ AEmpty = return AEmpty
+freshATele prefix (ACons (unrebind->((x,ty,ep),t))) = do
+   x' <- fresh (string2Name (prefix ++ (name2String x)))
+   t' <- freshATele prefix (subst x (AVar x') t)
+   return $ ACons (rebind (x',ty,ep) t')
+
+-- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
+-- Precondition: bs and delta have the same lenght.
+substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
+substATele AEmpty [] a = a
+substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
+substATele _ _ _ = error "internal error: substATele called with unequal-length arguments"
 
 ------------------------
 ------------------------

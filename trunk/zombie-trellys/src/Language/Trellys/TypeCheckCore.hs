@@ -341,6 +341,51 @@ aTs (ACase a bnd ty) = do
         (_, _,  Nothing) -> coreErr [DS "ACase case on abstract type"]
     _ -> coreErr [DS "ACase not data"]
 
+aTs (ADomEq a) = do
+  (th, aTy) <- aTs a
+  case aTy of
+    ATyEq (AArrow _ eps bndTy) (AArrow _ eps' bndTy') | eps == eps' ->
+      unbind2 bndTy bndTy' >>=
+        maybe (coreErr [DS "ADomEq applied to incorrect equality type"])
+              (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
+                return (th, ATyEq tyDom tyDom'))
+    _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]
+
+aTs (ARanEq a b) = do
+  (th,  aTy) <- aTs a
+  (th', bTy) <- aTs b
+  case aTy of
+    ATyEq (AArrow _ eps bndTy) (AArrow _ eps' bndTy') | th == th' && eps == eps' -> do
+      unbindRes <- unbind2 bndTy bndTy'
+      case unbindRes of
+        Nothing -> coreErr [DS "ARanEq incorrect equality type"]
+        Just ((tyVar, unembed -> tyDom), tyRan, (_, unembed -> tyDom'), tyRan') -> do
+          domsEq <- aeq <$> erase tyDom <*> erase tyDom'
+          unless domsEq $
+            coreErr [DS "ARanEq applied to an equality between arrow types with different domains "]
+          bTyEq <- aeq <$> erase bTy <*> erase tyDom
+          unless bTyEq $
+            coreErr [DS "ARanEq value has wrong type"]
+          return (th, ATyEq (subst tyVar b tyRan) (subst tyVar b tyRan'))
+    _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
+
+aTs (AAtEq a) = do
+  (th, aTy) <- aTs a
+  case aTy of
+    ATyEq (AAt atTy th') (AAt atTy' th'') | th' == th'' -> return (th, ATyEq atTy atTy')
+    _ -> coreErr [DS "AAtEq not applied to an equality between at-types"]
+
+aTs (ANthEq i a) = do
+  (th, aTy) <- aTs a
+  case aTy of
+    ATyEq (ATCon c as) (ATCon c' as')
+      | c /= c'                 -> coreErr [DS "ANthEq between different data types"]
+      | length as /= length as' -> coreErr [DS "ANthEq between mismatched ATCon lengths"]
+      | i <= 0                  -> coreErr [DS "ANthEq at non-positive index"]
+      | i > length as           -> coreErr [DS "ANthEq index out of range"]
+      | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
+    _ -> coreErr [DS "ANthEq not applied to an equality between type constructor applications"]
+
 aTs (ATrustMe ty) = do
   aKc ty
   return (Logic, ty)

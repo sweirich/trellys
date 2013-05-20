@@ -6,7 +6,7 @@
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
-  (makeModuleEnv, join, isEValue, isAValue, isValue, erase, eraseToHead, cbvStep, cbvNSteps)
+  (makeModuleEnv, join, isEValue, isValue, erase, eraseToHead, cbvStep, cbvNSteps)
 where
 
 import Language.Trellys.Options
@@ -73,6 +73,10 @@ erase (ALet ep bnd) = do
 erase (ACase a bnd _) = do
   (xeq, matchs) <- unbind bnd
   ECase <$> erase a <*> (mapM eraseMatch matchs)
+erase (ADomEq _) = return EJoin
+erase (ARanEq _ _) = return EJoin
+erase (AAtEq _) = return EJoin
+erase (ANthEq _ _) = return EJoin
 erase (ATrustMe _) = return ETrustMe
 erase (ASubstitutedFor a _) = erase a
 
@@ -86,6 +90,7 @@ eraseTele :: (Fresh m, Applicative m) => ATelescope -> m [EName]
 eraseTele AEmpty = return []
 eraseTele (ACons (unrebind-> ((x,_,Runtime), tele))) = (translate x:) <$> eraseTele tele
 eraseTele (ACons (unrebind-> ((x,_,Erased),  tele))) = eraseTele tele
+eraseTele _ = error "Impossible, but GHC can't tell that the above pattern matches are comprehensive."
 
 -- | Remove all completely-erased syntactic form, until we get to the first 
 --   constructor which shows up in the erased version.
@@ -407,9 +412,6 @@ isEValue EContra          = False
 isEValue (EAt _ _)        = False
 --isEValue (ETerminationCase _ _) = False
 isEValue ETrustMe          = True
-
-isAValue :: (Fresh m, Applicative m) => ATerm -> m Bool
-isAValue a = isEValue <$> erase a
 
 -- | Evaluation environments - a mapping between named values and
 -- | their definitions.

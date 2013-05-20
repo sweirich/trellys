@@ -515,10 +515,22 @@ instance Display ATerm where
       return $ (parens (text "case" <+> da <+> brackets dn <+> text "of" $$
                          nest 2 (vcat dmtchs))
                  <+> text ":" <+> dty)
+  display (ADomEq a) = do
+    da <- display a 
+    return $ text "domeq" <+> aWraparg Erased a da
+  display (ARanEq a b) = do
+    da <- display a 
+    db <- display b
+    return $ text "raneq" <+> aWraparg Erased a da <+> aWraparg Erased b db
+  display (AAtEq a) = do
+    da <- display a 
+    return $ text "ateq" <+> aWraparg Erased a da
+  display (ANthEq i a) = do
+    da <- display a
+    return $ text "ntheq" <+> int i <+> aWraparg Erased a da
   display (ATrustMe a) = do
     da <- display a
     return $ parens (text "TRUSTME" <+> colon <+> da)
-
   display (ASubstitutedFor a x) = display a
 
 instance Display AMatch where
