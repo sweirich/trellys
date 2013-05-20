@@ -1014,12 +1014,6 @@ simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
         simplUnboxBoxOnce (AUnboxVal (ABox a _)) = a
         simplUnboxBoxOnce a = a
 
-simplSubst :: Subst b a => Name b -> b -> a -> a
-simplSubst x b a = simplUnboxBox $ subst x b a
-
-simplSubsts :: Subst b a => [(Name b, b)] -> a -> a
-simplSubsts xs a =  simplUnboxBox $ substs xs a
-
 -------------------------------------------------------
 -- Dig through the context and get out all equations.
 -------------------------------------------------------
@@ -1035,25 +1029,6 @@ getAvailableEqs = do
                            ATyEq tyLHS tyRHS -> return $ Just (a,tyLHS,tyRHS)
                            _ -> return $ Nothing)
                      context
-
----------------------------------------
--- Some random utility functions
----------------------------------------
-
---Todo: can this function be replaced with something from Unbound?
-freshATele :: (Functor m, Fresh m) => String -> ATelescope -> m ATelescope
-freshATele _ AEmpty = return AEmpty
-freshATele prefix (ACons (unrebind->((x,ty,ep),t))) = do
-   x' <- fresh (string2Name (prefix ++ (name2String x)))
-   t' <- freshATele prefix (subst x (AVar x') t)
-   return $ ACons (rebind (x',ty,ep) t')
-
--- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
--- Precondition: bs and delta have the same lenght.
-substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
-substATele AEmpty [] a = a
-substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
-substATele _ _ _ = error "internal error: substATele called with unequal-length arguments"
 
 -------------------------------------
 -- Elaborating complex pattern matches
