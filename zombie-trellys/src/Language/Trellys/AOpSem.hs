@@ -1,9 +1,9 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns, TupleSections #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.AOpSem
   ( isPlainAValue, isConvAValue
-  , Correspondence(..), correspondingVarName, composeEq, disunify
+  , Correspondence(..), correspondingVarName, symEq, composeEq, disunify
   , astep)
 where
 
@@ -21,7 +21,6 @@ import Control.Monad.Trans.Maybe
 import Data.List
 import Data.Ord
 import qualified Data.Map as M
-
 
 isPlainAValue :: (Fresh m, Applicative m) => ATerm -> m Bool
 isPlainAValue = fmap isEValue . erase
@@ -42,6 +41,12 @@ correspondingVarName :: Correspondence -> AName
 correspondingVarName (LeftVar  l)       = l
 correspondingVarName (RightVar r)       = r
 correspondingVarName (TwoVars  _ _ y'') = y''
+
+-- symEq A B (pAB : A = B) : B = A
+symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
+symEq a b pab = do
+  x <- fresh $ string2Name "x"
+  return . AConv (AJoin a 0 a 0) [(pab,Erased)] (bind [x] $ ATyEq (AVar x) a) $ ATyEq b a
 
 -- composeEq A C (pAB : A = B) (pBC : B = C) : A = C
 composeEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
@@ -246,18 +251,6 @@ disunify ls l0 rs r0 = go l0 r0
     go _ _ =
       mzero
 
--- DONE:
---   0. Change disunify to build the disunified term, and keep the list of
---      variables in a writer monad.
---   1. Implement AConv-AConv in Haskell.*
---   2. Formalize disunification in Ott.
---   3. Formalize conv-conv in Ott.
---   6. Formalize disunification for case/telescopes in Ott.
---   5. Deal with the fact that AConv-AConv/conv-conv needs types.  FFFFFFFUUUUUUUUUUUU—.
--- TODO:
---   4. Fix raneq to be between (x : A)ε -> B and (x' : A)ε -> B'.  (Or should
---      x == x'?)  (Yes, it should.)
-
 -- If eps == Erased, don't bother stepping.
 
 astep :: ATerm -> TcMonad (Maybe ATerm)
@@ -325,10 +318,11 @@ astep (AApp eps a b ty) = do
                                           eps'
                                           (bind (f,var) $ mapBody body)
                           _ -> mzero
+                        
                         mkConv ps xs template res term = AConv term ps (bind xs template) res
                     (xs,template) <- unbind convBnd
-                    case (template,xs,bs) of
-                      (AVar x,[xx],[(p,pEps)]) | x == xx -> runMaybeT $ do
+                    runMaybeT $ case (template,xs,bs) of
+                      (AVar x,[xx],[(p,pEps)]) | x == xx -> do
                         (_, ATyEq (AArrow srcEx  srcEps  srcTyBnd)
                                   (AArrow resEx' resEps' resTyBnd')) <- lift $ aTs p
                         guard $ srcEps == resEps
@@ -343,12 +337,9 @@ astep (AApp eps a b ty) = do
                         x' <- fresh $ string2Name "x'"
                         x0 <- fresh $ string2Name "x"
                         x1 <- fresh $ string2Name "x"
+                        symDom <- symEq srcDom resDom $ ADomEq p
                         let y' = AConv (AVar tyVar)
-                                       [( AConv (AJoin srcDom 0 srcDom 0)
-                                                [(ADomEq p,pEps)]
-                                                (bind [x'] $ ATyEq (AVar x') srcDom)
-                                                (ATyEq resDom srcDom)
-                                        , pEps )]
+                                       [(symDom, pEps)]
                                        (bind [x'] $ AVar x')
                                        srcDom
                             p' = AConv p
@@ -364,15 +355,31 @@ astep (AApp eps a b ty) = do
                                                            subst tyVar y' srcRan)
                                               (AArrow resEx resEps $
                                                       bind (tyVar, embed resDom) resRan))
-                        v' <- update v tyVar resDom resRan $
+                        v' <- update (subst tyVar y' v) tyVar resDom resRan $
                                 mkConv [(ARanEq p' $ AVar tyVar,pEps)]
                                        [x']
                                        (AVar x')
                                        resRan
                         return $ AApp eps v' b ty
                       (AArrow srcEx srcEps srcTyBnd,_,_) -> do
-                        undefined
-                      _ -> return Nothing
+                        ( (tyVar, unembed -> srcDom), srcRan,
+                          (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
+                        let adjust f (bi,epsi) = do (b'i,t) <- f bi
+                                                    return ((b'i,epsi),t)
+                        (b's, froms) <- fmap unzip . forM bs . adjust $ \bi -> do
+                                          (Logic, ATyEq fromTy toTy) <- lift $ aTs bi
+                                          (fromTy,) <$> symEq fromTy toTy bi
+                        let y' = AConv (AVar tyVar)
+                                       b's
+                                       (bind xs srcDom)
+                                       (substs (zip xs froms) srcDom)
+                        v' <- update (subst tyVar y' v) tyVar resDom resRan $
+                                mkConv (bs ++ [(AJoin y' 0 (AVar tyVar) 0,Erased)])
+                                       (xs ++ [tyVar])
+                                       srcRan
+                                       resRan
+                        return $ AApp eps v' b ty
+                      _ -> mzero
                   (ALam _ _ bnd) -> do
                     (x,body) <- unbind bnd
                     return . Just $ subst x b body
@@ -441,7 +448,7 @@ astep (AConv a bs bnd ty) = do
                     disunify ys  (substs (zip xs  $ map AVar ys)  template)
                              ys' (substs (zip xs' $ map AVar ys') template')
           case mres of
-            Nothing -> return Nothing
+            Nothing -> return Nothing -- XXX Should always succeed by soundness
             Just (template'', corrs) -> do
               let outers = M.fromList $ zip ys  bs
                   inners = M.fromList $ zip ys' bs'
@@ -454,6 +461,7 @@ astep (AConv a bs bnd ty) = do
                                            (_, ATyEq ta  tb) <- lift $ aTs ieq
                                            (_, ATyEq tb' tc) <- lift $ aTs oeq
                                            guard $ tb == tb'
+                                             -- XXX Should always succeed by soundness
                                            eqtrans           <- composeEq ta tc ieq oeq
                                            pure (eqtrans, orEps oeps ieps)
                   bnd'' = bind (map correspondingVarName corrs) template''
