@@ -385,7 +385,7 @@ aWraparg :: Epsilon -> ATerm -> Doc -> Doc
 aWraparg ep b = case b of
                  AVar _        -> bindParens ep
                  ATCon _ []    -> bindParens ep 
-                 ADCon _ [] [] -> bindParens ep
+                 ADCon _ _ [] [] -> bindParens ep
                  _             -> mandatoryBindParens ep
 
 {-
@@ -408,12 +408,12 @@ instance Display ATerm where
     dn <- display n
     dparams <- mapM (\a -> aWraparg Runtime a <$> display a) params
     return $ dn <+> hsep dparams
-  display (ADCon n params args) = do
+  display (ADCon n th params args) = do
     dn <- display n
     dparams <- mapM (\a -> aWraparg Runtime a <$> (brackets <$> (display a))) params
     dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> (bindParens ep <$> (display a))) args
-    return $ dn <+> hsep dparams <+> hsep dargs
-  display (AArrow ex ep bnd) = 
+    return $ dn <+> text (show th) <+> hsep dparams <+> hsep dargs
+  display (AArrow _ ex ep bnd) = 
     lunbind bnd $ \((n, unembed -> a), b) -> do 
       dn <- display n
       da <- display a
@@ -421,7 +421,7 @@ instance Display ATerm where
       return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
                  <+> text (case ex of { Explicit ->  "->" ; Inferred -> "=>" })
                  <+> db
-  display (ALam ty ep bnd) = 
+  display (ALam _ ty ep bnd) = 
     lunbind bnd $ \(n, body) -> do
       dty <- display ty     
       dn <- display n

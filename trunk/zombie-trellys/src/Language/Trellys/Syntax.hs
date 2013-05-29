@@ -304,14 +304,16 @@ instance Alpha Explicitness where
 data ATerm = 
     AVar AName
   | AUniVar AName ATerm --the second ATerm is the type of the univar. Todo: Probably we should keep the context also.
-  | ACumul ATerm Int
+  | ACumul ATerm Int 
   | AType Int
   | ATCon AName [ATerm] 
-  | ADCon AName [ATerm] [(ATerm,Epsilon)]
+  | ADCon AName Theta [ATerm] [(ATerm,Epsilon)]
+    -- Theta is the max th of any argument
   -- ET_arrow and ET_arrowImpred
-  | AArrow  Explicitness Epsilon (Bind (AName, Embed ATerm) ATerm)
+  | AArrow Int Explicitness Epsilon (Bind (AName, Embed ATerm) ATerm)
+    -- Int is the Type-level of this Type
   -- ET_lamPlus and ET_lamMinus. The first ATerm is the (pi) type of the entire lambda.
-  | ALam ATerm  Epsilon (Bind AName ATerm)
+  | ALam Theta ATerm  Epsilon (Bind AName ATerm)
   -- ET_appPlus and ET_appMinus. The last expression is the type of the entire application:
   | AApp Epsilon ATerm ATerm ATerm
   | AAt ATerm Theta
