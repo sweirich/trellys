@@ -65,7 +65,7 @@ erase (ARec _ ep bnd) = do
   if (ep == Runtime) 
    then ERecPlus <$> (bind (translate f, translate y) <$> erase r)
    else ERecMinus <$> (bind (translate f) <$> erase r)
-erase (ALet ep bnd) = do
+erase (ALet ep bnd _) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
   if ep == Runtime
     then ELet <$> erase a <*> (bind (translate x) <$> erase b)

@@ -199,13 +199,15 @@ disunify ls l0 rs r0 = go l0 r0
            <*> pure eps
            <*> pure (bind (f,x) body'')
     
-    go (ALet eps bnd) (ALet eps' bnd') | eps == eps' = do
+    go (ALet eps bnd (th,ty)) (ALet eps' bnd' (th',ty')) 
+        | eps == eps' && th == th' = do
       ((x, y, unembed -> a), b, (_, _, unembed -> a'), b') <- unbind2M bnd bnd'
       a'' <- go a a'
       b'' <- go b b'
-      pure . ALet eps $ bind (x, y, embed a'') b''
+      ty'' <- go ty ty'
+      pure (ALet eps (bind (x, y, embed a'') b'') (th, ty''))
      
-    go (ACase a bnd ty) (ACase a' bnd' ty') = do
+    go (ACase a bnd (th,ty)) (ACase a' bnd' (th',ty')) | th == th' = do
       let sortArms = sortBy (comparing $ \(AMatch c _) -> c)
       (x, sortArms -> arms, _, sortArms -> arms') <- unbind2M bnd bnd'
       guard $ length arms == length arms'
@@ -219,6 +221,9 @@ disunify ls l0 rs r0 = go l0 r0
           goTele AEmpty AEmpty =
             pure AEmpty
           -- There doesn't seem to be an unrebind2
+          -- it's not necessary---unrebind doesn't freshen variable names
+          -- if you want them to use the same names you need to use
+          -- unbind2 on teleBnd and teleBnd'
           goTele (ACons (unrebind -> ((y,  unembed -> b,  eps),  teleTail )))
                  (ACons (unrebind -> ((y', unembed -> b', eps'), teleTail')))
             | eps == eps' = do
@@ -228,9 +233,10 @@ disunify ls l0 rs r0 = go l0 r0
           goTele _ _ =
             mzero
       arms'' <- zipWithM goMatch arms arms'
+      ty''   <- go ty ty'
       ACase <$> go a a'
             <*> pure (bind x arms'')
-            <*> go ty ty'
+            <*> pure (th, ty'')
     
     go (ADomEq a) (ADomEq a') =
       ADomEq <$> go a a'
@@ -488,12 +494,12 @@ astep (AInd _ _ _) = return Nothing
 
 astep (ARec _ _ _) = return Nothing
 
-astep (ALet eps bnd) = do
+astep (ALet eps bnd annot) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
   stepA <- astep a
   case stepA of
     Just (AAbort t) -> return . Just $ AAbort t
-    Just a'         -> return . Just . ALet eps $ bind (x, xeq, embed a') b
+    Just a'         -> return . Just $ ALet eps (bind (x, xeq, embed a') b) annot
     Nothing         -> do
       aval <- isConvAValue a
       if not aval

@@ -31,6 +31,7 @@ import Control.Monad.Error  hiding (join)
 --import Control.Monad.State  hiding (join)
 import Control.Arrow ((&&&), Kleisli(..))
 
+import Language.Trellys.GenericBind
 import qualified Generics.RepLib as RL
 
 import Data.Maybe
@@ -115,7 +116,7 @@ ta (Join s1 s2) (ATyEq a b) =
             DS "are not joinable."]
 
      aSubst <- substDefs a
-     testReduction aSubst
+     -- testReduction aSubst
      --testReduction bSubst
      --printReductionPath aSubst
      return (AJoin a s1 b s2)
@@ -337,18 +338,19 @@ ta (Let th' ep bnd) tyB =
            DS "appear in the erasure of the body, but here", DD x,
            DS "appears in the erasure of", DD b]
     zea <- zonkTerm ea
-    return (ALet ep (bind (translate x, translate y, embed zea) eb))
+    return (ALet ep (bind (translate x, translate y, embed zea) eb) (th', tyB))
 
     -- Elaborating 'unfold' directives; checking version
 
 ta (Unfold n a b) tyB = do
    (ea, _) <- ts a
+   (th, _) <- getType ea
    ea' <- asteps n ea 
    x   <- fresh $ string2Name "steps"
    y   <- fresh $ string2Name "_"
    eb  <- extendCtx (ASig x Logic (ATyEq ea ea'))
             $ ta b tyB      
-   return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb))
+   return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
 
 -- rule T_At
 ta (At ty th') (AType i) = do 
@@ -752,7 +754,7 @@ ts tsTm =
                DS "appears in the erasure of", DD b]
 
         zea <- zonkTerm ea
-        return (ALet ep (bind (translate x, translate y,embed zea) eb), tyB)
+        return (ALet ep (bind (translate x, translate y,embed zea) eb) (th',tyB), tyB)
 
     -- T_at
     ts' (At tyA th') = do
@@ -766,12 +768,13 @@ ts tsTm =
     -- Elaborating 'unfold' directives; synthesising version
     ts' (Unfold n a b) = do
       (ea, _) <- ts a
+      (th, _) <- getType ea
       ea' <- asteps n ea 
       x <- fresh $ string2Name "steps"
       y <- fresh $ string2Name "_"
       (eb,tyB) <- extendCtx (ASig x Logic (ATyEq ea ea'))
                     $ ts b      
-      return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb), tyB)
+      return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th,tyB), tyB)
 
     ts' tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
                     DS "Please add an annotation.",
@@ -1103,10 +1106,10 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any i
   x_eq <- fresh (string2Name "_")
   (th,sTy) <- aTs s
   ztyAlt <- zonkTerm tyAlt
-  (ALet Runtime . bind (x, x_eq, embed s)) <$>
-    (extendCtx (ASig x th sTy) $
-      extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $
-        buildCase ((AVar x,y):scruts) alts ztyAlt)
+  body <- (extendCtx (ASig x th sTy) $
+           extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $
+           buildCase ((AVar x,y):scruts) alts ztyAlt)
+  return (ALet Runtime (bind (x, x_eq, embed s) body) (th, ztyAlt))
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = do
   --Todo: handle the scrutinee=pattern equation y somehow?
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
@@ -1140,7 +1143,7 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
         return $ AMatch c (bind znewScrutTys newBody)
   ematchs <- bind (translate y) <$> mapM buildMatch cons
   ztyAlt <- zonkTerm tyAlt
-  return $ ACase s ematchs ztyAlt
+  return $ ACase s ematchs (th,ztyAlt)
 
 -- | expandMatch scrut args (pat, alt) 
 -- adjusts the ComplexMatch 'alt'

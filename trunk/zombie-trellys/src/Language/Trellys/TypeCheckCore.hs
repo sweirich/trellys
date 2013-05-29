@@ -57,6 +57,8 @@ getType  (AArrow j ex ep bnd) = return (Logic, AType j)
 
 getType (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = 
   return (th, AArrow k ex epTy bndTy) 
+  
+getType (ALam _ _ _ _) = coreErr [DS "Annotation type on ALam incorrect"]
 
 getType (AApp ep a b ty) = do
   (tha, _) <- getType a
@@ -125,10 +127,62 @@ getType (AOrdTrans a b) = do
 getType (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = 
   return (Logic, AArrow k ex epTy bndTy)
 
+getType (AInd _ _ _) = coreErr [DS "Annotation type on AInd incorrect"]
+
 getType  (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) =
   return (Program, AArrow k ex epTy bndTy)
 
-getType (ALet ep bnd) = undefined
+getType (ARec _ _ _) = coreErr [DS "Annotation type on ARec incorrect"]
+
+getType (ALet ep bnd annot) = return annot
+
+getType (ACase a bnd annot) = return annot
+
+getType t@(ADomEq a) = do
+  (th, aTy) <- aTs a
+  case aTy of
+    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | eps == eps' ->
+      unbind2 bndTy bndTy' >>=
+        maybe (coreErr [DS "ADomEq applied to incorrect equality type"])
+              (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
+                return (th, ATyEq tyDom tyDom'))
+    _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]   
+          
+getType (ARanEq a b) = do
+  (th,  aTy) <- aTs a
+  (th', bTy) <- aTs b
+  case aTy of
+    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | th == th' && eps == eps' -> do
+      unbindRes <- unbind2 bndTy bndTy'
+      case unbindRes of
+        Nothing -> coreErr [DS "ARanEq incorrect equality type"]
+        Just ((tyVar, unembed -> tyDom), tyRan, (_, unembed -> tyDom'), tyRan') -> do
+          return (th, ATyEq (subst tyVar b tyRan) (subst tyVar b tyRan'))
+    _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
+
+getType t@(AAtEq a) = do
+  (th, aTy) <- getType a
+  case aTy of
+    ATyEq (AAt atTy th') (AAt atTy' th'') | th' == th'' -> return (th, ATyEq atTy atTy')
+    _ -> coreErr [DS "AAtEq not applied to an equality between at-types"]
+
+getType (ANthEq i a) = do
+  (th, aTy) <- getType a
+  case aTy of
+    ATyEq (ATCon c as) (ATCon c' as')
+      | c /= c'                 -> coreErr [DS "ANthEq between different data types"]
+      | length as /= length as' -> coreErr [DS "ANthEq between mismatched ATCon lengths"]
+      | i <= 0                  -> coreErr [DS "ANthEq at non-positive index"]
+      | i > length as           -> coreErr [DS "ANthEq index out of range"]
+      | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
+    _ -> coreErr [DS "ANthEq not applied to an equality between type constructor applications"]
+ 
+getType (ATrustMe ty) = do
+  return (Logic, ty)
+
+getType (ASubstitutedFor a _) = getType a
+
+
 
 -------------------
 -------------------
@@ -418,7 +472,7 @@ aTs (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = do
   
 aTs (ARec ty _ _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs (ALet ep bnd) = do
+aTs (ALet ep bnd (th, ty)) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
   runtimeVars <- fv <$> erase b
   when (ep == Erased && (translate x) `S.member` runtimeVars) $
@@ -426,15 +480,16 @@ aTs (ALet ep bnd) = do
   (th',aTy) <- aTs a
   when (th' == Program && ep == Erased) $
     coreErr [DS "the bound term in ALet is P, so it cannot be erased"]
-  (th,bTy) <- extendCtx (ASig x th' aTy) $ 
+  (th'',bTy) <- extendCtx (ASig x th' aTy) $ 
                  extendCtx (ASig xeq Logic (ATyEq (AVar x) a)) $ do
                   aTs b
-  aKc bTy  --To check that no variables escape.
-  return (max th th', bTy) --The max enforces that P vars can not be bound in an L context.
+  aKc bTy  --To check that no variables escape
+  when (max th' th'' > th) $ coreErr [DS "Incorrect th annotation on ALet"]
+  return (th, bTy) --The max enforces that P vars can not be bound in an L context.
 
-aTs (ACase a bnd ty) = do
+aTs (ACase a bnd (th,ty)) = do
   (xeq, mtchs) <- unbind bnd
-  (th, aTy) <- aTs a
+  (aTh, aTy) <- aTs a
   aKc ty
   case aTy of 
     (ATCon c idxs) -> do
@@ -448,7 +503,9 @@ aTs (ACase a bnd ty) = do
             coreErr [DS "ACase malformed core term, this should never happen"]
           ths <- mapM (aTsMatch th ty (zip (binders delta) idxs) cons (\pat -> ASig xeq Logic (ATyEq a pat)))
                       mtchs
-          return (max th (maximum (minBound:ths)), ty)     
+          unless (max aTh (maximum (minBound:ths)) <= th) $
+              coreErr [DS "ACase theta annotation incorrect."]     
+          return (th , ty)     
         (_, _,  Nothing) -> coreErr [DS "ACase case on abstract type"]
     _ -> coreErr [DS "ACase not data"]
 
