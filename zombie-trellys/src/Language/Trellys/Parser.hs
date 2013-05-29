@@ -464,9 +464,11 @@ unfold =
   do reserved "unfold"
      s <- optionMaybe natural
      e <- expr
+     reserved "in"
+     e' <- expr
      case s of
-       Nothing -> return $ Unfold 100 e
-       Just n  -> return $ Unfold n e
+       Nothing -> return $ Unfold 100 e e'
+       Just n  -> return $ Unfold n e e'
 
 -- Expressions
 
@@ -516,7 +518,8 @@ funapp = do
                   ((,Runtime) <$> factor)
         app e1 (e2,ep)  =  App ep e1 e2
 
-factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
+factor = choice [ inferme   <?> "a placeholder (_)"
+                , varOrCon <?> "a variable or zero-argument data constructor"
                 , uniVar <?> "a questionmark (?)"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
@@ -524,6 +527,7 @@ factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
                 , ind <?> "ind"
                 , rec    <?> "rec"
                 , letExpr   <?> "a let"
+                , unfold <?> "an unfold"
                 , contra    <?> "a contra"
                 , abort     <?> "abort"
                 , caseExpr  <?> "a case"
@@ -534,7 +538,6 @@ factor = choice [ varOrCon <?> "a variable or zero-argument data constructor"
                 , join      <?> "join"
                 , termCase  <?> "a termcase"
                 , trustme   <?> "TRUSTME"
-                , inferme   <?> "a placeholder (_)"
                 , impProd   <?> "an implicit function type"
                 , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"

@@ -101,7 +101,7 @@ data Term = Var TName    -- | variables
           -- bidirectionally infer the terms
           | Join Int Int
           -- | The 'unfold' expression, only present in the surface language.
-          | Unfold Int Term       
+          | Unfold Int Term Term
           -- | @conv a by b at C@
           | Conv Term [(Term,Epsilon)] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type

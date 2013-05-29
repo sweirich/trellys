@@ -302,9 +302,11 @@ instance Display Term where
                                    then ""
                                    else show s1
                             else show s1 ++ " " ++ show s2)
-  display (Unfold s a) = do
+  display (Unfold s a b) = do
     da <- display a
-    return $ text "unfold" <+> text (show s) <+> da
+    db <- display b
+    return $ text "unfold" <+> text (show s) <+> da <+> text "in"
+              $$ nest 2 db
   display (Contra ty)  = do
      dty <- display ty
      return $ text "contra" <+> dty

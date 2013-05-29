@@ -199,7 +199,7 @@ cbvStep (EIApp a) =
            EIndMinus bnd ->
              do (f,body) <- unbind bnd
                 return $ Just $ subst f (EILam (EILam (EIApp a))) $ body
-           _ -> do warn [DS "The argument to EIApp does not step, it was", DD a]
+           _ -> do --warn [DS "The argument to EIApp does not step, it was", DD a]
                    return  Nothing
 cbvStep (ETyEq _ _)     = return Nothing
 cbvStep EJoin           = return Nothing
@@ -381,7 +381,7 @@ isValue (At _ _)           = return True
 isValue (TerminationCase _ _)     = return False
 isValue TrustMe            = return True
 isValue InferMe            = return False --Hm, dunno.
-isValue (Unfold _ _)       = return True  --acts like join
+isValue (Unfold _ _ b)     = isValue b  --acts like erased let
 isValue (SubstitutedFor  a _) = isValue a
 isValue (SubstitutedForA a _) = isEValue <$> erase a
 
