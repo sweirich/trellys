@@ -1,5 +1,6 @@
 {-# LANGUAGE ViewPatterns, TypeSynonymInstances, ExistentialQuantification, NamedFieldPuns, 
-             ParallelListComp, FlexibleContexts, ScopedTypeVariables, TupleSections #-}
+             ParallelListComp, FlexibleContexts, ScopedTypeVariables, TupleSections,
+             FlexibleInstances #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 -- | The Trellys surface language typechecker, using a bi-directional typechecking algorithm
@@ -12,6 +13,7 @@ import Language.Trellys.Syntax
 
 import Language.Trellys.PrettyPrint(Disp(..))
 import Language.Trellys.OpSem
+import Language.Trellys.AOpSem (astep, asteps)
 
 import Language.Trellys.Options
 import Language.Trellys.Environment
@@ -29,6 +31,7 @@ import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
 --import Control.Monad.State  hiding (join)
+import Control.Arrow ((&&&), Kleisli(..))
 
 import qualified Generics.RepLib as RL
 
@@ -112,6 +115,11 @@ ta (Join s1 s2) (ATyEq a b) =
      unless joinable $
        err [DS "The erasures of terms", DD a, DS "and", DD b,
             DS "are not joinable."]
+
+     aSubst <- substDefs a
+     testReduction aSubst
+     --testReduction bSubst
+     --printReductionPath aSubst
      return (AJoin a s1 b s2)
 
     -- rule T_ord
@@ -328,6 +336,17 @@ ta (Let th' ep bnd) tyB =
            DS "appears in the erasure of", DD b]
     zea <- zonkTerm ea
     return (ALet ep (bind (translate x, translate y, embed zea) eb))
+
+    -- Elaborating 'unfold' directives; checking version
+
+ta (Unfold n a b) tyB = do
+   (ea, _) <- ts a
+   ea' <- asteps n ea 
+   x   <- fresh $ string2Name "steps"
+   y   <- fresh $ string2Name "_"
+   eb  <- extendCtx (ASig x Logic (ATyEq ea ea'))
+            $ ta b tyB      
+   return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb))
 
 -- rule T_At
 ta (At ty th') (AType i) = do 
@@ -742,11 +761,15 @@ ts tsTm =
         (Program,AType i) -> err [DS "Types should check at L, but", DD tyA, DS "checks at P"]
         (_,_)             -> err [DS "Argument to @ should be a type, here it is", DD tyA, DS "which has type", DD s]
 
-    -- Elaborating 'unfold' directives.
-    ts' (Unfold n a) = do
+    -- Elaborating 'unfold' directives; synthesising version
+    ts' (Unfold n a b) = do
       (ea, _) <- ts a
-      err [DS "Unfortunately unfold is not implemented, because it poses unsolvable fundamental problems."]
-      -- return (Ann (Join n n) (TyEq 
+      ea' <- asteps n ea 
+      x <- fresh $ string2Name "steps"
+      y <- fresh $ string2Name "_"
+      (eb,tyB) <- extendCtx (ASig x Logic (ATyEq ea ea'))
+                    $ ts b      
+      return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb), tyB)
 
     ts' tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
                     DS "Please add an annotation.",
@@ -1172,3 +1195,51 @@ matchPat :: (Functor m, Fresh m) => ComplexMatch -> m (Pattern, ComplexMatch)
 matchPat (ComplexMatch bnd) = do
   ((pat:pats), body) <- unbind bnd
   return (pat, ComplexMatch $ bind pats body)
+
+
+------------- Some test code to exercise the annotated reduction semantics ----------
+
+-- step the term until it's stuck.
+reductionPath :: (a -> TcMonad (Maybe a)) -> a -> TcMonad [a]
+reductionPath step a = do
+  ma' <- step a
+  case ma' of 
+    Nothing -> return [a]
+    Just a' ->  (a : ) <$> reductionPath step a'
+
+newtype ReductionPath a = ReductionPath [a]
+
+-- Printing reduction sequences
+instance Disp a => Disp (ReductionPath a) where
+  disp (ReductionPath ts) = foldr (\x y -> x $$ text "--->" $$ y) empty (map disp ts)
+
+data AndTheErasureIs = AndTheErasureIs ATerm ETerm
+
+instance Disp AndTheErasureIs where
+  disp (a `AndTheErasureIs` t) = 
+      disp a $$ parens (text "erased version:" $$ disp t)
+
+testReduction :: ATerm -> TcMonad ()
+testReduction a = do
+  apath <- reductionPath astep a
+  eLastA <- erase (last apath)
+  eA <- erase a
+  aEpath <- reductionPath cbvStep eA
+  let lastEA = last aEpath
+  apathAnn <- mapM ((return . uncurry AndTheErasureIs) <=< runKleisli (Kleisli return &&& Kleisli erase)) apath
+  unless (eLastA `aeq` lastEA) $ do
+    liftIO $ putStrLn "Oops, mismatch between annotated and erased semantics"
+    liftIO $ putStrLn $ render (text "Erased reduction path:" $$ disp (ReductionPath aEpath))
+    liftIO $ putStrLn $ render (text "Annotated reduction path:" $$ disp (ReductionPath apathAnn))
+    err [DS "Something went wrong, see above"]
+
+--Print the reductions
+printReductionPath :: ATerm -> TcMonad ()
+printReductionPath a = do
+  liftIO $ putStrLn $ render (disp a)
+  ma' <- astep a
+  case ma' of 
+    Nothing -> return ()
+    Just a' -> do
+                 liftIO $ putStrLn "---->"
+                 printReductionPath a'

@@ -4,11 +4,13 @@
 module Language.Trellys.AOpSem
   ( isPlainAValue, isConvAValue
   , Correspondence(..), correspondingVarName, symEq, composeEq, disunify
-  , astep)
+  , astep
+  , asteps)
 where
 
 import Language.Trellys.Syntax
-import Language.Trellys.Environment (lookupDCon)
+import Language.Trellys.PrettyPrint
+import Language.Trellys.Environment (lookupDCon, warn)
 import Language.Trellys.TypeMonad
 import Language.Trellys.GenericBind
 import Language.Trellys.TypeCheckCore
@@ -509,7 +511,7 @@ astep (ACase a bnd ty) = do
             AMatch _ matchBodyBnd <- MaybeT . return
                                   $  find (\(AMatch c' _) -> c == c') matches
             (delta, matchBody) <- unbind matchBodyBnd
-            guard $ aTeleLength delta /= length args
+            guard $ aTeleLength delta == length args
             return $ substATele delta (map fst args) matchBody
         AConv (ADCon c indices vs) bs convBnd (ATCon tcon resIndices) -> do
           (xs,template) <- unbind convBnd
@@ -566,3 +568,13 @@ astep (ANthEq _ _) = return Nothing
 astep (ATrustMe _) = return Nothing
 
 astep (ASubstitutedFor a name) = fmap (flip ASubstitutedFor name) <$> astep a
+
+
+-- Step the term for at most n steps, or until it is stuck.
+asteps :: Int -> ATerm -> TcMonad ATerm
+asteps 0 a = return a
+asteps n a = do
+  ma' <- astep a
+  case ma' of
+    Nothing -> return a
+    Just a' -> asteps (n-1) a'
