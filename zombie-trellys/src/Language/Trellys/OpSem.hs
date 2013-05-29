@@ -32,11 +32,11 @@ erase (AUniVar x _) = return $ EUniVar (translate x)
 erase (ACumul a i) = erase a
 erase (AType i) = return $ EType i
 erase (ATCon c indxs) = ETCon (translate c) <$> mapM erase indxs
-erase (ADCon c indxs args) = EDCon (translate c) <$> mapM (erase . fst) (filter ((==Runtime) . snd) args)
-erase (AArrow ex ep bnd) = do
+erase (ADCon c _ indxs args) = EDCon (translate c) <$> mapM (erase . fst) (filter ((==Runtime) . snd) args)
+erase (AArrow _ ex ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
   EArrow ep <$> erase a <*> (bind (translate x) <$> erase b)
-erase (ALam _ ep bnd) = do
+erase (ALam _ _ ep bnd) = do
   (x, body) <- unbind bnd
   if ep == Runtime
     then ELam  <$> (bind (translate x) <$> erase body)

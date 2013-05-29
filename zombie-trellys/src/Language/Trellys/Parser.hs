@@ -59,7 +59,7 @@ import qualified Data.Set as S
     | a = b                    Equality type
     | join k                   Equality proof
     | conv a by b at EqC       Conversion
-    | conta a                  Contra
+    | contra a                  Contra
     | abort                    Abort
     | rec f x = a              Runtime rec
     | rec f [x] = a            Erased rec

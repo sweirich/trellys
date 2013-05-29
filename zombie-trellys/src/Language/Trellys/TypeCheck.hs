@@ -22,8 +22,6 @@ import Language.Trellys.TypeMonad
 import Language.Trellys.EqualityReasoning
 import Language.Trellys.TypeCheckCore
 
-import Language.Trellys.GenericBind
-import qualified Language.Trellys.GenericBind as GB
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
@@ -133,7 +131,7 @@ ta (OrdAx a) (ASmaller b1 b2) = do
      case eraseToHead tyA of
        ATyEq a1 cvs ->
          case cvs of 
-           (ADCon _ _ vs) -> do
+           (ADCon _ _ _ vs) -> do
              a1_eq_b2 <- a1 `aeqSimple` zb2
              unless (a1_eq_b2) $
                err [DS "The left side of the equality supplied to ord ",
@@ -160,7 +158,7 @@ ta (Contra a) b =  do
    case (eaTh, eraseToHead tyA) of
      (Logic, ATyEq cvs1 cvs2) ->
        case (cvs1, cvs2) of
-         ((ADCon c1 _ vs1), (ADCon c2 _ vs2)) ->
+         ((ADCon c1 _ _ vs1), (ADCon c2 _ _ vs2)) ->
             do when (c1 == c2) $
                  err [DS "The equality proof", DD tyA,
                       DS "isn't necessarily contradictory because the",
@@ -187,10 +185,11 @@ ta Abort tyA =
   return (AAbort tyA)
 
 -- Rules T_lam1 and T_lam2
-ta (Lam lep lbody) arr@(AArrow ex aep abody) = do
+ta (Lam lep lbody) arr@(AArrow _ ex aep abody) = do
   -- Note that the arrow type is assumed to be kind-checked already.
 
-
+  -- Can't use unbind2 because lbody and abody bind names from 
+  -- different languages.
   ((dumb_x,unembed -> tyA),dumb_tyB) <- unbind abody
   (x, body) <- unbind lbody
   let tyB = subst dumb_x (AVar (translate x)) dumb_tyB
@@ -202,6 +201,9 @@ ta (Lam lep lbody) arr@(AArrow ex aep abody) = do
   -- typecheck the function body
   ebody <- extendCtx (ASig (translate x) Program tyA) $
              (ta body tyB)
+             
+  -- get the theta from the annotated body           
+  (th,_) <- getType ebody  
 
   -- perform the FV and value checks if in T_Lam2
   -- The free variables function fv is ad-hoc polymorphic in its
@@ -213,10 +215,10 @@ ta (Lam lep lbody) arr@(AArrow ex aep abody) = do
        err [DS "ta: In implicit lambda, variable", DD x,
             DS "appears free in body", DD body]
   zarr <- zonkTerm arr
-  return (ALam zarr lep (bind (translate x) ebody))
+  return (ALam th zarr lep (bind (translate x) ebody))
 
 -- rules T_ind1 and T_ind2
-ta (Ind ep lbnd) arr@(AArrow ex aep abnd) = do
+ta (Ind ep lbnd) arr@(AArrow k ex aep abnd) = do
   -- Note that the the arrow type is assumed to by kind-checked already.
 
   unless (ep == aep) $
@@ -236,8 +238,8 @@ ta (Ind ep lbnd) arr@(AArrow ex aep abnd) = do
       smallerType = ASmaller (AVar x)
                              (AVar y)
 
-      tyC = AArrow ex ep (bind (x, embed tyA) 
-                         (AArrow Explicit Erased (bind (z, embed smallerType) xTyB)))
+      tyC = AArrow k ex ep (bind (x, embed tyA) 
+                         (AArrow k Explicit Erased (bind (z, embed smallerType) xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
   (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
                  extendCtx (ASig y Logic tyA) $ do
@@ -261,7 +263,7 @@ ta (Ind ep lbnd) arr@(AArrow ex aep abnd) = do
   return (AInd zarr ep (bind (f,y) ea))
 
 -- rules T_rec1 and T_rec2
-ta (Rec ep lbnd) arr@(AArrow ex aep abnd) = do
+ta (Rec ep lbnd) arr@(AArrow k ex aep abnd) = do
   -- Note that the arrow type is assumed to be already type checked.
 
   unless (ep == aep) $
@@ -544,7 +546,7 @@ ts tsTm =
          unless (etyBTh == Logic) $
             err [DS "domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
          case (eraseToHead tytyA, eraseToHead tytyB, isFirstOrder etyA) of
-           (AType n, AType m, True)  -> return $ (AArrow ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
+           (AType n, AType m, True)  -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
            (AType _, AType _, False) ->  err [DD tyA, 
                                               DS  "can not be used as the domain of a function type, must specify either",
                                               DD (At tyA Logic), DS "or", DD (At tyA Program)]
@@ -570,17 +572,17 @@ ts tsTm =
                 DS $ "should have " ++ show (aTeleLength delta) ++ " parameters and " ++ show (aTeleLength deltai)
                  ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
          eparams <- map fst <$> taTele (take (aTeleLength delta) args) (aSetTeleEps Erased delta)
-         eargs   <- taTele (drop (aTeleLength delta) args) (substATele delta eparams deltai)
+         eargs <- taTele (drop (aTeleLength delta) args) (substATele delta eparams deltai)
          zeparams <- mapM zonkTerm eparams
          aKc (ATCon tname zeparams)
-         return $ (ADCon (translate c) zeparams eargs, ATCon tname zeparams)
+         return $ (ADCon (translate c) Logic zeparams eargs, ATCon tname zeparams)
 
     -- rule T_app
     ts' tm@(App ep a b) =
       do (eaPreinst, tyPreinst) <- ts a
          (ea,tyArr) <- instantiateInferreds eaPreinst tyPreinst        
          case eraseToHead tyArr of
-           AArrow ex epArr bnd -> do
+           AArrow _ ex epArr bnd -> do
              ((x,tyA),tyB) <- unbind bnd
              unless (ep == epArr) $
                err [DS "Application annotation", DD ep, DS "in", DD tm,
@@ -790,7 +792,7 @@ adjustTheta th a aTy = do
 -- | Take a term which perhaps has an inferred arrow type (that is, (x1:A1)=>...(xn:An)=>B), 
 -- and replace the xs with unification variables.
 instantiateInferreds :: ATerm -> ATerm -> TcMonad (ATerm,ATerm)
-instantiateInferreds a (eraseToHead -> AArrow Inferred ep bnd) = do
+instantiateInferreds a (eraseToHead -> AArrow _ Inferred ep bnd) = do
   ((x,unembed->aTy),bTy) <- unbind bnd
   u <- AUniVar <$> (fresh (string2Name "")) <*> (pure aTy)
   let bTy' = subst x u bTy
@@ -1128,7 +1130,7 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
         ztyAlt <- zonkTerm tyAlt
         newBody <- extendCtxTele newScrutTys th $ 
                      extendCtx (ASig (translate y) Logic 
-                                     (ATyEq s (ADCon c bbar (aTeleAsArgs args')))) $
+                                     (ATyEq s (ADCon c th bbar (aTeleAsArgs args')))) $
                        buildCase (newScruts++scruts) newAlts ztyAlt
         erasedNewBody <- erase newBody
         unless (S.null (S.map translate (fv erasedNewBody) `S.intersection` erasedVars)) $ do

@@ -384,20 +384,20 @@ decompose _ _ avoid t@(AType _) = return t
 decompose sub e avoid (ATCon c args) = do
   args' <- mapM (decompose True e avoid) args
   return $ ATCon c args'
-decompose sub e avoid (ADCon c params args) = do
+decompose sub e avoid (ADCon th c params args) = do
   params' <- mapM (decompose True Erased avoid) params
   args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ ADCon c params' args'
-decompose _ e avoid (AArrow ex ep bnd) = do
+  return $ ADCon th c params' args'
+decompose _ e avoid (AArrow k ex ep bnd) = do
   ((x,unembed->t1), t2) <- unbind bnd
   r1 <- decompose True e avoid t1
   r2 <- decompose True e (S.insert x avoid) t2
-  return (AArrow ex ep (bind (x, embed r1) r2))
-decompose _ e avoid (ALam ty ep bnd) = do
+  return (AArrow k ex ep (bind (x, embed r1) r2))
+decompose _ e avoid (ALam th ty ep bnd) = do
   (x, body) <- unbind bnd 
   ty' <- decompose True Erased avoid ty
   r <- decompose True e (S.insert x avoid) body
-  return (ALam ty' ep (bind x r))
+  return (ALam th ty' ep (bind x r))
 decompose _ e avoid (AApp ep t1 t2 ty) = 
   AApp ep <$> (decompose True e avoid t1) 
           <*> (decompose True (e `orEps` ep) avoid t2)
@@ -485,15 +485,15 @@ match vars (ACumul t _) (ACumul t' _) = match vars t t'
 match vars (AType _) _ = return M.empty
 match vars (ATCon c params) (ATCon _ params') = 
   foldr M.union M.empty <$> zipWithM (match vars) params params'
-match vars (ADCon c params ts) (ADCon _ params' ts') = do
+match vars (ADCon _ c params ts) (ADCon _ _ params' ts') = do
    m1 <- foldr M.union M.empty <$> zipWithM (match vars) params params'
    m2 <- foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
    return (m1 `M.union` m2)
-match vars (AArrow ex ep bnd) (AArrow ex' ep' bnd') = do
+match vars (AArrow k ex ep bnd) (AArrow k' ex' ep' bnd') = do
   Just ((_,unembed -> t1), t2, (_,unembed -> t1'), t2') <- unbind2 bnd bnd'
   match vars t1 t1' `mUnion` match vars t2 t2'
 --Fixme: think a bit about ty.
-match vars (ALam ty ep bnd) (ALam ty' ep' bnd') = do
+match vars (ALam th ty ep bnd) (ALam th' ty' ep' bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'
   match vars ty ty' `mUnion` match vars t t'
 match vars (AApp ep t1 t2 ty) (AApp ep' t1' t2' ty') =

@@ -115,26 +115,26 @@ disunify ls l0 rs r0 = go l0 r0
       | d == d' && length as == length as' =
         ATCon d <$> zipWithM go as as'
     
-    go (ADCon d as bs) (ADCon d' as' bs')
-      | d == d' && length as == length as' && length bs == length bs' =
-        ADCon d <$> zipWithM go as as'
-                <*> zipWithM (\(b,eps) (b',eps') -> do
+    go (ADCon d th as bs) (ADCon d' th' as' bs')
+      | th == th' && d == d' && length as == length as' && length bs == length bs' =
+        ADCon d th <$> zipWithM go as as'
+                   <*> zipWithM (\(b,eps) (b',eps') -> do
                                  guard $ eps == eps'
                                  b'' <- go b b'
                                  pure (b'',eps))
                              bs bs'
 
-    go (AArrow ex eps bnd) (AArrow _ eps' bnd') | eps == eps' = do
+    go (AArrow th ex eps bnd) (AArrow th' _ eps' bnd') | th == th' && eps == eps' = do
       ((x, unembed -> dom), ran, (_, unembed -> dom'), ran') <- unbind2M bnd bnd'
       dom'' <- go dom dom'
       ran'' <- go ran ran'
-      pure . AArrow ex eps $ bind (x, embed dom'') ran''
+      pure . AArrow th ex eps $ bind (x, embed dom'') ran''
     
-    go (ALam ty eps bnd) (ALam ty' eps' bnd') | eps == eps' = do
+    go (ALam th ty eps bnd) (ALam th' ty' eps' bnd') | th == th' && eps == eps' = do
       (x,body,_,body') <- unbind2M bnd bnd'
       ty''             <- go ty ty'
       body''           <- go body body'
-      pure . ALam ty'' eps $ bind x body''
+      pure . ALam th ty'' eps $ bind x body''
     
     go (AApp eps a b t) (AApp eps' a' b' t') | eps == eps' =
       AApp eps <$> go a a' <*> go b b' <*> go t t'
@@ -267,19 +267,19 @@ astep (AType _) = return Nothing
 
 astep (ATCon _ _) = return Nothing
 
-astep (ADCon c annots argsOrig) = stepArgs [] argsOrig
+astep (ADCon c th annots argsOrig) = stepArgs [] argsOrig
   where stepArgs  _     []               = return Nothing
         stepArgs prefix ((arg,eps):args) = do
           stepArg <- astep arg
           case stepArg of
             Nothing         -> stepArgs ((arg,eps):prefix) args
             Just (AAbort t) -> return . Just $ AAbort t
-            Just arg'       -> return . Just . ADCon c annots $
+            Just arg'       -> return . Just . ADCon c th annots $
                                  reverse prefix ++ (arg',eps) : args
 
-astep (AArrow _ _ _) = return Nothing
+astep (AArrow _ _ _ _) = return Nothing
 
-astep (ALam _ _ _) = return Nothing
+astep (ALam _ _ _ _) = return Nothing
 
 astep (AApp eps a b ty) = do
   stepA <- astep a
@@ -300,23 +300,23 @@ astep (AApp eps a b ty) = do
               if not bval
                 then return Nothing
                 else case a of
-                  AConv v bs convBnd (AArrow resEx resEps resTyBnd) -> do
+                  AConv v bs convBnd (AArrow resTh resEx resEps resTyBnd) -> do
                     let update updatee var newDom newRan mapBody = case updatee of
-                          ALam src eps' bnd -> do
+                          ALam th src eps' bnd -> do
                             (x,body) <- unbind bnd
-                            return . ALam newDom eps' . bind x $ mapBody body
-                          ARec (eraseToHead -> AArrow tyEx tyEps tyBnd) eps' bnd -> do
+                            return . ALam th newDom eps' . bind x $ mapBody body
+                          ARec (eraseToHead -> AArrow th tyEx tyEps tyBnd) eps' bnd -> do
                             ((f,recVar),rawBody) <- unbind bnd
                             ((tyVar,unembed -> dom),rawRan) <- unbind tyBnd
                             let body = subst recVar (AVar var) rawBody
-                            return $ ARec (AArrow tyEx tyEps $ bind (var,embed newDom) newRan)
+                            return $ ARec (AArrow th tyEx tyEps $ bind (var,embed newDom) newRan)
                                           eps'
                                           (bind (f,var) $ mapBody body)
-                          AInd (eraseToHead -> AArrow tyEx tyEps tyBnd) eps' bnd -> do
+                          AInd (eraseToHead -> AArrow th tyEx tyEps tyBnd) eps' bnd -> do
                             ((f,recVar),rawBody) <- unbind bnd
                             ((tyVar,unembed -> dom),rawRan) <- unbind tyBnd
                             let body = subst recVar (AVar var) rawBody
-                            return $ AInd (AArrow tyEx tyEps $ bind (var,embed newDom) newRan)
+                            return $ AInd (AArrow th tyEx tyEps $ bind (var,embed newDom) newRan)
                                           eps'
                                           (bind (f,var) $ mapBody body)
                           _ -> mzero
@@ -325,8 +325,9 @@ astep (AApp eps a b ty) = do
                     (xs,template) <- unbind convBnd
                     runMaybeT $ case (template,xs,bs) of
                       (AVar x,[xx],[(p,pEps)]) | x == xx -> do
-                        (_, ATyEq (AArrow srcEx  srcEps  srcTyBnd)
-                                  (AArrow resEx' resEps' resTyBnd')) <- lift $ aTs p
+                        (_, ATyEq (AArrow si srcEx  srcEps  srcTyBnd)
+                                  (AArrow ri resEx' resEps' resTyBnd')) <- lift $ aTs p
+                        guard $ si == ri                                           
                         guard $ srcEps == resEps
                         guard $ resEps == resEps'
                         do -- Scoping
@@ -348,14 +349,14 @@ astep (AApp eps a b ty) = do
                                        [ (ADomEq p, pEps)
                                        , (AJoin srcRan 0 (subst tyVar y' srcRan) 0, pEps) ]
                                        (bind [x0,x1] $
-                                          ATyEq (AArrow srcEx srcEps $
+                                          ATyEq (AArrow si srcEx srcEps $
                                                         bind (tyVar, embed $ AVar x0) (AVar x1))
-                                                (AArrow resEx resEps $
+                                                (AArrow ri resEx resEps $
                                                         bind (tyVar ,embed resDom) resRan)) 
-                                       (ATyEq (AArrow srcEx srcEps $
+                                       (ATyEq (AArrow si srcEx srcEps $
                                                       bind (tyVar, embed resDom) $
                                                            subst tyVar y' srcRan)
-                                              (AArrow resEx resEps $
+                                              (AArrow ri resEx resEps $
                                                       bind (tyVar, embed resDom) resRan))
                         v' <- update (subst tyVar y' v) tyVar resDom resRan $
                                 mkConv [(ARanEq p' $ AVar tyVar,pEps)]
@@ -363,7 +364,7 @@ astep (AApp eps a b ty) = do
                                        (AVar x')
                                        resRan
                         return $ AApp eps v' b ty
-                      (AArrow srcEx srcEps srcTyBnd,_,_) -> do
+                      (AArrow srcTh srcEx srcEps srcTyBnd,_,_) -> do
                         ( (tyVar, unembed -> srcDom), srcRan,
                           (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
                         let adjust f (bi,epsi) = do (b'i,t) <- f bi
@@ -382,20 +383,20 @@ astep (AApp eps a b ty) = do
                                        resRan
                         return $ AApp eps v' b ty
                       _ -> mzero
-                  (ALam _ _ bnd) -> do
+                  (ALam _ _ _ bnd) -> do
                     (x,body) <- unbind bnd
                     return . Just $ subst x b body
                   (ARec _ _ bnd) -> do
                     ((f,x),body) <- unbind bnd
                     return . Just . subst f a $ subst x b body
-                  (AInd tyInd@(AArrow ex _ tyBnd) _ bnd) -> do
+                  (AInd tyInd@(AArrow i ex _ tyBnd) _ bnd) -> do
                     ((tyVar,ty1),ty2) <- unbind tyBnd
                     ((f,x),body) <- unbind bnd
                     y <- fresh $ string2Name "y"
                     p <- fresh $ string2Name "p"
-                    let tyArr2 = AArrow ex Erased $ bind (p, embed $ ASmaller (AVar y) b) ty2
-                        lam   = ALam (AArrow ex Runtime $ bind (tyVar,ty1) tyArr2) Runtime . bind y
-                              . ALam tyArr2                                        Erased  . bind p
+                    let tyArr2 = AArrow i ex Erased $ bind (p, embed $ ASmaller (AVar y) b) ty2
+                        lam   = ALam Logic (AArrow i ex Runtime $ bind (tyVar,ty1) tyArr2) Runtime . bind y
+                              . ALam Logic tyArr2                                        Erased  . bind p
                               $ AApp Erased (AApp Runtime a (AVar y) tyInd) (AVar p) ty2
                     return . Just . subst f lam $ subst x b body
                   _ -> return Nothing
@@ -507,13 +508,13 @@ astep (ACase a bnd ty) = do
     Nothing         -> runMaybeT $ do
       (_, matches) <- unbind bnd
       case a of
-        ADCon c _ args -> do
+        ADCon c _ _ args -> do
             AMatch _ matchBodyBnd <- MaybeT . return
                                   $  find (\(AMatch c' _) -> c == c') matches
             (delta, matchBody) <- unbind matchBodyBnd
             guard $ aTeleLength delta == length args
             return $ substATele delta (map fst args) matchBody
-        AConv (ADCon c indices vs) bs convBnd (ATCon tcon resIndices) -> do
+        AConv (ADCon c th indices vs) bs convBnd (ATCon tcon resIndices) -> do
           (xs,template) <- unbind convBnd
           -- indicesTele = Δ
           -- argsTele    = Δ'm
@@ -534,7 +535,7 @@ astep (ACase a bnd ty) = do
             _ -> mzero
           v's <- casepush indicesTele resIndices b's
                           vs argsTele
-          return $ ACase (ADCon c resIndices v's) bnd ty
+          return $ ACase (ADCon c th resIndices v's) bnd ty
         _ -> mzero
   where
     casepush (aTeleNames -> xs) res bs vs0 tele'0 =
