@@ -440,17 +440,18 @@ decompose _ e avoid (ARec ty ep bnd) = do
   ty' <- decompose True Erased avoid ty
   r <- decompose True e (S.insert x (S.insert y avoid)) t
   return $ ARec ty' ep (bind (x,y) r)
-decompose _ e avoid (ALet ep bnd) = do
+decompose _ e avoid (ALet ep bnd (th,ty)) = do
   ((x,y, unembed->t1), t2) <- unbind bnd
   r1 <- decompose True (e `orEps` ep) avoid t1
   r2 <- decompose True e (S.insert x (S.insert y avoid)) t2
-  return $ ALet ep (bind (x,y, embed r1) r2)
-decompose _ e avoid (ACase t1 bnd ty) = do
+  ty' <- decompose True Erased avoid ty
+  return $ ALet ep (bind (x,y, embed r1) r2) (th,ty')
+decompose _ e avoid (ACase t1 bnd (th,ty)) = do
   (x, ms) <- unbind bnd
   ty' <- decompose True Erased avoid ty
   r1 <- decompose True e avoid t1
   rs <- mapM (decomposeMatch e (S.insert x avoid)) ms
-  return (ACase r1 (bind x rs) ty')
+  return (ACase r1 (bind x rs) (th,ty'))
 decompose _ e avoid (ADomEq a) =
   ADomEq <$> decompose True e avoid a
 decompose _ e avoid (ARanEq a b) =
@@ -531,10 +532,10 @@ match vars (AInd ty ep bnd) (AInd ty' ep' bnd') = do
 match vars (ARec ty ep bnd) (ARec ty' ep' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
   match vars ty ty' `mUnion` match vars t t'
-match vars (ALet ep bnd) (ALet ep' bnd') = do
+match vars (ALet ep bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
   Just ((_,_,unembed -> t1), t2, (_,_,unembed -> t1'), t2') <- unbind2 bnd bnd'
-  match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (ACase t1 bnd ty) (ACase t1' bnd' ty') = do
+  match vars t1 t1' `mUnion` match vars t2 t2' `mUnion` match vars ty ty'
+match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
   Just (_, alts, _, alts') <- unbind2 bnd bnd'
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
     `mUnion`  match vars t1 t1'

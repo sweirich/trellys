@@ -394,6 +394,10 @@ epParens Runtime l = Dd (brackets (displays l))
 epParens Erased  l = Dd displays l
 -}
 
+instance Display Theta where
+  display Logic = return $ text "L"
+  display Program = return $ text "P"
+
 instance Display ATerm where
   display (AVar v) = display v
   display (AUniVar v a) = do
@@ -499,7 +503,7 @@ instance Display ATerm where
                          <+> text ":" <+> dty
                          <+> text "."
                         $$ nest 2 dbody)
-  display (ALet  ep bnd) = 
+  display (ALet  ep bnd _) = 
     lunbind bnd $ \((n,m, unembed -> a), b) -> do 
       dn <- display n
       dm <- display m
@@ -508,15 +512,17 @@ instance Display ATerm where
       return $ text "let" <+> dn <+> brackets dm <+> text "="
                      <+> da <+> text "in"
                 $$ nest 2 db
-  display (ACase a bnd ty) =
+  display (ACase a bnd (th,ty)) =
     lunbind bnd $ \(n,mtchs) -> do
       da <- display a
       dn <- display n
       dmtchs <- mapM display mtchs
+      
+      dth <- display th
       dty <- display ty
       return $ (parens (text "case" <+> da <+> brackets dn <+> text "of" $$
                          nest 2 (vcat dmtchs))
-                 <+> text ":" <+> dty)
+                 <+> text ":" <> dth <+> dty)
   display (ADomEq a) = do
     da <- display a 
     return $ text "domeq" <+> aWraparg Erased a da

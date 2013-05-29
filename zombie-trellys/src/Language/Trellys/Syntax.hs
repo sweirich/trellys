@@ -307,11 +307,14 @@ data ATerm =
   | ACumul ATerm Int 
   | AType Int
   | ATCon AName [ATerm] 
+    
+      -- Theta is the max th of any argument
   | ADCon AName Theta [ATerm] [(ATerm,Epsilon)]
-    -- Theta is the max th of any argument
+
   -- ET_arrow and ET_arrowImpred
+  -- Int is the Type-level of this Type
   | AArrow Int Explicitness Epsilon (Bind (AName, Embed ATerm) ATerm)
-    -- Int is the Type-level of this Type
+
   -- ET_lamPlus and ET_lamMinus. The first ATerm is the (pi) type of the entire lambda.
   | ALam Theta ATerm  Epsilon (Bind AName ATerm)
   -- ET_appPlus and ET_appMinus. The last expression is the type of the entire application:
@@ -336,9 +339,9 @@ data ATerm =
   -- ET_recPlus and ET_recMinus:
   | ARec ATerm Epsilon (Bind (AName, AName) ATerm)
   -- Why is let in the core language? To get more readable core terms.
-  | ALet Epsilon (Bind (AName, AName, Embed ATerm) ATerm)
+  | ALet Epsilon (Bind (AName, AName, Embed ATerm) ATerm) (Theta,ATerm)
    -- the final ATerm is the type of the entire match.
-  | ACase ATerm (Bind AName [AMatch]) ATerm
+  | ACase ATerm (Bind AName [AMatch]) (Theta,ATerm)
    -- Decomposing equalities
   | ADomEq ATerm
   | ARanEq ATerm ATerm
