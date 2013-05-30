@@ -23,6 +23,12 @@ After major changes, e.g. a GHC version upgrade, you may have to delete
 the ./cabal-dev directory from your working copy before doing a fresh 
 `make`.
 
+GHCI
+====
+
+There is a ./.ghci file that sets up paths automatically, so e.g.
+just `ghci src/Trellys.hs` as usual.
+
 Dir Summary
 ===========
 

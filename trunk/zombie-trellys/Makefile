@@ -64,7 +64,3 @@ etags:
 # started.
 cabal-dev-ghci:
 	cd src && cabal-dev ghci
-
-# Start ghci with appropriate include dirs.
-ghci:
-	ghci -isrc -i../lib/layout-token/src src/Trellys.hs
