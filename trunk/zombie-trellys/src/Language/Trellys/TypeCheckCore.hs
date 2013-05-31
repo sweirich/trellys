@@ -33,8 +33,15 @@ import Language.Trellys.TypeMonad
 
 getType :: ATerm -> TcMonad (Theta, ATerm)
 
-getType (AVar x) = maybeUseFO (AVar x) =<< lookupTy x
-getType (AUniVar x ty) = coreErr [DS "Vilhelm? What is secondPass?" ]
+getType (AVar x) = maybeUseFO (AVar x) =<< (lookupTy x)
+
+getType (AUniVar x ty) =  do 
+  secondPass <- getFlag SecondPass
+  if secondPass
+    then coreErr [DS "Encountered an uninstantiated unification variable", DD x, DS "of type", DD ty]
+    -- todo, the Logic is probably wrong, maybe need to do something smarter.
+    else return (Logic,ty)
+  
 getType (ACumul a j) = return (Logic, AType j) 
                        -- should aTs require that cumul used only for logical types?
 getType (AType i) = return (Logic, AType (i+1))                       
@@ -42,7 +49,7 @@ getType deriv@(AUnboxVal a) = do
   (_, atTy) <- getType a 
   case eraseToHead atTy of 
      (AAt ty th) -> return (th, ty)
-     _  -> coreErr [DS "Internal Error: argument of AUnboxVal should have an @-type, but has type", 
+     _  -> coreErr [DS "getType: argument of AUnboxVal should have an @-type, but has type", 
                     DD atTy,
                     DS ("\n in (" ++ show deriv ++ ")") ]
 getType (ATCon c _) = do
@@ -58,7 +65,7 @@ getType  (AArrow j ex ep bnd) = return (Logic, AType j)
 getType (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = 
   return (th, AArrow k ex epTy bndTy) 
   
-getType (ALam _ _ _ _) = coreErr [DS "Annotation type on ALam incorrect"]
+getType (ALam _ _ _ _) = coreErr [DS "getType: Annotation type on ALam incorrect"]
 
 getType (AApp ep a b ty) = do
   (tha, _) <- getType a
@@ -69,7 +76,7 @@ getType (AAt a th') = do
   (_,aTy) <- getType a
   case eraseToHead aTy of 
     AType i -> return $ (Logic, AType i)
-    _ -> coreErr [DS "The argument to AAt should be a type, but it is", DD a, DS "which has type", DD aTy]
+    _ -> coreErr [DS "getType: The argument to AAt should be a type, but it is", DD a, DS "which has type", DD aTy]
 
   
 -- maybe add type annotation here?  
@@ -80,7 +87,7 @@ getType (ABox a th') = do
     Logic                  -> return (Logic, AAt aTy th')
     Program | isVal        -> return (Logic, AAt aTy th')
     Program | th'==Program -> return (Program, AAt aTy th')
-    _ -> coreErr [DS "in ABox,", DD a, DS "should check at L but checks at P"]
+    _ -> coreErr [DS "getType: In ABox,", DD a, DS "should check at L but checks at P"]
   
 getType (AAbort aTy) =
   return (Program, aTy)
@@ -103,7 +110,7 @@ getType (AInjDCon a i) = do
   case eraseToHead aTy of
      ATyEq (ADCon _ _ _ args) (ADCon _ _ _ args') ->
        return (Logic, ATyEq (fst (args !! i)) (fst (args' !! i)))
-     _ -> coreErr [DS "AInjDCon: the term", DD a, 
+     _ -> coreErr [DS "getType AInjDCon: the term", DD a, 
                    DS"should prove an equality of datatype constructors, but it has type", DD aTy]
 
 
@@ -114,7 +121,7 @@ getType (AOrdAx pf a1) = do
   (_,pfTy) <- getType pf
   case eraseToHead pfTy of            
     (ATyEq b1 _) -> return (Logic, ASmaller a1 b1)
-    _ -> coreErr [DS "AOrdAx badeq"]
+    _ -> coreErr [DS "getType: AOrdAx badeq"]
     
 getType (AOrdTrans a b) = do
   (_, tya) <- getType a
@@ -122,17 +129,17 @@ getType (AOrdTrans a b) = do
   case (eraseToHead tya, eraseToHead tyb) of
     (ASmaller t1 _, ASmaller _ t3') ->
        return $ (Logic, ASmaller t1 t3')
-    _ -> coreErr [DS "The subproofs of AOrdTrans do not prove inequalities of the right type."]
+    _ -> coreErr [DS "getType: The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
 getType (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = 
   return (Logic, AArrow k ex epTy bndTy)
 
-getType (AInd _ _ _) = coreErr [DS "Annotation type on AInd incorrect"]
+getType (AInd _ _ _) = coreErr [DS "getType: Annotation type on AInd incorrect"]
 
 getType  (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) =
   return (Program, AArrow k ex epTy bndTy)
 
-getType (ARec _ _ _) = coreErr [DS "Annotation type on ARec incorrect"]
+getType (ARec _ _ _) = coreErr [DS "getType: Annotation type on ARec incorrect"]
 
 getType (ALet ep bnd annot) = return annot
 
@@ -143,10 +150,10 @@ getType t@(ADomEq a) = do
   case aTy of
     ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | eps == eps' ->
       unbind2 bndTy bndTy' >>=
-        maybe (coreErr [DS "ADomEq applied to incorrect equality type"])
+        maybe (coreErr [DS "getType: ADomEq applied to incorrect equality type"])
               (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
                 return (th, ATyEq tyDom tyDom'))
-    _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]   
+    _ -> coreErr [DS "getType: ADomEq not applied to an equality between arrow types"]   
           
 getType (ARanEq a b) = do
   (th,  aTy) <- aTs a
@@ -155,16 +162,16 @@ getType (ARanEq a b) = do
     ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | th == th' && eps == eps' -> do
       unbindRes <- unbind2 bndTy bndTy'
       case unbindRes of
-        Nothing -> coreErr [DS "ARanEq incorrect equality type"]
+        Nothing -> coreErr [DS "getType: ARanEq incorrect equality type"]
         Just ((tyVar, unembed -> tyDom), tyRan, (_, unembed -> tyDom'), tyRan') -> do
           return (th, ATyEq (subst tyVar b tyRan) (subst tyVar b tyRan'))
-    _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
+    _ -> coreErr [DS "getType: ARanEq not applied to an equality between arrow types"]
 
 getType t@(AAtEq a) = do
   (th, aTy) <- getType a
   case aTy of
     ATyEq (AAt atTy th') (AAt atTy' th'') | th' == th'' -> return (th, ATyEq atTy atTy')
-    _ -> coreErr [DS "AAtEq not applied to an equality between at-types"]
+    _ -> coreErr [DS "getType: AAtEq not applied to an equality between at-types"]
 
 getType (ANthEq i a) = do
   (th, aTy) <- getType a
@@ -175,7 +182,7 @@ getType (ANthEq i a) = do
       | i <= 0                  -> coreErr [DS "ANthEq at non-positive index"]
       | i > length as           -> coreErr [DS "ANthEq index out of range"]
       | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
-    _ -> coreErr [DS "ANthEq not applied to an equality between type constructor applications"]
+    _ -> coreErr [DS "getType: ANthEq not applied to an equality between type constructor applications"]
  
 getType (ATrustMe ty) = do
   return (Logic, ty)
@@ -484,8 +491,12 @@ aTs (ALet ep bnd (th, ty)) = do
                  extendCtx (ASig xeq Logic (ATyEq (AVar x) a)) $ do
                   aTs b
   aKc bTy  --To check that no variables escape
-  when (max th' th'' > th) $ coreErr [DS "Incorrect th annotation on ALet"]
-  return (th, bTy) --The max enforces that P vars can not be bound in an L context.
+  --The max enforces that P vars can not be bound in an L context.
+  when (max th' th'' > th) $ coreErr [DS "Incorrect th annotation on ALet",
+                                      DS "It was", DD th, 
+                                      DS "but scrutinee is", DD th', 
+                                      DS "and the body is", DD th'']
+  return (th, bTy) 
 
 aTs (ACase a bnd (th,ty)) = do
   (xeq, mtchs) <- unbind bnd
@@ -503,8 +514,13 @@ aTs (ACase a bnd (th,ty)) = do
             coreErr [DS "ACase malformed core term, this should never happen"]
           ths <- mapM (aTsMatch th ty (zip (binders delta) idxs) cons (\pat -> ASig xeq Logic (ATyEq a pat)))
                       mtchs
-          unless (max aTh (maximum (minBound:ths)) <= th) $
-              coreErr [DS "ACase theta annotation incorrect."]     
+          let th' = max aTh (maximum (minBound:ths))
+          unless (th' <= th) $
+              coreErr $ [DS "ACase theta annotation incorrect.",
+                       DS "The annotation was", DD th, 
+                       DS "but computed to be", DD th', 
+                       DS "from the scrutinee", DD aTh, 
+                       DS "and the branches"] ++ (map DD ths)
           return (th , ty)     
         (_, _,  Nothing) -> coreErr [DS "ACase case on abstract type"]
     _ -> coreErr [DS "ACase not data"]
@@ -586,7 +602,7 @@ maybeUseFO a (Program, aTy) = do
 -- Compute the best theta that can be given to a term.
 aGetTh :: ATerm -> TcMonad Theta
 aGetTh a = do
-  (th, _) <- aTs a
+  (th, _) <- getType a
   return th
 
 -- Check that a term is a type 
