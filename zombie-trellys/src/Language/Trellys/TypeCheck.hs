@@ -43,19 +43,23 @@ import qualified Data.Map as M
 {-
   We rely on two mutually recursive judgements:
 
-  * ta is an analysis judgement that takes a term and a type and checks it.
+  * ta is an analysis judgement that takes a term and a type 
+    and checks it.
 
   * ts is a synthesis that takes a term and synthesizes a type.
 
   Both functions also return an annotated term which is an
   elaborated version of the input term. The invariants for this is:
+
    - ta takes a source term and elaborated type, returns elaborated term
-     - The elaborated type has already been kind-checked, ta will not re-check it.
+     - The elaborated type has already been kind-checked, 
+       ta will not re-check it.
    - ts takes a source term, returns elaborated term and elaborated type.
      - The elaborated type is guaranteed to be well-kinded
   
-  From the elaborated term, we can also recover the minimal theta that makes 
-  that term typecheck. So these two functions also implicitly compute th.
+  From the elaborated term, we can also recover the minimal theta 
+  that makes that term typecheck. So these two functions also implicitly 
+  compute th.
 
   In both functions, the context (gamma) is an implicit argument
   encapsulated in the TcMonad.  
@@ -89,6 +93,8 @@ kcTele ((x,ty,ep):tele') = do
    return (ACons (rebind (translate x,embed ety,ep) etele'))
 
 -- | Type analysis
+-- Check that the provided term has the given type
+-- Produce the corresponding annotated language term
 ta :: Term -> ATerm -> TcMonad ATerm
 
 -- Position terms wrap up an error handler
@@ -204,7 +210,9 @@ ta (Lam lep lbody) arr@(AArrow _ ex aep abody) = do
              (ta body tyB)
              
   -- get the theta from the annotated body           
-  (th,_) <- getType ebody  
+  (th,_) <- extendCtx (ASig (translate x) Program tyA) $ 
+             getType ebody  
+  -- let th = error "disable getType" 
 
   -- perform the FV and value checks if in T_Lam2
   -- The free variables function fv is ad-hoc polymorphic in its
@@ -318,11 +326,13 @@ ta (Let th' ep bnd) tyB =
     (ea,tyA) <- ts a
     eaTh <- aGetTh ea
     unless (eaTh <= th') $
-      err [DS (show y ++ " was marked as " ++ show th' ++ " but"), DD a, DS "checks at P"]
-
+      err [DS (show y ++ " was marked as " ++ show th' ++ " but"), 
+           DD a, DS "checks at P"]
+      
     -- premise 2
     (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
-                 extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $ do
+                 extendCtx (ASig (translate y) Logic 
+                            (ATyEq (AVar (translate x)) ea)) $ do
                    eb <- ta b tyB
                    th <- aGetTh eb
                    return (eb,th)
@@ -338,7 +348,9 @@ ta (Let th' ep bnd) tyB =
            DS "appear in the erasure of the body, but here", DD x,
            DS "appears in the erasure of", DD b]
     zea <- zonkTerm ea
-    return (ALet ep (bind (translate x, translate y, embed zea) eb) (th', tyB))
+    --The max enforces that P vars can not be bound in an L context.
+    return (ALet ep (bind (translate x, translate y, embed zea) eb) 
+            (max th th', tyB))
 
     -- Elaborating 'unfold' directives; checking version
 
@@ -736,9 +748,11 @@ ts tsTm =
         unless (aTh <= th') $
           err [DS "The variable", DD y, DS "was marked as L but checks at P"]
         -- premise 2
-        (eb,tyB) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
-                      extendCtx (ASig (translate x) th' tyA) $
-                        ts b
+        (eb,tyB, bTh) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
+                      extendCtx (ASig (translate x) th' tyA) $ do
+                        (eb, tyB) <- ts b
+                        bTh <- aGetTh eb
+                        return (eb, tyB, bTh)
         -- premise 3
         aKc tyB
 
@@ -754,7 +768,8 @@ ts tsTm =
                DS "appears in the erasure of", DD b]
 
         zea <- zonkTerm ea
-        return (ALet ep (bind (translate x, translate y,embed zea) eb) (th',tyB), tyB)
+        return (ALet ep (bind (translate x, translate y,embed zea) eb) 
+                (max th' bTh,tyB), tyB)
 
     -- T_at
     ts' (At tyA th') = do
@@ -861,11 +876,10 @@ tcEntry (Def n term) = do
                       -- Put the elaborated version of term into the context.
                       return $ AddCtx [ASig (translate n) th ty, ADef (translate n) eterm]
         Just (theta,ty) ->
-          let handler (Err ps msg) = throwError $ Err (ps) (msg $$ msg')
-              msg' = disp [DS "When checking the term ", DD term,
+          let msg' = disp [DS "When checking the term ", DD term,
                            DS "against the signature", DD ty]
           in do
-            eterm <- ta term ty `catchError` handler
+            eterm <- ta term ty `catchError` rethrowWith msg'
             etermTh <- aGetTh eterm
             unless (etermTh <= theta) $
               err [DS "The variable", DD n, DS "was marked as L but checks at P"]
@@ -954,15 +968,15 @@ isFirstOrder _ = False
     
 -- Positivity Check
 
--- | Determine if a data type only occurs in strictly positive positions in a
--- constructor's arguments.
+-- | Determine if a data type only occurs in strictly positive 
+-- positions in a constructor's arguments.
 
 positivityCheck
   :: (Fresh m, MonadError Err m, MonadReader Env m) =>
      Name Term -> ConstructorDef -> m ()
 positivityCheck tName (ConstructorDef _ cName tele)  = do
   mapM_ checkBinding tele
-   `catchError` \(Err ps msg) ->  throwError $ Err ps (msg $$ msg')
+   `catchError` rethrowWith msg'
   where checkBinding (_,teleTy,_) = occursPositive tName teleTy
         msg' = text "When checking the constructor" <+> disp cName
 
@@ -1100,25 +1114,28 @@ buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
   ta body tyAlt
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any isEssentialVarMatch alts = do
-  -- If one of the branches contains an isolated variable, the ComplexCase basically acts as
+  -- If one of the branches contains an isolated variable, 
+  -- the ComplexCase basically acts as
   --  a let-expression, so that's what we elaborate it into.
   x <- fresh (string2Name "_scrutinee")
   x_eq <- fresh (string2Name "_")
   (th,sTy) <- aTs s
   ztyAlt <- zonkTerm tyAlt
-  body <- (extendCtx (ASig x th sTy) $
-           extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $
-           buildCase ((AVar x,y):scruts) alts ztyAlt)
-  return (ALet Runtime (bind (x, x_eq, embed s) body) (th, ztyAlt))
+  (body, bTh) <- extendCtx (ASig x th sTy) $
+           extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $ do
+             body <- buildCase ((AVar x,y):scruts) alts ztyAlt
+             bTh  <- aGetTh body
+             return (body, bTh)
+  return (ALet Runtime (bind (x, x_eq, embed s) body) (max th bTh, ztyAlt))
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = do
   --Todo: handle the scrutinee=pattern equation y somehow?
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
   buildCase scruts alts' tyAlt
 buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
   (th_unadjusted, sTy_unadjusted) <- aTs s_unadjusted
-  (th,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
+  (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
-  let buildMatch :: AConstructorDef -> TcMonad AMatch
+  let buildMatch :: AConstructorDef -> TcMonad (AMatch, Theta)
       buildMatch (AConstructorDef c args) = do
         relevantAlts <- filter (\(p,_) -> case p of 
                                            (PatCon (unembed -> c') _) -> (translate c')==c
@@ -1131,18 +1148,23 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
         let erasedVars = aTeleErasedVars args'
                          `S.union` (S.singleton (translate y))
         ztyAlt <- zonkTerm tyAlt
-        newBody <- extendCtxTele newScrutTys th $ 
-                     extendCtx (ASig (translate y) Logic 
-                                     (ATyEq s (ADCon c th bbar (aTeleAsArgs args')))) $
+        let extend = extendCtxTele newScrutTys aTh . 
+             extendCtx (ASig (translate y) Logic 
+                     (ATyEq s (ADCon c aTh bbar (aTeleAsArgs args'))))
+        newBody <- extend $
                        buildCase (newScruts++scruts) newAlts ztyAlt
+        (th,_) <- extend $ getType newBody
         erasedNewBody <- erase newBody
         unless (S.null (S.map translate (fv erasedNewBody) `S.intersection` erasedVars)) $ do
           let (x:_) = S.toList (fv newBody `S.intersection` erasedVars)
           err [DS "The variable", DD x, DS "is marked erased and should not appear in the erasure of the case expression"]
         znewScrutTys <- zonkTele newScrutTys
-        return $ AMatch c (bind znewScrutTys newBody)
-  ematchs <- bind (translate y) <$> mapM buildMatch cons
+        return $ (AMatch c (bind znewScrutTys newBody), th)
+  builds <- mapM buildMatch cons
+  let (matchs, ths) = unzip builds
+  let ematchs = bind (translate y)  matchs
   ztyAlt <- zonkTerm tyAlt
+  let th = maximum (aTh : ths) 
   return $ ACase s ematchs (th,ztyAlt)
 
 -- | expandMatch scrut args (pat, alt) 

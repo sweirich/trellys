@@ -5,6 +5,7 @@
 module Language.Trellys.GenericBind
   (Fresh(..),LFresh(..),Alpha(..)
   ,FreshM, runFreshM, FreshMT(..), runFreshMT
+  ,LFreshM, runLFreshM, LFreshMT(..), runLFreshMT
   {-- ,AlphaCtx --}
   ,Name(..),AnyName(..),rName
   ,translate

@@ -6,7 +6,9 @@
 module Language.Trellys.CongruenceClosure(
  Constant(..), EqConstConst(..), EqBranchConst(..), Equation, WantedEquation(..),
  Proof(..),
-  newState, propagate, reprs, unify, proofs, bindings
+  newState, propagate, reprs, 
+  unify, -- main function, runState is run for UniM monad
+  proofs, bindings
 ) where
 
 {- This module mostly follows two papers. The congruence closure part is based on

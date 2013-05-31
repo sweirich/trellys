@@ -17,6 +17,8 @@ import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
 import Unbound.LocallyNameless.Types (GenBind)
+import Unbound.LocallyNameless.Ops (lunbind2)
+
 import Control.Applicative
 import Control.Monad.Writer hiding (join)
 import Control.Monad.Trans.Maybe
@@ -61,6 +63,13 @@ unbind2M :: (MonadPlus m, Fresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
          -> GenBind order card p2 t2
          -> m (p1, t1, p2, t2)
 unbind2M bnd bnd' = maybe mzero return =<< unbind2 bnd bnd'
+
+lunbind2M :: (MonadPlus m, LFresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
+         => GenBind order card p1 t1
+         -> GenBind order card p2 t2
+         -> ((p1, t1, p2, t2) -> m r) -> m r
+lunbind2M bnd bnd' k =          
+  lunbind2 bnd bnd' $ maybe mzero k 
 
 -- Precondition: all the ANames are fresh.  If we had
 --   conv a by b1 ... bM at x1 ... xM . A : B
