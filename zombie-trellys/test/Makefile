@@ -26,7 +26,7 @@ TODO_PASS=ProgList
 # stale?
 UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
-TRELLYS=./trellys
+TRELLYS=./trellys 
 # typecheck *quietly*
 TYPECHECK=$(TRELLYS) 1>/dev/null # 2>&1
 

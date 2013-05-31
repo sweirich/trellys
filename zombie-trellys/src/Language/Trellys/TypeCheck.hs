@@ -77,7 +77,7 @@ import qualified Data.Map as M
 -- at some level.
 kcElab ::  Term -> TcMonad ATerm
 kcElab tm = do
-  (etm,ty) <- ts tm
+  (etm,ty) <- ts tm 
   case (eraseToHead ty) of
     AType _ -> return etm
     _       -> err [DD tm, DS "is not a well-formed type"]
@@ -205,15 +205,12 @@ ta (Lam lep lbody) arr@(AArrow _ ex aep abody) = do
        err ([DS "Lambda annotation", DD lep,
              DS "does not match arrow annotation", DD aep])
 
-  -- typecheck the function body
-  ebody <- extendCtx (ASig (translate x) Program tyA) $
-             (ta body tyB)
+  -- typecheck the function body and get its theta
+  (ebody, th) <- extendCtx (ASig (translate x) Program tyA) $ do
+             ebody <- ta body tyB
+             (th,_) <- getType ebody
+             return (ebody, th)
              
-  -- get the theta from the annotated body           
-  (th,_) <- extendCtx (ASig (translate x) Program tyA) $ 
-             getType ebody  
-  -- let th = error "disable getType" 
-
   -- perform the FV and value checks if in T_Lam2
   -- The free variables function fv is ad-hoc polymorphic in its
   -- return type, so we fix the type of xE.
@@ -310,7 +307,7 @@ ta (ComplexCase bnd) tyB = do
                  DD (ComplexMatch bnd1), DS $ "has " ++ show (length pats) ++  "."]
    mapM_ checkNumPats alts
    escruts <- mapM (\(s, eq) -> do                       
-                       (es, sTy) <- ts (unembed s)
+                       (es, sTy) <- ts (unembed s) 
                        return (es, eq))
                    scruts
    ztyB <- zonkTerm tyB
@@ -411,7 +408,7 @@ ta (SubstitutedFor a x) tyA = do
 
 -- rule T_chk
 ta a tyB = do
-  (ea,tyA) <- ts a
+  (ea,tyA) <- ts a 
   noCoercions <- getFlag NoCoercions
   ztyB <- zonkTerm tyB
   tyA_eq_ztyB <- tyA `aeqSimple` ztyB
@@ -465,6 +462,7 @@ maybeCumul a (eraseToHead -> AType l1) (eraseToHead -> AType l2) =
 maybeCumul _ _ _ = Nothing
 
 -- | Checks a list of terms against a telescope of types
+-- with the proviso that each term needs to check at Logic.
 -- Returns list of elaborated terms.
 -- Precondition: the two lists have the same length.
 --
@@ -478,7 +476,8 @@ taLogicalTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  =
   et <- ta t zty
   etTh <- aGetTh et
   unless (etTh == Logic) $
-    err [DS "Each argument needs to check logically, but", DD t, DS "checks at P"]
+    err [DS "Each argument needs to check logically, but", 
+         DD t, DS "checks at P"]
   eterms <- taLogicalTele terms (simplSubst x et tele')
   zet <- zonkTerm et
   return $ (zet,ep1) : eterms
@@ -486,22 +485,22 @@ taLogicalTele _ _ = error "Internal error: taTele called with unequal-length arg
 
 
 -- | Checks a list of terms against a telescope of types,
--- with the proviso that each term needs to check at Logic.
--- Returns list of elaborated terms.
+-- Returns list of elaborated terms
 -- Precondition: the two lists have the same length.
 --
 -- Unlike ta, here the telescope is not assumed to already be zonked.
-taTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [(ATerm,Epsilon)]
+taTele ::  [(Term,Epsilon)] -> ATelescope -> TcMonad [((ATerm,Epsilon),Theta)]
 taTele [] AEmpty = return []
 taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   unless (ep1 == ep2) $
     err [DS "The term ", DD t, DS "is", DD ep1, DS "but should be", DD ep2]
   zty <- zonkTerm ty
   et <- ta  t zty
+  etTh <- aGetTh et
   --Fixme: need to check that erased arguments are logical.
   eterms <- taTele terms (simplSubst x et tele')
   zet <- zonkTerm et
-  return $ (zet,ep1) : eterms
+  return $ ((zet,ep1),etTh) : eterms
 taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
 
@@ -585,11 +584,18 @@ ts tsTm =
            err [DS "Constructor", DD c,
                 DS $ "should have " ++ show (aTeleLength delta) ++ " parameters and " ++ show (aTeleLength deltai)
                  ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
-         eparams <- map fst <$> taTele (take (aTeleLength delta) args) (aSetTeleEps Erased delta)
-         eargs <- taTele (drop (aTeleLength delta) args) (substATele delta eparams deltai)
+         let numParams = aTeleLength delta
+         eparams <- map (fst . fst) <$> taTele (take numParams args) 
+                    (aSetTeleEps Erased delta)
+         teleRes <- taTele (drop numParams args) 
+                  (substATele delta eparams deltai)
+         let (eargs,eths) = unzip teleRes
          zeparams <- mapM zonkTerm eparams
          aKc (ATCon tname zeparams)
-         return $ (ADCon (translate c) Logic zeparams eargs, ATCon tname zeparams)
+         return $ (ADCon (translate c) (maximum (minBound:eths)) 
+                   zeparams eargs, 
+                   ATCon tname zeparams)
+
 
     -- rule T_app
     ts' tm@(App ep a b) =
@@ -652,8 +658,8 @@ ts tsTm =
 
     -- rule T_eq
     ts' (TyEq a b) = do
-      (ea,_) <- ts a
-      (eb,_) <- ts b
+      (ea,_) <- ts a 
+      (eb,_) <- ts b 
       zea <- zonkTerm ea
       return $ (ATyEq zea eb, AType 0)
 
@@ -667,10 +673,11 @@ ts tsTm =
     ts' (Conv b as bnd) =
       do (xs,c) <- unbind bnd
          let chkTy (pf,Runtime) x = do
-               (epf,pfTy) <- ts pf
+               (epf,pfTy) <- ts pf  
                pfTh <- aGetTh epf
                unless (pfTh==Logic) $
-                 err [DS "equality proof", DD pf, DS "should check at L but checks at P"]
+                 err [DS "equality proof", DD pf, 
+                      DS "should check at L but checks at P"]
                case eraseToHead pfTy of
                 ATyEq tyA1 tyA2 -> return $ (Just epf, SubstitutedForA tyA1 x, SubstitutedForA tyA2 x)
                 _ -> err $ [DS "The second arguments to conv must be equality proofs,",
@@ -687,7 +694,7 @@ ts tsTm =
          let cA2 = simplSubsts (zip xs (map (\(_,_,x)->x) atys)) c
          ecA2 <- kcElab cA2
         
-         eb <- ta b ecA1
+         eb <- ta b ecA1 
 
          let exs = map translate xs
          let ec = unsubstitute ecA2
@@ -697,7 +704,8 @@ ts tsTm =
              elaborateProof (Nothing, _,_) x =
                case (M.lookup x lhss, M.lookup x rhss) of
                  (Just etyA1, Just etyA2) -> return (ATyEq etyA1 etyA2, Erased)
-                 _ -> err [DS "The variable", DD x, DS "does not occur in the conv template expression"]
+                 _ -> err [DS "The variable", DD x, 
+                           DS "does not occur in the conv template expression"]
          eas <- zipWithM elaborateProof atys exs
 
          erasedEc <- erase ec
@@ -715,7 +723,7 @@ ts tsTm =
 -- congruence closure implementation rather than being exposed in the surface language.
     ts' (InjDCon a i) =
       do (ea,_) <- ts a
-         (_, ty) <- aTs (AInjDCon ea i)
+         (_, ty) <- getType (AInjDCon ea i)
          return (AInjDCon ea i, ty)
 
     -- rule T_annot
@@ -732,7 +740,7 @@ ts tsTm =
 
     -- pass through SubstitutedForA
     ts' (SubstitutedForA ea x) = do
-      (th, eaTy) <- aTs ea
+      (th, eaTy) <- getType ea
       zea <- zonkTerm ea
       return (ASubstitutedFor zea (translate x), eaTy)
 
@@ -873,21 +881,25 @@ tcEntry (Def n term) = do
       case lkup of
         Nothing -> do (eterm,ty) <- ts term
                       th <- aGetTh eterm
-                      -- Put the elaborated version of term into the context.
+                      -- Put the elaborated version of term 
+                      -- into the context.
                       return $ AddCtx [ASig (translate n) th ty, ADef (translate n) eterm]
         Just (theta,ty) ->
-          let msg' = disp [DS "When checking the term ", DD term,
+          let msg' = disp [DS "When checking the term ", DD n, 
+                           DS "with definition", DD term,
                            DS "against the signature", DD ty]
           in do
-            eterm <- ta term ty `catchError` rethrowWith msg'
+            eterm <- ta term ty 
             etermTh <- aGetTh eterm
             unless (etermTh <= theta) $
-              err [DS "The variable", DD n, DS "was marked as L but checks at P"]
+              err [DS "The variable", DD n, 
+                   DS "was marked as L but checks at P"]
             -- If we already have a type in the environment, due to a sig
             -- declaration, then we don't add a new signature.
             --
             -- Put the elaborated version of term into the context.
-            return $ AddCtx [ASig (translate n) theta ty, ADef (translate n) eterm]
+            return $ AddCtx [ASig (translate n) theta ty, 
+                             ADef (translate n) eterm]
     die term' =
       extendSourceLocation (unPosFlaky term) term $
          err [DS "Multiple definitions of", DD n,
@@ -1112,14 +1124,14 @@ buildCase :: [(ATerm,    TName)]       -> [ComplexMatch] -> ATerm        -> TcMo
 buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
 buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
-  ta body tyAlt
+  ta body tyAlt 
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any isEssentialVarMatch alts = do
   -- If one of the branches contains an isolated variable, 
   -- the ComplexCase basically acts as
   --  a let-expression, so that's what we elaborate it into.
   x <- fresh (string2Name "_scrutinee")
   x_eq <- fresh (string2Name "_")
-  (th,sTy) <- aTs s
+  (th,sTy) <- getType s 
   ztyAlt <- zonkTerm tyAlt
   (body, bTh) <- extendCtx (ASig x th sTy) $
            extendCtx (ASig x_eq Logic (ATyEq (AVar x) s)) $ do
@@ -1132,7 +1144,7 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = d
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
   buildCase scruts alts' tyAlt
 buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
-  (th_unadjusted, sTy_unadjusted) <- aTs s_unadjusted
+  (th_unadjusted, sTy_unadjusted) <- getType s_unadjusted
   (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
   let buildMatch :: AConstructorDef -> TcMonad (AMatch, Theta)

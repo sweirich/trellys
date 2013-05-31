@@ -9,10 +9,12 @@ options = [Option "p" ["picky equality"] (NoArg PickyEq) "use strongly typed equ
            Option "r" ["reduce"] (NoArg Reduce) "reduce the last term in the module",
            Option "L" ["lib"] (ReqArg LibDir "DIR") "look for imports in DIR (this option can be supplied multiple times)",
            Option "n" ["nocoercions"] (NoArg NoCoercions) "do not automatically infer equality proofs",
-           Option ""  ["parallel"] (NoArg UseParallelReduction) "use parallel (rather than CBV) reduction for join"
+           Option ""  ["parallel"] (NoArg UseParallelReduction) "use parallel (rather than CBV) reduction for join",
+           Option ""  ["no-tc-core"] (NoArg NoTypeCheckCore) "suppress type checking the core language"
           ]
 
 data Flag = PickyEq
+          | NoTypeCheckCore
           | NoCoercions
           | Reduce
           | LibDir FilePath
