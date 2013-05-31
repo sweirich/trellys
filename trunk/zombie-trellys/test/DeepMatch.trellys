@@ -3,7 +3,7 @@ module DeepMatch where
 import Prelude
 
 -- Two simple examples: min and fib.
-{-
+
 prog min : Nat -> Nat -> Nat
 rec min m = \n . 
   case m [_], n [_] of
@@ -88,7 +88,7 @@ ab_example6 = join
 
 log ab_example7 : ab (B2 (B1 (A2 A1 (A2 A1 A1))) (B2 (B1 A1) (B1 A1))) = 7
 ab_example7 = join
--}
+
 
 -- Pattern matching an expression against a variable introduces a let-expression.
 
@@ -101,7 +101,7 @@ let_example : Succ (case (abort : Nat) [q] of
 let_example = join
 
 -- It is ok to match a variable against a non-datatype.
-{-
+
 data C : Type 0 where
   MkC of (f : Nat -> Nat @log)
 
@@ -112,7 +112,7 @@ match_c = \ x .
 
 log match_c_example: (match_c (MkC (plus 2))) = 5
 match_c_example = join
--}
+
 
 {- We want tests covering:
    - failures from non-exhaustive matches.
