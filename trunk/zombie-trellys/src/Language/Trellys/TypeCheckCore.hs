@@ -24,6 +24,8 @@ import Language.Trellys.Syntax
 import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
 import Language.Trellys.TypeMonad
 
+import Text.PrettyPrint.HughesPJ (text,(<+>))
+import Language.Trellys.PrettyPrint(Disp(..))
 
 -------------------
 -------------------
@@ -245,9 +247,10 @@ aTs (ATCon c idxs) = do
 aTs (ADCon c th' idxs args) = do 
   (tyc, indx_tys, (AConstructorDef _ arg_tys)) <- lookupDCon c 
   th <- aTcTele (map (,Runtime) idxs ++ args) (aAppendTele indx_tys arg_tys)
-  guard (th' == th)
+  unless (th <= th') $
+    coreErr [DS "DataCon annotation ", DD th, DS "not <=", DD th']
   aKc (ATCon (translate tyc) idxs)
-  return (th, ATCon (translate tyc) idxs)
+  return (th', ATCon (translate tyc) idxs)
 
 aTs (AArrow k ex ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
@@ -321,7 +324,7 @@ aTs (AAbort aTy) = do
 
 aTs (ATyEq a b) = do
   _ <- aTs a
-  _ <- aTs b
+  _ <- aTs b 
   return (Logic, AType 0)
 
 aTs (AJoin a i b j) = do
@@ -402,7 +405,7 @@ aTs (AInjDCon a i) = do
                    DS"should prove an equality of datatype constructors, but it has type", DD aTy]
 
 aTs (ASmaller a b)  = do
-  _ <- aTs a
+  _ <- aTs a   
   _ <- aTs b
   return (Logic, AType 0)
 
@@ -513,8 +516,8 @@ aTs (ACase a bnd (th,ty)) = do
           unless (aTeleLength delta == length idxs) $
             coreErr [DS "ACase malformed core term, this should never happen"]
           ths <- mapM (aTsMatch th ty (zip (binders delta) idxs) cons (\pat -> ASig xeq Logic (ATyEq a pat)))
-                      mtchs
-          let th' = max aTh (maximum (minBound:ths))
+                      mtchs 
+          let th' = maximum (aTh:ths)
           unless (th' <= th) $
               coreErr $ [DS "ACase theta annotation incorrect.",
                        DS "The annotation was", DD th, 
@@ -608,7 +611,7 @@ aGetTh a = do
 -- Check that a term is a type 
 aKc :: ATerm  -> TcMonad ()
 aKc t  = do
-  (th,ty) <- aTs t
+  (th,ty) <- aTs t 
   ety <- erase ty
   case (th,ety) of
     (Logic,(EType _)) -> return ()

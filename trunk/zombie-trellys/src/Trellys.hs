@@ -20,6 +20,7 @@ import System.Console.GetOpt
 import System.Exit
 import System.FilePath (splitFileName)
 
+import Control.Monad
 import Control.Monad.Error (runErrorT)
 import Data.List (delete)
 
@@ -49,16 +50,17 @@ main = do
                Right defs -> do
                         putStrLn "Elaboration pass successful. Writing elaborated terms."
                         writeAModules prefixes defs 
-                        putStrLn "Typechecking the elaborated terms."
-                        result <- runTcMonad (emptyEnv (SecondPass:flags)) (aTcModules defs)
-                        case  result of
-                          Left typeError -> do
+                        unless (NoTypeCheckCore `elem` flags) $ do
+                          putStrLn "Typechecking the elaborated terms."
+                          result <- runTcMonad (emptyEnv (SecondPass:flags)) (aTcModules defs)
+                          case  result of
+                            Left typeError -> do
                                   putStrLn "Internal error, elaborated term fails type check:"
                                   putStrLn $ render $ disp typeError
                                   exitFailure
-                          Right _ -> do
-                            putStrLn "Type check successful."
-                            exitSuccess
+                            Right _ -> do
+                              putStrLn "Type check successful."
+                              exitSuccess
 --fixme: bring back the "Reduce" flag?
 {-
                         if (Reduce `elem` flags)
