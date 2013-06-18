@@ -137,7 +137,7 @@ ta (OrdAx a) (ASmaller b1 b2) = do
      zb2 <- zonkTerm b2
      case eraseToHead tyA of
        ATyEq a1 cvs ->
-         case cvs of 
+         case cvs of
            (ADCon _ _ _ vs) -> do
              a1_eq_b2 <- a1 `aeqSimple` zb2
              unless (a1_eq_b2) $
@@ -390,8 +390,7 @@ ta InferMe (ATyEq ty1 ty2) = do
   case pf of
     Nothing -> do
       gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal (map (\(x,tyLHS,tyRHS) -> (x, (ATyEq tyLHS tyRHS))) availableEqs)
-                                                 (ATyEq ty1 ty2)),
+      err [DS "I was unable to prove:", DD (Goal availableEqs (ATyEq ty1 ty2)),
            DS "The full local context is", DD gamma]
     Just p -> do
        pE <- erase p
@@ -424,8 +423,7 @@ ta a tyB = do
          then do
            context <- getTys
            availableEqs <- getAvailableEqs
-           let theGoal = (Goal (map (\(x,ty1,ty2) -> (x, (ATyEq ty1 ty2))) availableEqs) 
-                               (ATyEq tyA ztyB))
+           let theGoal = (Goal availableEqs (ATyEq tyA ztyB))
            pf <- prove availableEqs (tyA,ztyB)
            case pf of 
              Nothing ->
@@ -1069,20 +1067,33 @@ simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
         simplUnboxBoxOnce a = a
 
 -------------------------------------------------------
--- Dig through the context and get out all equations.
+-- Dig through the context, select all "interesting" bindings,
+-- apply adjustTheta as appropriate,
+-- return a suitable list of assumptions for unification/typeclass inference.
+
+{- Open issues:
+   - Which things are "interesting"? For unification, we probably want only equations.
+     Currently I include everything, but if that turns out to be too slow
+     we might want to have a mechanism to identify types which should be 
+     subject to guessing for typeclasses, and only select those.
+   - Is the adjustTheta ok? It could be a problem if we actually want to 
+     find an inhabitant of a boxed type.
+-}
 -------------------------------------------------------
 
 -- Note, the returned value is already zonked
-getAvailableEqs :: TcMonad [(ATerm, ATerm, ATerm)]
+getAvailableEqs :: TcMonad [(Theta, ATerm, ATerm)]
+                                   --proof --type of proof
 getAvailableEqs = do
   context <- getTys
   catMaybes <$> mapM (\(x,th,ty) -> do
                          zty <- zonkTerm ty
-                         (th',a,ty') <- adjustTheta th (AVar x) zty
-                         case eraseToHead ty' of
-                           ATyEq tyLHS tyRHS -> return $ Just (a,tyLHS,tyRHS)
-                           _ -> return $ Nothing)
+                         -- could return Nothing here, for "uninteresting" things
+                         Just <$> adjustTheta th (AVar x) zty)
                      context
+
+
+
 
 -------------------------------------
 -- Elaborating complex pattern matches
@@ -1153,7 +1164,8 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
                                            (PatCon (unembed -> c') _) -> (translate c')==c
                                            (PatVar _) -> True)
                            <$> mapM matchPat alts
-        args' <- freshATele "_pat_" args --This may look silly, but we don't get it fresh for free.
+        let nameSuggestions = suggestedNames (map ("_pat_"++) (aTeleNames args)) (map fst relevantAlts)
+        args' <- freshATele nameSuggestions args
         newScruts <- mapM (\x -> ((AVar (translate x)), ) <$> (fresh $ string2Name "_")) (binders args' :: [AName])
         let newScrutTys = simplSubsts (zip (binders delta) bbar) args'
         newAlts <- mapM (expandMatch s args') relevantAlts
@@ -1178,6 +1190,28 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
   ztyAlt <- zonkTerm tyAlt
   let th = maximum (aTh : ths) 
   return $ ACase s ematchs (th,ztyAlt)
+
+-- Given a list of Patterns (which should all be for the same datatype),
+-- see if there is any commonality in the name of the pattern variables, and if so
+-- give ack a list of them.
+-- If none are given, use the default ones.
+suggestedNames :: [String] -> [Pattern] -> [String]
+suggestedNames deflt (PatVar _ : rest) = suggestedNames deflt rest
+suggestedNames deflt (PatCon _ args : rest) =
+  zipWith (\new old -> case new of 
+                           Nothing -> old
+                           Just s -> s)
+          (map (suggestedName . fst) args)
+          (suggestedNames deflt rest)
+suggestedNames deflt [] = deflt
+
+suggestedName :: Pattern -> Maybe String 
+suggestedName (PatVar s) = Just (name2String s)
+suggestedName _ = Nothing
+
+aTeleNames :: ATelescope -> [String]
+aTeleNames AEmpty = []
+aTeleNames (ACons (unrebind -> ((x,ty,ep),t))) = (name2String x) : aTeleNames t
 
 -- | expandMatch scrut args (pat, alt) 
 -- adjusts the ComplexMatch 'alt'

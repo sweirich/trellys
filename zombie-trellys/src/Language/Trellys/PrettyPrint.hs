@@ -167,7 +167,7 @@ instance Disp Goal where
    $+$ text "========================================="
    $+$ text (show statement)
 -}
-   where dispAssumption (a, aTy) = disp a <+> colon <+> disp aTy
+   where dispAssumption (th, a, aTy) = disp th <+> disp a <+> colon <+> disp aTy
 
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele

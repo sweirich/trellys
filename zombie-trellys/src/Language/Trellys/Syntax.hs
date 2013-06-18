@@ -237,7 +237,7 @@ data ConstructorDef = ConstructorDef SourcePos TName Telescope
   deriving (Show)
 
 -- | Goals (in the Coq sense), just used for pretty-printing so far.
-data Goal = Goal [(ATerm,ATerm)] --available context
+data Goal = Goal [(Theta,ATerm,ATerm)] --available context
                  ATerm   --type to be proven.
 
 -------------
@@ -460,13 +460,15 @@ simplSubsts xs a =  simplUnboxBox $ substs xs a
 -- Some random utility functions
 ---------------------------------------
 
---Todo: can this function be replaced with something from Unbound?
-freshATele :: (Functor m, Fresh m) => String -> ATelescope -> m ATelescope
-freshATele _ AEmpty = return AEmpty
-freshATele prefix (ACons (unrebind->((x,ty,ep),t))) = do
-   x' <- fresh (string2Name (prefix ++ (name2String x)))
-   t' <- freshATele prefix (subst x (AVar x') t)
+-- Picks fresh names for each of the variables in the telecope.
+-- The names will be fresh versions of the given strings.
+freshATele :: (Functor m, Fresh m) => [String] -> ATelescope -> m ATelescope
+freshATele [] AEmpty = return AEmpty
+freshATele (s:ss) (ACons (unrebind->((x,ty,ep),t))) = do
+   x' <- fresh (string2Name s)
+   t' <- freshATele ss (subst x (AVar x') t)
    return $ ACons (rebind (x',ty,ep) t')
+freshATele _ _ = error "wrong number of strings given to freshATele"
 
 -- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
 -- Precondition: bs and delta have the same lenght.

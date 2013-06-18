@@ -13,7 +13,7 @@ import Language.Trellys.GenericBind
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(UniVarBindings, setUniVars)
-import Language.Trellys.OpSem(erase)
+import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
@@ -599,13 +599,15 @@ runDestructureT x = do
  where constantSupply :: [Constant]
        constantSupply = map Constant [0..]  
 
--- Given an assumed equation between subterms, name all the intermediate terms, and also add the equation itself.
-processHyp :: (Monad m, Applicative m, Fresh m) => (ATerm, ATerm, ATerm) -> DestructureT m ()
-processHyp (n,t1,t2) = do
+-- Given a binding in the context, name all the intermediate terms in its type.
+-- If the type is an equation, we also add the equation itself.
+processHyp :: (Monad m, Applicative m, Fresh m) => (Theta,ATerm, ATerm) -> DestructureT m ()
+processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
   a1 <- genEqs t1
   a2 <- genEqs t2
   tell [(RawAssumption (Just n,t1,t2), 
          Left $ EqConstConst a1 a2)]
+processHyp (th,n,t) = genEqs t >> return ()
 
 traceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
 traceFun naming msg (WantedEquation c1 c2) =
@@ -616,8 +618,8 @@ noTraceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
 noTraceFun naming msg eq = id
 
 
--- "Given a list of equations, please prove the other equation."
-prove :: [(ATerm,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
+-- "Given the context, please prove this other equation."
+prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
 prove hyps (lhs, rhs) = do
   (eqs, naming, allocated, (c1,c2))  <- runDestructureT $ do
                                           mapM_ processHyp hyps
