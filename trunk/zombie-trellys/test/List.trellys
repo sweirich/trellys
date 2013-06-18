@@ -6,6 +6,8 @@ import Prelude
 import Arithmetic
 import LessThanNat_lt_eq_True
 
+usually log
+
 data List (a : Type 0) : Type 0 where
   Nil
   Cons of (x : a @log) (xs : List a)
@@ -56,11 +58,11 @@ nth = \[a]. ind nth n = \xs default.
 nth_safe : [a : Type 0] => (n : Nat) -> (xs : List a) -> [safe : lt n (length xs) = True] -> a
 nth_safe = \[a]. ind nth_safe n = \xs [safe].
   case xs [_] of 
-   Nil -> let _ = (join : lt n (length (Nil)) = False) in
+   Nil -> let _ = (join : lt n (length (Nil : List a)) = False) in
             contra (_ : True = False)
    Cons x xs' -> case n [n_eq] of 
                   Zero -> x
                   Succ n' ->  let _ = (join : length (Cons x xs')  = Succ (length  xs')) 
                               in
-                                 nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]
-
+                                 TRUSTME
+                                 --nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]

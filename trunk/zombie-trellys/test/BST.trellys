@@ -209,7 +209,7 @@ member_In2 = \a order x. ind member_In2 t = \ isMember.
                                           False -> True) : Bool)
                           = member [a] order x t1) in
            let IH = (member_In2 t1 [ord t_eq] _) in
-               InLeft [a] [x] [t] t1 y t2 IH _
+               InLeft t1 y t2 IH _
          False ->
            case (ordLt [a] order y x) [_] of
              True -> 
@@ -220,10 +220,10 @@ member_In2 = \a order x. ind member_In2 t = \ isMember.
                                                False -> True) : Bool)
                                = member [a] order x t2) in
                let IH = (member_In2 t2 [ord t_eq] _) in
-                 InRight [a] [x] [t] t1 y t2 IH _
+                 InRight t1 y t2 IH _
              False -> 
                let _ = ordLtAntiSymm [a] order x y _ _ in
-                 InHere [a] [x] [t] t1 t2  _
+                 InHere t1 t2  _
 
 
 -- The insert function
@@ -254,7 +254,7 @@ insert_In1 = \ [a] order x . ind insert_In1 t =
                                    False -> t : Tree a)) in
   case t [t_eq] of 
     EmptyTree -> 
-      let _ = (join : (case EmptyTree [t_eq] of 
+      let _ = (join : (case (EmptyTree : Tree a) [t_eq] of 
                          EmptyTree -> BranchTree EmptyTree x EmptyTree
                          BranchTree t1 y t2 ->
                            case (ordLt [a] order x y) [_] of
@@ -263,9 +263,9 @@ insert_In1 = \ [a] order x . ind insert_In1 t =
                                        True -> BranchTree t1 x (insert [a] order x t2)
                                        False -> t : Tree a)
                     = (BranchTree EmptyTree x EmptyTree : Tree a)) in
-      InHere [a] [x] [insert [a] order x t] EmptyTree EmptyTree _
+      InHere EmptyTree EmptyTree _
     BranchTree t1 y t2 -> 
-      let _ = (join : (case (BranchTree t1 y t2) [t_eq] of 
+      let _ = (join : (case (BranchTree t1 y t2 : Tree a) [t_eq] of 
                          EmptyTree -> BranchTree EmptyTree x EmptyTree 
                          BranchTree t1 y t2 ->
                            case (ordLt [a] order x y) [_] of
