@@ -105,13 +105,28 @@ let_example = join
 data C : Type 0 where
   MkC of (f : Nat -> Nat @log)
 
-log match_c : (C @log) -> Nat 
+log match_c : C -> Nat 
 match_c = \ x .
   case x [_] of
     MkC f -> f 3
 
 log match_c_example: (match_c (MkC (plus 2))) = 5
 match_c_example = join
+
+-- If one of the arguments of a constructor has an @-type, we need to
+-- apply unboxing before matching subpatters.
+
+data D : Type 0 where
+  D1 of (A@prog)
+
+prog match_d : D -> Nat
+match_d = \ x .
+  case x [_] of
+    D1 A1 -> 1
+    D1 (A2 _ _) -> 2
+
+log match_d_example : (match_d (D1 (A2 A1 A1))) = 2
+match_d_example = join
 
 
 {- We want tests covering:
