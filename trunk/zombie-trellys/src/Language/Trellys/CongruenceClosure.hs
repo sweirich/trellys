@@ -63,7 +63,8 @@ type Equation label = Either EqConstConst (EqBranchConst label)
 -- Information we keep about a given equivalence class of constants
 data ClassInfo proof = ClassInfo {
   classMembers  :: Set Constant,                  -- All elements in the class
-  classVars     :: Set (CName proof,Constant),    -- All variables that are elements of the class; also remember which c they come from.
+  classVars     :: Set (CName proof,Constant),    -- All variables that are elements of the class; 
+                                                  ---  also remember which c they correspond to.
   classApps     :: Set (Label proof, [Constant]), -- All applications that are elements of the class
   essentialVars :: Set (CName proof)              -- variables that occur _inside_ _all_ members of the class
 }
@@ -109,6 +110,9 @@ data ProblemState proof = ProblemState {
   --   pi : bi = ai
   --   q  : bs = b.
   lookupeq :: Map ((Label proof),[Constant]) ([proof], proof, EqBranchConst (Label proof)),
+
+--  types       :: Map Constant Constant,       --Maps constants representing expressions to constants
+--                                              -- representing the type of the expression.
 
   unboundVars :: Set (CName proof),           --Set of variables that can still be assigned.
   bindings    :: Map (CName proof) Constant,  --Assignment to unification variables
