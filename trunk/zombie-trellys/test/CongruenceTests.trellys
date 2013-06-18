@@ -25,16 +25,16 @@ data T (a : Type 0) : Type 0 where
 log decompose_tcon : (atype = btype) -> (T atype = T btype)
 decompose_tcon = \ p . _
 
-log decompose_dcon_param : (atype = btype) -> (mkT [atype] = mkT [btype])
+log decompose_dcon_param : (atype = btype) -> ((mkT : T atype) = (mkT : T btype))
 decompose_dcon_param = \ p . _
 
 data T1 (a : Type 0) : Type 0 where
   mkT1 of (x : a @log) [y : a @log]
 
-log decompose_dcon_arg : (a = a1) -> (mkT1 [atype] a [a] = mkT1 [atype] a1 [a])
+log decompose_dcon_arg : (a = a1) -> ((mkT1 a [a] : T1 atype) = (mkT1 a1 [a] : T1 atype))
 decompose_dcon_arg = \p . _
 
-log decompose_dcon_erased_arg : mkT1 [atype] a [a] = mkT1 [atype] a [a1]
+log decompose_dcon_erased_arg : (mkT1 a [a] : T1 atype) = (mkT1 a [a1] : T1 atype)
 decompose_dcon_erased_arg = _
 
 log decompose_arrow_rng : (atype = btype) -> ((Nat -> atype) = (Nat -> btype))

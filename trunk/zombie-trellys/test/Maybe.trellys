@@ -1,0 +1,39 @@
+module Maybe where
+
+import Prelude
+
+data Maybe (a : Type 0) : Type 0 where
+  Just    of ( _ : a @ log)
+  Nothing 
+
+log mapMaybe : [a : Type 0] -> [b : Type 0] -> (f : (a @ log) -> b @ log) -> Maybe a -> Maybe b
+mapMaybe = TRUSTME
+
+
+log x : Maybe ((x:Nat) -> Nat @ prog)
+x = Just (rec f x = f x) 
+
+log appMaybe :  [a : Type 0] -> [b : Type 0] -> Maybe ((a @ log) -> b) -> Maybe a -> Maybe b
+appMaybe = \ [a] [b] m n . 
+  case m [_] , n [_] of
+    Just f , Just x -> Just (f x) 
+    _ , _  -> Nothing 
+
+
+data MaybeP (a : Type 0) : Type 0 where
+  Just     of ( _ : a @ prog)
+  Nothing 
+
+log xP : MaybeP ((x:Nat) -> Nat)
+xP = Just (rec f x = x)
+
+prog appMaybeP :  [a : Type 0] -> [b : Type 0] -> MaybeP ((a @ log) -> b) -> MaybeP a -> MaybeP b
+appMaybeP = \ [a] [b] m n . 
+  case m [_] , n [_] of
+    Just f , Just x -> Just (f x) 
+    _ , _  -> Nothing 
+
+
+z = appMaybeP [Nat] [Nat] (case xP [_] of 
+    Just f -> Just (\ x . f x)
+    Nothing -> Nothing) (Just 3)

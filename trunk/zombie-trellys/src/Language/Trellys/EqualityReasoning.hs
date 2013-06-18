@@ -371,6 +371,8 @@ uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere)
 -- The boolean argument tracks whether we are looking at a subterm or at the original term,
 -- the epsilon tracks whether we are looking at a subterm in an erased position of the original term.
 
+
+
 decompose :: (Monad m, Applicative m, Fresh m) => 
              Bool -> Epsilon -> Set AName -> ATerm -> WriterT [(Epsilon,AName,ATerm)] m ATerm
 decompose True e avoid t | S.null (S.intersection avoid (fv t)) = do

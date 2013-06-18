@@ -16,7 +16,7 @@ append = \[a] . ind app [n] = \[m] . \xs ys .
     VNil [neq] ->
       conv (conv ys by (plus0 [m]) at x.Vector a x) by (sym Nat Nat n 0 neq) at h.Vector a (plus h m)
     VCons [n'] [neq] x xs' ->
-      conv conv VCons [a] [Succ (plus n' m)] [plus n' m] [join 42] x (app [n'] [ord neq] [m] xs' ys)
+      conv conv (VCons [plus n' m] [join 42] x (app [n'] [ord neq] [m] xs' ys) : Vector a (Succ (plus n' m)))
            by (plusSucc [n'] [m]) at h.Vector a h
       by (sym Nat Nat n (Succ n') neq) at h.Vector a (plus h m)
 
@@ -28,7 +28,7 @@ appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
 
 appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
   case xs [xseq] of
-    VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq
+    VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [ieq]) xseq
                   in conv join 42 by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs
                                            = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
 
@@ -44,29 +44,29 @@ appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
       let unfold_xs [ign] =   conv k0 by xseq at hole. lhs = append [a] [plus i j] [k] (append [a] [i] [j] hole ys) zs in
 
       let unfold_append [unfold_app_eq] = (join 42 :
-           append [a] [plus i j] [k] (append [a] [i] [j] (VCons [a] [i] [i'] [ieq] x xs') ys) zs =
-           VCons [a] [Succ (plus (plus i' j) k)] [plus (plus i' j) k] [join 42] x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) in
+           append [a] [plus i j] [k] (append [a] [i] [j] (VCons [i'] [ieq] x xs') ys) zs =
+           ((VCons [plus (plus i' j) k] [join 42] x (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) : Vector a (Succ (plus (plus i' j) k)) )) in
 
 
                   let e [ign] = conv unfold_xs by unfold_append at hole. lhs = hole in
       let step_case [ign] = conv e by [ Succ (plus (plus i' j) k)  = Succ (plus i' (plus j k))], 
                                                   [(plus (plus i' j) k) = (plus i' (plus j k))],  
                                                   ih 
-                                               at n1 n2 step . lhs =  VCons [a] [n1] [n2] [join 42] x step in
+                                               at n1 n2 step . lhs = ( VCons [n2] [join 42] x step : Vector a n1) in
 
 
 
       let rhs_unfold [ign] = (join 42 :
-        VCons [a] [Succ (plus i' (plus j k))] [plus i' (plus j k)] [join 42] x (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs)) =
-          append [a] [Succ i'] [plus j k] (VCons [a] [Succ i'] [i'] [join 42] x xs') (append [a] [j] [k] ys zs)) in
+        (VCons [plus i' (plus j k)] [join 42] x (append [a] [i'] [(plus j k)] xs' (append [a] [j] [k] ys zs)) : Vector a (Succ (plus i' (plus j k)))) =
+          append [a] [Succ i'] [plus j k] (VCons [i'] [join 42] x xs') (append [a] [j] [k] ys zs)) in
 
                   let l0 [ign] = conv step_case by rhs_unfold at hole. lhs = hole in
-      let l1 [ign] = (join 42 : VCons [a] [Succ i'] [i'] [join 42] x xs' = VCons [a] [i] [i'] [ieq] x xs') in
+      let l1 [ign] = (join 42 : ((VCons  [i'] [join 42] x xs') : Vector a (Succ i')) = (VCons [i'] [ieq] x xs' : Vector a i)) in
       let l2 [ign] = trans [Vector a (Succ i')] [Vector a i] [Vector a i]
-                           [VCons [a] [Succ i'] [i'] [join 42] x xs']
-                           [VCons [a] [i] [i'] [ieq] x xs']
+                           [VCons [i'] [join 42] x xs']
+                           [VCons [i'] [ieq] x xs']
                            [xs]
-                           [l1] [sym (Vector a i) (Vector a i) xs (VCons [a] [i] [i'] [ieq] x xs') xseq] in
+                           [l1] [sym (Vector a i) (Vector a i) xs (VCons [i'] [ieq] x xs') xseq] in
       let l3 [ign] =
               conv l0 by lhs_eq, (sym Nat Nat i (Succ i') ieq), l2 at
                 lhs_hole i_hole cons_hole . lhs_hole = append [a] [i_hole] [plus j k] cons_hole (append [a] [j] [k] ys zs)
@@ -76,7 +76,7 @@ appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
 {-
 appendAssociates = \[a] . ind aa [i] = \[j] [k] [xs] [ys] [zs] .
   case xs [xseq] of
-    VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil [a] [i] [ieq]) xseq
+    VNil [ieq] -> let [xseq'] [p] = sym (Vector a i) (Vector a i) xs (VNil  [ieq]) xseq
                   in conv join 42 by xseq' at h . append [a] [plus i j] [k] (append [a] [i] [j] h ys) zs
                                            = append [a] [i] [plus j k] h (append [a] [j] [k] ys zs)
 

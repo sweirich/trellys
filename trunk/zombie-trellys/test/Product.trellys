@@ -1,0 +1,31 @@
+module Product where
+
+data Times (A:Type 0)(B : Type 0) : Type 0 where
+  Prod of (_ : A @ log) (_ : B @ log)
+
+data Sigma (A:Type 0) (b : (A @ log) -> Type 0 @ log) : Type 0 where
+  Pair of (x:A @ log) (_ : b x @ log)
+
+
+log fst : [A:Type 0] -> [b : (A @ log) -> Type 0 @ log] -> Sigma A b -> A
+fst = \ [A] [b] p . 
+  case p [_] of 
+    Pair x y -> x
+
+log snd : [A:Type 0] -> [b : (A @ log) -> Type 0 @ log] -> (x:Sigma A b) 
+	     -> b (fst [A][b] x)
+snd = \ [A] [b] p .
+  case p [_] of 
+    Pair x y -> 
+	    let _ = (join 10 : x = fst [A] [b] (Pair x y)) in
+		 y
+
+
+log map : [A : Type 0] -> [p : (A @ log) -> Type 0 @ log] -> 
+	   [B : Type 0] -> [q : (B @ log) -> Type 0 @ log] -> 
+		(f : (A @ log) -> B @ log) ->
+		(g : (x: A @ log) -> (p x @ log) -> q (f x) @ log) ->
+		Sigma A p -> Sigma B q
+map = \ [A][p][B][q] f g x. 
+  case x [_] of 
+    Pair x y -> Pair (f x) (g x y)

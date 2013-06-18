@@ -88,7 +88,8 @@ kcTele [] = return AEmpty
 kcTele ((x,ty,ep):tele') = do
    ety <- kcElab ty
    unless (isFirstOrder ety) $
-     err [DS "Each type in a telescope needs to be first-order, but", DD ty, DS "is not"]
+     err [DS "Each type in a telescope needs to be first-order, but", 
+          DD ty, DS "is not"]
    etele' <- extendCtx (ASig (translate x) Program ety) $ kcTele tele'
    return (ACons (rebind (translate x,embed ety,ep) etele'))
 
@@ -382,6 +383,20 @@ ta a (AAt tyA th') = do
    
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
+ta (DCon c args) (ATCon tname eparams) = do
+  -- could overload data constructors here
+  (_, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
+  unless (length args == aTeleLength deltai) $
+           err [DS "Constructor", DD c,
+                DS $ "should have " ++ show (aTeleLength deltai)
+                 ++ " data arguments, but was given " 
+                 ++ show (length args) ++ " arguments."]
+  teleRes <- taTele args 
+             (substATele delta eparams deltai)
+  let (eargs,eths) = unzip teleRes
+  return $ (ADCon (translate c) (maximum (minBound:eths)) 
+            eparams eargs) 
+
 ta TrustMe ty = return (ATrustMe ty)
 
 ta InferMe (ATyEq ty1 ty2) = do
@@ -548,14 +563,16 @@ ts tsTm =
       do ((x,unembed -> tyA), tyB) <- unbind body
          (etyA, tytyA) <- ts tyA
          etyATh <- aGetTh etyA
-         (etyB, etyBTh, tytyB) <- extendCtx (ASig (translate x) Program etyA) $ do 
-                                                                                  (etyB, tytyB) <- ts tyB
-                                                                                  etyBTh <- aGetTh etyB
-                                                                                  return (etyB, etyBTh, tytyB)
+         (etyB, etyBTh, tytyB) <- 
+           -- this was Program instead of etyATh, why?
+           extendCtx (ASig (translate x) etyATh etyA) $ do 
+             (etyB, tytyB) <- ts tyB
+             etyBTh <- aGetTh etyB
+             return (etyB, etyBTh, tytyB)
          unless (etyATh == Logic) $
             err [DS "domain of an arrow type must check logically, but", DD tyA, DS "checks at P"]
          unless (etyBTh == Logic) $
-            err [DS "domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
+            err [DS "co-domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
          case (eraseToHead tytyA, eraseToHead tytyB, isFirstOrder etyA) of
            (AType n, AType m, True)  -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
            (AType _, AType _, False) ->  err [DD tyA, 
@@ -576,24 +593,18 @@ ts tsTm =
          return (ATCon (translate c) (map fst eargs), (AType lev))
 
     -- Rule D | _dcon
+    
     ts' (DCon c args) = do
          (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
-         unless (length args == aTeleLength delta + aTeleLength deltai) $
-           err [DS "Constructor", DD c,
-                DS $ "should have " ++ show (aTeleLength delta) ++ " parameters and " ++ show (aTeleLength deltai)
-                 ++ " data arguments, but was given " ++ show (length args) ++ " arguments."]
          let numParams = aTeleLength delta
-         eparams <- map (fst . fst) <$> taTele (take numParams args) 
-                    (aSetTeleEps Erased delta)
-         teleRes <- taTele (drop numParams args) 
-                  (substATele delta eparams deltai)
+         unless (numParams == 0) $
+           err [DS "Can only synthesize the type when there are no params"]
+         teleRes <- taTele args deltai 
          let (eargs,eths) = unzip teleRes
-         zeparams <- mapM zonkTerm eparams
-         aKc (ATCon tname zeparams)
+         aKc (ATCon tname [])
          return $ (ADCon (translate c) (maximum (minBound:eths)) 
-                   zeparams eargs, 
-                   ATCon tname zeparams)
-
+                   [] eargs, ATCon tname [])
+    
 
     -- rule T_app
     ts' tm@(App ep a b) =
@@ -968,11 +979,11 @@ duplicateTypeBindingCheck n ty = do
          extendSourceLocation p ty $ err msg
 
 isFirstOrder :: ATerm -> Bool
-isFirstOrder (eraseToHead -> ATyEq _ _)    =  True
-isFirstOrder (eraseToHead -> ASmaller _ _) =  True
-isFirstOrder (eraseToHead -> AAt _ _)      =  True
-isFirstOrder (eraseToHead -> ATCon d _)    =  True
-isFirstOrder (eraseToHead -> AAt _ _)      =  True
+isFirstOrder (eraseToHead -> ATyEq _ _)    = True
+isFirstOrder (eraseToHead -> ASmaller _ _) = True
+isFirstOrder (eraseToHead -> AAt _ _)      = True
+isFirstOrder (eraseToHead -> ATCon d _)    = True
+isFirstOrder (eraseToHead -> AAt _ _)      = True
 isFirstOrder (eraseToHead -> AType _)      = True
 isFirstOrder _ = False
     

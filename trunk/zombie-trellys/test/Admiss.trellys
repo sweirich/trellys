@@ -1,0 +1,107 @@
+module Admiss where
+
+import Prelude
+
+data Terminates (h : (Unit -> Nat) @ prog) : Type 0 where
+  term of (y : Nat) (h U = y)
+
+log eqTerminates : (h1 : Unit -> Nat @ prog) -> 
+                   (h2 : Unit -> Nat @ prog) -> (h1 = h2)
+						 -> (Terminates h1 = Terminates h2)
+eqTerminates = \ h1 h2 pf . conv (join 0 : Terminates h1 = Terminates h1 )
+                            by pf 
+                            at x. Terminates h1 = Terminates x
+
+
+prog unbox : (Nat -> Nat @ prog) -> Nat -> Nat
+unbox = \ f. f 
+
+log Total : (h : Nat -> Nat @ prog) -> Type 0
+Total = \h . (x:Nat) -> Terminates (\_ . h x)
+
+data T : Type 0 where
+  pair of (h : (Nat -> Nat) @ prog) 
+          ((((x:Nat) -> Terminates (\ _ . h x)) @ log) -> Void @ log) 
+
+log fst : T -> ((Nat -> Nat) @ prog)
+fst = \ t . case t [_] of 
+  pair x y -> x
+
+
+log helper : (t : T) -> (x : Nat -> Nat @ prog) -> 
+	  (y : ((n:Nat) -> (Terminates (\ _ . x n)) @ log) -> Void @ log) ->
+	    (t = pair x y) -> (x = let f [_] = fst t in f)
+helper = \ t x y z . TRUSTME
+
+log snd : (t : T) -> ((((n:Nat) -> 
+	 Terminates (\ _ . (let f = (fst t) in f) n)) @ log) -> Void @ log) 
+snd = \ t . case t [z] of 
+  pair x y -> 
+    let _ = (join 10 : (x = (let f [_] = fst (pair x y) in f))) in
+    y
+
+{-
+prog fix f:*T. \_:Unit.
+        < \x. if x = 0 then 0 else (f ()).1 (x - 1), 
+          \z. (f ()).2 (\x. z (succ x) ) > 
+
+prog g = f () . 1
+       = \x. if x = 0 then 0 else (f ()).1 (x - 1) 
+    
+g 0 -> 0
+
+g (S m) -> (\x. if x = 0 then 0 else (f ()).1 (pred x)) (S m)
+        ->  (f ()).1 (pred (S m))
+        -> g (pred (S m)
+        -> g m
+        
+
+log g_term : (n : nat) -> Terminates (\ _ . g n)
+gterm = ind gt n 
+  0 -> 
+       join ((f () . 1) 0) 0
+  S m ->
+       join (f () . 1) (S m) ((f ()). 1 m)
+-}
+
+
+prog f : Unit -> T 
+rec f x = 
+   let prog g [eqg] = ((\ x0 . 
+                        case x0 [_] of
+                          Zero -> Zero
+                          Succ y -> 
+                            (let prog p1 = (fst (f U)) in p1) y) : Nat -> Nat) in
+   let log  pf [_] = 
+      ((\z. 
+      case (f U) [m] of 
+       pair p1 p2 -> 
+          p2 (\x1. 
+            let log j1 [_] = (z (Succ x1) : Terminates (\ _ . g (Succ x1))) in
+            let log j2 = (_ : Terminates (\ _ . g (Succ x1)) = 
+			                     Terminates (\ _ . 
+									    (((\ x0 . 
+                        case x0 [_] of
+                          Zero -> Zero
+                          Succ y -> 
+                            (let prog p1 = (fst (f U)) in p1) y) : Nat -> Nat) (Succ x1))))
+				in conv j1
+                    by ( TRUSTME : (Terminates (\ _ . g (Succ x1))) = 
+						           (Terminates (\ _ . p1 x1)))
+      				  at m. m)) :
+                          (((x:Nat) -> Terminates (\ _ . g x)) @ log) -> Void)
+       in pair g pf
+
+
+{-
+(eqTerminates (\ _ . g (Succ x1)) (\ _ .  p1 x1) 
+           ((trans' (Unit -> Nat) (Unit -> Nat) (Unit -> Nat)
+            (\ _ . g (Succ x1))
+            ((\ _ . ((\x0. case x0 [_] of
+                          Zero -> Zero
+                          Succ y -> p1 y) : Nat -> Nat)
+                     (Succ x1)) : Unit -> Nat @ prog)
+            (\ _ . p1 x1 : Unit -> Nat @ prog) _ _)
+              :  ((\ _ . g (Succ x1) : Unit -> Nat @ prog) =
+                  (\ _ . p1 x1 : Unit -> Nat @ prog)))
+-}

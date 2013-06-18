@@ -38,7 +38,8 @@ import qualified Data.Set as S
     a,b,A,B ::=
       Type l                   Universes
     | x                        Variables   (start with lowercase)
-    | C                        Term, Type constructors (start with uppercase)
+    | C                        Term, Type constructors (start with 
+                                      uppercase)
     | \ x . a                  Runtime lambda
     | \ [x] . a                Erased lambda
     | a b                      Runtime application
@@ -47,7 +48,8 @@ import qualified Data.Set as S
     | let th x [y] = a in b    Runtime let, explicitly prog or log
     | let [x] [y] = a in b     Erased let, default to log
     | let th [x] [y] = a in b  Erased let, default to log
-    | let th x = a in b        Let statement with the name of the equation supressed.
+    | let th x = a in b        Let statement with the name 
+                                  of the equation supressed.
     | (x : A) -> B             Runtime pi
     | [x : A] -> B             Erased pi
     | case a [y] of            Case expressions, roughly
@@ -79,7 +81,7 @@ import qualified Data.Set as S
      | [x : A] D               erased cons
 
   declarations:
-9
+
     For logical declarations:
       foo : A
       foo = a

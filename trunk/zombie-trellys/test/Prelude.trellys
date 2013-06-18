@@ -4,6 +4,26 @@ data Bool : Type 0 where
   True 
   False
 
+
+log not : Bool -> Bool
+not = \ b . 
+  case b [_] of 
+     True -> False
+     False -> True
+
+log and : Bool -> Bool -> Bool
+and = \ b1 b2. 
+  case b1 [_] of 
+    True -> b2
+    False -> False
+
+log or : Bool -> Bool -> Bool
+or = \b1 b2. 
+  case b1 [_] of 
+    True -> True
+    False -> b2
+
+
 data Nat : Type 0 where
     Zero
     Succ of (x : Nat)

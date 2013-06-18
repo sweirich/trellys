@@ -54,11 +54,6 @@ data Bool : Type 0 where
    False
 
 
-not : (x: Bool) -> Bool
-not = \x . case x [z] of
-  True -> False
-  False -> True
-
 data Id (a : Type 0@log) : Type 0 where
   IdC
 
@@ -108,7 +103,7 @@ tail = \ n [a] dis .
         conv xs by inj_succ sz n neq at x.Vector a x
 
 v1 : Vector Bool (Succ Zero)
-v1 = VCons [Bool] [1] [0] [join 1] True (VNil [Bool] [0] [join 1])
+v1 = VCons [0] [join 1] True (VNil [join 1])
 
 -- MiniAgda-style "sized nats"
 
@@ -136,7 +131,7 @@ divBy =
                ind f [i] = \ x .
                  case x [eq_x] of
 		   SZero [i'] [eq_i'] -> x
-		   SSucc [i'] [eq_i'] x'-> SSucc [i] [i'] [eq_i'] (f [i'] [ord eq_i'] (minus [i'] x' [j'] y'))
+		   SSucc [i'] [eq_i'] x'-> SSucc [i'] [eq_i'] (f [i'] [ord eq_i'] (minus [i'] x' [j'] y'))
                                             -- Note: (minus x' y') == (minus x y)
 
 div : [i:Nat] -> (x: SNat i) -> [j: Nat] -> (y: SNat j) -> SNat i

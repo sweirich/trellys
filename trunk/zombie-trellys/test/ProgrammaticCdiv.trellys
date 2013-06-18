@@ -41,7 +41,7 @@ cdivP_t_p_red' = \m . join
 cdivP_t_f_base : (m:Nat) -> [m = Zero] -> (n:Nat) -> Exists Nat (cdivP_ex m n)
 cdivP_t_f_base = \m [m_eq] n .
   let eq1 [_] = conv join by (sym Nat Nat m Zero m_eq) at m . cdivP m (Succ n) = m
-  in Ex [Nat] [cdivP_ex m n] [m] (conv eq1 by (cdivP_ex_red' m n m) at t.t)
+  in Ex [m] (conv eq1 by (cdivP_ex_red' m n m) at t.t)
 
 cdivP_t_f_step : (m:Nat) -> (m':Nat) -> [m = Succ m']
               -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n) @log)
@@ -64,7 +64,7 @@ cdivP_t_f_step = \m m' [m_eq] gm n .
                       in let w_eq [_] = conv eq2 by (join : (let prog r [_] = v
                                                in Succ r) = Succ v)
                                         at h . cdivP m (Succ n) = h
-                      in Ex [Nat] [cdivP_ex m n] [Succ v]
+                      in Ex [Succ v]
                             (conv w_eq by (cdivP_ex_red' m n (Succ v)) at t.t)
 
 cdivP_t_f' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n) @log)
