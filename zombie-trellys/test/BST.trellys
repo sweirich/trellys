@@ -20,7 +20,7 @@ ordLtIrrefl : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> ordLt [a] order x x 
 ordLtIrrefl = \[a].\order.\x.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (join : ordLt [a] (OrdDict [a] lt [irrefl] [antisymm] [trans]) x x = lt x x) in
+      let _ = (join : ordLt [a] (OrdDict lt [irrefl] [antisymm] [trans]) x x = lt x x) in
       let [_] = irrefl x in
       _
 
@@ -29,7 +29,7 @@ ordLtAntiSymm : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) ->
 ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (join : ordLt [a] (OrdDict [a] lt [irrefl] [antisymm] [trans]) = lt) in
+      let _ = (join : ordLt [a] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = antisymm x y h1 h2 in
       _
 
@@ -38,7 +38,7 @@ ordLtTrans : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@l
 ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (join : ordLt [a] (OrdDict [a] lt [irrefl] [antisymm] [trans]) = lt) in
+      let _ = (join : ordLt [a] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = trans x y z h1 h2 in
       _
 
@@ -64,14 +64,14 @@ data Tree (a:Type 0) : Type 0 where
 -- tree type before we can define the InTree predicate (or we'd need either "very mutual" datatypes or induction-recursion).
 
 data InTree (a:Type 0) (x : a @log) (t : Tree a) : Type 0 where
-  InHere  of (t1 : Tree a) (t2 : Tree a) (t = BranchTree [a] t1 x t2)
-  InLeft  of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t1) (t = BranchTree [a] t1 y t2)
-  InRight of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t2) (t = BranchTree [a] t1 y t2)
+  InHere  of (t1 : Tree a) (t2 : Tree a) (t = (BranchTree t1 x t2 : Tree a))
+  InLeft  of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t1) (t = (BranchTree t1 y t2 : Tree a))
+  InRight of (t1 : Tree a) (y : a @log) (t2 : Tree a) (InTree a x t2) (t = (BranchTree t1 y t2 : Tree a))
 
 data IsBST (a:Type 0) (t : Tree a) (order : Ord a) : Type 0 where
-  IsBSTEmpty of (t = EmptyTree [a])
+  IsBSTEmpty of (t = (EmptyTree : Tree a))
   IsBSTBranch of (t1 : Tree a) (x : a@log) (t2 : Tree a) 
-                 (t = BranchTree [a] t1 x t2)
+                 (t = (BranchTree t1 x t2 : Tree a))
                  (IsBST a t1 order)
                  ((y : a@log) -> InTree a y t1 -> ordLt [a] order y x = True @log)
                  (IsBST a t2 order)
@@ -79,41 +79,41 @@ data IsBST (a:Type 0) (t : Tree a) (order : Ord a) : Type 0 where
 
 -- "projection functions" for IsBST
 isBstLeft : (a:Type 0) -> (t1 : Tree a) -> (x : a@log) -> (t2 : Tree a) -> (order : Ord a) 
-            -> IsBST a (BranchTree [a] t1 x t2) order -> IsBST a t1 order
+            -> IsBST a (BranchTree t1 x t2) order -> IsBST a t1 order
 isBstLeft = \ a t1 x t2 order isBST .
   case isBST [p] of
-    IsBSTEmpty q -> contra (_ : BranchTree [a] t1 x t2 = EmptyTree [a])
+    IsBSTEmpty q -> contra (_ : (BranchTree t1 x t2 : Tree a) = (EmptyTree : Tree a))
     IsBSTBranch t1' x' t2' q left Hleft right Hright ->
       let _ = injectivity q 0 in
         left
 
 isBstInLeft : (a:Type 0) -> (t1 : Tree a) -> (x : a@log) -> (t2 : Tree a) -> (order : Ord a) 
-            -> IsBST a (BranchTree [a] t1 x t2) order 
+            -> IsBST a (BranchTree t1 x t2) order 
             -> (y : a@log) -> InTree a y t1 -> ordLt [a] order y x = True
 isBstInLeft = \ a t1 x t2 order isBST y intree .
   case isBST [p] of
-    IsBSTEmpty q -> contra (_ : BranchTree [a] t1 x t2 = EmptyTree [a])
+    IsBSTEmpty q -> contra (_ : (BranchTree t1 x t2 : Tree a) = (EmptyTree : Tree a))
     IsBSTBranch t1' x' t2' q left Hleft right Hright ->
       let _ = injectivity q 0 in
       let _ = injectivity q 1 in
         Hleft y intree
 
 isBstRight : (a:Type 0) -> (t1 : Tree a) -> (x : a@log) -> (t2 : Tree a) -> (order : Ord a) 
-            -> IsBST a (BranchTree [a] t1 x t2) order -> IsBST a t2 order
+            -> IsBST a (BranchTree t1 x t2) order -> IsBST a t2 order
 isBstRight = \ a t1 x t2 order isBST .
   case isBST [p] of
-    IsBSTEmpty q -> contra (_ : BranchTree [a] t1 x t2 = EmptyTree [a])
+    IsBSTEmpty q -> contra (_ : (BranchTree t1 x t2 : Tree a) = (EmptyTree : Tree a))
     IsBSTBranch t1' x' t2' q left Hleft right Hright ->
       let _ = injectivity q 2 in
         right
 
 
 isBstInRight : (a:Type 0) -> (t1 : Tree a) -> (x : a@log) -> (t2 : Tree a) -> (order : Ord a) 
-            -> IsBST a (BranchTree [a] t1 x t2) order 
+            -> IsBST a (BranchTree  t1 x t2) order 
             -> (y : a@log) -> InTree a y t2 -> ordLt [a] order x y = True
 isBstInRight = \ a t1 x t2 order isBST y intree .
   case isBST [p] of
-    IsBSTEmpty q -> contra (_ : BranchTree [a] t1 x t2 = EmptyTree [a])
+    IsBSTEmpty q -> contra (_ : (BranchTree t1 x t2 : Tree a) = (EmptyTree : Tree a))
     IsBSTBranch t1' x' t2' q left Hleft right Hright ->
       let _ = injectivity q 2 in
       let _ = injectivity q 1 in
@@ -139,7 +139,7 @@ member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
   case in_t [_] of 
     InHere  t1 t2 t_eq -> 
       let _ = (ordLtIrrefl [a] order x) in
-      let _ = (join : member [a] order x (BranchTree [a] t1 x t2)
+      let _ = (join : member [a] order x (BranchTree t1 x t2)
                     = ((case (ordLt [a] order x x) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order x x) [_] of
@@ -153,7 +153,7 @@ member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
                      = True) in
           _
     InLeft  t1 y t2 in_t1 t_eq -> 
-      let _ = (join : member [a] order x (BranchTree [a] t1 y t2)
+      let _ = (join : member [a] order x (BranchTree t1 y t2)
                     = ((case (ordLt [a] order x y) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order y x) [_] of
@@ -169,7 +169,7 @@ member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
       let IH = member_In1 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
         _
     InRight t1 y t2 in_t2 t_eq -> 
-      let _ = (join : member [a] order x (BranchTree [a] t1 y t2)
+      let _ = (join : member [a] order x (BranchTree t1 y t2)
                     = ((case (ordLt [a] order x y) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order y x) [_] of
@@ -191,10 +191,10 @@ log member_In2 : (a:Type 0) -> (order : Ord a) -> (x : a@log) -> (t : Tree a)
 member_In2 = \a order x. ind member_In2 t = \ isMember.
   case t [t_eq] of
     EmptyTree -> 
-      let _ = (join : member [a] order x (EmptyTree [a]) = False) in
+      let _ = (join : member [a] order x EmptyTree  = False) in
         contra (_ : True = False)
     BranchTree t1 y t2 -> 
-      let _ = (join : member [a] order x (BranchTree [a] t1 y t2)
+      let _ = (join : member [a] order x (BranchTree t1 y t2)
                     = ((case (ordLt [a] order x y) [_] of
                           True -> member [a] order x t1
                           False -> case (ordLt [a] order y x) [_] of
@@ -231,12 +231,12 @@ member_In2 = \a order x. ind member_In2 t = \ isMember.
 log insert : [a:Type 0] -> Ord a -> (x : a@log) -> Tree a -> Tree a
 insert = \[a] order x . ind insert t =
   case t [t_eq] of 
-    EmptyTree -> BranchTree [a] (EmptyTree [a]) x (EmptyTree [a])
+    EmptyTree -> BranchTree EmptyTree x EmptyTree
     BranchTree t1 y t2 ->
        case (ordLt [a] order x y) [_] of
-         True -> BranchTree [a] (insert t1 [ord t_eq]) x t2
+         True -> BranchTree (insert t1 [ord t_eq]) x t2
          False -> case (ordLt [a] order y x) [_] of
-                    True -> BranchTree [a] t1 x (insert t2 [ord t_eq])
+                    True -> BranchTree t1 x (insert t2 [ord t_eq])
                     False -> t
 
 -- Correctness of insert with respect to InTree.
@@ -245,38 +245,38 @@ log insert_In1 : [a:Type 0] -> (order:Ord a) -> (x : a@log) -> (t : Tree a)
 insert_In1 = \ [a] order x . ind insert_In1 t =
   let _ = (join : insert [a] order x t
                 = (case t [t_eq] of 
-                     EmptyTree -> BranchTree [a] (EmptyTree [a]) x (EmptyTree [a])
+                     EmptyTree -> BranchTree EmptyTree x EmptyTree
                      BranchTree t1 y t2 ->
                        case (ordLt [a] order x y) [_] of
-                         True -> BranchTree [a] (insert [a] order x t1) x t2
+                         True -> BranchTree (insert [a] order x t1) x t2
                          False -> case (ordLt [a] order y x) [_] of
-                                   True -> BranchTree [a] t1 x (insert [a] order x t2)
+                                   True -> BranchTree t1 x (insert [a] order x t2)
                                    False -> t : Tree a)) in
   case t [t_eq] of 
     EmptyTree -> 
-      let _ = (join : (case (EmptyTree [a]) [t_eq] of 
-                         EmptyTree -> BranchTree [a] (EmptyTree [a]) x (EmptyTree [a])
+      let _ = (join : (case EmptyTree [t_eq] of 
+                         EmptyTree -> BranchTree EmptyTree x EmptyTree
                          BranchTree t1 y t2 ->
                            case (ordLt [a] order x y) [_] of
-                             True -> BranchTree [a] (insert [a] order x t1) x t2
+                             True -> BranchTree (insert [a] order x t1) x t2
                              False -> case (ordLt [a] order y x) [_] of
-                                       True -> BranchTree [a] t1 x (insert [a] order x t2)
+                                       True -> BranchTree t1 x (insert [a] order x t2)
                                        False -> t : Tree a)
-                    = BranchTree [a] (EmptyTree [a]) x (EmptyTree [a])) in
-      InHere [a] [x] [insert [a] order x t] (EmptyTree [a]) (EmptyTree [a]) _
+                    = (BranchTree EmptyTree x EmptyTree : Tree a)) in
+      InHere [a] [x] [insert [a] order x t] EmptyTree EmptyTree _
     BranchTree t1 y t2 -> 
-      let _ = (join : (case (BranchTree [a] t1 y t2) [t_eq] of 
-                         EmptyTree -> BranchTree [a] (EmptyTree [a]) x (EmptyTree [a])
+      let _ = (join : (case (BranchTree t1 y t2) [t_eq] of 
+                         EmptyTree -> BranchTree EmptyTree x EmptyTree 
                          BranchTree t1 y t2 ->
                            case (ordLt [a] order x y) [_] of
-                             True -> BranchTree [a] (insert [a] order x t1) x t2
+                             True -> BranchTree (insert [a] order x t1) x t2
                              False -> case (ordLt [a] order y x) [_] of
-                                       True -> BranchTree [a] t1 x (insert [a] order x t2)
+                                       True -> BranchTree t1 x (insert [a] order x t2)
                                        False -> t : Tree a)
                     = (case (ordLt [a] order x y) [_] of
-                             True -> BranchTree [a] (insert [a] order x t1) x t2
+                             True -> BranchTree (insert [a] order x t1) x t2
                              False -> case (ordLt [a] order y x) [_] of
-                                       True -> BranchTree [a] t1 x (insert [a] order x t2)
+                                       True -> BranchTree t1 x (insert [a] order x t2)
                                        False -> t : Tree a)) in
       case (ordLt [a] order x y) [_] of
         True -> TRUSTME
@@ -299,16 +299,16 @@ insertS = \[a] order x . ind insertS t =
   case t [t_eq] of 
     EmptyTree -> 
        MkRefine [?] [?]
-                (BranchTree [a] (EmptyTree [a]) x (EmptyTree [a]))
+                (BranchTree EmptyTree x EmptyTree)
                 [TRUSTME]
     BranchTree t1 y t2 ->
        case (ordLt [a] order x y) [_] of
          True -> 
-           MkRefine (BranchTree [a] (insert t1 [ord t_eq]) x t2)
+           MkRefine (BranchTree (insert t1 [ord t_eq]) x t2)
                     [TRUSTME]
          False -> case (ordLt [a] order y x) [_] of
                     True ->
-                      MkRefine (BranchTree [a] t1 x (insert t2 [ord t_eq]))
+                      MkRefine (BranchTree t1 x (insert t2 [ord t_eq]))
                                [TRUSTME]
                     False -> 
                       MkRefine t
