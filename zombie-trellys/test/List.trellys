@@ -6,7 +6,7 @@ import Prelude
 import Arithmetic
 import LessThanNat_lt_eq_True
 
-usually log
+-- usually log
 
 data List (a : Type 0) : Type 0 where
   Nil
