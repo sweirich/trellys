@@ -32,7 +32,6 @@ import Control.Monad.Error  hiding (join)
 import Control.Arrow ((&&&), Kleisli(..))
 
 import Language.Trellys.GenericBind
-import qualified Generics.RepLib as RL
 
 import Data.Maybe
 import Data.List
@@ -81,15 +80,41 @@ kcElab tm = do
   case (eraseToHead ty) of
     AType _ -> return etm
     _       -> err [DD tm, DS "is not a well-formed type"]
+--
+-- Elaborate tm,  check that it is a well-formed first-order type
+-- at some level, if it is not first-order but there is a specified 
+-- default then use that default.
+kcElabFirstOrder :: Term -> TcMonad ATerm
+kcElabFirstOrder ty = do
+  (ety,tyTy) <- ts ty
+  dth <- getDefaultTheta
+  case (eraseToHead tyTy, isFirstOrder ety, dth) of
+    (AType _, True, _) -> 
+      return ety
+    (AType _, False, Nothing) ->
+      err [DD ty, 
+           DS  "can not be used as the domain of a function/data type, must specify either",
+           DD (At ty Logic), DS "or", DD (At ty Program),
+           DS "(no default theta is currently in effect.)"]
+    (AType _, False, Just th) ->
+      return (AAt ety th)
+    (_, _, _)      -> 
+      err [DD ty, DS "is not a well-formed type"]
+
+isFirstOrder :: ATerm -> Bool
+isFirstOrder (eraseToHead -> ATyEq _ _)    = True
+isFirstOrder (eraseToHead -> ASmaller _ _) = True
+isFirstOrder (eraseToHead -> AAt _ _)      = True
+isFirstOrder (eraseToHead -> ATCon d _)    = True
+isFirstOrder (eraseToHead -> AAt _ _)      = True
+isFirstOrder (eraseToHead -> AType _)      = True
+isFirstOrder _ = False
 
 -- Check wellformedness of, and elaborate, each type in a telescope
 kcTele :: Telescope -> TcMonad ATelescope
 kcTele [] = return AEmpty
 kcTele ((x,ty,ep):tele') = do
-   ety <- kcElab ty
-   unless (isFirstOrder ety) $
-     err [DS "Each type in a telescope needs to be first-order, but", 
-          DD ty, DS "is not"]
+   ety <- kcElabFirstOrder ty
    etele' <- extendCtx (ASig (translate x) Program ety) $ kcTele tele'
    return (ACons (rebind (translate x,embed ety,ep) etele'))
 
@@ -561,8 +586,8 @@ ts tsTm =
     -- Rule T_pi
     ts' (Arrow ex ep body) =
       do ((x,unembed -> tyA), tyB) <- unbind body
-         (etyA, tytyA) <- ts tyA
-         etyATh <- aGetTh etyA
+         etyA <- kcElabFirstOrder tyA
+         (etyATh, tytyA) <- getType etyA
          (etyB, etyBTh, tytyB) <- 
            -- this was Program instead of etyATh, why?
            extendCtx (ASig (translate x) etyATh etyA) $ do 
@@ -573,14 +598,11 @@ ts tsTm =
             err [DS "domain of an arrow type must check logically, but", DD tyA, DS "checks at P"]
          unless (etyBTh == Logic) $
             err [DS "co-domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
-         case (eraseToHead tytyA, eraseToHead tytyB, isFirstOrder etyA) of
-           (AType n, AType m, True)  -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
-           (AType _, AType _, False) ->  err [DD tyA, 
-                                              DS  "can not be used as the domain of a function type, must specify either",
-                                              DD (At tyA Logic), DS "or", DD (At tyA Program)]
-           (AType _, _, _)          -> err [DD tyB, DS "is not a type."]
-           (_,_, _)                 -> err [DD tyA, DS "is not a type.", 
-                                            DS "inferred", DD tytyA]
+         case (eraseToHead tytyA, eraseToHead tytyB) of
+           (AType n, AType m) -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
+           (AType _, _)       -> err [DD tyB, DS "is not a type."]
+           (_,_)              -> err [DD tyA, DS "is not a type.", 
+                                      DS "It has type", DD tytyA]
 
     -- Rules T_tcon and T_acon 
     ts' (TCon c args) =
@@ -855,31 +877,16 @@ tcModules mods = foldM tcM [] mods
 tcModule :: [AModule]        -- ^ List of already checked modules (including their Decls).
          -> Module           -- ^ Module to check.
          -> TcMonad AModule  -- ^ The same module with all Decls checked and elaborated.
-tcModule defs m' = do checkedEntries <- extendCtxMods importedModules $
-                                          foldr tcE (return [])
-                                                  (moduleEntries m')
-                      return $ AModule (moduleName m') checkedEntries
-  where d `tcE` m = do
-          -- Extend the Env per the current Decl before checking
-          -- subsequent Decls.
-          x <- tcEntry d
-          case x of
-            AddHint  hint  -> extendHints hint m
-                           -- Add decls to the Decls to be returned
-            AddCtx decls -> (decls++) <$> (extendCtxsGlobal decls m)
-        -- Get all of the defs from imported modules (this is the env to check current module in)
-        importedModules = filter (\x -> (ModuleImport (aModuleName x)) `elem` moduleImports m') defs
+tcModule defs m' = do 
+  let importedModules = filter (\x -> (ModuleImport (aModuleName x)) `elem` moduleImports m') defs
+  checkedEntries <- extendCtxMods importedModules $ 
+                      do
+                        cutoff <- length <$> getCtx
+                        (drop cutoff . reverse) <$> tcEntries (moduleEntries m')
+  return $ AModule (moduleName m') checkedEntries
 
--- | The Env-delta returned when type-checking a top-level Decl.
-data HintOrCtx = AddHint AHint
-               | AddCtx [ADecl]
-                 -- Q: why [ADecl] and not ADecl ? A: when checking a
-                 -- Def w/o a Sig, a Sig is synthesized and both the
-                 -- Def and the Sig are returned.
-
-tcEntry :: Decl -> TcMonad HintOrCtx
-
-tcEntry (Def n term) = do
+tcEntries :: [Decl] -> TcMonad [ADecl]
+tcEntries (Def n term : decls) = do
   oldDef <- lookupDef (translate n)
   case oldDef of
     Nothing -> tc
@@ -888,16 +895,15 @@ tcEntry (Def n term) = do
     tc = do
       lkup <- lookupHint (translate n)
       case lkup of
-        Nothing -> do (eterm,ty) <- ts term
-                      th <- aGetTh eterm
-                      -- Put the elaborated version of term 
-                      -- into the context.
-                      return $ AddCtx [ASig (translate n) th ty, ADef (translate n) eterm]
-        Just (theta,ty) ->
-          let msg' = disp [DS "When checking the term ", DD n, 
-                           DS "with definition", DD term,
-                           DS "against the signature", DD ty]
-          in do
+        Nothing -> do 
+          (eterm,ty) <- ts term
+          th <- aGetTh eterm
+          -- Put the elaborated version of term 
+          -- into the context.
+          extendCtxsGlobal [ASig (translate n) th ty, 
+                            ADef (translate n) eterm] $
+            tcEntries decls
+        Just (theta,ty) -> do
             eterm <- ta term ty 
             etermTh <- aGetTh eterm
             unless (etermTh <= theta) $
@@ -907,32 +913,35 @@ tcEntry (Def n term) = do
             -- declaration, then we don't add a new signature.
             --
             -- Put the elaborated version of term into the context.
-            return $ AddCtx [ASig (translate n) theta ty, 
-                             ADef (translate n) eterm]
+            extendCtxsGlobal [ASig (translate n) theta ty, 
+                              ADef (translate n) eterm] $
+              tcEntries decls
     die term' =
       extendSourceLocation (unPosFlaky term) term $
          err [DS "Multiple definitions of", DD n,
               DS "Previous definition was", DD term']
 
-tcEntry (Sig n th ty) = do
+tcEntries (Sig n th ty : decls) = do
   duplicateTypeBindingCheck n ty
   ety <- kcElab ty
   tyTh <- aGetTh ety
   unless (tyTh <= th) $
     err [DS "The variable", DD n, DS "was marked as L, but", DD ty, DS "checks at P"]
-  return $ AddHint (AHint (translate n) th ety)
+  extendHints (AHint (translate n) th ety) $
+    tcEntries decls
 
-tcEntry (Axiom n th ty) = do
+tcEntries (Axiom n th ty : decls) = do
   duplicateTypeBindingCheck n ty
   ety <- kcElab ty
   tyTh <- aGetTh ety
   unless (tyTh <= th) $
     err [DS "The variable", DD n, DS "was marked as L, but", DD ty, DS "checks at P"]
-  return $ AddCtx [ASig (translate n) th ety, 
-                   ADef (translate n) (ATrustMe ety)]
+  extendCtxsGlobal [ASig (translate n) th ety, 
+                    ADef (translate n) (ATrustMe ety)] $
+    tcEntries decls
 
 -- rule Decl_data
-tcEntry (Data t delta lev cs) =
+tcEntries (Data t delta lev cs : decls) =
   do -- The parameters of a datatype must all be Runtime.
      unless (all (\(_,_,ep) -> ep==Runtime) delta) $
        err [DS "All parameters to a datatype must be marked as relevant."]
@@ -955,11 +964,18 @@ tcEntry (Data t delta lev cs) =
      unless (length cnames == length (nub cnames)) $
        err [DS "Datatype definition", DD t, DS"contains duplicated constructors" ]
      -- finally, add the datatype to the env and perform action m
-     return $ AddCtx [AData (translate t) edelta lev ecs]
+     extendCtxsGlobal [AData (translate t) edelta lev ecs] $
+       tcEntries decls
 
-tcEntry dt@(AbsData t delta lev) = do
+tcEntries (AbsData t delta lev : decls) = do
   edelta <- kcTele delta
-  return $ AddCtx [AAbsData (translate t) edelta lev]
+  extendCtxsGlobal [AAbsData (translate t) edelta lev] $
+    tcEntries decls
+
+tcEntries (UsuallyTheta dth : decls) = 
+  withDefaultTheta dth $ tcEntries decls
+
+tcEntries [] = getCtx
 
 duplicateTypeBindingCheck :: TName -> Term -> TcMonad ()
 duplicateTypeBindingCheck n ty = do
@@ -977,15 +993,6 @@ duplicateTypeBindingCheck n ty = do
                  DS "Previous typing was", DD ty']
        in
          extendSourceLocation p ty $ err msg
-
-isFirstOrder :: ATerm -> Bool
-isFirstOrder (eraseToHead -> ATyEq _ _)    = True
-isFirstOrder (eraseToHead -> ASmaller _ _) = True
-isFirstOrder (eraseToHead -> AAt _ _)      = True
-isFirstOrder (eraseToHead -> ATCon d _)    = True
-isFirstOrder (eraseToHead -> AAt _ _)      = True
-isFirstOrder (eraseToHead -> AType _)      = True
-isFirstOrder _ = False
     
 -- Positivity Check
 
@@ -1047,35 +1054,6 @@ lookupDType b bty@(eraseToHead -> ATCon d params) = do
 lookupDType b bty = err [DS "Scrutinee ", DD b,
                          DS "must be a member of a datatype, but is not. It has type", DD bty]
 
---------------------------------------
--- Simplifying substitution
---------------------------------------
-
-{- Suppose that somewhere inside a typing derivation we have
-   (AUnboxVal x) for some variable x, and then want to substitute
-   (ABox a) for x, where a is some non-value expression.  If we just
-   constructed the derivation (AUnboxVal (ABox a)) it would violate
-   the value restriction of Unbox.
-
-   This case is actually very common for the regularity premise of the
-   function application rule. In the case when a function
-   argument has an @-type, we implicitly use Unbox to check that the
-   function type is well-kinded, and also implicitly use Box at the
-   call site to give the argument the right type. So it's
-   important to do something about this.
-
-   Here, I define a function to simplify away such Unbox-Box pairs.
-
-   Probably one should try harder than this, but more sophisticated 
-   simplifications would require type information.
- -}
-
-
-simplUnboxBox :: Rep a => a -> a
-simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
-  where simplUnboxBoxOnce :: ATerm -> ATerm 
-        simplUnboxBoxOnce (AUnboxVal (ABox a _)) = a
-        simplUnboxBoxOnce a = a
 
 -------------------------------------------------------
 -- Dig through the context, select all "interesting" bindings,
@@ -1295,7 +1273,7 @@ newtype ReductionPath a = ReductionPath [a]
 
 -- Printing reduction sequences
 instance Disp a => Disp (ReductionPath a) where
-  disp (ReductionPath ts) = foldr (\x y -> x $$ text "--->" $$ y) empty (map disp ts)
+  disp (ReductionPath path) = foldr (\x y -> x $$ text "--->" $$ y) empty (map disp path)
 
 data AndTheErasureIs = AndTheErasureIs ATerm ETerm
 
