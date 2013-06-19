@@ -1,39 +1,77 @@
 module Unify where
 
 import Prelude
-import List
 import Product
+import Fin
 import Vectors
+import List
+import Maybe
 
-data Maybe (A : Type 0) : Type 0 where
-  Just of (_ : A @ log)
-  Nothing
-
-data Fin (n : Nat) : Type 0 where
-  FZ of [m:Nat][ m_eq : (n = Succ m) ] 
-  FS of [m:Nat][ m_eq : (n = Succ m) ](_ : Fin m)
-
-data Env (n : Nat) : Type 0 where
-  VZ of [_ : n = 0]
-  VS of [m : Nat][m_eq : n = Succ m](f : Bool)(t : Env m)
-
-log head : [n:Nat] -> Env (Succ n) -> Bool
-head = \ [n] v . case v [v_eq] of 
-  VZ [n_eq] -> contra (_ : 0 = Succ n)
-  VS [m][m_eq] f t -> f 
-
-log lookup : [n:Nat] -> (f : Fin n) -> Env n -> Bool
-lookup = \ [n] . 
-  ind recFin f = \v . 
-    case f [f_eq] of 
-      FZ [m][m_eq] -> head [m] v
-      FS [m][m_eq] fm -> head [m] v
 		 
+-- A formula with n free variables
 data Formula (n : Nat) : Type 0 where
   Var of (_ :Fin n)
   And of (_ :Formula n) (_ :Formula n)
   Lit of (_ :Bool)
 
+-- apply a substitution to a formula
+log subst : [n:Nat] -> Vector (Formula n) n -> Formula n ->  Formula n
+subst = \ [n] v . 
+ ind rs f =   
+   case f [f_eq] of 
+	  Var x -> lookup [Formula n][n] x v
+	  And f1 f2 -> And (rs f1 [ord f_eq]) (rs f2 [ord f_eq])
+	  Lit b -> Lit b
+
+log subst1 : [n:Nat] -> Fin n -> Formula n -> Formula n -> Formula n
+subst1 = \ [n] v u. 
+ ind rs f =   
+   case f [f_eq] of 
+     Var x -> case (eq_fin [n] x v) [_] of 
+         True -> u 
+         False -> f
+     And f1 f2 -> And (rs f1 [ord f_eq]) (rs f2 [ord f_eq])
+     Lit b -> Lit b
+
+log subst1_pair : [n:Nat] -> Fin n -> Formula n 
+	 -> Times (Formula n) (Formula n) -> Times (Formula n) (Formula n)
+subst1_pair = \[n] fn form z. 
+  case z [z_eq] of 
+    Pair x y -> Pair (subst1 [n] fn form x) (subst1 [n] fn form y)
+
+log occurs : [n:Nat] -> Fin n -> Formula n -> Bool
+occurs = \ [n] fn. 
+  ind occ f = 
+    case f [f_eq] of 
+      Var fn1 -> eq_fin [n] fn fn1
+      And f1 f2 -> and (occ f1 [ord f_eq]) (occ f2 [ord f_eq])
+      Lit _ -> False
+
+prog unify : (n:Nat) 
+           -> (fs : List (Times (Formula n) (Formula n)))
+           -> Maybe (Vector (Maybe (Formula n)) n)
+unify = \ n . 
+  rec uni fs = 
+     case fs [_] of 
+        Nil -> Just (repeat [Maybe (Formula n)] Nothing n)
+        Cons (Prod f1 f2) xs -> 
+           case f1 [_], f2 [_] of 
+              Var x , _ -> 
+                case (occurs x f2) [_] of 
+                  True -> Nothing 
+                  False -> 
+                    case (uni (map [?][?] (subst1_pair [n] x f2) xs)) [_] of 
+                      Nothing -> Nothing
+                      Just s  -> Just (set [Formula n][n] x (Just f2) s)
+              _ , Var x -> TRUSTME
+              (And b1 b2) , (And c1 c2) -> unify 
+                       (Cons (Prod b1 c1) 
+                            (Cons (Prod b2 c2) xs))
+              Lit True, Lit True -> unify xs
+              Lit False, Lit False -> unify xs
+              _ , _ -> Nothing
+
+{-
 log interp : [n : Nat] -> Env n -> Formula n -> Bool
 interp = \ [n] e .
  ind interp f =  
@@ -42,40 +80,9 @@ interp = \ [n] e .
       And f1 f2 -> and (interp f1 [ord f_eq]) (interp f2 [ord f_eq])
       Lit b  -> b
 
-log repeat : [A:Type 0] -> (A @ log) -> (n:Nat) -> Vector A n
-repeat = \ [A] a . 
-  ind rep n = 
-    case n [n_eq] of 
-      Zero -> VNil [A][n][_]
-      Succ m -> VCons [A][n][m][_] a (rep m [ord n_eq])
-
-log set : [A:Type 0] -> (A @ log) -> (n:Nat) -> Fin n -> Vector A n -> Vector A n
-set = \ [A] a . 
-  ind set [n] fn = 
-       case fn [n_eq] of 
-       	FZ   -> VNil [A][n][_]
-         FS m -> VCons [A][n][m][_] a (rep m [ord n_eq])
 
 
-prog unify : (n:Nat) 
-	        -> (fs : List (Times (Formula n) (Formula n)))
-			  -> Vector (Maybe (Formula n)) n
-unify = \ n . 
-  rec unify fs = 
-     case fs [_] of 
-        Nil -> repeat [Maybe (Formula n)] (Nothing [Formula n]) n
-        Cons (Prod f1 f2) xs -> 
-           case f1 [_], f2 [_] of 
-              Var x , y -> set x y (unify xs)
-              _ , Var x -> TRUSTME
-              (And b1 b2) , (And c1 c2) -> unify 
-                       (Cons [Times (Formula n) (Formula n)] 
-							             (Prod [Formula n][Formula n] b1 c1) 
-                            (Cons [Times (Formula n) (Formula n)] 
-									       (Prod [Formula n][Formula n] b2 c2) xs))
-              Lit True, Lit True -> unify xs
-              Lit False, Lit False -> unify xs
-              _ , _ -> TRUSTME
+-}
 
 {-
 prog isSat : [n:Nat] -> Formula n -> Maybe (Env n)
