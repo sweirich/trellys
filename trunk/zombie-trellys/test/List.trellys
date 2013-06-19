@@ -1,18 +1,18 @@
 -- The standard list data type.
--- Except, kindof annoyingly, we need to fix @log throughout most of this file...
 
 module List where
 import Prelude
 import Arithmetic
 import LessThanNat_lt_eq_True
 
--- usually log
+-- We fix @log throughout this file.
+usually log
 
 data List (a : Type 0) : Type 0 where
   Nil
-  Cons of (x : a @log) (xs : List a)
+  Cons of (x : a) (xs : List a)
 
-map : [a : Type 0] => [b : Type  0] => (f : (x:a@log) -> b @log) ->
+map : [a : Type 0] => [b : Type  0] => (f : (x:a) -> b) ->
       (xs : List a) -> List b
 map = \ [a] [b] f . ind map xs = 
   case xs [xs_eq] of
@@ -31,11 +31,11 @@ concat = \ [a] . ind concat xss =
     Nil -> Nil 
     Cons xs xss -> append xs (concat xss [ord xss_eq])
 
-concatMap : [a : Type 0] => [b : Type  0] => (f : (x:a@log) -> List b @log) ->
+concatMap : [a : Type 0] => [b : Type  0] => (f : (x:a) -> List b) ->
       (xs : List a) -> List b
 concatMap = \[a] [b] f xs . concat [b] (map f xs)
 
-replicate : [a : Type 0] => Nat -> (a@log) -> List a
+replicate : [a : Type 0] => Nat -> a -> List a
 replicate = \[a] . ind replicate n = \ x .
   case n [neq] of 
     Zero -> Nil 
@@ -47,7 +47,7 @@ length = \[a]. ind length xs =
     Nil -> Zero
     Cons x xs -> Succ (length xs [ord xs_eq])
 
-nth : [a : Type 0] => Nat -> (List a) -> (default : a@log) -> a
+nth : [a : Type 0] => Nat -> (List a) -> (default : a) -> a
 nth = \[a]. ind nth n = \xs default.
  case xs [_] of
    Nil -> default
@@ -63,6 +63,4 @@ nth_safe = \[a]. ind nth_safe n = \xs [safe].
    Cons x xs' -> case n [n_eq] of 
                   Zero -> x
                   Succ n' ->  let _ = (join : length (Cons x xs')  = Succ (length  xs')) 
-                              in
-                                 TRUSTME
-                                 --nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]
+                              in nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]

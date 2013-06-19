@@ -10,6 +10,7 @@ module Language.Trellys.Environment
    emptyEnv,
    lookupTy, lookupTyMaybe, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
    lookupUniVar, setUniVar, setUniVars,
+   getDefaultTheta, withDefaultTheta, 
    getCtx, getLocalCtx, extendCtx, extendCtxTele, extendCtxs, extendCtxsGlobal,
    extendCtxMods,
    extendHints,
@@ -47,6 +48,8 @@ data Env = Env { ctx :: [ADecl],
                -- ^ Type declarations (signatures): it's not safe to
                -- put these in the context until a corresponding term
                -- has been checked.
+                 defaultTheta :: Maybe Theta,
+               -- ^ used when a type needs to be FO, and no th was given
                  flags :: [Flag],
                -- ^ Command-line options that might influence typechecking
                  sourceLocation ::  [SourceLocation]
@@ -59,7 +62,12 @@ type UniVarBindings = Map AName ATerm
 
 -- | The initial environment.
 emptyEnv :: [Flag] -> Env
-emptyEnv fs = Env { ctx = [] , globals = 0, hints = [], flags = fs, sourceLocation = [] }
+emptyEnv fs = Env { ctx = [] , 
+                   globals = 0, 
+                   hints = [],
+                   defaultTheta = Nothing,
+                   flags = fs, 
+                   sourceLocation = [] }
 
 instance Disp Env where
   disp e = vcat [disp decl | decl <- ctx e]
@@ -215,6 +223,14 @@ getSourceLocation = asks sourceLocation
 -- | Add a type hint
 extendHints :: (MonadReader Env m) => AHint -> m a -> m a
 extendHints h = local (\m@(Env {hints = hs}) -> m { hints = h:hs })
+
+-- | Manipulate the defaultTheta field
+getDefaultTheta :: MonadReader Env m => m (Maybe Theta)
+getDefaultTheta = asks defaultTheta
+
+withDefaultTheta :: MonadReader Env m => Maybe Theta -> m a -> m a
+withDefaultTheta dth = local (\m -> m { defaultTheta = dth })
+
 
 getDefs :: MonadReader Env m => m [(AName,ATerm)]
 getDefs = do

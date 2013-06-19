@@ -12,9 +12,9 @@ case "${RESULT}" in
      echo 
      exit 0 ;;
   "1 1" ) 
-     echo "failed with the wrong error message" 
+     echo -e "failed with the \033[1;31mwrong error message\033[0;30m" 
      exit 1 ;;
   0* ) 
-     echo "suceeded, but should fail" 
+     echo -e "suceeded, but \033[1;31mshould fail\033[0;30m" 
      exit 1 ;;
 esac

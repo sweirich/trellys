@@ -156,6 +156,10 @@ instance Disp Decl where
         text "data" <+> disp t <+> disp delta <+> colon
     <+> text "Type" <+> text (show lev)
 
+  disp (UsuallyTheta (Just th)) = text "usually" <+> disp th
+  disp (UsuallyTheta Nothing) = text "usually none"
+
+
 instance Disp Goal where
   disp (Goal ctx statement) = 
    foldr ($+$) empty (map dispAssumption ctx)

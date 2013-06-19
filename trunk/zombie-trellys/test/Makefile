@@ -13,7 +13,7 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Arithmetic-old Vectors List LetRebind Trees Append2 \
+PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees Append2 \
      Append2-old AppendUni TypeTest NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
@@ -69,13 +69,13 @@ todo: todo_pass todo_fail
 
 %.pass:	%.trellys
 	@echo -n "$<: "
-	@if ! $(TYPECHECK) $<; then echo "failed (should pass)" >&2; else echo; fi
+	@if ! $(TYPECHECK) $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 
 %.pass-parallel:	%.trellys
 	@echo -n "$<: "
-	@if ! $(TYPECHECK) --parallel $<; then echo "failed (should pass)" >&2; else echo; fi
+	@if ! $(TYPECHECK) --parallel $<; then echo "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 %.fail: %.trellys
 	@echo -n "$<: "
-	@if $(TYPECHECK) $<; then echo "passed (should fail)" >&2; else echo; fi
+	@if $(TYPECHECK) $<; then echo "\033[1;31mpassed\033[0;30m (should fail)" >&2; else echo; fi

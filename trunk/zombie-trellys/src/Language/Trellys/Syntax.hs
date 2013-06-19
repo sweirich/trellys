@@ -229,6 +229,7 @@ data Decl = Sig  TName Theta Term
           | Def TName Term
           | Data TName Telescope Int [ConstructorDef]
           | AbsData TName Telescope Int
+          | UsuallyTheta (Maybe Theta)
   deriving (Show)
 
 

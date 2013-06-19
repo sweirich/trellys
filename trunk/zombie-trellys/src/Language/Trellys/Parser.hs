@@ -115,6 +115,10 @@ import qualified Data.Set as S
          ...
          Cn of Deln
 
+    Setting default thetas (used when a function type doesn't specify an @).
+       usually prog
+       usually log
+       usually none
 
   Syntax sugar:
 
@@ -351,7 +355,7 @@ theta =      (reserved "prog" >> return Program)
 ---
 
 decl,dataDef,sigDef,valDef,indDef,recDef :: LParser Decl
-decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef
+decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef <|> usuallyTheta
 
 -- datatype declarations.
 dataDef = do
@@ -397,6 +401,12 @@ recDef = do
  r@(Rec _ b) <- rec
  let ((n,_),_) = unsafeUnbind b
  return $ Def n r
+
+usuallyTheta = do
+  _ <- string "usually" 
+  whiteSpace
+  try (return . UsuallyTheta . Just =<< theta) 
+    <|> (string "none" >> return (UsuallyTheta Nothing))
 
 ------------------------
 ------------------------
