@@ -8,8 +8,8 @@ data Fin (n : Nat) : Type 0 where
 
 -- equality is decidable
 
-log eq_fin : [n: Nat] -> Fin n -> Fin n -> Bool
-eq_fin =  
+log fin_eq : [n: Nat] -> Fin n -> Fin n -> Bool
+fin_eq =  
  ind eq [n] = \fn1 fn2 .
    case fn1 [n1_eq], fn2 [_] of 
       FZ [m1][m1_eq], FZ [m2][m2_eq] -> True
