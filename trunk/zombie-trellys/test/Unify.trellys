@@ -48,12 +48,12 @@ data Formula (n : Nat) : Type 0 where
 
 log formula_eq : [n : Nat] -> (x:Formula n) -> (y:Formula n) 
                   -> Bool
-formula_eq = \ [n] x .
- ind fe y =  
+formula_eq = \ [n] .
+ ind fe x  =  \y .
    case x [x_eq] , y [y_eq] of 
-      Var x1 , Var y1 ->fin_eq [n] x1 y1
+      Var x1 , Var y1 -> fin_eq [n] x1 y1
       Lit b1, Lit b2 -> bool_eq b1 b2
-      And xx1 xx2 , And yy1 yy2 -> and (fe xx1 [ord xx_eq] yy1) (fe xx2 [ord xx_eq] yy2) 
+      And x1 x2 , And y1 y2 -> and (fe x1 [ord x_eq] y1) (fe x2 [ord x_eq] y2) 
       _ , _ -> False
           
      
@@ -62,16 +62,25 @@ formula_eq = \ [n] x .
 log formula_equal : [n : Nat] -> (x:Formula n) -> (y:Formula n) 
                   -> DecEq (Formula n) x y
 formula_equal = \[n] .
- ind fe x = \y .  TRUSTME
-{-   case x [x_eq] , y [y_eq] of 
-      Var x1, Var y1 -> TRUSTME
-      And x1 x2, And y1 y2 -> TRUSTME
-         case (fe x1 [ord x_eq] y1) [_], (fe x2 [ord x_eq]) [_] of 
+ ind fe x = \y . 
+   case x [x_eq] , y [y_eq] of 
+      Var x1, Var y1 -> case (fin_equal [n] x1 y1) [_] of 
+          Equal eq1 -> Equal _
+          NotEqual ne1 -> NotEqual (\z . TRUSTME)  -- need injectivity for Var herex
+      And x1 x2, And y1 y2 ->
+         case (fe x1 [ord x_eq] y1) [_], (fe x2 [ord x_eq] y2) [_] of 
           Equal eq1, Equal eq2 -> Equal _
-          NotEqual ne1, _ -> TRUSTME
-          _ , NotEqual ne2 -> TRUSTME 
-      Lit b1, Lit b2 -> TRUSTME -}
-
+          NotEqual ne1, _ -> NotEqual (\z . TRUSTME)
+          _ , NotEqual ne2 -> NotEqual (\z. TRUSTME)
+      Lit b1, Lit b2 -> case (boolean_equal b1 b2) [_] of 
+          Equal _ -> Equal _
+          NotEqual ne1 -> NotEqual (\z . TRUSTME)
+      Var x1 , And y1 y2 -> NotEqual (\z . contra (_ : (Var x1 : Formula n) = (And y1 y2 : Formula n)))
+      Var x1 , Lit b2   -> NotEqual (\z . contra (_ : (Var x1 : Formula n) = (Lit b2 : Formula n)))
+      And _ _ , Var _ -> NotEqual (\z . TRUSTME)
+      And _ _ , Lit _ -> NotEqual (\z . TRUSTME)
+      Lit _ , Var _ -> NotEqual (\z . TRUSTME)
+      Lit _ , And _ _ -> NotEqual (\z . TRUSTME)
 -- apply a substitution to a formula
 log subst : [n:Nat] -> Vector (Formula n) n -> Formula n ->  Formula n
 subst = \ [n] v . 
@@ -129,8 +138,7 @@ rec occurs_in [n] = \ var val vec .
 
 prog bad_unify : [n : Nat] 
 	  -> Formula n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n) -> Maybe (Vector (Maybe (Formula n)) n)
-bad_unify = \ [n] . 
-  rec bu x = \ y subst . 
+rec bad_unify [n] = \ x y subst . 
     case subst [_] of 
       Nothing -> Nothing
       Just vec -> case (formula_eq [n] x y) [_] of 
@@ -138,14 +146,14 @@ bad_unify = \ [n] .
          False ->
             let prog bad_unify_variable = ((\ var val . 
                case (lookup [?][?] var vec) [_] of 
-                    Just varval -> bu varval val subst
+                    Just varval -> bad_unify [n] varval val subst
                     Nothing -> case (occurs_in [n] var val vec) [_] of 
                        True -> Nothing
                        False -> (Just (set [?][n] var (Just val : Maybe (Formula n)) vec)) ) : Fin n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n)) in 
             case x [_], y [_] of      
               Var x1, _ -> bad_unify_variable x1 y
               _ , Var y1 -> bad_unify_variable y1 x
-              And x1 x2 , And y1 y2 -> bu x1 y1 (bu x2 y2 subst)
+              And x1 x2 , And y1 y2 -> bad_unify [n] x1 y1 (bad_unify [n] x2 y2 subst)
               _ , _ -> Nothing
 
 -- failing test
@@ -165,9 +173,15 @@ f1 = And (Var a) (Var b)
 f2 : Formula 3 
 f2 = And (Var b) (Var a)
 
-bad_test1 = bad_unify [3] f1 f2
-bad_test2 = bad_unify [3] (And (And (Var a) (Var b)) (And (Var b) (Var a))) (And (Var c) (Var c))
-bad_test3 = bad_unify [3] (And (Var a) (And (Var b) (Lit True))) (And (Var a) (And (Var b) (Var b)))
+msubst : Maybe (Vector (Maybe (Formula 3)) 3)
+msubst = Just (repeat [?] (Nothing : Maybe (Formula 3)) 3)
+
+bad_test1 = bad_unify [3] f1 f2 msubst
+bad_test2 = bad_unify [3] (And (And (Var a) (Var b)) (And (Var b) (Var a))) (And (Var c) (Var c)) msubst
+bad_test3 = bad_unify [3] (And (Var a) (And (Var b) (Lit True))) (And (Var a) (And (Var b) (Var b))) msubst
+
+-- note 10,000 is not enough!
+foo = (join 1000000 : bad_test1 = (Nothing : Maybe Bool))
 
 -- The correct version, also from the same paper
 -- The difference is that this version maintains the invariant that the substitution is non-circular. 
