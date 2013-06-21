@@ -6,6 +6,12 @@ usually log
 data Times (A:Type 0)(B : Type 0) : Type 0 where
   Prod of (_ : A) (_ : B)
 
+log pi1 : [A : Type 0]-> [B : Type 0] -> Times A B -> A
+pi1 = \[A][B] p. 
+  case p [_] of 
+    Prod x y -> x
+
+
 data Sigma (A:Type 0) (b : A -> Type 0) : Type 0 where
   Pair of (x:A) (_ : b x)
 

@@ -7,12 +7,71 @@ import Vectors
 import List
 import Maybe
 
-		 
+data DecEq (A : Type 0) (a : A @ log) (b : A @ log) : Type 0 where
+  Equal    of  (a = b)
+  NotEqual of ((a = b) -> Void @ log)
+
+log bool_eq : Bool -> Bool -> Bool
+bool_eq = \ x y . 
+  case x [x_eq], y [y_eq] of 
+     True, True -> True
+     False, False -> True
+     _ , _ -> False
+
+log boolean_equal : (x : Bool) -> (y : Bool) -> DecEq ? x y
+boolean_equal = \ x y . 
+  case x [x_eq], y [y_eq] of 
+    True,  True  -> Equal _
+    False, False -> Equal _
+    True,  False -> NotEqual (\x . contra (_ : True = False))
+    False, True  -> NotEqual (\x . contra (_ : True = False))
+
+log fin_equal : [n: Nat] -> (x : Fin n) -> (y : Fin n) -> DecEq ? x y
+fin_equal = 
+  ind fe [n] = \x y . 
+    case  x [x_eq], y [y_eq] of 
+      FZ [_][_],  FZ [_][_] -> Equal _
+      FS [m1][m1_eq] x1,  FS [m2][m2_eq] y1 -> 
+	      let _ = uneraseEq [Nat][Nat][m1][m2] [sm_eq_Sn__m_eq_n m1 m2 _] in
+         case (fe [m1][ord m1_eq] x1 y1) [_] of 
+            Equal _ -> Equal _
+            NotEqual pf -> NotEqual TRUSTME
+      FZ [_][_],  FS [_][_] y1 -> TRUSTME
+      FS [_][_] y, FZ [_][_] -> TRUSTME
+
 -- A formula with n free variables
 data Formula (n : Nat) : Type 0 where
-  Var of (_ :Fin n)
-  And of (_ :Formula n) (_ :Formula n)
-  Lit of (_ :Bool)
+  Var of (var  :Fin n)
+  And of (left :Formula n) (right :Formula n)
+  Lit of (litb :Bool)
+
+
+log formula_eq : [n : Nat] -> (x:Formula n) -> (y:Formula n) 
+                  -> Bool
+formula_eq = \ [n] x .
+ ind fe y =  
+   case x [x_eq] , y [y_eq] of 
+      Var x1 , Var y1 ->fin_eq [n] x1 y1
+      Lit b1, Lit b2 -> bool_eq b1 b2
+      _ , _ -> TRUSTME
+--      And xx1 xx2 , And yy1 yy2 -> and (fe xx1 [ord xx_eq] yy1) (fe xx2 [ord xx_eq] yy2) 
+           
+          
+     
+
+
+log formula_equal : [n : Nat] -> (x:Formula n) -> (y:Formula n) 
+                  -> DecEq (Formula n) x y
+formula_equal = \[n] .
+ ind fe x = \y .  TRUSTME
+{-   case x [x_eq] , y [y_eq] of 
+      Var x1, Var y1 -> TRUSTME
+      And x1 x2, And y1 y2 -> TRUSTME
+         case (fe x1 [ord x_eq] y1) [_], (fe x2 [ord x_eq]) [_] of 
+          Equal eq1, Equal eq2 -> Equal _
+          NotEqual ne1, _ -> TRUSTME
+          _ , NotEqual ne2 -> TRUSTME 
+      Lit b1, Lit b2 -> TRUSTME -}
 
 -- apply a substitution to a formula
 log subst : [n:Nat] -> Vector (Formula n) n -> Formula n ->  Formula n
@@ -23,80 +82,120 @@ subst = \ [n] v .
 	  And f1 f2 -> And (rs f1 [ord f_eq]) (rs f2 [ord f_eq])
 	  Lit b -> Lit b
 
-log subst1 : [n:Nat] -> Fin n -> Formula n -> Formula n -> Formula n
+-- substitute u for x in formula t.
+log subst1 : [n:Nat] -> (x :Fin n) -> (u : Formula n) -> (t : Formula n) -> Formula n
 subst1 = \ [n] v u. 
  ind rs f =   
    case f [f_eq] of 
-     Var x -> case (eq_fin [n] x v) [_] of 
+     Var x -> case (fin_eq [n] x v) [_] of 
          True -> u 
          False -> f
      And f1 f2 -> And (rs f1 [ord f_eq]) (rs f2 [ord f_eq])
      Lit b -> Lit b
 
 log subst1_pair : [n:Nat] -> Fin n -> Formula n 
-	 -> Times (Formula n) (Formula n) -> Times (Formula n) (Formula n)
-subst1_pair = \[n] fn form z. 
-  case z [z_eq] of 
-    Pair x y -> Pair (subst1 [n] fn form x) (subst1 [n] fn form y)
+	 -> (Times (Formula n) (Formula n) @ log) -> Times (Formula n) (Formula n)
+subst1_pair = \[n] fin form p. 
+  case p [z_eq] of 
+    Prod x y -> Prod (subst1 [n] fin form x) (subst1 [n] fin form y)
 
+-- standard occurs check
 log occurs : [n:Nat] -> Fin n -> Formula n -> Bool
 occurs = \ [n] fn. 
   ind occ f = 
     case f [f_eq] of 
-      Var fn1 -> eq_fin [n] fn fn1
+      Var fn1 -> fin_eq [n] fn fn1
       And f1 f2 -> and (occ f1 [ord f_eq]) (occ f2 [ord f_eq])
       Lit _ -> False
 
-prog unify : (n:Nat) 
-           -> (fs : List (Times (Formula n) (Formula n)))
-           -> Maybe (Vector (Maybe (Formula n)) n)
-unify = \ n . 
-  rec uni fs = 
-     case fs [_] of 
-        Nil -> Just (repeat [Maybe (Formula n)] Nothing n)
-        Cons (Prod f1 f2) xs -> 
-           case f1 [_], f2 [_] of 
-              Var x , _ -> 
-                case (occurs x f2) [_] of 
-                  True -> Nothing 
-                  False -> 
-                    case (uni (map [?][?] (subst1_pair [n] x f2) xs)) [_] of 
-                      Nothing -> Nothing
-                      Just s  -> Just (set [Formula n][n] x (Just f2) s)
-              _ , Var x -> TRUSTME
-              (And b1 b2) , (And c1 c2) -> unify 
-                       (Cons (Prod b1 c1) 
-                            (Cons (Prod b2 c2) xs))
-              Lit True, Lit True -> unify xs
-              Lit False, Lit False -> unify xs
+-- can't really use this type declaration. Type checker doesn't unfold.
+
+log substitution : Nat -> Type 0
+substitution = \n. Vector (Maybe (Formula n)) n
+
+
+-- An incorrect version of unification from 
+-- Peter Norvig, "Correcting A Widespread Error in Unification Algorithms"
+
+prog occurs_in : [n : Nat] -> Fin n -> Formula n -> Vector (Maybe (Formula n)) n -> Bool
+rec occurs_in [n] = \ var val vec . 
+  case val [_] of 
+     Var x -> case (fin_eq [n] var x) [_] of 
+       True -> True
+       False -> case (lookup [?][n] x vec) [_] of 
+          Just val -> occurs_in [n] var val vec
+          Nothing -> False
+     And y1 y2 -> (or (occurs_in [n] var y1 vec) (occurs_in [n] var y2 vec))
+     Lit _ -> False 
+
+prog bad_unify : [n : Nat] 
+	  -> Formula n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n) -> Maybe (Vector (Maybe (Formula n)) n)
+bad_unify = \ [n] . 
+  rec bu x = \ y subst . 
+    case subst [_] of 
+      Nothing -> Nothing
+      Just vec -> case (formula_eq [n] x y) [_] of 
+         True -> Just vec
+         False ->
+            let prog bad_unify_variable = ((\ var val . 
+               case (lookup [?][?] var vec) [_] of 
+                    Just varval -> bu varval val subst
+                    Nothing -> case (occurs_in [n] var val vec) [_] of 
+                       True -> Nothing
+                       False -> (Just (set [?][n] var (Just val : Maybe (Formula n)) vec)) ) : Fin n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n)) in 
+            case x [_], y [_] of      
+              Var x1, _ -> bad_unify_variable x1 y
+              _ , Var y1 -> bad_unify_variable y1 x
+              And x1 x2 , And y1 y2 -> bu x1 y1 (bu x2 y2 subst)
               _ , _ -> Nothing
 
-{-
-log interp : [n : Nat] -> Env n -> Formula n -> Bool
-interp = \ [n] e .
- ind interp f =  
-   case f [f_eq] of 
-      Var fn -> lookup [n] fn e
-      And f1 f2 -> and (interp f1 [ord f_eq]) (interp f2 [ord f_eq])
-      Lit b  -> b
+-- failing test
 
+a : Fin 3
+a = FZ [?][_]
 
+b : Fin 3
+b = FS [?][_] (FZ [?][_])
 
--}
+c : Fin 3
+c = FS [?][_] (FS [?][_] (FZ [?][_]))
 
-{-
-prog isSat : [n:Nat] -> Formula n -> Maybe (Env n)
-isSat = 
-  rec isSat [n] f = 
-     case f of 
-	    Var x 
--}
+f1 : Formula 3
+f1 = And (Var a) (Var b)
 
+f2 : Formula 3 
+f2 = And (Var b) (Var a)
 
-{-
-log Subst : Type 0 
-subst = Nat -> Formula
+bad_test1 = bad_unify [3] f1 f2
+bad_test2 = bad_unify [3] (And (And (Var a) (Var b)) (And (Var b) (Var a))) (And (Var c) (Var c))
+bad_test3 = bad_unify [3] (And (Var a) (And (Var b) (Lit True))) (And (Var a) (And (Var b) (Var b)))
 
-data Sat (f : Formulat) : Type 0
-  isSat : 
--}
+-- The correct version, also from the same paper
+-- The difference is that this version maintains the invariant that the substitution is non-circular. 
+
+prog unify : [n : Nat] 
+     -> Formula n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n) -> Maybe (Vector (Maybe (Formula n)) n)
+unify = \ [n] . 
+  rec bu x = \ y subst . 
+    case subst [_] of 
+      Nothing -> Nothing
+      Just vec -> case (formula_eq [n] x y) [_] of 
+         True -> Just vec
+         False ->
+            let prog bad_unify_variable = ((\ var val . 
+               case (lookup [?][?] var vec) [_] of 
+                    Just varval -> bu varval val subst
+                    Nothing -> 
+                       case val [_] of
+                          Var w -> case (lookup [?][?] w vec) [_] of
+                                     Just wval -> bu (Var var) wval subst
+                                     Nothing -> (Just (set [?][n] var (Just val : Maybe (Formula n)) vec))
+                          _ -> case (occurs_in [n] var val vec) [_] of 
+                               True -> Nothing
+                               False -> (Just (set [?][n] var (Just val : Maybe (Formula n)) vec)) ) : Fin n -> Formula n -> Maybe (Vector (Maybe (Formula n)) n)) in 
+            case x [_], y [_] of      
+              Var x1, _ -> bad_unify_variable x1 y
+              _ , Var y1 -> bad_unify_variable y1 x
+              And x1 x2 , And y1 y2 -> bu x1 y1 (bu x2 y2 subst)
+              _ , _ -> Nothing
+
