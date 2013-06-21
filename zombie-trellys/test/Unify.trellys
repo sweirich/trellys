@@ -53,9 +53,8 @@ formula_eq = \ [n] x .
    case x [x_eq] , y [y_eq] of 
       Var x1 , Var y1 ->fin_eq [n] x1 y1
       Lit b1, Lit b2 -> bool_eq b1 b2
-      _ , _ -> TRUSTME
---      And xx1 xx2 , And yy1 yy2 -> and (fe xx1 [ord xx_eq] yy1) (fe xx2 [ord xx_eq] yy2) 
-           
+      And xx1 xx2 , And yy1 yy2 -> and (fe xx1 [ord xx_eq] yy1) (fe xx2 [ord xx_eq] yy2) 
+      _ , _ -> False
           
      
 
