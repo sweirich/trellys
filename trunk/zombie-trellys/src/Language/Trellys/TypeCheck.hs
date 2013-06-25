@@ -142,17 +142,14 @@ ta (Join s1 s2) (ATyEq a b) =
   -- so we don't need a kind-check here.
   do t1E <- erase =<< substDefs a
      t2E <- erase =<< substDefs b
+     -- Test the astep code
+     testReduction =<< substDefs a
+     testReduction =<< substDefs b
+     -- End astep test
      joinable <- join s1 s2 t1E t2E
      unless joinable $
        err [DS "The erasures of terms", DD a, DS "and", DD b,
             DS "are not joinable."]
-
-     aSubst <- substDefs a
-     testReduction aSubst
-     bSubst <- substDefs b
-     testReduction bSubst
---     printReductionPath aSubst
---     printReductionPath bSubst
      return (AJoin a s1 b s2)
 
     -- rule T_ord

@@ -9,7 +9,6 @@ module Language.Trellys.AOpSem
 where
 
 import Language.Trellys.Syntax
-import Language.Trellys.PrettyPrint
 import Language.Trellys.Environment (lookupDCon)
 import Language.Trellys.TypeMonad
 import Language.Trellys.GenericBind
@@ -419,10 +418,7 @@ astep (AApp eps a b ty) = do
                         lam    = ALam Logic tyArr2 epsArr   . bind x
                                . ALam Logic tyArr1 Erased   . bind p
                                $ AApp epsArr a (AVar x) ty2
-                    let note msg val = liftIO $ do
-                          putStrLn $ "* " ++ msg ++ " *"
-                          print $ disp val
-                    return . Just . subst x b $ subst f lam body
+                    return . Just . subst f lam $ subst x b body
                   _ -> return Nothing
 
 astep (AAt _ _) = return Nothing
@@ -592,7 +588,7 @@ astep (ANthEq _ _) = return Nothing
 
 astep (ATrustMe _) = return Nothing
 
-astep (ASubstitutedFor a name) = fmap (flip ASubstitutedFor name) <$> astep a
+astep (ASubstitutedFor a _) = return $ Just a
 
 
 -- Step the term for at most n steps, or until it is stuck.
