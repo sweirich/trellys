@@ -148,9 +148,11 @@ ta (Join s1 s2) (ATyEq a b) =
             DS "are not joinable."]
 
      aSubst <- substDefs a
-     -- testReduction aSubst
-     --testReduction bSubst
-     --printReductionPath aSubst
+     testReduction aSubst
+     bSubst <- substDefs b
+     testReduction bSubst
+--     printReductionPath aSubst
+--     printReductionPath bSubst
      return (AJoin a s1 b s2)
 
     -- rule T_ord

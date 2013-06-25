@@ -10,14 +10,14 @@ where
 
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
-import Language.Trellys.Environment (lookupDCon, warn)
+import Language.Trellys.Environment (lookupDCon)
 import Language.Trellys.TypeMonad
 import Language.Trellys.GenericBind
 import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
 import Unbound.LocallyNameless.Types (GenBind)
-import Unbound.LocallyNameless.Ops (lunbind2)
+--import Unbound.LocallyNameless.Ops (lunbind2)
 
 import Control.Applicative
 import Control.Monad.Writer hiding (join)
@@ -64,12 +64,12 @@ unbind2M :: (MonadPlus m, Fresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
          -> m (p1, t1, p2, t2)
 unbind2M bnd bnd' = maybe mzero return =<< unbind2 bnd bnd'
 
-lunbind2M :: (MonadPlus m, LFresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
-         => GenBind order card p1 t1
-         -> GenBind order card p2 t2
-         -> ((p1, t1, p2, t2) -> m r) -> m r
-lunbind2M bnd bnd' k =          
-  lunbind2 bnd bnd' $ maybe mzero k 
+-- lunbind2M :: (MonadPlus m, LFresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
+--          => GenBind order card p1 t1
+--          -> GenBind order card p2 t2
+--          -> ((p1, t1, p2, t2) -> m r) -> m r
+-- lunbind2M bnd bnd' k =          
+--   lunbind2 bnd bnd' $ maybe mzero k 
 
 -- Precondition: all the ANames are fresh.  If we had
 --   conv a by b1 ... bM at x1 ... xM . A : B
@@ -404,16 +404,25 @@ astep (AApp eps a b ty) = do
                   (ARec _ _ bnd) -> do
                     ((f,x),body) <- unbind bnd
                     return . Just . subst f a $ subst x b body
-                  (AInd tyInd@(AArrow i ex _ tyBnd) _ bnd) -> do
-                    ((tyVar,ty1),ty2) <- unbind tyBnd
-                    ((f,x),body) <- unbind bnd
-                    y <- fresh $ string2Name "y"
-                    p <- fresh $ string2Name "p"
-                    let tyArr2 = AArrow i ex Erased $ bind (p, embed $ ASmaller (AVar y) b) ty2
-                        lam   = ALam Logic (AArrow i ex Runtime $ bind (tyVar,ty1) tyArr2) Runtime . bind y
-                              . ALam Logic tyArr2                                        Erased  . bind p
-                              $ AApp Erased (AApp Runtime a (AVar y) tyInd) (AVar p) ty2
-                    return . Just . subst f lam $ subst x b body
+                  (AInd tyInd@(AArrow i ex epsArr tyBnd) _ bnd) -> do
+                    -- We can't use unbind2 here, because bnd and tyBnd have
+                    -- different numbers of variables.
+                    ((f,x),body)                    <- unbind bnd
+                    ( (tyVar,unembed -> ty1),
+                      subst tyVar (AVar x) -> ty2 ) <- unbind tyBnd
+                    x'                              <- fresh x
+                    p                               <- fresh $ string2Name "p"
+                    let tyArr2 = AArrow i ex       epsArr . bind (x', embed $ ty1)
+                               $ tyArr1
+                        tyArr1 = AArrow i Inferred Erased . bind (p,  embed $ ASmaller (AVar x) (AVar x'))
+                               $ ty2
+                        lam    = ALam Logic tyArr2 epsArr   . bind x
+                               . ALam Logic tyArr1 Erased   . bind p
+                               $ AApp epsArr a (AVar x) ty2
+                    let note msg val = liftIO $ do
+                          putStrLn $ "* " ++ msg ++ " *"
+                          print $ disp val
+                    return . Just . subst x b $ subst f lam body
                   _ -> return Nothing
 
 astep (AAt _ _) = return Nothing
