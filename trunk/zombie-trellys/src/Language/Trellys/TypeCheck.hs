@@ -143,8 +143,8 @@ ta (Join s1 s2) (ATyEq a b) =
   do t1E <- erase =<< substDefs a
      t2E <- erase =<< substDefs b
      -- Test the astep code
-     testReduction =<< substDefs a
-     testReduction =<< substDefs b
+     --testReduction =<< substDefs a
+     --testReduction =<< substDefs b
      -- End astep test
      joinable <- join s1 s2 t1E t2E
      unless joinable $
@@ -1101,7 +1101,6 @@ getAvailableEqs = do
 --  Also, unlike haskell, we want to signal an error for non-exhaustive matches.
 -----------------------------------------
 
-
 {- Problems to be fixed:
     * The treatment of equations for the scrutinees is dubious. 
       The named equation should actually equate the scrutinee with the full nested pattern.
@@ -1146,6 +1145,8 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
   (th_unadjusted, sTy_unadjusted) <- getType s_unadjusted
   (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
+  when (null alts && not (null cons)) $
+    err [DS "Patterns in case-expression not exhaustive."]
   let buildMatch :: AConstructorDef -> TcMonad (AMatch, Theta)
       buildMatch (AConstructorDef c args) = do
         relevantAlts <- filter (\(p,_) -> case p of 

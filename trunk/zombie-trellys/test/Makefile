@@ -59,7 +59,8 @@ fail:
 	@./expect_error DeepMatchError3 "should take 1 constructors,"
 	@./expect_error DeepMatchError4 "wrong epsilons on arguments in pattern"
 	@./expect_error DeepMatchError5 "Each branch should have 2 patterns, but"
-	@./expect_error DeepMatchError6 "Patterns in case-expression not exhaustive."
+	@./expect_error DeepMatchNonExhaustive1 "Patterns in case-expression not exhaustive."
+	@./expect_error DeepMatchNonExhaustive2 "Patterns in case-expression not exhaustive."
 
 todo_pass: $(foreach f,$(TODO_PASS),$(f).pass)
 todo_fail: $(foreach f,$(TODO_FAIL),$(f).fail)
@@ -74,8 +75,8 @@ todo: todo_pass todo_fail
 
 %.pass-parallel:	%.trellys
 	@echo -n "$<: "
-	@if ! $(TYPECHECK) --parallel $<; then echo "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
+	@if ! $(TYPECHECK) --parallel $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 %.fail: %.trellys
 	@echo -n "$<: "
-	@if $(TYPECHECK) $<; then echo "\033[1;31mpassed\033[0;30m (should fail)" >&2; else echo; fi
+	@if $(TYPECHECK) $<; then echo -e "\033[1;31mpassed\033[0;30m (should fail)" >&2; else echo; fi
