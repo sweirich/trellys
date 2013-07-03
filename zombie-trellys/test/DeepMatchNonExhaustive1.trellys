@@ -1,0 +1,23 @@
+-- signal an error of pattern matches are not exhaustive. 
+module DeepMatchError6 where
+import Prelude 
+
+data A : Type 0 where
+  A1 
+  A2 of (x : A) (y : A)
+
+data B : Type 0 where
+  B1 of (x : A) 
+  B2 of (x : B) (y : B)
+
+log ab : B -> Nat
+ab = \ x.
+  case x [_] of
+    B2 (B1 (A2 _ A1)) (B1 _) -> 0
+    B1 (A2 _ A1) -> 1
+    B1 (A2 A1 _) -> 2
+    B1 (A2 (A2 _ _)  _)  -> 3
+    B2 (B1 _) (B1 A1) -> 4
+    B1 _ -> 5
+    B2 (B1 (A2 _ _)) (B1 _) -> 6
+--    B2 _ _ -> 7
