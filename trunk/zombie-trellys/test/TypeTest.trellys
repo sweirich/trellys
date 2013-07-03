@@ -2,11 +2,6 @@ module TypeTest where
 
 import Prelude
 
-
-data Nat : Type 0 where
- Zero 
- Succ of (x:Nat) 
-
 x = 1
 
 y = 1
@@ -49,11 +44,6 @@ ind mult x = \y .
    	 Zero -> Zero
    	 Succ m -> add y (mult m [ord z] y)
 
-data Bool : Type 0 where
-   True 
-   False
-
-
 data Id (a : Type 0@log) : Type 0 where
   IdC
 
@@ -67,7 +57,6 @@ id = \ [aTy] a . a
 
 
 z = id [Nat] Zero
-
 
 v2 = pred 0 -- (VNil [Nat])
 

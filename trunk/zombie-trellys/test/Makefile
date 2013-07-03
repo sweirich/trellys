@@ -62,6 +62,8 @@ fail:
 	@./expect_error DeepMatchNonExhaustive1 "Patterns in case-expression not exhaustive."
 	@./expect_error DeepMatchNonExhaustive2 "Patterns in case-expression not exhaustive."
 
+extraction: $(foreach p,$(PASS),$(p).extraction) 
+
 todo_pass: $(foreach f,$(TODO_PASS),$(f).pass)
 todo_fail: $(foreach f,$(TODO_FAIL),$(f).fail)
 todo: todo_pass todo_fail
@@ -71,6 +73,10 @@ todo: todo_pass todo_fail
 %.pass:	%.trellys
 	@echo -n "$<: "
 	@if ! $(TYPECHECK) $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
+
+%.extraction:	%.trellys
+	@echo -n "$< (testing extraction)"
+	@if ! ($(TYPECHECK) --extraction $< && ocamlc -w -A $*.ml); then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 
 %.pass-parallel:	%.trellys

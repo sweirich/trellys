@@ -12,7 +12,8 @@ options = [Option "p" ["picky equality"] (NoArg PickyEq) "use strongly typed equ
            Option ""  ["parallel"] (NoArg UseParallelReduction) "use parallel (rather than CBV) reduction for join",
            Option ""  ["no-tc-core"] (NoArg NoTypeCheckCore) "suppress type checking the core language", 
            Option ""  ["non-logical-types"] (NoArg NonLogicalTypes) 
-                         "do not force all types to be logical"
+                         "do not force all types to be logical",
+           Option "e" ["extraction"] (NoArg DoExtraction) "extract to OCaml code"
           ]
 
 data Flag = PickyEq
@@ -21,6 +22,7 @@ data Flag = PickyEq
           | Reduce
           | LibDir FilePath
           | UseParallelReduction
-          | NonLogicalTypes  
+          | NonLogicalTypes
+          | DoExtraction
           | SecondPass   --used internally, when we re-check the elaborated core term. 
   deriving (Eq,Show,Read)

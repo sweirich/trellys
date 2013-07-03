@@ -181,7 +181,7 @@ bad_test2 = bad_unify [3] (And (And (Var a) (Var b)) (And (Var b) (Var a))) (And
 bad_test3 = bad_unify [3] (And (Var a) (And (Var b) (Lit True))) (And (Var a) (And (Var b) (Var b))) msubst
 
 -- note 10,000 is not enough!
-foo = (join 1000000 : bad_test1 = (Nothing : Maybe Bool))
+--foo = (join 1000000 : bad_test1 = (Nothing : Maybe Bool))
 
 -- The correct version, also from the same paper
 -- The difference is that this version maintains the invariant that the substitution is non-circular. 

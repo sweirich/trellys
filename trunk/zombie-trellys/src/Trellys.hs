@@ -11,6 +11,7 @@ import Language.Trellys.TypeCheckCore (aTcModules)
 import Language.Trellys.OpSem
 import Language.Trellys.AOpSem
 import Language.Trellys.Environment
+import Language.Trellys.Extraction
  
 import Text.PrettyPrint.HughesPJ (render, text, fsep)
 import Text.ParserCombinators.Parsec.Error
@@ -18,7 +19,7 @@ import Text.ParserCombinators.Parsec.Error
 import System.Environment(getArgs)
 import System.Console.GetOpt
 import System.Exit
-import System.FilePath (splitFileName)
+import System.FilePath (splitFileName, replaceExtension)
 
 import Control.Monad
 import Control.Monad.Error (runErrorT)
@@ -60,7 +61,20 @@ main = do
                                   exitFailure
                             Right _ -> do
                               putStrLn "Type check successful."
-                              exitSuccess
+                        when (DoExtraction `elem` flags) $ do
+                          putStrLn "Extracting to OCaml code"
+                          result <- runTcMonad (emptyEnv flags) (extractModules defs)
+                          case result of
+                            Left typeError -> do
+                                  putStrLn "Internal error, extraction failed:"
+                                  putStrLn $ render $ disp typeError
+                                  exitFailure
+                            Right extracted -> do                                        
+                                  writeFile (replaceExtension pathToMainFile "ml") 
+                                            (render extracted)
+                        exitSuccess
+
+
 --fixme: bring back the "Reduce" flag?
 {-
                         if (Reduce `elem` flags)
