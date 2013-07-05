@@ -231,7 +231,6 @@ getDefaultTheta = asks defaultTheta
 withDefaultTheta :: MonadReader Env m => Maybe Theta -> m a -> m a
 withDefaultTheta dth = local (\m -> m { defaultTheta = dth })
 
-
 getDefs :: MonadReader Env m => m [(AName,ATerm)]
 getDefs = do
   ctx <- getCtx

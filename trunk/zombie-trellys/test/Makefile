@@ -18,7 +18,7 @@ PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees 
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
-     BasicOrd DeepMatch CongruenceTests
+     BasicOrd DeepMatch CongruenceTests UnfoldTests
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.

@@ -6,12 +6,11 @@ module Language.Trellys.Modules(getModules, writeAModules) where
 import Language.Trellys.Options
 import Language.Trellys.Syntax
 import Language.Trellys.Parser(parseModuleFile, parseModuleImports)
-
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ (render)
-
 import Language.Trellys.GenericBind
 
+import Prelude hiding (mod)
+import Text.PrettyPrint.HughesPJ (render)
 import Text.ParserCombinators.Parsec.Error
 import Control.Applicative 
 import Control.Monad.Error

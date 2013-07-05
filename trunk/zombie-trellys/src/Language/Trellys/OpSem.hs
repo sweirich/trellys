@@ -19,9 +19,8 @@ import Language.Trellys.GenericBind
 import Control.Applicative 
 import Control.Monad hiding (join)
 import Data.List (find)
-import Data.Map (Map)
-import qualified Data.Map as M
-import qualified Generics.RepLib as RL
+--import Data.Map (Map)
+--import qualified Data.Map as M
 
 ---------------------------------------------------------------
 -- Erasing core terms. 
@@ -106,6 +105,7 @@ eraseToHead (AConv a _ _ _) = eraseToHead a
 eraseToHead (ASubstitutedFor a _) = eraseToHead a
 eraseToHead a = a
 
+{-
 -- Tries to undo the effect of substDefs. This is slow, but it's only
 -- called when printing the error message for join failure.
 unsubstDefsWith :: (Map ETerm EName) -> ETerm -> ETerm
@@ -119,6 +119,7 @@ getInvDefs :: TcMonad (Map ETerm EName)
 getInvDefs = do
   defs <- getDefs
   M.fromList <$> (mapM (\(x,a) -> (,) <$> erase a <*> pure (translate x)) defs)
+-}
 
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
@@ -129,19 +130,23 @@ join s1 s2 m n = do
   n' <- nsteps s2 n
   let joined = m' `aeq` n'
   unless joined $ do
-    invDefs <- getInvDefs
+    --invDefs <- getInvDefs
     warn [DS "Join failure:",
-          DD m, DS ("reduces in "++show s1++" steps to"), 
-          DD (unsubstDefsWith invDefs m'),
+          DD m, DS ("reduces in "++show s1++" steps to"),  DD m',
+          --DD (unsubstDefsWith invDefs m'),
           DS "and",
-          DD n, DS ("reduces in "++show s2++" steps to"), 
-          DD (unsubstDefsWith invDefs n')]
+          DD n, DS ("reduces in "++show s2++" steps to"),  DD n'
+          --DD (unsubstDefsWith invDefs n')
+         ]
   return joined
 
 -- | Small-step semantics.
 -- Returns Nothing when the argument cannot reduce 
 cbvStep :: ETerm -> TcMonad (Maybe ETerm)
-cbvStep (EVar _)         = return Nothing
+cbvStep (EVar x)         = do def <- lookupDef (translate x)
+                              case def of 
+                                Nothing -> return Nothing
+                                Just d -> Just <$> (erase d)
 cbvStep (EUniVar _)      = return Nothing
 cbvStep (ETCon c idxs)   = return Nothing
 cbvStep (EDCon c args)   = stepArgs [] args
@@ -171,7 +176,7 @@ cbvStep (EApp a b)       =
                Nothing     ->
          -- These lines are necessary for correctness, but temporarily 
          -- commented out since they break most unit tests...:
-                 -- if (isEValue b) then
+                 --if (isEValue b) then
                    case a of
                      ELam bnd ->
                        do (x,body) <- unbind bnd
@@ -182,9 +187,9 @@ cbvStep (EApp a b)       =
                      EIndPlus bnd ->
                        do ((f,x),body) <- unbind bnd
                           x' <- fresh (string2Name "x")
-                          return $ Just $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
+                          return $ Just $ subst x b $ subst f (ELam (bind x' (EILam (EApp a (EVar x')))))  body
                      _ -> return  Nothing
-                  -- else return Nothing
+                  --else return Nothing
 cbvStep (EIApp a) =
   do stpa <- cbvStep a
      case stpa of 
@@ -262,7 +267,10 @@ cbvNSteps n tm =
 -- binder, when deep==True we don't unfold ind/rec.
 --
 parStep :: Bool -> ETerm -> TcMonad ETerm
-parStep deep a@(EVar _)       = return a
+parStep deep a@(EVar  x)      = do def <- lookupDef (translate x)
+                                   case def of 
+                                     Nothing -> return a
+                                     Just d  -> (erase d)
 parStep deep a@(EUniVar _)    = return a
 parStep deep (ETCon c idxs)   = ETCon c <$> mapM (parStep deep) idxs
 parStep deep (EDCon c args)   = EDCon c <$> mapM (parStep deep) args

@@ -267,10 +267,11 @@ aTs (AArrow k ex ep bnd) = do
 
 aTs (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = do
   unless (epTy == ep) $
-    coreErr [DS "ALam ep"]
+    coreErr [DS "ALam ep"]  
   aKc (AArrow k ex epTy bndTy)  
   Just ((x , unembed -> aTy), bTy , _, b) <- unbind2 bndTy bnd
-  (th', bTy') <- extendCtx (ASig x Program aTy) $ aTs b
+  (th', bTy') <- extendCtx (ASig x Program aTy) $ do    
+    aTs b
   unless (th' <= th) (coreErr [DS "ALam theta annotation mismtach."]) 
   bTyEq <- aeq <$> (erase bTy) <*> (erase bTy')
   unless bTyEq $ do
@@ -330,8 +331,8 @@ aTs (ATyEq a b) = do
 
 aTs (AJoin a i b j) = do
   aKc (ATyEq a b)
-  aE <- erase =<< substDefs a
-  bE <- erase =<< substDefs b
+  aE <- erase a
+  bE <- erase b  
   joinable <- join i j aE bE
   unless joinable $
     coreErr [DS "AJoin: not joinable"]
@@ -772,16 +773,16 @@ aTcEntries :: [ADecl] -> TcMonad ()
 aTcEntries [] = return ()
 aTcEntries (d@(ASig x th aTy) : rest) = do
   aKc aTy
-  extendCtx d $ aTcEntries rest
+  extendCtxsGlobal [d] $ aTcEntries rest
 aTcEntries (d@(ADef x a) : rest) = do
   _ <- aTs a
-  extendCtx d $ aTcEntries rest
+  extendCtxsGlobal [d] $ aTcEntries rest
 aTcEntries (d@(AData t delta lvl constructors) : rest) = do
   aKcTele delta
   extendCtx (AAbsData t delta lvl) $
             mapM_ (\(AConstructorDef c args) -> extendCtxTele delta Program $ aKcTele args) constructors
   mapM_ (aPositivityCheck t) constructors
-  extendCtx d $ aTcEntries rest
+  extendCtxsGlobal [d] $ aTcEntries rest
 aTcEntries (d@(AAbsData t delta lvl) : rest)  = do 
   aKcTele delta
 

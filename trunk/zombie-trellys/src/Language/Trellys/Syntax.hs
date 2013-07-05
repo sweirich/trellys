@@ -529,13 +529,14 @@ splitEApp e = splitEApp' e []
     splitEApp' (EApp t0 t1) acc = splitEApp' t0 ((t1):acc)
     splitEApp' t acc = (t, acc)
 
+
 --------------------
 -- LangLib instances
 --------------------
 
 $(derive [''Epsilon, ''Theta, ''Explicitness, ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
-         ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope])
+         ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope ])
 
 
 instance Alpha Term
@@ -598,3 +599,50 @@ instance Eq ATerm where
   (==) = aeq
 instance Ord ATerm where
   compare = acompare
+
+-----------------------------------------------------------
+-- Equational reasoning proofs, constructed by the 
+-- congruence closure implementation.
+------------------------------------------------------------
+
+{- I try to keep this somewhat minimal. If Haskell had a 
+   ML-like module system I would expose this as a formalized 
+   interface, and CongruenceClosure.hs would be a functor depending on it.
+ -}
+
+-- The unification code needs to be aware of which things are 
+-- unification variables.
+isAUniVar :: ATerm -> Maybe AName
+isAUniVar (AUniVar x _) = Just x
+isAUniVar _ = Nothing
+
+-- | Gather all unification variables that occur in a term.
+uniVars :: ATerm -> Set AName 
+uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere) 
+  where uniVarsHere (AUniVar x _)   = S.singleton x
+        uniVarsHere  _ = S.empty
+
+-- Labels for non-atomic terms.
+type Label = Bind [(AName,Epsilon)] ATerm
+
+instance Eq Label where
+  (==) = aeq
+instance Ord Label where
+  compare = acompare
+
+-- The datatype of proofs. 
+data Proof =
+   --The first component is either Just a proof term which the type elaborator constructed
+   -- (usually just a variable, sometimes unbox applied to a variable),
+   -- or Nothing if an equality holds just by (join) after erasure.
+   -- (The Congruence Closure algorithm will not itself use the RawAssumption constructor,
+   --- but its caller will).
+   RawAssumption (Maybe ATerm, ATerm, ATerm) 
+ | RawRefl
+ | RawSymm Proof
+ | RawTrans Proof Proof
+ | RawCong Label [Proof]
+ deriving (Show,Eq)
+
+
+$(derive [''Proof])

@@ -71,7 +71,7 @@ ind minus_same_zero n =
     case n [n_eq] of
       Zero -> (join : minus 0 0 = 0)
       Succ pred ->
-        let _ = (join 10 : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+        let _ = (join 20 : (minus (Succ pred) (Succ pred)) = minus pred pred) in
           minus_same_zero pred [ord n_eq]
 
 -- n - 0 = n

@@ -66,12 +66,13 @@ instance Disp AConstructorDef where
 -- level, so we could print parenthesis exactly when needed.
 data DispInfo = DI
   {
+  verbose :: Bool, -- ^ should we supress some annotations to reduce clutter?
   dispAvoid :: Set AnyName -- ^ names that have already been used
   }
 
 -- | An empty 'DispInfo' context
 initDI :: DispInfo
-initDI = DI S.empty
+initDI = DI False S.empty
 
 instance LFresh (Reader DispInfo) where
   lfresh nm = do
@@ -104,7 +105,6 @@ class (Alpha t) => Display t where
   -- Default implementations that can be overridden
   showd = render . cleverDisp
   pp    = putStrLn . showd
-
 
 instance Display String where
   display = return . text
@@ -142,10 +142,10 @@ instance Disp Decl where
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
   disp (Sig n th ty) =
-        disp th <+> disp n <+> text ":" <+> disp ty
+        disp th <+> disp n <+> colon <+> disp ty
   disp (Axiom n th ty) =
         text "axiom"
-    <+> disp th <+> disp n <+> text ":" <+> disp ty
+    <+> disp th <+> disp n <+> colon <+> disp ty
 
   disp (Data n params lev constructors) =
     hang (text "data" <+> disp n <+> disp params
@@ -321,7 +321,7 @@ instance Display Term where
   display (Ann a b)    = do
     da <- display a
     db <- display b
-    return $ parens (da <+> text ":" <+> db)
+    return $ parens (da <+> colon <+> db)
 
   display (At ty th) = do 
     da <- display ty
@@ -392,6 +392,19 @@ aWraparg ep b = case b of
                  ADCon _ _ [] [] -> bindParens ep
                  _             -> mandatoryBindParens ep
 
+eWrapf :: ETerm -> Doc -> Doc
+eWrapf a =  case a of
+              EVar _   -> id
+              EApp _ _ -> id
+              _        -> parens
+
+eWraparg :: ETerm -> Doc -> Doc
+eWraparg b = case b of
+               EVar _     -> id
+               ETCon _ [] ->  id
+               EDCon _ [] ->  id
+               _          -> parens
+
 {-
 epParens :: Epsilon -> [DispElem] -> DispElem
 epParens Runtime l = Dd (brackets (displays l))
@@ -410,31 +423,39 @@ instance Display ATerm where
   display (ACumul a level) = display a
   display (AType level) = return $ text "Type" <+> int level
   display (AUnboxVal a) = do
+    isVerbose <- asks verbose                     
     da <- display a
-    return $ text "unbox" <+> aWraparg Runtime a da
+    return $ (if isVerbose
+                then text "unbox" <+> aWraparg Runtime a da
+                else da)
   display (ATCon n params) = do
     dn <- display n
     dparams <- mapM (\a -> aWraparg Runtime a <$> display a) params
     return $ dn <+> hsep dparams
   display (ADCon n th params args) = do
+    isVerbose <- asks verbose
     dn <- display n
     dparams <- mapM (\a -> aWraparg Runtime a <$> (brackets <$> (display a))) params
     dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> (bindParens ep <$> (display a))) args
-    return $ dn <+> text (show th) <+> hsep dparams <+> hsep dargs
+    return $ dn <+> (if isVerbose then text (show th) else empty)
+                <+> hsep dparams <+> hsep dargs
   display (AArrow _ ex ep bnd) = 
     lunbind bnd $ \((n, unembed -> a), b) -> do 
       dn <- display n
       da <- display a
       db <- display b
-      return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
+      return $ (mandatoryBindParens ep $ dn <+> colon <+> da)
                  <+> text (case ex of { Explicit ->  "->" ; Inferred -> "=>" })
                  <+> db
   display (ALam _ ty ep bnd) = 
     lunbind bnd $ \(n, body) -> do
+      isVerbose <- asks verbose
       dty <- display ty     
       dn <- display n
       dbody <- display body
-      return $ text "\\" <+> dn <+> colon <+> dty <+> text "." <+> dbody
+      return $ text "\\" <+> dn 
+        <+> (if isVerbose then colon <+> dty else empty)
+        <+> text "." <+> dbody
   display (AApp ep a b ty) = do 
     da <- display a 
     db <- display b
@@ -443,8 +464,11 @@ instance Display ATerm where
     da <- display a
     return $ da <+> text "@" <+> disp th
   display (ABox a th) = do
+    isVerbose <- asks verbose
     da <- display a
-    return $ text "box" <+> aWraparg Runtime a da
+    return (if isVerbose
+              then text "box" <+> aWraparg Runtime a da
+              else da)
   display (AAbort a) = do
     da <- display a 
     return $ text "abort" <+> da
@@ -459,19 +483,20 @@ instance Display ATerm where
                          <+> parens db <+> disp j
   display (AConv a pfs bnd ty) = 
     lunbind bnd $ \(xs, template) -> do 
+      isVerbose <- asks verbose
       da <- display a
-      dpfs <- mapM display pfs
+      dpfs <- mapM (if isVerbose then display else const (return (text "<proof elided>")))  pfs
       dxs <- mapM display xs
       dtemplate <- display template
       dty <- display ty
       return $ text "conv" <+> da
                 $$ nest 2 (text "by" <+> hsep dpfs)
                 $$ nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate)
-                $$ nest 2 (colon <+> dty)
+                $$ (if isVerbose then nest 2 (colon <+> dty) else empty)
   display (AContra a aTy) = do
     da <- display a
     daTy <- display aTy
-    return $ text "contra" <+> da <+> text ":" <+> daTy
+    return $ text "contra" <+> da <+> colon <+> daTy
   display (AInjDCon a i) = do
     da <- display a 
     return $ text "injectivity" <+> da <+> text (show i)
@@ -489,23 +514,25 @@ instance Display ATerm where
     return $ text "ordtrans" <+> parens da <+> parens db
   display (AInd ty ep bnd) = 
     lunbind bnd $ \((n,m), body) -> do
+      isVerbose <- asks verbose
       dty <- display ty
       dn <- display n
       dm <- display m
       dbody <- display body
       return $ parens (text "ind" <+> dn <+> bindParens ep dm 
-                         <+> text ":" <+> dty
-                         <+> text "."
+                         <+> (if isVerbose then colon <+> dty else empty)
+                         <+> text "="
                         $$ nest 2 dbody)
   display (ARec ty ep bnd) = 
     lunbind bnd $ \((n,m), body) -> do
+      isVerbose <- asks verbose
       dty <- display ty
       dn <- display n
       dm <- display m
       dbody <- display body
       return $ parens (text "rec" <+> dn <+> bindParens ep dm 
-                         <+> text ":" <+> dty
-                         <+> text "."
+                         <+> (if isVerbose then colon <+> dty else empty)
+                         <+> text "="
                         $$ nest 2 dbody)
   display (ALet  ep bnd _) = 
     lunbind bnd $ \((n,m, unembed -> a), b) -> do 
@@ -526,7 +553,7 @@ instance Display ATerm where
       dty <- display ty
       return $ (parens (text "case" <+> da <+> brackets dn <+> text "of" $$
                          nest 2 (vcat dmtchs))
-                 <+> text ":" <> dth <+> dty)
+                 <+> colon <> dth <+> dty)
   display (ADomEq a) = do
     da <- display a 
     return $ text "domeq" <+> aWraparg Erased a da
@@ -555,7 +582,7 @@ instance Display AMatch where
 
 instance Disp ADecl where
   disp (ASig x th ty) = 
-    disp th <+> disp x <+> text ":" <+> disp ty
+    disp th <+> disp x <+> colon <+> disp ty
   disp (ADef x a) = do
     disp x <+> text "=" <+> disp a
   disp (AData n params level constructors) = 
@@ -594,11 +621,11 @@ instance Display ETerm where
   display (EUniVar n) = return $ text ("?" ++ show n)
   display (ETCon n args) = do
     dn <- display n
-    dargs <- mapM display args
+    dargs <- mapM (\a -> eWraparg a <$> (display a)) args
     return $ dn <+> hsep dargs
   display (EDCon n args) = do
     dn <- display n
-    dargs <- mapM display args
+    dargs <- mapM (\a -> eWraparg a <$> (display a)) args
     return $ dn <+> hsep dargs
   display (EType level) = return $ text "Type" <+> int level
   display (EArrow ep a bnd) = do
@@ -606,7 +633,7 @@ instance Display ETerm where
      lunbind bnd $ \ (n,b) -> do
         dn <- display n
         db <- display b
-        return $ (mandatoryBindParens ep $ dn <+> text ":" <+> da)
+        return $ (mandatoryBindParens ep $ dn <+> colon <+> da)
                     <+> text "->" <+> db
   display (ELam  b) =
      lunbind b $ \ (n, body) -> do
@@ -619,24 +646,10 @@ instance Display ETerm where
   display (EApp f x) = do
        df <- display f
        dx <- display x
-       let wrapf = case f of
-                     EVar _     -> id
-                     EApp _ _   -> id
-                     EIApp _    -> id
-                     _          -> parens
-       let wrapx = case x of
-                     EVar _     -> id
-                     ETCon _ [] -> id
-                     EDCon _ [] -> id
-                     _          -> parens
-       return (wrapf df <+> wrapx dx)
+       return (eWrapf f df <+> eWraparg x dx)
   display (EIApp f) = do
        df <- display f
-       let wrapf = case f of
-                     EVar _     -> id
-                     EApp _ _   -> id
-                     _          -> parens
-       return (wrapf df <+> text "[]")
+       return (eWrapf f df <+> text "[]")
   display (EOrdAx) = return $ text "ord"
   display (ESmaller e0 e1) = do
        de0 <- display e0
@@ -645,7 +658,7 @@ instance Display ETerm where
   display (ETyEq e0 e1) = do
        de0 <- display e0
        de1 <- display e1
-       return (de0 <+> text "=" <+> de1)
+       return (eWraparg e0 de0 <+> text "=" <+> eWraparg e1 de1)
   display EJoin = return $ text "join"
   display EAbort = return $ text "abort"
   display (ERecPlus bnd) =
@@ -661,7 +674,7 @@ instance Display ETerm where
         dn <- display n
         dw <- display w
         db <- display body
-        return $ parens ( text "ind" <+> dn <+> brackets (dw)
+        return $ parens ( text "ind" <+> dn <+> dw
                           <+> text "."
                           <+> db )
   display (ERecMinus bnd) =
@@ -730,6 +743,18 @@ instance Display Telescope where
 instance Disp Theta where
   disp Logic = text "log"
   disp Program = text "prog"
+
+instance Disp Proof where
+  disp _ = text "prf"
+
+instance Disp Label where
+  disp bnd = 
+   let (vars, body) = unsafeUnbind bnd in
+     text "<" <> hsep (map disp vars) <> text ">." <+> disp body
+
+instance Disp (AName, Epsilon) where
+  disp (x,Runtime) = disp x
+  disp (x,Erased) = brackets (disp x)
 
 -- Assumes that all terms were opened safely earlier.
 instance Rep a => Display (Name a) where

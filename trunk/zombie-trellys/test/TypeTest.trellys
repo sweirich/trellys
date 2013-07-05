@@ -211,7 +211,7 @@ ind plusZero' a =
                  conv (join 0 : add' a 0 = add' a 0) 
                    by aeq
                    at h.add' a 0 = add' h 0
-               by (join 7 : ((add' (Succ x) 0) = let y[yeq] = (add' x 0) in Succ y))
+               by (join 8 : ((add' (Succ x) 0) = let y[yeq] = (add' x 0) in Succ y))
                at h.add' a 0 = h
              by (join 5 : (let y[yeq] = (add' x 0) in Succ y) = (let y[yeq] = add' x 0 in Succ y))
              at h.add' a 0 = h

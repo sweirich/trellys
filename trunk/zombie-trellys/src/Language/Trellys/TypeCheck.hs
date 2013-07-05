@@ -13,7 +13,6 @@ import Language.Trellys.Syntax
 
 import Language.Trellys.PrettyPrint(Disp(..))
 import Language.Trellys.OpSem
-import Language.Trellys.AOpSem (astep, asteps)
 
 import Language.Trellys.Options
 import Language.Trellys.Environment
@@ -21,6 +20,7 @@ import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 import Language.Trellys.EqualityReasoning
 import Language.Trellys.TypeCheckCore
+import Language.Trellys.TestReduction
 
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
@@ -28,8 +28,6 @@ import Text.PrettyPrint.HughesPJ
 import Control.Applicative ((<$>), (<*>), pure)
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
---import Control.Monad.State  hiding (join)
-import Control.Arrow ((&&&), Kleisli(..))
 
 import Language.Trellys.GenericBind
 
@@ -140,8 +138,13 @@ ta (UniVar x) ty = return (AUniVar (translate x) ty)
 ta (Join s1 s2) (ATyEq a b) =
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
-  do t1E <- erase =<< substDefs a
+  do 
+     t1E <- erase a
+     t2E <- erase b
+{-
+     t1E <- erase =<< substDefs a
      t2E <- erase =<< substDefs b
+-}
      -- Test the astep code
      --testReduction =<< substDefs a
      --testReduction =<< substDefs b
@@ -375,16 +378,18 @@ ta (Let th' ep bnd) tyB =
             (max th th', tyB))
 
     -- Elaborating 'unfold' directives; checking version
-
 ta (Unfold n a b) tyB = do
-   (ea, _) <- ts a
-   (th, _) <- getType ea
-   ea' <- asteps n ea 
-   x   <- fresh $ string2Name "steps"
+   (ea,_)  <- ts a
+   --ea' <- asteps n ea 
+   availableEqs <- getAvailableEqs
+   (ea', p) <- smartSteps availableEqs ea n
+   x   <- fresh $ string2Name "unfolds"
    y   <- fresh $ string2Name "_"
-   eb  <- extendCtx (ASig x Logic (ATyEq ea ea'))
-            $ ta b tyB      
-   return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
+   (eb)  <- extendCtx (ASig x Logic (ATyEq ea ea'))
+                 $ ta b tyB      
+   th <- aGetTh eb
+   --return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
+   return (ALet Runtime (bind (x, y, embed p) eb) (th, tyB))
 
 -- rule T_At
 ta (At ty th') (AType i) = do 
@@ -429,8 +434,9 @@ ta InferMe (ATyEq ty1 ty2) = do
   case pf of
     Nothing -> do
       gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal availableEqs (ATyEq ty1 ty2)),
-           DS "The full local context is", DD gamma]
+      err [DS "I was unable to prove:", DD (Goal availableEqs (ATyEq ty1 ty2))
+--           ,DS "The full local context is", DD gamma
+           ]
     Just p -> do
        pE <- erase p
        if (S.null (fv pE :: Set EName))
@@ -498,6 +504,40 @@ maybeCumul a (eraseToHead -> AType l1) (eraseToHead -> AType l2) =
       else Nothing
 maybeCumul _ _ _ = Nothing
 
+-- coerce a tyA tyB
+-- Tries to use equational reasoning to change tyA to tyB.
+coerce :: ATerm -> ATerm -> ATerm -> TcMonad (Maybe ATerm)
+coerce a tyA tyB = do
+  noCoercions <- getFlag NoCoercions
+  tyA_eq_tyB <- tyA `aeqSimple` tyB
+  if (tyA_eq_tyB)
+    then return (Just a)   --already got the right type.
+    else 
+     -- try to use a cumul
+     case maybeCumul a tyA tyB of
+       Just aCumuled -> return (Just aCumuled)
+       Nothing ->
+        -- try to insert an equality proof.
+        if noCoercions
+         then return Nothing
+         else do
+           context <- getTys
+           availableEqs <- getAvailableEqs
+           let theGoal = (Goal availableEqs (ATyEq tyA tyB))
+           pf <- prove availableEqs (tyA,tyB)
+           case pf of 
+             Nothing -> return Nothing
+             Just p -> do
+                    -- If the two types contained unification variables they may be identical now,
+                    -- in which case we do not need to insert a conversion after all.
+                    ztyA <- zonkTerm tyA
+                    ztyB <- zonkTerm tyB
+                    if (ztyA `aeq` ztyB)
+                      then Just <$> zonkTerm a
+                      else do
+                         x <- fresh (string2Name "x")
+                         Just <$> (zonkTerm $ AConv a [(p,Runtime)] (bind [x] (AVar x)) ztyB)
+
 -- | Checks a list of terms against a telescope of types
 -- with the proviso that each term needs to check at Logic.
 -- Returns list of elaborated terms.
@@ -540,6 +580,14 @@ taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   return $ ((zet,ep1),etTh) : eterms
 taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
 
+-- Expressions which are always synthesized, so we don't gain anything
+-- from checking them against a given type. (partial list, this is a bit of a hack).
+unCheckable :: Term-> Bool
+unCheckable (Var _) = True
+unCheckable (App _ _ _) = True
+unCheckable (Paren t) = unCheckable t
+unCheckable (Pos _ t) = unCheckable t
+unCheckable _ = False
 
 ------------------------------
 ------------------------------
@@ -817,17 +865,6 @@ ts tsTm =
         (Logic, AType i) -> return (AAt ea th',s)
         (Program,AType i) -> err [DS "Types should check at L, but", DD tyA, DS "checks at P"]
         (_,_)             -> err [DS "Argument to @ should be a type, here it is", DD tyA, DS "which has type", DD s]
-
-    -- Elaborating 'unfold' directives; synthesising version
-    ts' (Unfold n a b) = do
-      (ea, _) <- ts a
-      (th, _) <- getType ea
-      ea' <- asteps n ea 
-      x <- fresh $ string2Name "steps"
-      y <- fresh $ string2Name "_"
-      (eb,tyB) <- extendCtx (ASig x Logic (ATyEq ea ea'))
-                    $ ts b      
-      return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th,tyB), tyB)
 
     ts' tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
                     DS "Please add an annotation.",
@@ -1258,50 +1295,3 @@ matchPat (ComplexMatch bnd) = do
   ((pat:pats), body) <- unbind bnd
   return (pat, ComplexMatch $ bind pats body)
 
-
-------------- Some test code to exercise the annotated reduction semantics ----------
-
--- step the term until it's stuck.
-reductionPath :: (a -> TcMonad (Maybe a)) -> a -> TcMonad [a]
-reductionPath step a = do
-  ma' <- step a
-  case ma' of 
-    Nothing -> return [a]
-    Just a' ->  (a : ) <$> reductionPath step a'
-
-newtype ReductionPath a = ReductionPath [a]
-
--- Printing reduction sequences
-instance Disp a => Disp (ReductionPath a) where
-  disp (ReductionPath path) = foldr (\x y -> x $$ text "--->" $$ y) empty (map disp path)
-
-data AndTheErasureIs = AndTheErasureIs ATerm ETerm
-
-instance Disp AndTheErasureIs where
-  disp (a `AndTheErasureIs` t) = 
-      disp a $$ parens (text "erased version:" $$ disp t)
-
-testReduction :: ATerm -> TcMonad ()
-testReduction a = do
-  apath <- reductionPath astep a
-  eLastA <- erase (last apath)
-  eA <- erase a
-  aEpath <- reductionPath cbvStep eA
-  let lastEA = last aEpath
-  apathAnn <- mapM ((return . uncurry AndTheErasureIs) <=< runKleisli (Kleisli return &&& Kleisli erase)) apath
-  unless (eLastA `aeq` lastEA) $ do
-    liftIO $ putStrLn "Oops, mismatch between annotated and erased semantics"
-    liftIO $ putStrLn $ render (text "Erased reduction path:" $$ disp (ReductionPath aEpath))
-    liftIO $ putStrLn $ render (text "Annotated reduction path:" $$ disp (ReductionPath apathAnn))
-    err [DS "Something went wrong, see above"]
-
---Print the reductions
-printReductionPath :: ATerm -> TcMonad ()
-printReductionPath a = do
-  liftIO $ putStrLn $ render (disp a)
-  ma' <- astep a
-  case ma' of 
-    Nothing -> return ()
-    Just a' -> do
-                 liftIO $ putStrLn "---->"
-                 printReductionPath a'
