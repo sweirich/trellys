@@ -4,7 +4,9 @@
     UndecidableInstances, OverlappingInstances, TypeSynonymInstances, 
     TupleSections, TypeFamilies #-}
 
-module Language.Trellys.EqualityReasoning (prove, uneraseTerm, zonkTerm, zonkTele) where
+module Language.Trellys.EqualityReasoning 
+  (prove, uneraseTerm, smartSteps, zonkTerm, zonkTele) 
+where
 
 import Generics.RepLib hiding (Arrow,Con,Refl)
 import qualified Generics.RepLib as RL
@@ -14,6 +16,8 @@ import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(UniVarBindings, setUniVars)
 import Language.Trellys.OpSem(erase, eraseToHead)
+import Language.Trellys.AOpSem (astep)
+import Language.Trellys.TypeCheckCore (aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
@@ -27,74 +31,15 @@ import Data.Set (Set)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Map (Map)
-import Data.Function (on)
-import Data.Ix
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
+import Data.Function (on)
+import Data.Ix
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
 import Debug.Trace
-
--- A convenient monad for recording an association between terms and constants.
--- While we are at it, also record what free unification variables various terms have.
-newtype NamingT t m a = NamingT (StateT (--record the mapping
-                                         Bimap t Constant,
-                                         --list of already allocated constants, and they unification variables.
-                                         [(Constant,Maybe AName,Set AName)],
-                                         --supply of fresh constants
-                                         [Constant]) 
-                                        m a)
-  deriving (Monad, MonadTrans, Functor, Applicative)
-
-instance Fresh m => Fresh (NamingT t m) where
-  fresh = lift . fresh
-
-recordName :: (Monad m, Ord t) => t -> Maybe AName -> Set AName -> NamingT t m Constant
-recordName t x evars = 
-    NamingT $ do
-               (mapping, allocated, (c:cs)) <- get
-               case BM.lookup t mapping of
-                 Nothing -> do put (BM.insert t c mapping, (c,x,evars):allocated, cs)
-                               return c
-                 Just c' -> return c'
-
-runNamingT :: (Monad m) => NamingT t m a -> [Constant] -> m (a, Bimap t Constant, [(Constant,Maybe AName, Set AName)])
-runNamingT (NamingT m) constantSupply = do
-  (a, (mapping, touchable, supply)) <- runStateT m (BM.empty, [], constantSupply) 
-  return (a, mapping, touchable)
-
-type TermLabel = Bind [(AName,Epsilon)] ATerm
-
-instance Eq TermLabel where
-  (==) = aeq
-instance Ord TermLabel where
-  compare = acompare
-
--- This data type just records the operations that the congruence closure algorithm 
--- performs. It is useful to construct this intermediate structure so that we don't have
--- to traverse the proof multiple times when pushing in Symm
-data RawProof =
-   --The first component is either Just a proof term which the type elaborator constructed
-   -- (usually just a variable, sometimes unbox applied to a variable),
-   -- or Nothing if an equality holds just by (join) after erasure.
-   RawAssumption (Maybe ATerm, ATerm, ATerm) 
- | RawRefl
- | RawSymm RawProof
- | RawTrans RawProof RawProof
- | RawCong TermLabel [RawProof]
-  deriving (Show,Eq)
-
-$(derive [''RawProof])
-
-instance Proof RawProof where
-  type Label RawProof = TermLabel
-  type CName RawProof = AName
-  refl _ = RawRefl
-  symm = RawSymm
-  trans = RawTrans 
-  cong = RawCong 
 
 -- ********** ASSOCIATION PHASE 
 -- In a first pass, we associate all uses of trans to the right, which
@@ -103,7 +48,7 @@ instance Proof RawProof where
 -- This is important because such ineffecient proofs are
 -- often introduced by the union-find datastructure.
 
-associateProof :: RawProof -> RawProof
+associateProof :: Proof -> Proof
 associateProof (RawAssumption h) = RawAssumption h
 associateProof RawRefl = RawRefl
 associateProof (RawSymm p) = RawSymm (associateProof p)
@@ -111,17 +56,17 @@ associateProof (RawTrans p q) = rawTrans (associateProof p) (associateProof q)
 associateProof (RawCong l ps) = RawCong l (map associateProof ps)
 
 -- This is a smart constructor for RawTrans
-rawTrans :: RawProof -> RawProof -> RawProof
+rawTrans :: Proof -> Proof -> Proof
 rawTrans RawRefl p = p
 rawTrans (RawTrans p q) r = maybeCancel p (rawTrans q r)
-  where maybeCancel :: RawProof -> RawProof -> RawProof
+  where maybeCancel :: Proof -> Proof -> Proof
         maybeCancel p           (RawTrans (RawSymm q) r) | p==q = r
         maybeCancel (RawSymm p) (RawTrans q r)           | p==q = r
         maybeCancel p q = RawTrans p q
 rawTrans p q = RawTrans p q
 
 -- ********** SYMMETRIZATION PHASE
--- Next we simplify the RawProofs into this datatype, which gets rid of
+-- Next we simplify the Proofs into this datatype, which gets rid of
 -- the Symm constructor by pushing it up to the leaves of the tree.
 
 data Orientation = Swapped | NotSwapped
@@ -130,10 +75,10 @@ data Raw1Proof =
    Raw1Assumption Orientation (Maybe ATerm, ATerm, ATerm)
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
- | Raw1Cong TermLabel [Raw1Proof]
+ | Raw1Cong Label [Raw1Proof]
   deriving Show
 
-symmetrizeProof :: RawProof -> Raw1Proof
+symmetrizeProof :: Proof -> Raw1Proof
 symmetrizeProof (RawAssumption h) = Raw1Assumption NotSwapped h
 symmetrizeProof (RawSymm (RawAssumption h)) = Raw1Assumption Swapped h
 symmetrizeProof RawRefl = Raw1Refl
@@ -332,6 +277,18 @@ symmTerm tyA tyB p = do
   x <- fresh (string2Name "x")
   return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
 
+-- From (tyA=tyB), conclude [tyA/x]template = [tyB/x]template
+-- For simplicity this function doesn't handle n-ary conv or erased subterms.
+congTerm :: (ATerm,ATerm,ATerm) -> AName -> ATerm -> TcMonad ATerm
+congTerm (tyA,tyB,pf) x template = do
+  y <- fresh $ string2Name "y"  --need a fresh var in case tyB == (AVar hole)
+  return (AConv (AJoin (subst x tyA template) 0 
+                       (subst x tyA template) 0)
+                [(pf,Runtime)]
+                (bind [y] (ATyEq (subst x tyA template) (subst x (AVar y) template)))
+                (ATyEq (subst x tyA template)
+                       (subst x tyB template)))
+
 ----------------------------------------
 -- Dealing with unification variables.
 ----------------------------------------
@@ -357,12 +314,6 @@ zonkWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
         zonkTermOnce a = a
 
 
--- | Gather all unification variables that occur in a term.
-uniVars :: ATerm -> Set AName 
-uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere) 
-  where uniVarsHere (AUniVar x _)   = S.singleton x
-        uniVarsHere  _ = S.empty
-
 -- 'decompose False avoid t' returns a new term 's' where each immediate
 -- subterm of 't' that does not mention any of the variables in 'avoid'
 -- has been replaced by a fresh variable. The mapping of the
@@ -370,8 +321,6 @@ uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere)
 -- the variable occurs in an unerased position or not.
 -- The boolean argument tracks whether we are looking at a subterm or at the original term,
 -- the epsilon tracks whether we are looking at a subterm in an erased position of the original term.
-
-
 
 decompose :: (Monad m, Applicative m, Fresh m) => 
              Bool -> Epsilon -> Set AName -> ATerm -> WriterT [(Epsilon,AName,ATerm)] m ATerm
@@ -561,54 +510,37 @@ matchMatch vars (AMatch _ bnd) (AMatch _ bnd') = do
 mUnion :: (Applicative m, Ord k) => m (Map k a) -> m (Map k a) -> m (Map k a)
 mUnion x y = M.union <$> x <*> y
 
--- A monad for naming subterms and recording term-subterm equations.
-type DestructureT m a = WriterT [(RawProof, Equation TermLabel)] (NamingT ATerm m) a
-
-isAUniVar :: ATerm -> Bool
-isAUniVar (AUniVar _ _) = True
-isAUniVar _ = False
 
 -- Take a term to think about, and name each subterm in it as a seperate constant,
--- while at the same time recording equations relating terms to their subterms.
+-- while at the same time propagating equations relating terms to their subterms.
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
-genEqs :: (Monad m, Applicative m, Fresh m) => ATerm -> DestructureT m Constant
+genEqs :: (Monad m, Applicative m, Fresh m) => ATerm -> StateT ProblemState m Constant
 genEqs t = do
-  let mx = case t of 
-              (AUniVar x _) -> Just (translate x)
-              _             -> Nothing
-  a <- lift $ recordName t mx (S.map translate (uniVars t))
+  a <- recordName t
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
   let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
   bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
   let label = (bind (map (\(ep,name,term)->(name,ep)) ss) s)
-  tell [(RawRefl,
-         Right $ EqBranchConst label bs a)]
+  propagate [(RawRefl,
+             Right $ EqBranchConst label bs a)]
 
   when (not (null ssRuntime)) $ do
     --If the head of t is erased, we record an equation saying so.
     sErased <- erase s
     let ((_,x,s1):_) = ssRuntime
     when (sErased `aeq` EVar (translate x)) $
-      tell [(RawAssumption (Nothing, t, s1),
-             Left $ EqConstConst a (head bs))]
+      propagate [(RawAssumption (Nothing, t, s1),
+                 Left $ EqConstConst a (head bs))]
   return a
-
-runDestructureT :: (Monad m) => 
-                   DestructureT m a -> m ([(RawProof, Equation TermLabel)], Bimap ATerm Constant, [(Constant,Maybe AName,Set AName)], a)
-runDestructureT x = do
-  ((a, eqs), bm, allocated) <- flip runNamingT constantSupply $ runWriterT x
-  return (eqs, bm, allocated, a)
- where constantSupply :: [Constant]
-       constantSupply = map Constant [0..]  
 
 -- Given a binding in the context, name all the intermediate terms in its type.
 -- If the type is an equation, we also add the equation itself.
-processHyp :: (Monad m, Applicative m, Fresh m) => (Theta,ATerm, ATerm) -> DestructureT m ()
+processHyp :: (Monad m, Applicative m, Fresh m) => (Theta,ATerm, ATerm) -> StateT ProblemState m ()
 processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
   a1 <- genEqs t1
   a2 <- genEqs t2
-  tell [(RawAssumption (Just n,t1,t2), 
-         Left $ EqConstConst a1 a2)]
+  propagate [(RawAssumption (Just n,t1,t2), 
+             Left $ EqConstConst a1 a2)]
 processHyp (th,n,t) = genEqs t >> return ()
 
 traceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
@@ -616,39 +548,33 @@ traceFun naming msg (WantedEquation c1 c2) =
         trace (msg ++ " "    ++ (render (parens (disp (naming BM.!> c1))))
                    ++ " == " ++ (render (parens (disp (naming BM.!> c2)))))
 
-noTraceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
-noTraceFun naming msg eq = id
-
+noTraceFun :: String -> WantedEquation -> a -> a
+noTraceFun msg eq = id
 
 -- "Given the context, please prove this other equation."
 prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
 prove hyps (lhs, rhs) = do
-  (eqs, naming, allocated, (c1,c2))  <- runDestructureT $ do
-                                          mapM_ processHyp hyps
-                                          c1 <- genEqs lhs
-                                          c2 <- genEqs rhs
-                                          return $ (c1,c2)
-{-  liftIO $ do
-    putStrLn $ "The available equations are:\n"
-    putStrLn $ intercalate "\n" (map (render . disp) eqs)
-    putStrLn $ "The equation to show is " ++ show c1 ++ " == " ++ show c2  -}
-  let sts = flip execStateT (newState allocated) $ do
-              propagate eqs
-              unify (noTraceFun naming) S.empty [WantedEquation c1 c2]
+  ((c1,c2),st1) <- flip runStateT newState $ do
+                     mapM_ processHyp hyps
+                     c1 <- genEqs lhs
+                     c2 <- genEqs rhs
+                     return (c1,c2)
+  let sts = flip execStateT st1 $ do
+              unify noTraceFun S.empty [WantedEquation c1 c2]
   case sts of
     [] -> return Nothing
     st:_ -> 
-       let bndgs = M.map (naming BM.!>)  (bindings st)
-           pf = (proofs st) M.! (WantedEquation c1 c2) in
+       let bndgs = M.map ((naming st) BM.!>)  (bindings st)
+           pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
+                                                (naming st BM.! rhs)) in
         do
-
+{-
          let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
          let symmetrized = symmetrizeProof zonkedAssociated
          fused <- fuseProof symmetrized
          checked <- checkProof lhs rhs fused
          let simplified = simplProof checked
 
-{-
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
          liftIO $ putStrLn $ "Proof is: \n" ++ show pf
          liftIO $ putStrLn $ "Associated: \n" ++ show zonkedAssociated
@@ -667,28 +593,237 @@ prove hyps (lhs, rhs) = do
                   . zonkWithBindings bndgs) pf
          return $ Just tm
 
+
+-------------------------------------------------------
+
+-- A CBV-evaluation context. The name marks the hole, e.g.
+--   CbvContext x (AApp (AVar x) (AVar y))
+-- represents the context ([] y).
+data CbvContext = CbvContext AName ATerm
+
+data ValueFlavour = AnyValue | FunctionValue | ConstructorValue
+  deriving (Show,Eq) 
+
+valueFlavour :: ValueFlavour -> ATerm -> Bool
+valueFlavour AnyValue = isAnyValue
+valueFlavour FunctionValue = isFunctionValue
+valueFlavour ConstructorValue = isConstructorValue
+
+isFunctionValue :: ATerm -> Bool
+isFunctionValue (eraseToHead -> (ALam _ _ _ _)) = True
+isFunctionValue (eraseToHead -> (AInd _ _ _)) = True
+isFunctionValue (eraseToHead -> (ARec _ _ _)) = True
+isFunctionValue _ = False
+
+isConstructorValue :: ATerm -> Bool
+isConstructorValue (eraseToHead -> (ADCon c th params args)) =
+  all (isAnyValue . fst) args
+isConstructorValue _ = False
+
+-- The use of unsafeUnbind is a bit hacky, but I think it's safe if we only
+-- case about the constructor of the term, like here.
+isAnyValue :: ATerm -> Bool
+isAnyValue (ACumul a lvl) = isAnyValue a
+isAnyValue (ADCon c th params args) = all (isAnyValue . fst) args
+isAnyValue (AApp ep a b ty) = False
+isAnyValue (ALet Runtime bnd _) = False
+isAnyValue (ALet Erased (unsafeUnbind -> ((x,xeq,unembed->a),b)) _) = isAnyValue b
+isAnyValue (ACase a bnd _) = undefined
+isAnyValue (ABox a th) = isAnyValue a
+isAnyValue (AConv a pfs bnd resTy) = isAnyValue a
+isAnyValue (ASubstitutedFor a x) = isAnyValue a
+isAnyValue (AUniVar x ty) = True
+isAnyValue (AVar _) = True
+isAnyValue (ATCon _ _) = True
+isAnyValue (AArrow _ _ _ _) = True
+isAnyValue (ALam _ _ _ _) = True
+isAnyValue (AAt _ _) = True
+isAnyValue (AUnboxVal a) = isAnyValue a
+isAnyValue (AAbort _) = True
+isAnyValue (ATyEq _ _) = True
+isAnyValue (AJoin _ _ _ _) = True
+isAnyValue (AInjDCon _ _) = True
+isAnyValue (AContra _ _) = True
+isAnyValue (ASmaller _ _) = True
+isAnyValue (AOrdAx _ _) = True
+isAnyValue (AOrdTrans _ _) = True
+isAnyValue (AInd _ _ _) = True
+isAnyValue (ARec _ _ _) = True
+isAnyValue (ADomEq _) = True
+isAnyValue (ARanEq _ _) = True
+isAnyValue (AAtEq _) = True
+isAnyValue (ANthEq _ _) = True
+isAnyValue (ATrustMe _) = True
+
+{- Split it a term into a CBV evaluation context and a subterm
+   which it is "stuck" on.  Also a predicate describing what things can
+   be plugged into the hole to let the expression make progress.
+   Return None if the term is a value, or if it can already step. -}
+aCbvContext :: ATerm -> TcMonad (Maybe (CbvContext, ValueFlavour, ATerm))
+aCbvContext (ACumul a lvl) = inCtx (\a -> ACumul a lvl) <$> aCbvContext a
+aCbvContext (ADCon c th params args) = go [] args
+  where go _ [] = return Nothing
+        go prefix ((a,ep) :args) | isAnyValue a || ep==Erased = go ((a,ep):prefix) args
+                                 | otherwise = do
+           hole <- fresh (string2Name "hole")
+           return $ Just (CbvContext hole (ADCon c th params (reverse prefix ++ [(AVar hole,Runtime)] ++ args)),
+                          AnyValue,
+                          a)
+aCbvContext (AApp Erased a b ty) = inCtx (\a -> AApp Erased a b ty) <$> aCbvContext a
+aCbvContext (AApp Runtime a b ty) | not (isFunctionValue a) = do
+  hole <- fresh (string2Name "hole")
+  return $ Just (CbvContext hole (AApp Runtime (AVar hole) b ty), FunctionValue, a) 
+aCbvContext (AApp Runtime a b ty) | isFunctionValue a && not (isAnyValue b) = do
+  hole <- fresh (string2Name "hole")
+  return $ Just (CbvContext hole (AApp Runtime a (AVar hole) ty), AnyValue, b)
+aCbvContext (AApp Runtime a b ty) | otherwise = return Nothing
+aCbvContext (ALet Erased bnd ty) = do
+  ((x,xeq,unembed->a), b) <- unbind bnd
+  inCtx (\b -> ALet Erased (bind (x,xeq,embed a) b) ty) <$> aCbvContext b
+aCbvContext (ALet Runtime bnd ty) = do
+  ((x,xeq,unembed->a),b) <- unbind bnd
+  if (isAnyValue a)
+   then return Nothing
+   else do
+     hole <- fresh (string2Name "hole")
+     return $ Just (CbvContext hole (ALet Runtime (bind (x,xeq,embed (AVar hole)) b) ty),
+                    AnyValue,
+                    a)
+aCbvContext (ACase a bnd ty) | not (isConstructorValue a) = do
+  hole <- fresh (string2Name "hole")
+  return $ Just (CbvContext hole (ACase (AVar hole) bnd ty), ConstructorValue, a)
+aCbvContext (ACase a bnd ty) | otherwise = return Nothing
+aCbvContext (ABox a th) = inCtx (\a -> ABox a th) <$> aCbvContext a
+aCbvContext (AConv a pfs bnd resTy) = inCtx (\a -> AConv a pfs bnd resTy) <$> aCbvContext a
+aCbvContext (ASubstitutedFor a x) = inCtx (\a -> ASubstitutedFor a x) <$> aCbvContext a
+-- The rest of the cases are already values:
+aCbvContext (AUniVar x ty) = return Nothing
+aCbvContext (AVar _) = return Nothing
+aCbvContext (ATCon _ _) = return Nothing
+aCbvContext (AArrow _ _ _ _) = return Nothing
+aCbvContext (ALam _ _ _ _) = return Nothing
+aCbvContext (AAt _ _) = return Nothing
+aCbvContext (AUnboxVal _) = return Nothing --already a value.
+aCbvContext (AAbort _) = return Nothing
+aCbvContext (ATyEq _ _) = return Nothing
+aCbvContext (AJoin _ _ _ _) = return Nothing
+aCbvContext (AInjDCon _ _) = return Nothing
+aCbvContext (AContra _ _) = return Nothing
+aCbvContext (ASmaller _ _) = return Nothing
+aCbvContext (AOrdAx _ _) = return Nothing
+aCbvContext (AOrdTrans _ _) = return Nothing
+aCbvContext (AInd _ _ _) = return Nothing
+aCbvContext (ARec _ _ _) = return Nothing
+aCbvContext (ADomEq _) = return Nothing
+aCbvContext (ARanEq _ _) = return Nothing
+aCbvContext (AAtEq _) = return Nothing
+aCbvContext (ANthEq _ _) = return Nothing
+aCbvContext (ATrustMe _) = return Nothing
+
+-- Helper function for aCbvContext
+inCtx :: (ATerm -> ATerm) -> (Maybe (CbvContext, a, b))
+                          -> (Maybe (CbvContext, a, b))
+inCtx ctx Nothing = Nothing
+inCtx ctx (Just (CbvContext hole ctx', flavour, subterm)) =
+           Just (CbvContext hole (ctx ctx'), flavour, subterm)
+
 ---- Some misc. utility functions
 
 firstM :: Monad m => (a -> m b) -> (a,c) -> m (b,c)
 firstM = runKleisli . first . Kleisli
 
-instance Disp (RawProof, Equation TermLabel) where 
-  disp (p, eq) = disp p <+> text ":" <+> disp eq
-
-instance Disp RawProof where
-  disp _ = text "prf"
-
 instance Disp EqConstConst where
   disp (EqConstConst a b) = text (show a) <+> text "=" <+> text (show b)
 
-instance Disp (EqBranchConst TermLabel) where
+instance Disp (EqBranchConst) where
   disp (EqBranchConst label bs a) = parens (disp label) <+> hsep (map (text . show) bs) <+> text "=" <+> text (show a)
 
-instance Disp TermLabel where
-  disp bnd = 
-   let (vars, body) = unsafeUnbind bnd in
-     text "<" <> hsep (map disp vars) <> text ">." <+> disp body
+instance Disp (Proof, Equation) where 
+  disp (p, eq) = disp p <+> text ":" <+> disp eq
 
-instance Disp (AName, Epsilon) where
-  disp (x,Runtime) = disp x
-  disp (x,Erased) = brackets (disp x)
+
+-- In a given context, try to make a step n times, using equational reasoning
+-- if it gets stuck.
+-- Returns (a', p : a = a') where a' the term that it stepped to.
+smartSteps ::  [(Theta,ATerm,ATerm)] -> ATerm -> Int -> TcMonad (ATerm, ATerm)
+smartSteps hyps a n = do
+  flip evalStateT newState $ do 
+    mapM_ processHyp hyps
+    steps a n
+ where steps :: ATerm -> Int -> StateT ProblemState TcMonad (ATerm,ATerm)
+       steps a 0 = return $ (a, AJoin a 0 a 0)
+       steps a n = do
+          ma' <- smartStep a
+          case ma' of
+            Nothing -> return $ (a, AJoin a 0 a 0)
+            Just (a', p) -> do
+                             (a'',q) <- steps a' (n-1)
+                             pq <- lift $ transTerm a a' a'' p q
+                             return (a'', pq)
+ 
+-- Try to step a once, returning Nothing if it is really stuck,
+-- or Just (a', pf : a = a').
+-- Uses the union-find structor of the problem state.
+smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
+smartStep a = do
+  --liftIO . putStrLn $ "About to step " ++ (render . disp $ a)
+  _ <- genEqs a
+  maybeCtx <- lift $ aCbvContext a
+  case maybeCtx of
+    Just (CbvContext hole ctx, flavour, b) -> do
+       --(liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b))
+       names <- gets naming
+       candidates <- classMembersExplain (names BM.! b)
+       let cs = [(c,b',p)
+                 | (c,p) <- candidates,
+                   let b' = (names BM.!> c),
+                   valueFlavour flavour b']
+       case cs of
+         (c,b',p):_ -> do
+           pf <- (genProofTerm 
+                 <=< return . simplProof
+                 <=< checkProof b b'
+                 <=< fuseProof 
+                 . symmetrizeProof 
+                 . associateProof) p
+           let a' = subst hole b' ctx
+           cong_pf <- lift $ congTerm (b, b', pf) hole ctx
+           return $ Just (a', cong_pf)
+                          
+         [] -> lift $ do
+                       th <- aGetTh b
+                       if (flavour == AnyValue && th == Logic)
+                         then Just <$> smartStepLet (CbvContext hole ctx) b
+                         else dumbStep a
+    Nothing -> lift $ dumbStep a
+
+-- Cleverly introduce an erased binding to allow a term to step when it is stuck 
+-- because of the value-restriction for beta-reduction.
+--   smartstep ctx b
+-- steps the term ctx[b] , which is stuck on the non-value b.
+smartStepLet :: CbvContext -> ATerm -> TcMonad (ATerm, ATerm)
+smartStepLet (CbvContext hole a) b = do
+  hole_eq <- fresh $ string2Name "hole_eq"
+  (Just a') <- astep a  --This should always succeed, or aCbvContext lied to us.
+  
+  hole_eq_symm <- symmTerm (AVar hole) b (AVar hole_eq)
+  pf_ba_a <- congTerm (b, AVar hole, hole_eq_symm) hole a
+  let pf_a_a' = AJoin a 1 a' 0
+  pf_a'_ba' <- congTerm (AVar hole, b, AVar hole_eq) hole a'
+  pf_a_ba'  <- transTerm a a' (subst hole b a') pf_a_a' pf_a'_ba'
+  pf_ba_ba' <- transTerm (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
+
+  return (subst hole b a',
+          ALet Erased 
+               (bind (hole, hole_eq, embed b) pf_ba_ba')
+               (Logic, ATyEq (subst hole b a) (subst hole b a')))
+
+-- Try to step a once, returning Nothing if it is really stuck, or 
+-- Just (a', pf : a = a').
+-- Uses just the operational semantics, not equational reasoning
+dumbStep :: ATerm -> TcMonad (Maybe (ATerm,ATerm))
+dumbStep a = do
+  ma' <- astep a
+  case ma' of
+    Nothing -> return Nothing
+    Just a' -> return $ Just (a', AJoin a 1 a' 0)

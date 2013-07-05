@@ -318,9 +318,11 @@ cdiv = \m n .
          Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n)
                                    by (sym Nat Nat m (Succ m') m_eq)
                                    at m.ltT ((minus (Succ m') (Succ n))) m in
-                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
-                                   by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
-                                   at h.h in
+                    unfold (cdiv_p (minus (Succ m') (Succ n))) in
+                    let recg [_] = (g (minus (Succ m') (Succ n)) [lt_p]) in 
+--                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
+--                                   by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
+--                                   at h.h in
                     conv (Succ recg) by (join : Nat = cdiv_p m) at h.h
                    ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m@log] -> cdiv_p m_minus_sn @log) -> cdiv_p m))
        in conv (cov [cdiv_p] f m) by (join : cdiv_p m = Nat) at h.h
@@ -350,32 +352,16 @@ rec fdiv m = \n . ((case (lt m n) [_] of
   False -> Succ (fdiv (minus m n) n)) : Nat) -- this came up in getting fdiv_case to check ...
                                              -- not sure it's necessary
 
-fdiv_case  : (m:Nat) -> (n:Nat) -> (b:Bool) -> [lt m n = b]
-          -> (fdiv m n =
-  ((case b [_] of
-    True  -> Zero
-    False -> Succ (fdiv (minus m n) n)) : Nat))
-fdiv_case = \m n b [m_lt_n] .
-  conv join
-  by m_lt_n at b . (fdiv m n = ((case b [_] of
-    True  -> Zero
-    False -> Succ (fdiv (minus m n) n)) : Nat))
-
 fdiv_caseT : (m:Nat) -> (n:Nat) -> [lt m n = True] -> fdiv m n = Zero
 fdiv_caseT = \m n [m_lt_n] .
-  conv (fdiv_case m n True [m_lt_n])
-  by (join :   ((case True [_] of
-    True  -> Zero
-    False -> Succ (fdiv (minus m n) n)) : Nat) = Zero)
-  at h . fdiv m n = h
+  unfold (fdiv m n) 
+  in _
 
 fdiv_caseF : (m:Nat) -> (n:Nat) -> [lt m n = False] -> fdiv m n = Succ (fdiv (minus m n) n)
 fdiv_caseF = \m n [m_lt_n] .
-  conv (fdiv_case m n False [m_lt_n])
-  by (join :   ((case False [_] of
-    True  -> Zero
-    False -> Succ (fdiv (minus m n) n)) : Nat) = Succ (fdiv (minus m n) n))
-  at h . fdiv m n = h
+  unfold (fdiv m n) 
+  in unfold (fdiv (minus m n) n) 
+  in _
 
 -- fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 

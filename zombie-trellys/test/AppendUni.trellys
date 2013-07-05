@@ -5,7 +5,7 @@ import Vectors
 import Arithmetic
 
 plus0 : [n:Nat] -> n = plus 0 n
-plus0 = \[n] . join 3
+plus0 = \[n] . join
 
 plusSucc : [n:Nat] -> [m:Nat] -> Succ (plus n m) = plus (Succ n) m
 plusSucc = \[n] [m] . join 42

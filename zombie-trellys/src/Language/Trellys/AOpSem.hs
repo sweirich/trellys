@@ -4,19 +4,17 @@
 module Language.Trellys.AOpSem
   ( isPlainAValue, isConvAValue
   , Correspondence(..), correspondingVarName, symEq, composeEq, disunify
-  , astep
-  , asteps)
+  , astep, asteps)
 where
 
 import Language.Trellys.Syntax
-import Language.Trellys.Environment (lookupDCon)
+import Language.Trellys.Environment (lookupDCon, lookupDef)
 import Language.Trellys.TypeMonad
 import Language.Trellys.GenericBind
 import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
 import Unbound.LocallyNameless.Types (GenBind)
---import Unbound.LocallyNameless.Ops (lunbind2)
 
 import Control.Applicative
 import Control.Monad.Writer hiding (join)
@@ -271,7 +269,7 @@ disunify ls l0 rs r0 = go l0 r0
 
 astep :: ATerm -> TcMonad (Maybe ATerm)
 
-astep (AVar _) = return Nothing
+astep (AVar x) = lookupDef x
 
 astep (AUniVar _ _) = return Nothing
 
@@ -413,12 +411,12 @@ astep (AApp eps a b ty) = do
                     p                               <- fresh $ string2Name "p"
                     let tyArr2 = AArrow i ex       epsArr . bind (x', embed $ ty1)
                                $ tyArr1
-                        tyArr1 = AArrow i Inferred Erased . bind (p,  embed $ ASmaller (AVar x) (AVar x'))
+                        tyArr1 = AArrow i Inferred Erased . bind (p,  embed $ ASmaller (AVar x') (AVar x))
                                $ ty2
-                        lam    = ALam Logic tyArr2 epsArr   . bind x
+                        lam    = ALam Logic tyArr2 epsArr   . bind x'
                                . ALam Logic tyArr1 Erased   . bind p
-                               $ AApp epsArr a (AVar x) ty2
-                    return . Just . subst f lam $ subst x b body
+                               $ AApp epsArr a (AVar x') ty2
+                    return . Just . subst x b $ subst f lam body
                   _ -> return Nothing
 
 astep (AAt _ _) = return Nothing
@@ -599,3 +597,4 @@ asteps n a = do
   case ma' of
     Nothing -> return a
     Just a' -> asteps (n-1) a'
+
