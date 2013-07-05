@@ -6,10 +6,9 @@
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
-  (makeModuleEnv, join, isEValue, isValue, erase, eraseToHead, cbvStep, cbvNSteps)
+  (makeModuleEnv, join, cbvStep, isEValue, isValue, erase, eraseToHead)
 where
 
-import Language.Trellys.Options
 import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.Environment
@@ -47,7 +46,7 @@ erase (AUnboxVal a) = erase a
 erase (ABox a th) = erase a
 erase (AAbort _) = return EAbort
 erase (ATyEq a b) = ETyEq <$> erase a <*> erase b
-erase (AJoin a i b j) = return EJoin
+erase (AJoin a i b j strategy) = return EJoin
 erase (AConv a _ _ _) = erase a
 erase (AContra a ty) = return EContra
 erase (AInjDCon a i) = return EJoin
@@ -122,10 +121,11 @@ getInvDefs = do
 -}
 
 -- | Checks if two terms have a common reduct within n full steps
-join :: Int -> Int -> ETerm -> ETerm -> TcMonad Bool
-join s1 s2 m n = do
-  useParallelReduction <- getFlag UseParallelReduction
-  let nsteps = if useParallelReduction then parNSteps else cbvNSteps
+join :: Int -> Int -> ETerm -> ETerm -> EvaluationStrategy -> TcMonad Bool
+join s1 s2 m n strategy = do
+  let nsteps = case strategy of
+                PAR_CBV -> parNSteps
+                CBV     -> cbvNSteps
   m' <- nsteps s1 m
   n' <- nsteps s2 n
   let joined = m' `aeq` n'
@@ -370,7 +370,7 @@ isValue (Smaller _ _)      = return True
 isValue (OrdAx _)          = return True
 isValue (OrdTrans _ _)     = return True
 isValue (TyEq _ _)         = return True
-isValue (Join _ _)         = return True
+isValue (Join _ _ _)       = return True
 isValue Abort              = return False
 isValue (Ind ep _)         = return True
 isValue (Rec ep _)         = return True

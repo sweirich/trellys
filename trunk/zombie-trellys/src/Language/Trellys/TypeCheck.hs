@@ -135,7 +135,7 @@ ta (UniVar x) ty = return (AUniVar (translate x) ty)
   -- so we don't have to check for a binding of x.
 
 -- rule T_join
-ta (Join s1 s2) (ATyEq a b) =
+ta (Join s1 s2 strategy) (ATyEq a b) =
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
   do 
@@ -149,11 +149,11 @@ ta (Join s1 s2) (ATyEq a b) =
      --testReduction =<< substDefs a
      --testReduction =<< substDefs b
      -- End astep test
-     joinable <- join s1 s2 t1E t2E
+     joinable <- join s1 s2 t1E t2E strategy
      unless joinable $
        err [DS "The erasures of terms", DD a, DS "and", DD b,
             DS "are not joinable."]
-     return (AJoin a s1 b s2)
+     return (AJoin a s1 b s2 strategy)
 
     -- rule T_ord
 ta (OrdAx a) (ASmaller b1 b2) = do
@@ -399,6 +399,28 @@ ta (At ty th') (AType i) = do
      err [DD ty, DS "should check at L but checks at P"]
    return (AAt ea th')
 
+-- Horrible hack to avoid applying Box* too eagerly.
+-- The bidirectional inference of box seems dubious, will need
+-- to revisit this.
+ta a (AAt tyA th') | unCheckable a = do
+  (ea, tyA') <- ts a
+  eaTh <- aGetTh ea
+  isVal <- isValue a
+  withoutBox <- coerce ea tyA' (AAt tyA th')
+  case withoutBox of
+    Just eaCoerced -> return $ eaCoerced
+    Nothing -> do
+      withBox <- coerce ea tyA' tyA
+      case (withBox, eaTh) of
+        (Just eaCoerced, Logic)                   -> return $ ABox ea th'
+        (Just eaCoerced, Program) | isVal         -> return $ ABox ea th'
+        (Just eaCoerced, Program) | th'==Program  -> return $ ABox ea th'
+        (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
+        (Nothing,_) -> err [DD a, DS "should have type", DD tyA,
+                            DS "or", DD (AAt tyA th'), 
+                            DS "but has type", DD tyA',
+                            DS "Unable to prove", DD (ATyEq tyA' tyA)]
+
 -- the T_Box* rules
 ta a (AAt tyA th') = do
   ea <- ta a tyA
@@ -523,7 +545,6 @@ coerce a tyA tyB = do
          else do
            context <- getTys
            availableEqs <- getAvailableEqs
-           let theGoal = (Goal availableEqs (ATyEq tyA tyB))
            pf <- prove availableEqs (tyA,tyB)
            case pf of 
              Nothing -> return Nothing
@@ -585,6 +606,7 @@ taTele _ _ = error "Internal error: taTele called with unequal-length arguments"
 unCheckable :: Term-> Bool
 unCheckable (Var _) = True
 unCheckable (App _ _ _) = True
+unCheckable (Ann _ _) = True
 unCheckable (Paren t) = unCheckable t
 unCheckable (Pos _ t) = unCheckable t
 unCheckable _ = False

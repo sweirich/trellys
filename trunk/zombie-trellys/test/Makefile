@@ -18,7 +18,8 @@ PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees 
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
-     BasicOrd DeepMatch CongruenceTests UnfoldTests
+     BasicOrd DeepMatch CongruenceTests UnfoldTests \
+     RLE BST
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
@@ -37,7 +38,7 @@ all: pass fail
 clean:
 	rm *.trellys-elaborated
 
-pass: $(foreach p,$(PASS),$(p).pass) RLE.pass-parallel BST.pass-parallel
+pass: $(foreach p,$(PASS),$(p).pass)
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"
@@ -78,10 +79,6 @@ todo: todo_pass todo_fail
 	@echo -n "$< (testing extraction)"
 	@if ! ($(TYPECHECK) --extraction $< && ocamlc -w -A $*.ml); then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
-
-%.pass-parallel:	%.trellys
-	@echo -n "$<: "
-	@if ! $(TYPECHECK) --parallel $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 %.fail: %.trellys
 	@echo -n "$<: "
