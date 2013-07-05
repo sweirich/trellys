@@ -47,7 +47,7 @@ correspondingVarName (TwoVars  _ _ y'') = y''
 symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
 symEq a b pab = do
   x <- fresh $ string2Name "x"
-  return . AConv (AJoin a 0 a 0) [(pab,Erased)] (bind [x] $ ATyEq (AVar x) a) $ ATyEq b a
+  return . AConv (AJoin a 0 a 0 CBV) [(pab,Erased)] (bind [x] $ ATyEq (AVar x) a) $ ATyEq b a
 
 -- composeEq A C (pAB : A = B) (pBC : B = C) : A = C
 composeEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
@@ -160,8 +160,8 @@ disunify ls l0 rs r0 = go l0 r0
     go (ATyEq a b) (ATyEq a' b') =
       ATyEq <$> go a a' <*> go b b'
     
-    go (AJoin a i b j) (AJoin a' i' b' j') | i == i' && j == j' =
-      AJoin <$> go a a' <*> pure i <*> go b b' <*> pure j
+    go (AJoin a i b j strategy) (AJoin a' i' b' j' strategy') | i == i' && j == j' =
+      AJoin <$> go a a' <*> pure i <*> go b b' <*> pure j <*> pure strategy
     
     go (AConv a bs bnd res) (AConv a' bs' bnd' res') | length bs == length bs' = do
       (xs, template, xs', template') <- unbind2M bnd bnd'
@@ -359,7 +359,7 @@ astep (AApp eps a b ty) = do
                                        srcDom
                             p' = AConv p
                                        [ (ADomEq p, pEps)
-                                       , (AJoin srcRan 0 (subst tyVar y' srcRan) 0, pEps) ]
+                                       , (AJoin srcRan 0 (subst tyVar y' srcRan) 0 CBV, pEps) ]
                                        (bind [x0,x1] $
                                           ATyEq (AArrow si srcEx srcEps $
                                                         bind (tyVar, embed $ AVar x0) (AVar x1))
@@ -389,7 +389,7 @@ astep (AApp eps a b ty) = do
                                        (bind xs srcDom)
                                        (substs (zip xs froms) srcDom)
                         v' <- update (subst tyVar y' v) tyVar resDom resRan $
-                                mkConv (bs ++ [(AJoin y' 0 (AVar tyVar) 0,Erased)])
+                                mkConv (bs ++ [(AJoin y' 0 (AVar tyVar) 0 CBV,Erased)])
                                        (xs ++ [tyVar])
                                        srcRan
                                        resRan
@@ -450,7 +450,7 @@ astep (AAbort t) = return Nothing
 
 astep (ATyEq _ _) = return Nothing
 
-astep (AJoin _ _ _ _) = return Nothing
+astep (AJoin _ _ _ _ _) = return Nothing
 
 astep (AConv a bs bnd ty) = do
   stepA <- astep a
@@ -544,7 +544,7 @@ astep (ACase a bnd ty) = do
               -- indices     = As
               -- fromIndices = B's
               -- resIndices  = Bs
-              pure $ zipWith3 (\aj b'j bj -> ( AConv (AJoin aj 0 aj 0)
+              pure $ zipWith3 (\aj b'j bj -> ( AConv (AJoin aj 0 aj 0 CBV)
                                                      bs
                                                      (bind xs $ ATyEq aj b'j)
                                                      (ATyEq aj bj)
@@ -562,7 +562,7 @@ astep (ACase a bnd ty) = do
         go [] [] = return ([],[])
         go ((v,eps):vs) ((y,e,eps'):tele') | eps == eps' = do
           (v's,ys) <- go vs tele'
-          let b's = zipWith (\(vi,epsi) (v'i,_) -> (AJoin vi 0 v'i 0,epsi)) vs v's
+          let b's = zipWith (\(vi,epsi) (v'i,_) -> (AJoin vi 0 v'i 0 CBV,epsi)) vs v's
               v'  = AConv v
                           (bs ++ b's)
                           (bind (xs ++ ys) e)

@@ -57,16 +57,16 @@ append_replicate_Succ : [a:Type 0] -> (n:Nat) -> (x:a@log) -> (ys: List a)
                  -> append (replicate (Succ n) x) ys = append (replicate n x) (Cons x ys)
 append_replicate_Succ = \[a]. ind append_replicate_Succ n = \x ys.
   case n [n_eq] of
-    Zero -> (join : append (replicate (Succ 0) x) ys = append (replicate 0 x) (Cons x ys))
+    Zero -> (pjoin : append (replicate (Succ 0) x) ys = append (replicate 0 x) (Cons x ys))
     Succ m -> 
-      let _  = (join : replicate (Succ (Succ m)) x = 
+      let _  = (pjoin : replicate (Succ (Succ m)) x = 
 		             (Cons x (replicate (Succ m) x) : List a)) in
-      let _  = (join : append (Cons x (replicate (Succ m) x)) ys = 
+      let _  = (pjoin : append (Cons x (replicate (Succ m) x)) ys = 
 		             (Cons x (append (replicate (Succ m) x) ys) : List a)) in
       let IH = append_replicate_Succ m [ord n_eq] x ys in
       let [x_ys] = (Cons x ys : List a ) in
-      let _  = (join : (Cons x (append (replicate m x) x_ys) : List a) = append (Cons x (replicate m x)) x_ys) in
-      let _  = (join : (Cons x (replicate m x) : List a) = replicate (Succ m) x) in
+      let _  = (pjoin : (Cons x (append (replicate m x) x_ys) : List a) = append (Cons x (replicate m x)) x_ys) in
+      let _  = (pjoin : (Cons x (replicate m x) : List a) = replicate (Succ m) x) in
       _
 
 encodeFrom_spec : [a:Type 0] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
@@ -78,18 +78,18 @@ encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
     Nil -> 
      -- Note, this could be completely automated by using a "smart" join, which takes 
      -- congruence classes into account.
-     let _ = (join : decode (encodeFrom eq (Nil) n x0)
+     let _ = (pjoin : decode (encodeFrom eq (Nil) n x0)
                    = append (replicate n x0) (Nil)) in
      _
     Cons x ys ->
-     let _ = (join : (encodeFrom eq (Cons  x ys) n x0)
+     let _ = (pjoin : (encodeFrom eq (Cons  x ys) n x0)
                    = (case (eq x x0) [_] of
                         Just q -> encodeFrom eq ys (Succ n) x0
                         Nothing -> Cons  (Conj n x0) (encodeFrom eq ys 1 x) 
                       : List (And Nat a)))
      in case (eq x x0) [_] of
          Just q ->
-          let _ = (join :  (case (Just q : Maybe (x=x0)) [_] of
+          let _ = (pjoin :  (case (Just q : Maybe (x=x0)) [_] of
                              Just q -> encodeFrom eq ys (Succ n) x0
                              Nothing -> Cons (Conj n x0) (encodeFrom eq ys 1 x) 
                            : List (And Nat a))
@@ -105,14 +105,14 @@ encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
            
              _
          Nothing -> 
-          let _ = (join :  (case (Nothing : Maybe (x=x0)) [_] of
+          let _ = (pjoin :  (case (Nothing : Maybe (x=x0)) [_] of
                              Just q -> encodeFrom eq ys (Succ n) x0
                              Nothing -> Cons (Conj n x0) (encodeFrom eq ys 1 x) 
                            : List (And Nat a))
                         = (Cons (Conj n x0) (encodeFrom eq ys 1 x) : List (And Nat a))) in
 
           let [encode_ys] = encodeFrom eq ys 1 x in
-          let _ = (TRUSTME {- join -}: 
+          let _ = (TRUSTME {- pjoin -}: 
                           (decode (Cons (Conj n x0) encode_ys))
                         = (append (replicate n x0) (decode encode_ys))) in
 
@@ -120,7 +120,7 @@ encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
                      : decode (encodeFrom eq ys 1 x)
                      = append (replicate 1 x) ys) in
 
-          let _ = (join : (append (replicate 1 x) ys : List a)  = (Cons x ys : List a)) in
+          let _ = (pjoin : (append (replicate 1 x) ys : List a)  = (Cons x ys : List a)) in
            
            _
 
@@ -129,9 +129,9 @@ encode_spec : [a:Type 0] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log)
                   -> decode (encode eq xs) =  xs
 encode_spec = \[a] eq xs .
   case xs [_] of
-    Nil -> (join : decode (encode  eq (Nil)) = (Nil : List a))
+    Nil -> (pjoin : decode (encode  eq (Nil)) = (Nil : List a))
     Cons x ys ->
-      let _ = (join : encode eq (Cons x ys) = encodeFrom eq ys 1 x) in
+      let _ = (pjoin : encode eq (Cons x ys) = encodeFrom eq ys 1 x) in
       let _ = encodeFrom_spec [?] eq ys 1 x in
-      let _ = (join : append (replicate 1 x) ys = (Cons x ys : List a)) in
+      let _ = (pjoin : append (replicate 1 x) ys = (Cons x ys : List a)) in
       _

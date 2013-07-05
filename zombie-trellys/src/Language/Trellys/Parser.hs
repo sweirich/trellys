@@ -201,6 +201,7 @@ trellysStyle = Token.LanguageDef
                   ["ord"
                   ,"ordtrans"
                   ,"join"
+                  ,"pjoin"
                   ,"unfold"
                   ,"rec"
                   ,"ind"
@@ -461,13 +462,14 @@ ordtrans =
       
 join :: LParser Term
 join =
-  do reserved "join"
+  do strategy <-     try (reserved "join" >> return CBV)
+                 <|> (reserved "pjoin" >> return PAR_CBV)
      s1 <- optionMaybe natural
      s2 <- optionMaybe natural
      case (s1,s2) of
-       (Nothing,Nothing) -> return $ Join 100 100
-       (Just n,Nothing)  -> return $ Join n n
-       (Just n1,Just n2) -> return $ Join n1 n2
+       (Nothing,Nothing) -> return $ Join 100 100 strategy
+       (Just n,Nothing)  -> return $ Join n n strategy
+       (Just n1,Just n2) -> return $ Join n1 n2 strategy
        _                 -> error $ "Internal error: nat after no nat"
 
 

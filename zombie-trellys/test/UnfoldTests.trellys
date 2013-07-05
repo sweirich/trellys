@@ -1,0 +1,13 @@
+module UnfoldTests where
+
+import Prelude
+
+log f : Nat -> Nat
+f = \x.x
+
+-- This is stuck on a non-value, but we can work 
+-- around that since (pred n) is logical.
+log foo : (n:Nat) -> f (pred n) = (pred n)
+foo = \n.
+  unfold 2 (f (pred n)) in 
+    _

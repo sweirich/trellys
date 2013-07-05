@@ -72,7 +72,8 @@ data DispInfo = DI
 
 -- | An empty 'DispInfo' context
 initDI :: DispInfo
-initDI = DI False S.empty
+--initDI = DI False S.empty
+initDI = DI True S.empty
 
 instance LFresh (Reader DispInfo) where
   lfresh nm = do
@@ -300,12 +301,15 @@ instance Display Term where
       da <- display a
       db <- display b
       return $ wraparg a da <+> text "=" <+> wraparg b db
-  display (Join s1 s2) =
-    return $ text "join" <+> text (if s1 == s2
-                            then if s1 == 100
-                                   then ""
-                                   else show s1
-                            else show s1 ++ " " ++ show s2)
+  display (Join s1 s2 strategy) =
+    return $ (case strategy of 
+                CBV     -> text "join" 
+                PAR_CBV -> text "pjoin")
+             <+> text (if s1 == s2
+                         then if s1 == 100
+                                 then ""
+                                 else show s1
+                         else show s1 ++ " " ++ show s2)
   display (Unfold s a b) = do
     da <- display a
     db <- display b
@@ -476,11 +480,14 @@ instance Display ATerm where
     da <- display a
     db <- display b
     return $ parens da <+> text "=" <+> parens db
-  display (AJoin a i b j) = do
+  display (AJoin a i b j strategy) = do
     da <- display a
     db <- display b
-    return $ text "join" <+> parens da <+> disp i
-                         <+> parens db <+> disp j
+    return $ (case strategy of 
+                CBV     -> text "join"
+                PAR_CBV -> text "pjoin")
+             <+> parens da <+> disp i
+             <+> parens db <+> disp j
   display (AConv a pfs bnd ty) = 
     lunbind bnd $ \(xs, template) -> do 
       isVerbose <- asks verbose

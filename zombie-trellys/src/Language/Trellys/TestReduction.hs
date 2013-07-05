@@ -5,7 +5,7 @@ module Language.Trellys.TestReduction where
 import Language.Trellys.Syntax
 
 import Language.Trellys.PrettyPrint(Disp(..))
-import Language.Trellys.OpSem
+import Language.Trellys.OpSem (cbvStep, erase)
 import Language.Trellys.AOpSem (astep)
 
 import Language.Trellys.Environment

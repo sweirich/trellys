@@ -98,7 +98,7 @@ getType (AAbort aTy) =
 getType (ATyEq a b) = 
   return (Logic, AType 0)
 
-getType (AJoin a _ b _) = 
+getType (AJoin a _ b _ _) = 
   return (Logic, ATyEq a b)
 
 getType (AConv a _ _ ty) = do
@@ -329,11 +329,11 @@ aTs (ATyEq a b) = do
   _ <- aTs b 
   return (Logic, AType 0)
 
-aTs (AJoin a i b j) = do
+aTs (AJoin a i b j strategy) = do
   aKc (ATyEq a b)
   aE <- erase a
   bE <- erase b  
-  joinable <- join i j aE bE
+  joinable <- join i j aE bE strategy
   unless joinable $
     coreErr [DS "AJoin: not joinable"]
   return (Logic, ATyEq a b)

@@ -235,9 +235,9 @@ simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
 genProofTerm (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
 genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symmTerm tyA tyB a
-genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0
-genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0
-genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0)
+genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
+genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
+genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0 CBV)
 genProofTerm (AnnCong template ps) = do
   let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
   let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
@@ -245,7 +245,7 @@ genProofTerm (AnnCong template ps) = do
                                       Nothing -> return (ATyEq subA subB, Erased)
                                       Just p' -> (,Runtime) <$> genProofTerm p')
                  ps                                            
-  return (AConv (AJoin tyA 0 tyA 0)
+  return (AConv (AJoin tyA 0 tyA 0 CBV)
                 subpfs
                 (bind (map (\(x,_,_,_) -> x) ps) (ATyEq tyA template))
                 (ATyEq tyA tyB))
@@ -269,13 +269,13 @@ uneraseTerm tyA tyB p = do
   pErased <- erase p
   if S.null (fv pErased :: Set EName)
     then return p
-    else return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
+    else return $ AConv (AJoin tyA 0 tyA 0 CBV) [(p,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symmTerm :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
 symmTerm tyA tyB p = do
   x <- fresh (string2Name "x")
-  return $ AConv (AJoin tyA 0 tyA 0) [(p,Runtime)] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
+  return $ AConv (AJoin tyA 0 tyA 0 CBV) [(p,Runtime)] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
 
 -- From (tyA=tyB), conclude [tyA/x]template = [tyB/x]template
 -- For simplicity this function doesn't handle n-ary conv or erased subterms.
@@ -283,7 +283,8 @@ congTerm :: (ATerm,ATerm,ATerm) -> AName -> ATerm -> TcMonad ATerm
 congTerm (tyA,tyB,pf) x template = do
   y <- fresh $ string2Name "y"  --need a fresh var in case tyB == (AVar hole)
   return (AConv (AJoin (subst x tyA template) 0 
-                       (subst x tyA template) 0)
+                       (subst x tyA template) 0
+                       CBV)
                 [(pf,Runtime)]
                 (bind [y] (ATyEq (subst x tyA template) (subst x (AVar y) template)))
                 (ATyEq (subst x tyA template)
@@ -361,9 +362,10 @@ decompose _ e avoid (AAbort t) = AAbort <$> (decompose True Erased avoid t)
 decompose _ e avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True e avoid t1) <*> (decompose True e avoid t2)
 --Fixme: surely we need to do something about the erased subterms here?
-decompose _ _ avoid t@(AJoin a i b j) =
+decompose _ _ avoid t@(AJoin a i b j strategy) =
   AJoin <$> (decompose True Erased avoid a) <*> pure i 
         <*> (decompose True Erased avoid b) <*> pure j
+        <*> pure strategy
 decompose _ e avoid (AConv t1 ts bnd ty) =  do
   (xs, t2) <- unbind bnd
   r1 <- decompose True e avoid t1
@@ -459,7 +461,7 @@ match vars (AAbort t) (AAbort t') = match vars t t'
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
 --Fixme: this seems dubious too?
-match vars (AJoin a _ b _) (AJoin a' _ b' _) = 
+match vars (AJoin a _ b _ _) (AJoin a' _ b' _ _) = 
   match vars a a' `mUnion` match vars b b'
 match vars (AConv t1 t2s bnd ty) (AConv t1' t2s' bnd' ty') = do
   Just (_, t3, _, t3') <- unbind2 bnd bnd'
@@ -641,7 +643,7 @@ isAnyValue (AAt _ _) = True
 isAnyValue (AUnboxVal a) = isAnyValue a
 isAnyValue (AAbort _) = True
 isAnyValue (ATyEq _ _) = True
-isAnyValue (AJoin _ _ _ _) = True
+isAnyValue (AJoin _ _ _ _ _) = True
 isAnyValue (AInjDCon _ _) = True
 isAnyValue (AContra _ _) = True
 isAnyValue (ASmaller _ _) = True
@@ -706,7 +708,7 @@ aCbvContext (AAt _ _) = return Nothing
 aCbvContext (AUnboxVal _) = return Nothing --already a value.
 aCbvContext (AAbort _) = return Nothing
 aCbvContext (ATyEq _ _) = return Nothing
-aCbvContext (AJoin _ _ _ _) = return Nothing
+aCbvContext (AJoin _ _ _ _ _) = return Nothing
 aCbvContext (AInjDCon _ _) = return Nothing
 aCbvContext (AContra _ _) = return Nothing
 aCbvContext (ASmaller _ _) = return Nothing
@@ -751,11 +753,11 @@ smartSteps hyps a n = do
     mapM_ processHyp hyps
     steps a n
  where steps :: ATerm -> Int -> StateT ProblemState TcMonad (ATerm,ATerm)
-       steps a 0 = return $ (a, AJoin a 0 a 0)
+       steps a 0 = return $ (a, AJoin a 0 a 0 CBV)
        steps a n = do
           ma' <- smartStep a
           case ma' of
-            Nothing -> return $ (a, AJoin a 0 a 0)
+            Nothing -> return $ (a, AJoin a 0 a 0 CBV)
             Just (a', p) -> do
                              (a'',q) <- steps a' (n-1)
                              pq <- lift $ transTerm a a' a'' p q
@@ -804,11 +806,10 @@ smartStep a = do
 smartStepLet :: CbvContext -> ATerm -> TcMonad (ATerm, ATerm)
 smartStepLet (CbvContext hole a) b = do
   hole_eq <- fresh $ string2Name "hole_eq"
-  (Just a') <- astep a  --This should always succeed, or aCbvContext lied to us.
+  (Just (a', pf_a_a')) <- dumbStep a  --This should always succeed, or aCbvContext lied to us.
   
   hole_eq_symm <- symmTerm (AVar hole) b (AVar hole_eq)
   pf_ba_a <- congTerm (b, AVar hole, hole_eq_symm) hole a
-  let pf_a_a' = AJoin a 1 a' 0
   pf_a'_ba' <- congTerm (AVar hole, b, AVar hole_eq) hole a'
   pf_a_ba'  <- transTerm a a' (subst hole b a') pf_a_a' pf_a'_ba'
   pf_ba_ba' <- transTerm (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
@@ -826,4 +827,10 @@ dumbStep a = do
   ma' <- astep a
   case ma' of
     Nothing -> return Nothing
-    Just a' -> return $ Just (a', AJoin a 1 a' 0)
+    Just a' -> do
+      --Sometimes astep takes an "extra" step (due to cast-shuffling).
+      ea  <- erase a
+      ea' <- erase a'
+      if (ea `aeq` ea')
+        then return $ Just (a', AJoin a 0 a 0 CBV)
+        else return $ Just (a', AJoin a 1 a' 0 CBV)

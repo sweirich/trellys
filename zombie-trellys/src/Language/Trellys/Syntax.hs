@@ -57,6 +57,9 @@ instance Ord Theta where
 
 deriving instance Ord Epsilon
 
+data EvaluationStrategy = CBV | PAR_CBV
+  deriving (Show)
+
 ------------------------------
 ------------------------------
 --- Source Language
@@ -97,9 +100,9 @@ data Term = Var TName    -- | variables
           | OrdTrans Term Term
           -- | The type of a proof that the two terms join, @a = b@
           | TyEq Term Term
-          -- | The 'join' expression, written @join k1 k2@.  We
+          -- | The 'join' expression, written @join k1 k2@ or @pjoin k1 k2@  We
           -- bidirectionally infer the terms
-          | Join Int Int
+          | Join Int Int EvaluationStrategy
           -- | The 'unfold' expression, only present in the surface language.
           | Unfold Int Term Term
           -- | @conv a by b at C@
@@ -325,7 +328,7 @@ data ATerm =
   | ABox ATerm Theta
   | AAbort ATerm
   | ATyEq ATerm ATerm
-  | AJoin ATerm Int ATerm Int
+  | AJoin ATerm Int ATerm Int EvaluationStrategy
   -- The last term is the type of the entire case-expression
   | AConv ATerm [(ATerm,Epsilon)] (Bind [AName] ATerm) ATerm
   | AInjDCon ATerm Int
@@ -535,7 +538,8 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Explicitness, ''Term, ''Match, ''ComplexMatch, 
+$(derive [''Epsilon, ''Theta, ''Explicitness, ''EvaluationStrategy, 
+         ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
          ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope ])
 
@@ -546,6 +550,7 @@ instance Alpha ComplexMatch
 instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
+instance Alpha EvaluationStrategy
 
 instance Subst Term Term where
   isvar (Var x) = Just (SubstName x)
@@ -560,6 +565,8 @@ instance Subst Term ATelescope
 instance Subst Term Epsilon
 instance Subst Term Explicitness
 instance Subst Term Theta
+instance Subst Term EvaluationStrategy
+
 instance Subst Term Match
 instance Subst Term ComplexMatch
 instance Subst Term Pattern
@@ -576,6 +583,8 @@ instance Subst ATerm ATerm where
 instance Subst ATerm Epsilon
 instance Subst ATerm Explicitness
 instance Subst ATerm Theta
+instance Subst ATerm EvaluationStrategy
+
 instance Subst ATerm AMatch
 instance Subst ATerm ATelescope
 
