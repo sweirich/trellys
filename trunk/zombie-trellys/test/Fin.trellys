@@ -6,9 +6,11 @@ data Fin (n : Nat) : Type 0 where
   FZ of [m:Nat][ m_eq : (n = Succ m) ] 
   FS of [m:Nat][ m_eq : (n = Succ m) ](_ : Fin m)
 
--- equality is decidable
+fin_succ : [n : Nat] => [m:Nat] -> [ m_eq : (n = Succ m) ] -> (Fin m @ log) -> Fin n
+fin_succ = \[n][m][m_eq] f . FS [m][m_eq] f
 
-log fin_eq : [n: Nat] -> Fin n -> Fin n -> Bool
+-- equality is decidable
+log fin_eq : [n: Nat] -> (Fin n @ log) -> (Fin n @ log) -> Bool
 fin_eq =  
  ind eq [n] = \fn1 fn2 .
    case fn1 [n1_eq], fn2 [_] of 
@@ -17,3 +19,35 @@ fin_eq =
 		   let _ = uneraseEq [Nat][Nat][m1][m2] [sm_eq_Sn__m_eq_n m1 m2 _] in
 		   eq [m1] [ord m1_eq] fn1'  fn2'
       _ , _ -> False
+
+-- inject a fin into a larger set
+log promote : [n:Nat] -> (Fin n @ log) -> Fin (Succ n)
+ind promote [n] = \ x .
+  case x [x_eq] of 
+    FZ [m][m_eq]    -> FZ [Succ m][_]
+    FS [m][m_eq] m' -> FS [Succ m][_] (promote [m] [ord m_eq] m')
+
+-- take advantage of heterogeneous equality
+log promote_spec : [n:Nat] -> (x : Fin n) -> promote [n] x = x
+ind promote_spec [n] = \ x. 
+   case x [x_eq] of 
+    FZ [m][m_eq]    -> 
+	   -- explicit unfold of promote
+	   let _ = (join : promote [n] (FZ [m][m_eq]) = 
+		                  (FZ [Succ m][_] : Fin (Succ (Succ m)))) in
+		_
+    FS [m][m_eq] m' ->  
+       let _ = promote_spec [m] [ord m_eq] m' in
+		 let _ = (join : promote [n] (FS [m][m_eq] m') = 
+		                 (FS [Succ m][_] (promote [m] m') : Fin (Succ (Succ m)))) in
+       _
+       
+	  
+-- compute the predecessor of the number
+log fin_pred : [n:Nat] => Fin n -> Fin n
+fin_pred = \ [n] x . 
+  case x [x_eq] of 
+     FZ [_][_] -> x 
+     FS [m][m_eq] m' -> (promote [m] m')
+
+

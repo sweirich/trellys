@@ -2,39 +2,36 @@ module Maybe where
 
 import Prelude
 
+usually log
+
 data Maybe (a : Type 0) : Type 0 where
   Just    of ( _ : a @ log)
   Nothing 
 
-log mapMaybe : [a : Type 0] -> [b : Type 0] -> (f : (a @ log) -> b @ log) -> Maybe a -> Maybe b
-mapMaybe = TRUSTME
+log maybe : [a : Type 0] => a -> (Maybe a @ log) -> a 
+maybe = \[a] default m . case m [_] of 
+   Just y -> y
+   Nothing -> default
 
-
-log x : Maybe ((x:Nat) -> Nat @ prog)
-x = Just (rec f x = f x) 
-
-log appMaybe :  [a : Type 0] -> [b : Type 0] -> Maybe ((a @ log) -> b) -> Maybe a -> Maybe b
-appMaybe = \ [a] [b] m n . 
+log maybe_app : [a : Type 0] => [b : Type 0] => 
+	 Maybe ((a @ log) -> b) -> (Maybe a @ log) -> Maybe b
+maybe_app = \ [a] [b] m n . 
   case m [_] , n [_] of
     Just f , Just x -> Just (f x) 
     _ , _  -> Nothing 
 
-{-
-data MaybeP (a : Type 0) : Type 0 where
-  Just     of ( _ : a @ prog)
-  Nothing 
-
-log xP : MaybeP ((x:Nat) -> Nat)
-xP = Just (rec f x = x)
-
-prog appMaybeP :  [a : Type 0] -> [b : Type 0] -> MaybeP ((a @ log) -> b) -> MaybeP a -> MaybeP b
-appMaybeP = \ [a] [b] m n . 
-  case m [_] , n [_] of
-    Just f , Just x -> Just (f x) 
-    _ , _  -> Nothing 
+log maybe_map : [a : Type 0] => [b : Type 0] => 
+	 ((a @ log) -> b) -> (Maybe a @ log) -> Maybe b
+maybe_map = \ [a] [b] f n . 
+  case  n [_] of
+    Just x -> Just (f x) 
+    _      -> Nothing 
 
 
-z = appMaybeP [Nat] [Nat] (case xP [_] of 
-    Just f -> Just (\ x . f x)
-    Nothing -> Nothing) (Just 3)
--}
+log maybe_eq : [A : Type 0] => (A -> A -> Bool) ->
+    (Maybe A @ log) -> (Maybe A @ log) -> Bool
+maybe_eq = \ [A] eqA p1 p2 . 
+ case p1 [_], p2 [_] of 
+   Just x1 , Just x2 -> eqA x1 x2
+   Nothing , Nothing -> True
+   _ , _ -> False

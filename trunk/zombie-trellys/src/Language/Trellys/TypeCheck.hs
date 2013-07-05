@@ -1144,13 +1144,11 @@ getAvailableEqs = do
     * Need to think/test the logic for empty case statements a bit more, probably.
  -}
 
--- (buildCase scrutinees scrutineeTys alts tyAlt) builds a case tree that
--- evaluates to the first alternative that matches, or 'fallback' if
--- none of them do. The argument scrutineeTys is a list of the types of the scrutinees.
--- Each branch in alts should have type tyAlt.
+-- (buildCase scrutinees alts tyAlt) builds a case tree that evaluates to the
+-- first alternative that matches, or 'fallback' if none of them do.  Each
+-- branch in alts should have type tyAlt.
 --
--- precondition: scrutineeTys has the same length as scrutinees, and all the pattern lists have the same length 
--- as scrutinees.
+-- precondition: all the pattern lists have the same length as scrutinees.
 --
 -- The scrutinees and the branch-type are zonked before buildCase is called.
 --
@@ -1160,10 +1158,11 @@ buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
 buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
   ta body tyAlt 
-buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any isEssentialVarMatch alts = do
-  -- If one of the branches contains an isolated variable, 
+buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any isEssentialVarMatch alts = (do
+  -- If one of the patterns contains an isolated variable, 
   -- the ComplexCase basically acts as
   --  a let-expression, so that's what we elaborate it into.
+  -- SCW: Shouldn't it be the *first* alt?
   x <- fresh (string2Name "_scrutinee")
   x_eq <- fresh (string2Name "_")
   (th,sTy) <- getType s 
@@ -1173,12 +1172,15 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any i
              body <- buildCase ((AVar x,y):scruts) alts ztyAlt
              bTh  <- aGetTh body
              return (body, bTh)
-  return (ALet Runtime (bind (x, x_eq, embed s) body) (max th bTh, ztyAlt))
-buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = do
+  return (ALet Runtime (bind (x, x_eq, embed s) body) (max th bTh, ztyAlt)))
+
+buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = (do
   --Todo: handle the scrutinee=pattern equation y somehow?
   alts' <- mapM (expandMatch s AEmpty <=< matchPat) alts
-  buildCase scruts alts' tyAlt
-buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
+  buildCase scruts alts' tyAlt)
+
+-- normal pattern matching case. First pattern is not a variable.
+buildCase ((s_unadjusted,y):scruts) alts tyAlt = (do
   (th_unadjusted, sTy_unadjusted) <- getType s_unadjusted
   (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
@@ -1203,6 +1205,7 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
                      (ATyEq s (ADCon c aTh bbar (aTeleAsArgs args'))))
         newBody <- extend $
                        buildCase (newScruts++scruts) newAlts ztyAlt
+                                                   
         (th,_) <- extend $ getType newBody
         erasedNewBody <- erase newBody
         unless (S.null (S.map translate (fv erasedNewBody) `S.intersection` erasedVars)) $ do
@@ -1215,11 +1218,11 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = do
   let ematchs = bind (translate y)  matchs
   ztyAlt <- zonkTerm tyAlt
   let th = maximum (aTh : ths) 
-  return $ ACase s ematchs (th,ztyAlt)
+  return $ ACase s ematchs (th,ztyAlt))
 
 -- Given a list of Patterns (which should all be for the same datatype),
 -- see if there is any commonality in the name of the pattern variables, and if so
--- give ack a list of them.
+-- give back a list of them.
 -- If none are given, use the default ones.
 suggestedNames :: [String] -> [Pattern] -> [String]
 suggestedNames deflt (PatVar _ : rest) = suggestedNames deflt rest
@@ -1244,7 +1247,7 @@ aTeleNames (ACons (unrebind -> ((x,ty,ep),t))) = (name2String x) : aTeleNames t
 -- for the fact that 'scrut' has just been sucessfully tested against
 -- pattern pat.  It adds the new variables args to the list of
 -- patterns for alt, and substitutes scrut into the body of alt if
--- 'pat' was a variable pattern.a
+-- 'pat' was a variable pattern.
 -- Precondition: scrut is a variable (so we can substitute it into the body).
 
 expandMatch :: ATerm ->  ATelescope -> (Pattern, ComplexMatch) -> TcMonad ComplexMatch

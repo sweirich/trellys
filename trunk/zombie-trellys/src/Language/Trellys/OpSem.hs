@@ -176,7 +176,7 @@ cbvStep (EApp a b)       =
                Nothing     ->
          -- These lines are necessary for correctness, but temporarily 
          -- commented out since they break most unit tests...:
-                 --if (isEValue b) then
+                 if (isEValue b) then
                    case a of
                      ELam bnd ->
                        do (x,body) <- unbind bnd
@@ -189,7 +189,7 @@ cbvStep (EApp a b)       =
                           x' <- fresh (string2Name "x")
                           return $ Just $ subst x b $ subst f (ELam (bind x' (EILam (EApp a (EVar x')))))  body
                      _ -> return  Nothing
-                  --else return Nothing
+                  else return Nothing
 cbvStep (EIApp a) =
   do stpa <- cbvStep a
      case stpa of 

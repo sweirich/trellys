@@ -4,7 +4,6 @@ data Bool : Type 0 where
   True 
   False
 
-
 log not : Bool -> Bool
 not = \ b . 
   case b [_] of 
@@ -24,6 +23,14 @@ or = \b1 b2.
     False -> b2
 
 
+log bool_eq : (Bool @ log) -> (Bool @ log) -> Bool
+bool_eq = \ x y . 
+  case x [x_eq], y [y_eq] of 
+     True, True -> True
+     False, False -> True
+     _ , _ -> False
+
+
 data Nat : Type 0 where
     Zero
     Succ of (x : Nat)
@@ -32,6 +39,15 @@ pred : Nat -> Nat
 pred = \n . case n [_] of
   Zero -> Zero
   Succ n' -> n'
+
+log nat_eq : (Nat @ log) -> (Nat @ log) -> Bool
+ind nat_eq x = \ y . 
+  case x [x_eq], y [y_eq] of 
+     Zero, Zero -> True
+     Succ m, Succ n -> nat_eq m [ord x_eq] n
+     _ , _ -> False
+     
+
 
 -- S m = S n -> m = n
 --
