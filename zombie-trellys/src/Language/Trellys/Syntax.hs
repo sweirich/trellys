@@ -469,7 +469,8 @@ freshATele (s:ss) (ACons (unrebind->((x,ty,ep),t))) = do
    x' <- fresh (string2Name s)
    t' <- freshATele ss (subst x (AVar x') t)
    return $ ACons (rebind (x',ty,ep) t')
-freshATele _ _ = error "wrong number of strings given to freshATele"
+freshATele [] _ = error "wrong number of strings given to freshATele--too many args"
+freshATele _  AEmpty = error "wrong number of strings given to freshATele--too many strings"
 
 -- | (substATele bs delta a) substitutes the b's for the variables in delta in a.
 -- Precondition: bs and delta have the same lenght.

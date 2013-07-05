@@ -788,6 +788,9 @@ instance Disp [Name ETerm] where
 
 instance Disp [(Name Term,Term)] where
   disp = vcat . map disp
+  
+instance Disp (ATerm, Name Term) where
+  disp (t,n) = disp t <> comma <+> brackets (disp n)
 
 instance Disp (Name Term,Term) where
   disp (n,t) = parens $ (disp n) <> comma <+> disp t

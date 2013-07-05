@@ -11,13 +11,6 @@ data DecEq (A : Type 0) (a : A @ log) (b : A @ log) : Type 0 where
   Equal    of  (a = b)
   NotEqual of ((a = b) -> Void @ log)
 
-log bool_eq : Bool -> Bool -> Bool
-bool_eq = \ x y . 
-  case x [x_eq], y [y_eq] of 
-     True, True -> True
-     False, False -> True
-     _ , _ -> False
-
 log boolean_equal : (x : Bool) -> (y : Bool) -> DecEq ? x y
 boolean_equal = \ x y . 
   case x [x_eq], y [y_eq] of 
@@ -56,8 +49,6 @@ formula_eq = \ [n] .
       And x1 x2 , And y1 y2 -> and (fe x1 [ord x_eq] y1) (fe x2 [ord x_eq] y2) 
       _ , _ -> False
           
-     
-
 
 log formula_equal : [n : Nat] -> (x:Formula n) -> (y:Formula n) 
                   -> DecEq (Formula n) x y
@@ -81,6 +72,7 @@ formula_equal = \[n] .
       And _ _ , Lit _ -> NotEqual (\z . TRUSTME)
       Lit _ , Var _ -> NotEqual (\z . TRUSTME)
       Lit _ , And _ _ -> NotEqual (\z . TRUSTME)
+
 -- apply a substitution to a formula
 log subst : [n:Nat] -> Vector (Formula n) n -> Formula n ->  Formula n
 subst = \ [n] v . 
@@ -212,3 +204,4 @@ unify = \ [n] .
               And x1 x2 , And y1 y2 -> bu x1 y1 (bu x2 y2 subst)
               _ , _ -> Nothing
 
+-- correctness : [n:Nat] f1 f2 -> unify f1 f2 empty = Just subst -> subst f1 = subst f2
