@@ -29,24 +29,29 @@ appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
 appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
   case xs [xseq] of
     VNil [ieq] ->  
-      let _ = (join : append [a] [i] [j] (VNil [ieq]) ys
-                      = ys) in     
-      let _ = (join : append [a] [i] [plus j k] (VNil [ieq]) (append [a] [j] [k] ys zs)
-                      = append [a] [j] [k] ys zs) in
+      let _ = (join : append [a] [i] [j] (VNil [ieq]) ys = ys) in     
+	   let [rhs] [rhs_eq] = (append [a] [j] [k] ys zs) in
+      let _ = (join : append [a] [i] [plus j k] (VNil [ieq]) rhs = rhs) in
       _
 
-    VCons [i'] [ieq] x xs' ->
+    VCons [i'] [ieq] x xs' -> 
       let ih [p] = aa [i'] [ord ieq] [j] [k] xs' ys zs in
-      let unfold_append = (join :
-			     append [a] [plus i j] [k] (append [a] [i] [j] (VCons [i'] [ieq] x xs') ys) zs
-                             = ((VCons [plus (plus i' j) k] [(join : Succ (plus (plus i' j) k) = Succ (plus (plus i' j) k))] x 
-                                 (append [a] [plus i' j] [k] (append [a] [i'] [j] xs' ys) zs)) : Vector a (Succ (plus (plus i' j) k))  )) in
-      let unfold_append' = (join :
-                             append [a] [i] [plus j k] (VCons [i'] [ieq] x xs') (append [a] [j] [k] ys zs)
-                             = ((VCons[plus i' (plus j k)] [(join : Succ (plus i' (plus j k)) =  Succ (plus i' (plus j k)))] x
-                                 (append [a] [i'] [plus j k] xs' (append [a] [j] [k] ys zs))) : Vector a (Succ (plus i' (plus j k))) )) in
+      let v1 [v1_eq] = (append [a] [i] [j] (VCons [i'] [ieq] x xs') ys) in
+      let v2 [v2_eq] = (append [a] [i'] [j] xs' ys) in 
+	   let v3 [v3_eq] = (append [a] [j] [k]  ys zs) in	
 
-      _
+		let _  = (join : (append [a] [i] [j] (VCons [i'] [ieq] x xs') ys) = 
+		                 (VCons [plus i' j] [_] x (append [a] [i'] [j] xs' ys) 
+							  : Vector a (Succ (plus i' j)))) in
 
+		let _ = (join : (append [a] [i] [plus j k] (VCons [i'] [ieq] x xs') v3) = 
+			             ((VCons [?] [_] x  (append [a] [i'] [plus j k] xs' v3)
+							  : Vector a (Succ (plus i' (plus j k)))))) in
+
+	   let _ = (join : (append [a] [?] [k] (VCons [?] [_] x v2) zs) =
+		                ((VCons [?] [_] x (append [a] [plus i' j] [k] v2 zs)
+							  : Vector a (Succ (plus (plus i' j) k))))) in
+
+		_
 
 
