@@ -20,6 +20,7 @@ PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees 
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch CongruenceTests UnfoldTests \
      RLE BST
+
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.

@@ -1,0 +1,87 @@
+module Paper where
+
+-- wish list for the implementation
+{-
+
+	* join -> refl ?
+	* join/all unfold/all
+	* @P and @L instead of prog and log in types
+	* infix operators
+	* mplus m n = ... vs mplus = \m n.
+	* automatic unfolding for logical terms
+	* Type shorthand for Type 0
+	* TUnboxP and TUnboxL
+-}
+
+-- Prelude for examples
+
+data Bool : Type where
+  True 
+  False
+
+data Nat : Type where
+  Zero 
+  Succ of (_ : Nat)
+
+data Maybe (A : Type) : Type where
+  Just of (x : A @ log)
+  Nothing
+
+plus : Nat -> Nat -> Nat
+ind plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [ord cw] m)
+
+minus : Nat -> Nat -> Nat
+ind minus n = \m .
+   case n [cn] of
+     Zero -> Zero
+     Succ pred -> case m [cm] of
+                    Zero -> n
+                    Succ mpred -> minus pred [ord cn] mpred
+
+-- 'x > y'
+gt : Nat -> Nat -> Bool
+ind gt x = \y.
+   case x [xpf] of
+        Zero    -> False
+        Succ x' -> case y [_] of
+                   Zero -> True
+                   Succ y' -> gt x' [ord xpf] y' 
+-- 'x < y'
+lt : Nat -> Nat -> Bool
+lt = \x.\y.gt y x
+
+---------------------------------
+
+log not : Bool -> Bool
+not = \ b. if b then False else True
+
+
+
+prog div : Nat -> Nat -> Nat
+rec div n = \ m. if (lt n m) then 0
+    else (plus 1 (div (minus n m) m))
+
+log div63 : div 6 3 = 2
+div63 = join 1000  
+  -- change to refl? note, 100 is NOT enough
+  -- maybe no # should tell the type inferencer to do as many as necessary. 
+
+prog mplus : (A : Type) => Maybe A -> Maybe A -> Maybe A 
+mplus = \A x y. case x [_] of 
+            Just z  -> x
+            Nothing -> y
+
+log idl : (A : Type) => (y:Maybe A @ prog) -> mplus Nothing y = y
+idl = \A y. join
+
+-- need to remove the parameter from Nothing. It's interfering with 
+-- the unfolding!
+-- Also, why does this stop working when I add the @ prog?
+
+log idr : (A : Type) => (x:Maybe A) -> mplus x Nothing = x 
+idr = \A x. case x [x_eq] of 
+        Just x1 -> unfold (mplus (Just x1) Nothing) in _
+        Nothing -> unfold (mplus (Nothing : Maybe A) Nothing) in _
