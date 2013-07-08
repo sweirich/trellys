@@ -19,7 +19,7 @@ PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees 
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch CongruenceTests UnfoldTests \
-     RLE BST
+     RLE BST Sat paper
 
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=

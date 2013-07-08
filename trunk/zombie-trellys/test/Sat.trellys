@@ -31,21 +31,21 @@ usually log
 -- clauses are lists of literals
 -- formulae are lists of clauses
 
-log Formula : (n:Nat) -> Type 0
+log Formula : (n:Nat) -> Type 
 Formula = \n. List (List (Times (Fin n) Bool))
 
 -- an environment is a mapping from variables to truth values
-log Env : (n:Nat) -> Type 0
+log Env : (n:Nat) -> Type 
 Env = \ n . Vector Bool n
 
 log interp_lit : [n:Nat] => Vector Bool n -> (Times (Fin n) Bool @ log) -> Bool
-interp_lit = \ [n] env lit . case lit [l_eq] of 
-   Prod fn b -> bool_eq b (lookup [?][?] fn env)
+interp_lit = \ [n] env lit . case lit of 
+   Prod fn b -> bool_eq b (lookup fn env)
      
 log interp : [n:Nat] => Vector Bool n -> Formula n -> Bool
 interp = \ [n] env formula . 
-  let _ = ( join : Formula n = List (List (Times (Fin n) Bool))) in
-  all (any (interp_lit env)) formula
+  unfold (Formula n) in
+  all (any (interp_lit env)) (formula : List (List (Times (Fin n) Bool)))
 
 -- general procedure for sat solving, i.e. showing that Phi is satisfiable
 -- we want to search for a satisfying assignment to the literals in Phi
@@ -53,13 +53,13 @@ interp = \ [n] env formula .
 -- convert a partial assignment to an environment
 -- (unassigned variables are just true)
 log extend : [n:Nat] => Vector (Maybe Bool) n -> Vector Bool n
-extend = \[n] xs . vmap [?][?] (maybe True) [n] xs
+extend = \[n] xs . vmap (maybe True) [n] xs
 
 log partial_interp_lit : [n:Nat] => (partial : Vector (Maybe Bool) n) 
               -> (lit : (Times (Fin n) Bool) @ log) -> Maybe Bool
 partial_interp_lit = \[n] p lit .
-   case lit [_] of 
-     Prod fn b -> case (lookup [?][?] fn p) [_] of 
+   case lit of 
+     Prod fn b -> case (lookup fn p) of 
          Just v  -> Just (bool_eq b v)
          Nothing -> Nothing
 
@@ -87,24 +87,24 @@ false_lit = \[n] p lit .
 log partial_interp_clause : [n:Nat] => (partial : Vector (Maybe Bool) n) 
               -> (clause : List (Times (Fin n) Bool) @ log) -> Maybe Bool
 partial_interp_clause = \[n] p c. 
-  case (any (true_lit p) c) [_] of 
-    True -> Just True
-    False -> case (all (false_lit p) c) [_] of 
-        True -> Just False
-        False -> Nothing
+  if (any (true_lit p) c) 
+    then Just True
+    else if (all (false_lit p) c) 
+         then Just False
+         else Nothing
 
 -- a formula is known to be true if all clauses are known to be true
 -- and known to be false if any clauses are known to be false.
 log partial_interp : [n:Nat] => (partial : Vector (Maybe Bool) n) 
               -> (formula : Formula n) -> Maybe Bool
 partial_interp = \ [n] p f . 
-   let _ = ( join : Formula n = List (List (Times (Fin n) Bool))) in
-   let f' = map (partial_interp_clause p) f in
-   case (all (maybe_eq bool_eq (Just True)) f') [_] of 
-     True -> Just True
-     False -> case (any (maybe_eq bool_eq (Just False)) f') [_] of 
-        True -> Just False
-        False -> Nothing
+   unfold (Formula n) in
+   let f' = map (partial_interp_clause p) (f :  List (List (Times (Fin n) Bool))) in
+   if (all (maybe_eq bool_eq (Just True)) f')
+     then Just True
+     else if (any (maybe_eq bool_eq (Just False)) f') 
+          then Just False
+          else Nothing
 
 -- unit propagation
 -- Find a clause with only one unassigned literal and no other true
@@ -115,16 +115,16 @@ log unit_lit_clause : [n : Nat] => (p : Vector (Maybe Bool) n) ->
 unit_lit_clause = \ [n] p c . 
    let unassigned_lits = filter (unassigned_lit p) c in
 	let true_lits = filter (true_lit p) c in
-	case (and (nat_eq (length unassigned_lits) 1)
-	          (nat_eq (length true_lits)       0)) [_] of
-	  True -> c 
-	  False -> Nil
+	if (and (nat_eq (length unassigned_lits) 1)
+	          (nat_eq (length true_lits)       0)) 
+	  then c 
+	  else Nil
 
 log unit_lits : [n : Nat] => (p : Vector (Maybe Bool) n) ->
        (formula : Formula n) -> List (Times (Fin n) Bool)
 unit_lits = \ [n] p f . 
-   let _ = ( join : Formula n = List (List (Times (Fin n) Bool))) in
-	concatMap (unit_lit_clause p) f 
+   unfold (Formula n) in
+	concatMap (unit_lit_clause p) (f :  List (List (Times (Fin n) Bool)))
 
 -- future work: pure literal assignment
 -- If a propositional variable occurs with only one polarity in the
@@ -140,12 +140,12 @@ set_lits = \[n] . ind set_lits l = \v.
     Nil -> v
     Cons x xs -> 
 	    let v' = set_lits xs [ord l_eq] v in
-		 set [?][n] (pi1 x) (Just (pi2 x) : Maybe Bool) v'
+		 set [n] (pi1 x) (Just (pi2 x) : Maybe Bool) v'
 
 
 -- the result of sat solving, a satisfiable assignment
 -- or "UNSAT"
-data Answer (n : Nat) (formula : Formula n) : Type 0 where
+data Answer (n : Nat) (formula : Formula n) : Type where
   SAT    of (partial : Vector (Maybe Bool) n) 
             [_ : partial_interp partial formula = (Just True : Maybe Bool) ]
   UNSAT
@@ -153,9 +153,9 @@ data Answer (n : Nat) (formula : Formula n) : Type 0 where
 -- find the index of the first unassigned variable in the partial map
 log next_var : [n:Nat] -> Vector (Maybe Bool) n -> Maybe (Fin n)    
 ind next_var [n] = \ v . 
-  case v [v_eq] of 
+  case v of 
     VNil [pf]  -> Nothing
-    VCons [m][m_eq] x xs -> case x [_] of 
+    VCons [m][m_eq] x xs -> case x of 
        Just b  -> maybe_map (fin_succ [m][m_eq]) (next_var [m][ord m_eq] xs)
        Nothing -> Just (FZ [m][m_eq])
 
@@ -172,21 +172,22 @@ rec dpll [n] = \ formula partial .
    Just False -> UNSAT
    Nothing -> 
      let units = unit_lits partial formula in
-     case (null [?] units) [_] of 
-        False -> dpll formula (set_lits units partial)
-        True  ->
-          case (next_var [n] partial) [_] of 
+     if (null units) 
+        then dpll formula (set_lits units partial)
+        else
+          case (next_var [n] partial) of 
              Nothing -> UNSAT -- no more variables to try
              Just m -> 
                case (dpll formula
-                       (set [?][?] m (Just False : Maybe Bool) partial)) [_] of 
+                       (set [n] m (Just False : Maybe Bool) partial)) [_] of 
                  SAT partial [pf] -> SAT partial [pf]
                  UNSAT     ->
                     dpll formula 
-                      (set [?][?] m (Just True : Maybe Bool) partial)
+                      (set [n] m (Just True : Maybe Bool) partial)
 
 -- The termination of this algorithm decreases with the number of unassigned 
 -- literals in the partial map. Perhaps not TOO difficult to show...
 
 -- Would also be good to get some experience using HOFs in the programmatic 
 -- fragment.
+

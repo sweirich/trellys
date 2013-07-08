@@ -24,7 +24,7 @@ recvec = \ [a] . \ [c] . \ base . \ step .
                  at x.(c [n] x)
 
 
-vmap : [a : Type 0] -> [b : Type  0] -> ((x:a@log) -> b @log) ->
+vmap : [a : Type 0] => [b : Type  0] => ((x:a@log) -> b @log) ->
        [n : Nat] -> (xs : Vector a n) -> Vector b n
 vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
         case xs [xs_eq] of
@@ -45,7 +45,7 @@ tail = \ [A][n] v . case v [v_eq] of
    in t
 
 
-log lookup : [A: Type 0] -> [n:Nat] -> Fin n -> Vector A n -> A
+log lookup : [A: Type 0] => [n:Nat] => Fin n -> Vector A n -> A
 lookup = \ [A] . 
   ind recFin [n] = \ f v . 
     case f [f_eq] of 
@@ -54,7 +54,7 @@ lookup = \ [A] .
 
 
 -- create a vector with n copies of its argument
-log repeat : [A:Type 0] -> (A @ log) -> (n:Nat) -> Vector A n
+log repeat : [A:Type 0] => (A @ log) -> (n:Nat) -> Vector A n
 repeat = \ [A] a . 
   ind rep n = 
     case n [n_eq] of 
@@ -62,7 +62,7 @@ repeat = \ [A] a .
       Succ m -> VCons [m][_] a (rep m [ord n_eq])
 
 -- update the mth component of the vector to be 'a'
-log set : [A:Type 0] -> [n:Nat] -> (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
+log set : [A:Type 0] => [n:Nat] -> (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
 set = \ [A] . 
   ind set [n] = \ m a v.
        case m [n_eq] of 

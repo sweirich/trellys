@@ -25,7 +25,7 @@ fold = \[a] [b] n f . ind fold xs =
     Nil -> n
     Cons x xs -> f x (fold xs [ord xs_eq]) 
 
-null : [a : Type 0] -> (List a @ log) -> Bool
+null : [a : Type 0] => (List a @ log) -> Bool
 null = \ [a] xs . case xs [_] of 
   Nil -> True
   Cons _ _ -> False

@@ -9,7 +9,6 @@ module Paper where
 	* infix operators
 	* mplus m n = ... vs mplus = \m n.
 	* automatic unfolding for logical terms
-	* Type shorthand for Type 0
 	* TUnboxP and TUnboxL
 -}
 
@@ -24,7 +23,7 @@ data Nat : Type where
   Succ of (_ : Nat)
 
 data Maybe (A : Type) : Type where
-  Just of (x : A @ log)
+  Just of (x : A @ L)
   Nothing
 
 plus : Nat -> Nat -> Nat
@@ -46,7 +45,7 @@ gt : Nat -> Nat -> Bool
 ind gt x = \y.
    case x [xpf] of
         Zero    -> False
-        Succ x' -> case y [_] of
+        Succ x' -> case y of
                    Zero -> True
                    Succ y' -> gt x' [ord xpf] y' 
 -- 'x < y'
@@ -59,22 +58,21 @@ log not : Bool -> Bool
 not = \ b. if b then False else True
 
 
-
 prog div : Nat -> Nat -> Nat
 rec div n = \ m. if (lt n m) then 0
     else (plus 1 (div (minus n m) m))
 
 log div63 : div 6 3 = 2
-div63 = join 1000  
+div63 = join   
   -- change to refl? note, 100 is NOT enough
   -- maybe no # should tell the type inferencer to do as many as necessary. 
 
 prog mplus : (A : Type) => Maybe A -> Maybe A -> Maybe A 
-mplus = \A x y. case x [_] of 
+mplus = \A x y. case x of 
             Just z  -> x
             Nothing -> y
 
-log idl : (A : Type) => (y:Maybe A @ prog) -> mplus Nothing y = y
+log idl : (A : Type) => (y:Maybe A @ P) -> mplus Nothing y = y
 idl = \A y. join
 
 -- need to remove the parameter from Nothing. It's interfering with 

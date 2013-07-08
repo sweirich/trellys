@@ -218,6 +218,7 @@ trellysStyle = Token.LanguageDef
                   ,"conv", "by", "at"
                   ,"let", "in"
                   ,"prog", "log"
+                  , "L", "P"                
                   ,"axiom"
                   ,"erased"
                   ,"termcase"
@@ -353,6 +354,9 @@ telescope = many teleBinding
 theta :: LParser Theta
 theta =      (reserved "prog" >> return Program)
         <|>  (reserved "log" >> return Logic)
+        <|>  (reserved "P" >> return Program)
+        <|>  (reserved "L" >> return Logic)
+            
 
 ---
 --- Top level declarations
@@ -470,7 +474,7 @@ join =
      s1 <- optionMaybe natural
      s2 <- optionMaybe natural
      case (s1,s2) of
-       (Nothing,Nothing) -> return $ Join 100 100 strategy
+       (Nothing,Nothing) -> return $ Join 1000 1000 strategy
        (Just n,Nothing)  -> return $ Join n n strategy
        (Just n1,Just n2) -> return $ Join n1 n2 strategy
        _                 -> error $ "Internal error: nat after no nat"
@@ -702,10 +706,16 @@ complexMatch =
      body <- term
      return $ ComplexMatch (bind pats body)
 
+eqName :: LParser TName
+eqName = do 
+  n <- fresh (string2Name "_")
+  option n (brackets variableOrWild)
+  
+
 caseExpr :: LParser Term
 caseExpr = do
     reserved "case"
-    scruts <- sepBy1 ((,) <$> (embed <$> factor) <*> (brackets variableOrWild))
+    scruts <- sepBy1 ((,) <$> (embed <$> factor) <*> eqName)
                      (reservedOp ",")
     reserved "of"
     alts <- layout complexMatch (return ())
