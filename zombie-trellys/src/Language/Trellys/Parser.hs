@@ -36,7 +36,7 @@ import qualified Data.Set as S
 
   terms:
     a,b,A,B ::=
-      Type l                   Universes
+      Type [l]                 Universes
     | x                        Variables   (start with lowercase)
     | C                        Term, Type constructors (start with 
                                       uppercase)
@@ -69,6 +69,8 @@ import qualified Data.Set as S
     | ind f [x] = a            Erased ind
     | (a : A)                  Annotations
     | A @ th                   At
+    
+    | if a then b else c       Syntactic sugar for case
 
 
    equality contexts
@@ -101,16 +103,16 @@ import qualified Data.Set as S
       axiom log  foo : A -- logical
       axiom foo : A      -- also logical
 
-    For logical datatype declarations (the log can be omitted):
+    For logical datatype declarations (the level can be omitted):
 
-       log data T D : Type l where
+       log data T D : Type [l] where
          C1 of Del1
          ...
          Cn of Deln
 
     For programmatic datatype declarations:
 
-       prog data T D : Type l where
+       prog data T D : Type [l] where
          C1 of Del1
          ...
          Cn of Deln
@@ -221,6 +223,7 @@ trellysStyle = Token.LanguageDef
                   ,"termcase"
                   ,"TRUSTME"
                   , "injectivity"
+                  , "if", "then", "else"  
                   ]
                , Token.reservedOpNames =
                  ["!","?","\\",":",".",",","<", "=", "+", "-", "^", "()", "_", "@"]
@@ -365,7 +368,7 @@ dataDef = do
   params <- telescope
   colon
   reserved "Type"
-  level <- natural
+  level <- option 0 natural
   modify (\cnames -> cnames{ tconNames = S.insert name (tconNames cnames) })
   reserved "where"
   cs <- layout constructorDef (return ())
@@ -553,6 +556,7 @@ factor = choice [ inferme   <?> "a placeholder (_)"
                 , termCase  <?> "a termcase"
                 , trustme   <?> "TRUSTME"
                 , impProd   <?> "an implicit function type"
+                , ifExpr    <?> "an if expression"  
                 , expProdOrAnnotOrParens
                     <?> "an explicit function type or annotated expression"
                 ]
@@ -568,7 +572,7 @@ impOrExpBind = impBind <|> expBind
 typen :: LParser Term
 typen =
   do reserved "Type"
-     Type <$> natural
+     Type <$> (option 0 $ natural)
 
 
 -- Lambda abstractions have the syntax '\x . e' There is no type annotation
@@ -600,6 +604,20 @@ rec = do
   reservedOp "="
   body <- expr
   return $ (Rec ep (bind (f,x) body))
+
+ifExpr :: LParser Term
+ifExpr = 
+  do reserved "if"
+     a <- expr
+     reserved "then"
+     b <- expr
+     reserved "else"
+     c <- expr
+     eqname <- fresh (string2Name "if_eq")
+     let scrut = [ (embed a, eqname) ]
+     let tm = ComplexMatch (bind [PatCon (embed (string2Name "True")) []] b)
+     let fm = ComplexMatch (bind [PatCon (embed (string2Name "False")) []] c)
+     return $ (ComplexCase (bind scrut [tm, fm]))
 
 letExpr :: LParser Term
 letExpr =

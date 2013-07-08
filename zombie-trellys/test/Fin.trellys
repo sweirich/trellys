@@ -17,7 +17,7 @@ fin_eq =
       FZ [m1][m1_eq], FZ [m2][m2_eq] -> True
       FS [m1][m1_eq] fn1', FS [m2][m2_eq] fn2' -> 
 		   let _ = uneraseEq [Nat][Nat][m1][m2] [sm_eq_Sn__m_eq_n m1 m2 _] in
-		   eq [m1] [ord m1_eq] fn1'  fn2'
+		   eq [m1] [ord m1_eq] fn1' ( fn2' : Fin m1 )
       _ , _ -> False
 
 -- inject a fin into a larger set
