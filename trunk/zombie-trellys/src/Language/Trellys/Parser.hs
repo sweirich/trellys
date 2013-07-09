@@ -396,8 +396,11 @@ sigDef = do
   return $ axOrSig n th ty 
 
 valDef = do
-  n <- try (do {n <- variable; reservedOp "="; return n})
-  val <- expr
+  (n, binds) <- try (do {n <- variable; 
+                      ps <- many impOrExpBind; 
+                      reservedOp "="; return (n, ps)})
+  body <- expr
+  let val = foldr (\(x,ep) m -> Lam ep (bind x m)) body binds
   return $ Def n val
 
 indDef = do
@@ -595,9 +598,12 @@ ind = do
   reserved "ind"
   f <- variable
   (x,ep) <- impOrExpBind
+  binds <- many impOrExpBind
   reservedOp "="
   body <- expr
-  return $ (Ind ep (bind (f,x) body))
+  let rhs = foldr (\(x,ep) m -> Lam ep (bind x m))
+                           body binds
+  return $ (Ind ep (bind (f,x) rhs))
 
 -- recursive abstractions, with the syntax 'rec f x = e', no type annotation.
 rec :: LParser Term
@@ -605,9 +611,13 @@ rec = do
   reserved "rec"
   f <- variable
   (x,ep) <- impOrExpBind
+  binds <- many impOrExpBind
   reservedOp "="
   body <- expr
-  return $ (Rec ep (bind (f,x) body))
+  let rhs = foldr (\(x,ep) m -> Lam ep (bind x m))
+                           body binds
+
+  return $ (Rec ep (bind (f,x) rhs))
 
 ifExpr :: LParser Term
 ifExpr = 
