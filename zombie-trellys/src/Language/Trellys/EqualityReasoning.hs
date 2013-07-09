@@ -41,6 +41,25 @@ import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
 import Debug.Trace
 
+-- In the decompose function, we will need to "canonicalize" certain fields
+-- that should not matter in the erased language. For readability we use
+-- this typeclass
+
+class Canonical a where
+  canonical :: a
+
+instance Canonical Theta where
+  canonical = Logic
+
+instance Canonical Int where
+  canonical = 0
+
+instance Canonical EvaluationStrategy where
+  canonical = CBV
+
+instance Canonical Explicitness where
+  canonical = Explicit
+
 -- ********** ASSOCIATION PHASE 
 -- In a first pass, we associate all uses of trans to the right, which
 -- lets us simplify subproofs of the form (trans h (trans (symm h) p))
@@ -336,15 +355,15 @@ decompose _ _ avoid t@(AType _) = return t
 decompose sub e avoid (ATCon c args) = do
   args' <- mapM (decompose True e avoid) args
   return $ ATCon c args'
-decompose sub e avoid (ADCon th c params args) = do
+decompose sub e avoid (ADCon c th params args) = do
   params' <- mapM (decompose True Erased avoid) params
   args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ ADCon th c params' args'
+  return $ ADCon c canonical params' args'
 decompose _ e avoid (AArrow k ex ep bnd) = do
   ((x,unembed->t1), t2) <- unbind bnd
   r1 <- decompose True e avoid t1
   r2 <- decompose True e (S.insert x avoid) t2
-  return (AArrow k ex ep (bind (x, embed r1) r2))
+  return (AArrow canonical canonical ep (bind (x, embed r1) r2))
 decompose _ e avoid (ALam th ty ep bnd) = do
   (x, body) <- unbind bnd 
   ty' <- decompose True Erased avoid ty
@@ -361,11 +380,12 @@ decompose sub e avoid (ABox t th) = ABox <$> (decompose True e avoid t) <*> pure
 decompose _ e avoid (AAbort t) = AAbort <$> (decompose True Erased avoid t)
 decompose _ e avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True e avoid t1) <*> (decompose True e avoid t2)
---Fixme: surely we need to do something about the erased subterms here?
 decompose _ _ avoid t@(AJoin a i b j strategy) =
-  AJoin <$> (decompose True Erased avoid a) <*> pure i 
-        <*> (decompose True Erased avoid b) <*> pure j
-        <*> pure strategy
+  AJoin <$> (decompose True Erased avoid a) 
+        <*> pure canonical
+        <*> (decompose True Erased avoid b) 
+        <*> pure canonical
+        <*> pure canonical
 decompose _ e avoid (AConv t1 ts bnd ty) =  do
   (xs, t2) <- unbind bnd
   r1 <- decompose True e avoid t1
@@ -439,7 +459,7 @@ match vars (ACumul t _) (ACumul t' _) = match vars t t'
 match vars (AType _) _ = return M.empty
 match vars (ATCon c params) (ATCon _ params') = 
   foldr M.union M.empty <$> zipWithM (match vars) params params'
-match vars (ADCon _ c params ts) (ADCon _ _ params' ts') = do
+match vars (ADCon c _ params ts) (ADCon _ _ params' ts') = do
    m1 <- foldr M.union M.empty <$> zipWithM (match vars) params params'
    m2 <- foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
    return (m1 `M.union` m2)
@@ -460,7 +480,6 @@ match vars (ABox t th) (ABox t' th') = match vars t t'
 match vars (AAbort t) (AAbort t') = match vars t t'
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
---Fixme: this seems dubious too?
 match vars (AJoin a _ b _ _) (AJoin a' _ b' _ _) = 
   match vars a a' `mUnion` match vars b b'
 match vars (AConv t1 t2s bnd ty) (AConv t1' t2s' bnd' ty') = do

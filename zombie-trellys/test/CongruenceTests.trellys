@@ -51,6 +51,9 @@ axiom n1 : Nat
 log decompose_arrow_rng_binding : (F = F1) -> (((x:Nat) -> F x) = ((x:Nat) -> F1 x))
 decompose_arrow_rng_binding = \p. _
 
+log decompose_arrow_explicitness : (Nat -> atype) = (Nat => atype)
+decompose_arrow_explicitness = _
+
 log decompose_lam_body : (a=a1) -> ((\x.a) : Nat->atype) = ((\x.a1) : Nat->atype)
 decompose_lam_body = \p. _
 
@@ -82,6 +85,12 @@ decompose_tyeq_rhs = \p. _
 
 log decompose_join : (join : a = a) = (join : a1 = a1)
 decompose_join = _
+
+log decompose_join_stepcount : (join 1 1 : (a = a)) = (join 2 2 : (a = a))
+decompose_join_stepcount = _
+
+log decompose_join_strategy : (join : (a = a)) = (pjoin : (a = a))
+decompose_join_strategy = _
 
 log decompose_conv_subject : (a=a1) -> (p : atype=btype) -> (conv a by p at x.x)  = (conv a1 by p at x.x)
 decompose_conv_subject = \q p. _
@@ -145,3 +154,4 @@ decompose_case_branch = \p. _
 log decompose_case_branch_binding : (f=f1) ->  (case n [_] of { Zero -> a ; Succ n' -> f n'} : atype)
                                              = (case n [_] of { Zero -> a ; Succ n' -> f1 n'} : atype)
 decompose_case_branch_binding = \p. _
+

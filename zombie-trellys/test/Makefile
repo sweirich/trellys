@@ -13,13 +13,16 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Arithmetic-old Vectors Product List Fin LetRebind Trees Append2 \
-     Append2-old AppendUni TypeTest NatElimination \
+PASS=Prelude Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
+     AppendUni TypeTest NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch CongruenceTests UnfoldTests \
      RLE BST Sat paper
+
+# These were broken by correctly doing CBV-reduction:
+### Arithmetic-old Append2-old
 
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
