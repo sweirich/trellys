@@ -82,3 +82,4 @@ log idr : [A : Type] => (x:Maybe A) -> mplus x Nothing = x
 idr [A] x = case x of 
         Just x1 -> unfold (mplus (Just x1) Nothing) in _
         Nothing -> unfold (mplus (Nothing : Maybe A) Nothing) in _
+
