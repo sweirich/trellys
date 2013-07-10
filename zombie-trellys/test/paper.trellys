@@ -21,9 +21,6 @@ data Nat : Type where
   Zero 
   Succ of (_ : Nat)
 
-data Maybe (A : Type) : Type where
-  Just of (x : A @ L)
-  Nothing
 
 plus : Nat -> Nat -> Nat
 ind plus n m =
@@ -51,6 +48,16 @@ ind gt x y =
 lt : Nat -> Nat -> Bool
 lt x y = gt y x
 
+eq : Nat -> Nat -> Bool
+ind eq x y = 
+  case x [xpf], y [_] of 
+     Zero, Zero -> True
+     Succ x', Succ y' -> eq x' [ord xpf] y'
+     _ , _ -> False
+
+log void : Type
+void = True = False
+
 ---------------------------------
 
 log not : Bool -> Bool
@@ -65,6 +72,49 @@ log div63 : div 6 3 = 2
 div63 = join   
   -- change to refl? note, 100 is NOT enough
   -- maybe no # should tell the type inferencer to do as many as necessary. 
+
+-- this function diverges at 0, is an identity function everywhere else
+prog silly : Nat -> Nat
+rec silly x = case x of 
+  Zero -> silly x
+  Succ Zero -> x
+  Succ (Succ n) -> Succ (silly (Succ n))
+
+log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ log) -> (silly n = n)
+ind lemma_silly n pf = 
+  case n [n_eq] of 
+    Zero -> unfold void in 
+            contra (pf n_eq : True = False)
+    Succ m -> case m [m_eq] of
+        Zero -> unfold (silly (Succ Zero)) in _
+        (Succ n') -> 
+		   let not_zero = ((\pf . contra (_ : (Succ n') = 0)) : (m = 0) -> void) in
+         let ih = lemma_silly m [ord n_eq] not_zero in
+			let _  = (join : (silly (Succ (Succ n'))) = Succ (silly (Succ n'))) in
+			-- why can't CC derive this last equality?
+			let _  = (conv _ by ih at x . (Succ x = silly n) : Succ m = silly n) in
+         _
+
+log diverge : (f : Nat -> Nat @ prog) -> (x : Nat) -> Type
+diverge f x = (y : Nat) -> (f x = y) -> void 
+
+-- can't prove this
+-- log silly_diverge : diverge silly 0
+
+data Maybe (a : Type 0) : Type 0 where
+  Just    of ( _ : a @ prog)
+  Nothing 
+
+prog maybe_map : [a : Type 0] => [b : Type 0] => 
+	 ((a @ log) -> b @ prog) -> (Maybe a @ prog) -> Maybe b
+maybe_map = \ [a] [b] f n . 
+  case  n [_] of
+    Just x -> Just (f x) 
+    _      -> Nothing 
+
+log lemma_maybe : (f : (Nat @ log) -> Nat @ prog) -> (x:Nat) -> maybe_map f (Just x) = (Just (f x) : Maybe Nat)
+lemma_maybe f x = unfold (maybe_map f (Just x)) in _
+
 
 prog mplus : [A : Type] => Maybe A -> Maybe A -> Maybe A 
 mplus [A] x y = case x of 
