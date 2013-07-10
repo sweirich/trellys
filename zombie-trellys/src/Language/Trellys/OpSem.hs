@@ -260,7 +260,7 @@ cbvNSteps n tm =
 -- As is standard for parallel reduction relations, it does not try
 --  to find further redexes in the subterms of a redex.
 --
--- Unlike a standard parallel recuction relation, once it goes under a
+-- Unlike a standard parallel reduction relation, once it goes under a
 -- binder it only reduces lambdas and case-expressions, not ind
 -- expressions.  This decreases the risk of unfolding a term
 -- indefinitely.  The boolean argument tracks whether we are under a
@@ -285,9 +285,23 @@ parStep deep (EILam b)         = EILam <$> parStep True b
 parStep deep (EApp EAbort _)   = return EAbort
 -- Note: for correctness, need a value restriction on b here,
 --  and in the corresponding cases for RecPlus and IndPlus
-parStep deep  (EApp (ELam bnd) b) = do
-  (x,body) <- unbind bnd
-  return $ subst x b body
+parStep deep (EApp a b) = 
+  if (isEValue b) then 
+    case (deep, a) of 
+      (_,ELam bnd) -> 
+        do (x,body) <- unbind bnd
+           return $ subst x b body
+      (False, ERecPlus bnd) ->
+        do ((f,x),body) <- unbind bnd
+           return $ subst f a $ subst x b body
+      (False, EIndPlus bnd) ->
+        do ((f,x),body) <- unbind bnd
+           x' <- fresh (string2Name "x")
+           return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
+      _ -> EApp <$> parStep deep a <*> parStep deep b
+  else 
+    EApp <$> parStep deep a <*> parStep deep b
+{-
 parStep False (EApp a@(ERecPlus bnd) b) = do
   ((f,x),body) <- unbind bnd
   return $ subst f a $ subst x b body
@@ -296,6 +310,7 @@ parStep False (EApp a@(EIndPlus bnd) b) = do
   x' <- fresh (string2Name "x")
   return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
 parStep deep (EApp a b) = EApp <$> parStep deep a <*> parStep deep b
+-}
 parStep deep  (EIApp (EILam body)) = return body
 parStep False (EIApp a@(ERecMinus bnd)) = do
   (f,body) <- unbind bnd
@@ -322,7 +337,7 @@ parStep deep (EIndMinus bnd)  = do
   EIndMinus <$> (bind f <$> parStep True b)
 parStep deep (ECase EAbort mtchs) = return EAbort
 -- Todo: need a value-restriction for correctness.
-parStep deep a@(ECase (EDCon c args) mtchs) = 
+parStep deep a@(ECase (EDCon c args) mtchs) | all isEValue args = 
   case find (\(EMatch c' _) -> c' == c) mtchs of
     Nothing  -> return a  --This should probably never happen?
     Just (EMatch c' bnd) ->
