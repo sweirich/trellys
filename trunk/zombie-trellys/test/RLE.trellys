@@ -61,11 +61,12 @@ append_replicate_Succ = \[a]. ind append_replicate_Succ n = \x ys.
     Succ m -> 
       let _  = (pjoin : replicate (Succ (Succ m)) x = 
 		             (Cons x (replicate (Succ m) x) : List a)) in
-      let _  = (pjoin : append (Cons x (replicate (Succ m) x)) ys = 
-		             (Cons x (append (replicate (Succ m) x) ys) : List a)) in
+		let rep_Sm  = (replicate (Succ m) x) in
+      let _  = (pjoin : append (Cons x rep_Sm) ys = (Cons x (append rep_Sm ys) : List a)) in
       let IH = append_replicate_Succ m [ord n_eq] x ys in
       let [x_ys] = (Cons x ys : List a ) in
-      let _  = (pjoin : (Cons x (append (replicate m x) x_ys) : List a) = append (Cons x (replicate m x)) x_ys) in
+		let rep_m_x = (replicate m x) in
+      let _  = (pjoin : (Cons x (append rep_m_x x_ys) : List a) = append (Cons x rep_m_x) x_ys) in
       let _  = (pjoin : (Cons x (replicate m x) : List a) = replicate (Succ m) x) in
       _
 

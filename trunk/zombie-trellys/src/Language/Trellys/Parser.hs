@@ -202,7 +202,7 @@ trellysStyle = Token.LanguageDef
                 , Token.reservedNames =
                   ["ord"
                   ,"ordtrans"
-                  ,"join"
+                  , "join"
                   ,"pjoin"
                   ,"unfold"
                   ,"rec"

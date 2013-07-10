@@ -17,7 +17,7 @@ ind mult n = \m .
 
 
 minus : Nat -> Nat -> Nat
-ind minus n = \m .
+ind minus n m =
    case n [cn] of
      Zero -> Zero
      Succ pred -> case m [cm] of
@@ -29,16 +29,16 @@ gt : Nat -> Nat -> Bool
 ind gt x = \y.
    case x [xpf] of
         Zero    -> False
-        Succ x' -> case y [_] of
+        Succ x' -> case y of
                    Zero -> True
                    Succ y' -> gt x' [ord xpf] y' 
 -- 'x < y'
 lt : Nat -> Nat -> Bool
-lt = \x.\y.gt y x
+lt x y = gt y x
 
 -- 'x >= y'
 ge : Nat -> Nat -> Bool
-ge = \x y . gt (Succ x) y
+ge x y = gt (Succ x) y
 
 -- 'x <= y'
 le : Nat -> Nat -> Bool
@@ -46,25 +46,60 @@ le = \x.\y.ge y x
 
 -- 'x = y'
 eq : Nat -> Nat -> Bool
-eq = \x.\y.case (gt x y) [_] of
-           False -> case (lt  x y) [_] of
-                    False -> True
-                    True -> False
-           True  -> False
+eq x y = if (gt x y) 
+         then not (lt x y) 
+         else False
 
 -- x != y
 neq : Nat -> Nat -> Bool
-neq = \x.\y.case (eq x y) [_] of
-            True -> False
-            False -> True
+neq x y = not (eq x y) 
 
 -- 'div' calculates ceiling(n/m+1)
 prog div : Nat -> Nat -> Nat
-rec div n = \m .
-  case n [_] of
+rec div n m =
+  case n of
     Zero -> Zero
-    Succ pred ->  let prog rc = div (minus pred m) m in
-                  Succ rc
+    Succ pred -> let prog rc = div (minus pred m) m in
+                 Succ rc
+
+prog div' : Nat -> Nat -> Nat
+rec div' n m =
+  case n of
+    Zero -> Zero
+    Succ pred -> Succ (div' (minus pred m) m)
+
+-- log eqdivs : (m : Nat) -> (n:Nat) -> (div m n = div' m n)
+
+{-
+--- this won't work, but it seems like there should be a way 
+-- to annotate to make it work.
+log eqdivs :  (m : Nat) -> (n:Nat) -> (div m n = div' m n)
+eqdivs m n = 
+  unfold 1 (div m n) in
+  unfold 1 (div' m n) in
+  let _ = (conv _ 
+            by (unfold 1 (let prog rc [_] = div1 (minus pred m1) m1 in
+                   Succ rc))
+				at x . (rec div'1 n1 =
+            \ m1 . (case n1 [_] of
+                Zero -> Zero 
+                Succ pred -> x)))) 
+      : (((rec div'1 n1 =
+            \ m1 . (case n1 [_] of
+                Zero -> Zero 
+                Succ pred -> 
+                   Succ (div'1 (minus pred m1) m1))) 
+         : Nat -> Nat -> Nat) m n) = 
+       (((rec div1 n1 =
+            \ m1 . (case n1 [_] of
+                Zero -> Zero 
+                Succ pred -> 
+                   let prog rc [_] = div1 (minus pred m1) m1 in
+                   Succ rc))
+         : Nat -> Nat -> Nat) m n))
+  in _ 
+-}
+
 
 minus_same_zero : (n : Nat) -> (minus n n = 0)
 ind minus_same_zero n =
@@ -110,7 +145,7 @@ ind div_mult m = \n .
                                  (let prog r [_] = div (minus plus_n__mult_m'_Sn n) n
                                   in Succ r))
                in let _ = lemma_minus_plus_id n (mult m' (Succ n))
-               in let IH= div_mult m' [ord m_eq] n
+               in let IH = div_mult m' [ord m_eq] n
                in let _ = (join : (let prog r [_] = m' in Succ r) = Succ m')
                in (_ : (div (mult m (Succ n)) n = m))
 
