@@ -20,7 +20,7 @@ PASS=Prelude TypeTest CongruenceTests UnfoldTests \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE BST Sat paper
+     RLE BST Sat Paper
 
 # These were broken by correctly doing CBV-reduction:
 ### Arithmetic-old Append2-old
