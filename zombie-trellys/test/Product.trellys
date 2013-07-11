@@ -27,19 +27,18 @@ pair_eq = \ [A][B] eqA eqB p1 p2 .
 data Sigma (A:Type 0) (b : A -> Type 0) : Type 0 where
   Pair of (x:A) (_ : b x)
 
-
-log fst : [A:Type 0] -> [b : A -> Type 0] -> Sigma A b -> A
-fst = \ [A] [b] p . 
-  case p [_] of 
+log fst : [A:Type 0] => [b : A -> Type 0] => Sigma A b -> A
+fst [A] [b] p =  
+  case p of 
     Pair x y -> x
 
-log snd : [A:Type 0] -> [b : A  -> Type 0] -> (x:Sigma A b) 
-	     -> b (fst [A][b] x)
-snd = \ [A] [b] p .
-  case p [_] of 
+log snd : [A:Type] => [b : A  -> Type] => (x:Sigma A b) 
+	     -> b (fst x)
+snd [A] [b] p =
+  case p of 
     Pair x y -> 
-	    let _ = (join 10 : x = fst [A] [b] (Pair x y)) in
-		 y
+       unfold (fst p) in
+         y
 
 {-
 log map : [A : Type 0] -> [p : A -> Type 0] -> 
@@ -50,4 +49,4 @@ log map : [A : Type 0] -> [p : A -> Type 0] ->
 map = \ [A][p][B][q] f g x. 
   case x [_] of 
     Pair x y -> Pair (f x) (g x y)
--}
+ -}
