@@ -311,9 +311,26 @@ diverge f x = (y : Nat) -> (f x = y) -> void
 -- also can't prove this one. Infinite loops give us no information.
 -- log lemma_silly' : (k : Nat) -> (n : Nat) -> (silly n = k) -> (k = n)
 
-data Maybe (a : Type 0) : Type 0 where
-  Just    of ( _ : a @ prog)
+data Maybe (a : Type) : Type where
+  Just    of ( _ : a @ P)
   Nothing 
+
+log md3 : Maybe (Nat -> Nat)
+md3 = Just (\x. div 3 x)
+
+log foo : Maybe (Nat -> Nat) -> (Nat -> Nat @ P)
+foo x = case x of 
+  Just y -> y
+  Nothing -> \ x . x
+
+prog bar : Maybe (Nat -> Nat) -> Nat -> Maybe Nat
+bar x y = case x of 
+      Just f  -> Just (f y)
+      Nothing -> Nothing
+
+prog boom : Maybe Nat
+boom = bar md3 0
+
 
 prog maybe_map : [a : Type 0] => [b : Type 0] => 
 	 ((a @ log) -> b @ prog) -> (Maybe a @ prog) -> Maybe b
@@ -326,17 +343,17 @@ log lemma_maybe : (f : (Nat @ log) -> Nat @ prog) -> (x:Nat) -> maybe_map f (Jus
 lemma_maybe f x = unfold (maybe_map f (Just x)) in _
 
 
-prog mplus : [A : Type] => Maybe A -> Maybe A -> Maybe A 
+log mplus : [A : Type] => Maybe A -> Maybe A -> Maybe A 
 mplus [A] x y = case x of 
             Just z  -> x
             Nothing -> y
 
-log idl : [A : Type] => (y:Maybe A @ P) -> mplus Nothing y = y
+
+log idl : [A : Type] => (y:Maybe A) -> mplus Nothing y = y
 idl [A] y = join
 
 -- need to remove the parameter from Nothing. It's interfering with 
 -- the unfolding!
--- Also, why does this stop working when I add the @ prog?
 
 log idr : [A : Type] => (x:Maybe A) -> mplus x Nothing = x 
 idr [A] x = case x of 
