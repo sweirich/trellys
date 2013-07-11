@@ -187,8 +187,9 @@ div63 = join
   -- change to refl? note, 100 is NOT enough
   -- maybe no # should tell the type inferencer to do as many as necessary. 
 
-log div_le : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
-ind div_le n m hm = 
+-- This one doesn't work (some of the TRUSTME holes can't be filled in).
+log div_le_bad : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
+ind div_le_bad n m hm = 
   case (lt n m) [lt_pf] of
     True -> 
       unfold (div n m) in
@@ -205,7 +206,7 @@ ind div_le n m hm =
 			      else (plus 1 (div (minus n m) m)) : Nat) 
 			  = (plus 1 (div (minus n m) m))) in
           let hn = (join : eq (Succ n') Zero = False) in
-	  let ih = (div_le (minus n m) 
+	  let ih = (div_le_bad (minus n m) 
 	                   [minus_smaller n m hn hm]
 			   m
 			   hm
@@ -216,6 +217,51 @@ ind div_le n m hm =
 -- But alas, we can't, because (div (minus n m) m) is programmatic.
 --          let _ = (le_Succ_cong (div (minus n m) m) (minus n m) ih) in
 	    TRUSTME
+
+-- But, undeterred we plow on!
+
+data Div_le_Answer (n : Nat) (m : Nat) : Type where
+  Answer of (k : Nat)
+            (pf1 : div n m = k)
+            (pf2 : le k n = True)
+
+log div_le_helper : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> Div_le_Answer n m
+ind div_le_helper n m hm = 
+  case (lt n m) [lt_pf] of
+    True -> 
+      unfold (div n m) in
+      unfold (le Zero n) in 
+        Answer Zero _ _ 
+    False ->
+      case n [n_eq] of
+        Zero -> TRUSTME
+        Succ n' ->
+	  let _  = (pjoin : (div n m) = (if (lt n m) 
+					   then 0
+					   else (plus 1 (div (minus n m) m)) : Nat)) in
+	  let _  = (pjoin : (if False 
+			      then 0
+			      else (plus 1 (div (minus n m) m)) : Nat) 
+			  = (plus 1 (div (minus n m) m))) in
+          let hn = (join : eq (Succ n') Zero = False) in
+	  let ih = (div_le_helper (minus n m) 
+	                   [minus_smaller n m hn hm]
+			   m
+			   hm) in
+          case ih of
+	    Answer k ih1 ih2 ->
+              let _ = (minus_le n m hn hm
+   	                : le (Succ (minus n m)) n = True) in
+              let _ = (le_Succ_cong k (minus n m) ih2) in
+	      let _ = (join : plus 1 k = Succ k) in
+	        Answer (Succ k)
+		       _
+ 	               (le_trans (Succ k) (Succ (minus n m)) n _ _)
+   	        
+log div_le : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
+div_le n m hm =
+  case (div_le_helper n m hm) of
+    Answer _ _ pf -> pf 
 
 -----------------------------------
 
