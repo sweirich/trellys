@@ -24,21 +24,21 @@ pair_eq = \ [A][B] eqA eqB p1 p2 .
  case p1 [_], p2 [_] of 
    Prod x1 y1, Prod x2 y2 -> and (eqA x1 x2) (eqB y1 y2)
 
-data Sigma (A:Type 0) (b : A -> Type 0) : Type 0 where
+
+data Sigma (A:Type) (b:A -> Type) : Type where
   Pair of (x:A) (_ : b x)
 
-log fst : [A:Type 0] => [b : A -> Type 0] => Sigma A b -> A
+log fst : [A:Type] => [b:A -> Type] => Sigma A b -> A
 fst [A] [b] p =  
   case p of 
     Pair x y -> x
 
-log snd : [A:Type] => [b : A  -> Type] => (x:Sigma A b) 
-	     -> b (fst x)
+log snd : [A:Type] => [b:A -> Type] => (p:Sigma A b) 
+	     -> b (fst p)
 snd [A] [b] p =
   case p of 
-    Pair x y -> 
-       unfold (fst p) in
-         y
+    Pair x y -> unfold (fst p) in y
+
 
 {-
 log map : [A : Type 0] -> [p : A -> Type 0] -> 
