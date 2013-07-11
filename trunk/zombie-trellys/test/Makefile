@@ -13,12 +13,13 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
-     AppendUni TypeTest NatElimination \
+PASS=Prelude TypeTest CongruenceTests UnfoldTests \
+     Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
+     AppendUni  NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
-     BasicOrd DeepMatch CongruenceTests UnfoldTests \
+     BasicOrd DeepMatch \
      RLE BST Sat paper
 
 # These were broken by correctly doing CBV-reduction:

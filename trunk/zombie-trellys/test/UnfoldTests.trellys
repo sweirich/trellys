@@ -2,6 +2,31 @@ module UnfoldTests where
 
 import Prelude
 
+-- Stepping a function with a conv applied to it.
+{-
+converted_lam : (p : ((b:Bool)->Bool) = ((n:Nat)->Nat)) -> (n : Nat) -> Bool
+converted_lam p n = 
+  unfold ((conv ((\b . b) : (b:Bool)->Bool) by p at x.x) n) in
+  let _ = (_ : ((conv ((\b . b) : (b:Bool)->Bool) by p at x.x) n) = n) in
+    True
+-}
+
+-- Stepping an ind with a dependent type.
+-- (tricky points: right type annotation on the
+--   introduced lambda).
+-- Stepping a case-expression
+-- (tricky points: substitute the right thing for xq).
+ind_refl : (x:Nat) -> (x=x)
+ind_refl = ind ih x =
+  case x [xq] of
+   Zero -> join
+   Succ x' -> let _ = ih x' [ord xq] in _
+
+ind_step : (ind_refl 1) = (join : 1 = 1)
+ind_step = 
+  unfold (ind_refl 1) in
+    _
+
 log f : Nat -> Nat
 f = \x.x
 

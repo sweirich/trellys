@@ -14,10 +14,10 @@ import Language.Trellys.GenericBind
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
-import Language.Trellys.Environment(UniVarBindings, setUniVars)
+import Language.Trellys.Environment(UniVarBindings, setUniVars, warn)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
-import Language.Trellys.TypeCheckCore (aGetTh, getType)
+import Language.Trellys.TypeCheckCore --(aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
@@ -25,6 +25,7 @@ import Control.Applicative
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.ST
 import Control.Monad.State.Strict
+import Control.Monad.Error.Class
 import Data.Maybe (isJust,fromJust)
 import qualified Data.Set as S
 import Data.Set (Set)
@@ -427,8 +428,8 @@ decompose _ e avoid (ACase t1 bnd (th,ty)) = do
   return (ACase r1 (bind x rs) (th,ty'))
 decompose _ e avoid (ADomEq a) =
   ADomEq <$> decompose True e avoid a
-decompose _ e avoid (ARanEq a b) =
-  ARanEq <$> decompose True e avoid a <*> decompose True e avoid b
+decompose _ e avoid (ARanEq p a b) =
+  ARanEq <$> decompose True e avoid p <*> decompose True e avoid a <*> decompose True e avoid b
 decompose _ e avoid (AAtEq a) =
   AAtEq <$> (decompose True e avoid a)
 decompose _ e avoid (ANthEq i a) =
@@ -513,7 +514,8 @@ match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
     `mUnion`  match vars t1 t1'
     `mUnion`  match vars ty ty'
 match vars (ADomEq t)     (ADomEq t')      = match vars t t'
-match vars (ARanEq t1 t2) (ARanEq t1' t2') = match vars t1 t1' `mUnion` match vars t2 t2'
+match vars (ARanEq p t1 t2) (ARanEq p' t1' t2') = 
+     match vars p p' `mUnion` match vars t1 t1' `mUnion` match vars t2 t2'
 match vars (AAtEq  t)     (AAtEq  t')      = match vars t t'
 match vars (ANthEq _ t)   (ANthEq _ t')    = match vars t t'
 match vars (ATrustMe t)   (ATrustMe t')    = match vars t t'
@@ -649,7 +651,7 @@ isAnyValue (ADCon c th params args) = all (isAnyValue . fst) args
 isAnyValue (AApp ep a b ty) = False
 isAnyValue (ALet Runtime bnd _) = False
 isAnyValue (ALet Erased (unsafeUnbind -> ((x,xeq,unembed->a),b)) _) = isAnyValue b
-isAnyValue (ACase a bnd _) = undefined
+isAnyValue (ACase a bnd _) = False
 isAnyValue (ABox a th) = isAnyValue a
 isAnyValue (AConv a pfs bnd resTy) = isAnyValue a
 isAnyValue (ASubstitutedFor a x) = isAnyValue a
@@ -671,7 +673,7 @@ isAnyValue (AOrdTrans _ _) = True
 isAnyValue (AInd _ _ _) = True
 isAnyValue (ARec _ _ _) = True
 isAnyValue (ADomEq _) = True
-isAnyValue (ARanEq _ _) = True
+isAnyValue (ARanEq _ _ _) = True
 isAnyValue (AAtEq _) = True
 isAnyValue (ANthEq _ _) = True
 isAnyValue (ATrustMe _) = True
@@ -736,7 +738,7 @@ aCbvContext (AOrdTrans _ _) = return Nothing
 aCbvContext (AInd _ _ _) = return Nothing
 aCbvContext (ARec _ _ _) = return Nothing
 aCbvContext (ADomEq _) = return Nothing
-aCbvContext (ARanEq _ _) = return Nothing
+aCbvContext (ARanEq _ _ _) = return Nothing
 aCbvContext (AAtEq _) = return Nothing
 aCbvContext (ANthEq _ _) = return Nothing
 aCbvContext (ATrustMe _) = return Nothing
@@ -788,6 +790,9 @@ smartSteps hyps a n = do
 smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
 smartStep a = do
   --liftIO . putStrLn $ "About to step " ++ (render . disp $ a)
+  -- _ <- lift $ aTs a 
+  --liftIO . putStrLn $ "It typechecks, so far"
+
   _ <- genEqs a
   maybeCtx <- lift $ aCbvContext a
   case maybeCtx of
@@ -808,9 +813,17 @@ smartStep a = do
                  . symmetrizeProof 
                  . associateProof) p
            let a' = subst hole b' ctx
-           cong_pf <- lift $ congTerm (b, b', pf) hole ctx
-           return $ Just (a', cong_pf)
-                          
+           (do 
+               _ <- lift $ aTs a'
+               cong_pf <- lift $ congTerm (b, b', pf) hole ctx
+               --(liftIO . putStrLn $ "Stepped by existing equality to " ++ (render . disp $ a'))
+               return $ Just (a', cong_pf))
+             `catchError`
+               (\ _ -> do 
+                  warn [DS "unfold: the term", DD a, DS "is stuck on the subexpression", DD b,
+                        DS "and using an equality proof to change the subterm to", DD b',
+                        DS "would create an ill-typed term"]
+                  return Nothing)                          
          [] -> lift $ do
                        th <- aGetTh b
                        if (flavour == AnyValue && th == Logic)
@@ -833,6 +846,8 @@ smartStepLet (CbvContext hole a) b = do
   pf_a_ba'  <- transTerm a a' (subst hole b a') pf_a_a' pf_a'_ba'
   pf_ba_ba' <- transTerm (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
 
+--  (liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
+
   return (subst hole b a',
           ALet Erased 
                (bind (hole, hole_eq, embed b) pf_ba_ba')
@@ -843,6 +858,7 @@ smartStepLet (CbvContext hole a) b = do
 -- Uses just the operational semantics, not equational reasoning
 dumbStep :: ATerm -> TcMonad (Maybe (ATerm,ATerm))
 dumbStep a = do
+--  (liftIO . putStrLn $ "Trying to dumb-step " ++ (render . disp $  a))
   ma' <- astep a
   case ma' of
     Nothing -> return Nothing
@@ -850,6 +866,7 @@ dumbStep a = do
       --Sometimes astep takes an "extra" step (due to cast-shuffling).
       ea  <- erase a
       ea' <- erase a'
+      --(liftIO . putStrLn $ "Dumb step to " ++ (render . disp $  a'))
       if (ea `aeq` ea')
         then return $ Just (a', AJoin a 0 a 0 CBV)
         else return $ Just (a', AJoin a 1 a' 0 CBV)

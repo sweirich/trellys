@@ -73,7 +73,10 @@ data DispInfo = DI
 -- | An empty 'DispInfo' context
 initDI :: DispInfo
 --initDI = DI False S.empty
-initDI = DI True S.empty
+initDI = DI {
+              verbose = False,
+              dispAvoid = S.empty
+         }
 
 instance LFresh (Reader DispInfo) where
   lfresh nm = do
@@ -459,7 +462,7 @@ instance Display ATerm where
       dbody <- display body
       return $ text "\\" <+> dn 
         <+> (if isVerbose then colon <+> dty else empty)
-        <+> text "." <+> dbody
+        <+> text "." $$ (nest 4 dbody)
   display (AApp ep a b ty) = do 
     da <- display a 
     db <- display b
@@ -564,10 +567,12 @@ instance Display ATerm where
   display (ADomEq a) = do
     da <- display a 
     return $ text "domeq" <+> aWraparg Erased a da
-  display (ARanEq a b) = do
+  display (ARanEq a v1 v2) = do
     da <- display a 
-    db <- display b
-    return $ text "raneq" <+> aWraparg Erased a da <+> aWraparg Erased b db
+    dv1 <- display v1
+    dv2 <- display v2
+    return $ text "raneq" <+> aWraparg Erased a da 
+               <+> aWraparg Erased v1 dv1 <+> aWraparg Erased v2 dv2
   display (AAtEq a) = do
     da <- display a 
     return $ text "ateq" <+> aWraparg Erased a da
