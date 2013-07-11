@@ -22,7 +22,7 @@
 .PHONY: all sandbox-install sandbox-uninstall sandbox-trellys \
 	    install uninstall clean test ghci cabal-dev-ghci
 
-all: sandbox-install
+all: install
 
 sandbox-install: sandbox-trellys
 
@@ -39,8 +39,8 @@ cabal-dev:
 	cabal install cabal-dev
 
 install:
-#	cabal install
-	cd src && cabal install
+	cabal install
+#	cd src && cabal install
 
 uninstall:
 	-ghc-pkg unregister `ghc-pkg list | grep trellys`
