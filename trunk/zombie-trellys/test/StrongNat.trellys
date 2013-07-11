@@ -349,9 +349,11 @@ test_cdiv5 = join 1000
 
 -- this version of fdiv diverges when n = 0
 prog fdiv : Nat -> Nat -> Nat
-rec fdiv m = \n . case (lt m n) [_] of
-  True  -> Zero
-  False -> Succ (fdiv (minus m n) n) 
+rec fdiv m n = 
+  if (lt m n) 
+  then 0
+  else Succ (fdiv (minus m n) n)
+
 
 fdiv_caseT : (m:Nat) -> (n:Nat) -> [lt m n = True] -> fdiv m n = Zero
 fdiv_caseT = \m n [m_lt_n] .
@@ -359,22 +361,43 @@ fdiv_caseT = \m n [m_lt_n] .
   in _
 
 -- note, this case could occur even if fdiv diverges
-fdiv_caseF : (m:Nat) -> (n:Nat) -> [lt m n = False] -> fdiv m n = Succ (fdiv (minus m n) n)
+fdiv_caseF : (m:Nat) -> (n:Nat) -> [lt m n = False] 
+			  -> fdiv m n = Succ (fdiv (minus m n) n)
 fdiv_caseF = \m n [m_lt_n] .
   unfold (fdiv m n) 
   in unfold (fdiv (minus m n) n) 
   in _
 
-data FdivTerm (n:Nat) (m : Nat)  : Type 0 where
-  Val of (x:Nat)  (fdiv m (Succ n) = x)
 
-fdiv_term : (m : Nat) -> (n : Nat) -> FdivTerm n m 
+data FdivTerm (n:Nat) (m : Nat)  : Type where
+  Val of (x:Nat) (fdiv m (Succ n) = x)
+
+fdiv_term : (m : Nat) -> (n : Nat) -> (FdivTerm m n)
 fdiv_term = \m n. 
-  let step [_] = (join : (FdivTerm m n) = (\n1. FdivTerm m n1 : Nat -> Type 0) n) in
-  cov [\n. FdivTerm m n]
+  unfold ((\n1. FdivTerm m n1 : Nat -> Type) n) in
+  (cov [\n1. FdivTerm m n1]
     (\n. \ih. -- ((m':Nat) -> [ltT m' n @log] -> FdivTerm m m' @log)
-	   (conv (TRUSTME : FdivTerm m n) by step at h.h))
-	 n			 
+	   unfold ((\n1. FdivTerm m n1 : Nat -> Type) n) in
+	   if (lt n (Succ m)) 
+		then unfold (fdiv n (Succ m)) in
+		     (Val 0 _ : FdivTerm m n) 
+		else let _ = fdiv_caseF n (Succ m) [_] in
+		     let minus_n_sm = minus n (Succ m) in
+		     let x = (TRUSTME : lt (minus n (Succ m)) n = True) in
+			  let eq = (sg (minus n (Succ m)) n) in
+			  let x' = conv x by eq at h. h in
+			  unfold ((\n1. FdivTerm m n1 : Nat -> Type) minus_n_sm) in
+			  case (ih (minus n (Succ m)) [x'] : FdivTerm m (minus n (Succ m)))  of
+			     Val rc pf -> 
+				     let pf' = (_ : rc = (fdiv (minus n (Succ m)) (Succ m))) in
+				     let _ = (conv (join : Succ rc = Succ rc) 
+					           by pf' at h. Succ h = Succ rc
+								 : Succ (fdiv (minus n (Succ m)) (Succ m)) = Succ (rc)) in
+ 				     let H = (_ : fdiv n (Succ m) = (Succ rc)) in
+				     (Val (Succ rc) H : FdivTerm m n)
+		)
+	 n : FdivTerm m n)
+
 
 -- fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
 

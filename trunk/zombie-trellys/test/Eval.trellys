@@ -1,12 +1,38 @@
 module Eval where
 
+-- example from Chen and Xi, "combining programming with theorem proving"
+
+-- An untyped lambda calculus evaluator that returns a derivation of its 
+-- evaluation. 
+
 import Prelude
 
-plus : Nat -> Nat -> Nat
-ind plus n = \m .
-  case n [cw] of
-    Zero -> m
-    Succ pred -> Succ (plus pred [cw] m)
+data Tm : Type where
+  App  of (_ : Tm) (_ : Tm)
+  Lam  of ((Tm -> Tm) @ P)
 
-main : Nat
-main = plus 3 2
+data Eval (t : Tm) (t' : Tm) : Type where
+  ELam of (f : Tm -> Tm @ P) (_ : Lam f = t) (_ : Lam f = t')
+  EApp of (u1 : Tm)(u2 : Tm)(v : Tm) (f : Tm -> Tm @ P) (v' : Tm)
+          (_ : t = App u1 u2) (_ : Eval u1 (Lam f))
+			 (_ : v' = f v)
+			 (_ : Eval u2 v) (_ : Eval v' t' )
+
+data Ans (t : Tm) : Type where
+  Result of (t' : Tm) (_ : Eval t t')
+
+prog eval : (t : Tm) -> Ans t
+rec eval t = 
+  case t of 
+    App u1 u2 -> 
+      case (eval u1) [_], (eval u2) [_] of 
+        Result (Lam f) pf1 , Result v pf2 -> 
+		     let prog v' = f v in
+           case (eval v') of 
+			     Result t' pf3 -> Result t' (EApp u1 u2 v f v' _ pf1 _ pf2 pf3) 
+        _ , _ -> abort
+    Lam f -> Result t (ELam f _ _)
+
+
+
+

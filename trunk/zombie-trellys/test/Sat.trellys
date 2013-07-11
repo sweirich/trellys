@@ -31,21 +31,26 @@ usually log
 -- clauses are lists of literals
 -- formulae are lists of clauses
 
+log Lit : (n:Nat) -> Type
+Lit = \n. Times (Fin n) Bool
+
 log Formula : (n:Nat) -> Type 
-Formula = \n. List (List (Times (Fin n) Bool))
+Formula = \n. List (List (Lit n))
 
 -- an environment is a mapping from variables to truth values
 log Env : (n:Nat) -> Type 
 Env = \ n . Vector Bool n
 
-log interp_lit : [n:Nat] => Vector Bool n -> (Times (Fin n) Bool @ log) -> Bool
-interp_lit = \ [n] env lit . case lit of 
-   Prod fn b -> bool_eq b (lookup [n] fn env)
+log interp_lit : [n:Nat] => Vector Bool n -> (Lit n @ log) -> Bool
+interp_lit [n] env lit =
+	unfold (Lit n) in
+   case (lit : Times (Fin n) Bool) of 
+     Prod fn b -> bool_eq b (lookup [n] fn env)
      
 log interp : [n:Nat] => Vector Bool n -> Formula n -> Bool
-interp = \ [n] env formula . 
+interp [n] env formula =
   unfold (Formula n) in
-  all (any (interp_lit env)) (formula : List (List (Times (Fin n) Bool)))
+  all (any (interp_lit env)) (formula : List (List (Lit n)))
 
 -- general procedure for sat solving, i.e. showing that Phi is satisfiable
 -- we want to search for a satisfying assignment to the literals in Phi
@@ -56,28 +61,29 @@ log extend : [n:Nat] => Vector (Maybe Bool) n -> Vector Bool n
 extend = \[n] xs . vmap (maybe True) [n] xs
 
 log partial_interp_lit : [n:Nat] => (partial : Vector (Maybe Bool) n) 
-              -> (lit : (Times (Fin n) Bool) @ log) -> Maybe Bool
+              -> (lit : (Lit n) @ log) -> Maybe Bool
 partial_interp_lit = \[n] p lit .
-   case lit of 
+   unfold (Lit n) in
+   case (lit : Times (Fin n) Bool) of 
      Prod fn b -> case (lookup [n] fn p) of 
          Just v  -> Just (bool_eq b v)
          Nothing -> Nothing
 
 -- is this literal unassigned by the map?
 log unassigned_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (c : (Times (Fin n) Bool) @ log) -> Bool
+       (c : (Lit n) @ log) -> Bool
 unassigned_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) Nothing
 
 -- is this literal known to be true?
 log true_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (c : (Times (Fin n) Bool) @ log) -> Bool
+       (c : (Lit n) @ log) -> Bool
 true_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) (Just True)
 
 -- is this literal known to be false?
 log false_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (c : (Times (Fin n) Bool) @ log) -> Bool
+       (lit : (Lit n) @ log) -> Bool
 false_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) (Just False)
 
@@ -85,7 +91,7 @@ false_lit = \[n] p lit .
 -- or known to be false if all literals are assigned false
 -- otherwise its truth value is unknown.
 log partial_interp_clause : [n:Nat] => (partial : Vector (Maybe Bool) n) 
-              -> (clause : List (Times (Fin n) Bool) @ log) -> Maybe Bool
+              -> (clause : List (Lit n) @ log) -> Maybe Bool
 partial_interp_clause [n] p c =
   if (any (true_lit p) c) 
     then Just True
@@ -99,7 +105,7 @@ log satisfies : [n:Nat] => (partial : Vector (Maybe Bool) n)
               -> (formula : Formula n) -> Maybe Bool
 satisfies [n] p f =
    unfold (Formula n) in
-   let f' = map (partial_interp_clause p) (f :  List (List (Times (Fin n) Bool))) in
+   let f' = map (partial_interp_clause p) (f :  List (List (Lit n))) in
    if (all (maybe_eq bool_eq (Just True)) f')
      then Just True
      else if (any (maybe_eq bool_eq (Just False)) f') 
@@ -111,20 +117,20 @@ satisfies [n] p f =
 -- literals. That one must be true.
 
 log unit_lit_clause : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (c : List (Times (Fin n) Bool) @ log) -> List (Times (Fin n) Bool)
+       (c : List (Lit n) @ log) -> List (Lit n)
 unit_lit_clause [n] p c = 
    let unassigned_lits = filter (unassigned_lit p) c in
 	let true_lits = filter (true_lit p) c in
 	if (and (nat_eq (length unassigned_lits) 1)
-	          (nat_eq (length true_lits)       0)) 
+	          (nat_eq (length true_lits)     0)) 
 	  then c 
 	  else Nil
 
 log unit_lits : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (formula : Formula n) -> List (Times (Fin n) Bool)
+       (formula : Formula n) -> List (Lit n)
 unit_lits = \ [n] p f . 
    unfold (Formula n) in
-	concatMap (unit_lit_clause p) (f :  List (List (Times (Fin n) Bool)))
+	concatMap (unit_lit_clause p) (f : List (List (Lit n)))
 
 -- future work: pure literal assignment
 -- If a propositional variable occurs with only one polarity in the
@@ -133,21 +139,24 @@ unit_lits = \ [n] p f .
 -- clauses do not constrain the search anymore and can be deleted. 
 
 -- update the partial map validating the literals in the list
-log set_lits : [n:Nat] => List (Times (Fin n) Bool) -> 
+log set_lits : [n:Nat] => List (Lit n) -> 
                   Vector (Maybe Bool) n -> Vector (Maybe Bool) n
-set_lits = \[n] . ind set_lits l = \v.
-  case l [l_eq] of 
-    Nil -> v
-    Cons x xs -> 
-	    let v' = set_lits xs [ord l_eq] v in
-		 set [n] (pi1 x) (Just (pi2 x) : Maybe Bool) v'
+set_lits [n] =
+  unfold (Lit n) in
+  ind set_lits l = \v.
+    case (l : List (Times (Fin n) Bool)) [l_eq] of 
+      Nil -> v
+      Cons (Pair m x) xs -> 
+	      let v' = set_lits xs [ord l_eq] v in
+		   set [n] m (Just x) v'
+      _ -> TRUSTME
 
 
 -- the result of sat solving, a satisfiable assignment
 -- or "UNSAT"
 data Answer (n : Nat) (formula : Formula n) : Type where
   SAT    of (assignment : Vector (Maybe Bool) n) 
-            [_ : satisfies assignment formula = (Just True : Maybe Bool) ]
+            (_ : satisfies assignment formula = (Just True : Maybe Bool))
   UNSAT
 
 -- find the index of the first unassigned variable in the partial map
@@ -167,8 +176,8 @@ ind next_var [n] = \ v .
 prog dpll : [n:Nat] => (formula : Formula n) 
            -> Vector (Maybe Bool) n -> (Answer n formula @ L)
 rec dpll [n] formula assign =
- case (satisfies assign formula) [s_eq] of 
-   Just True  -> SAT assign [s_eq]
+ case (satisfies assign formula) of 
+   Just True  -> SAT assign _
    Just False -> UNSAT
    Nothing -> 
      let units = unit_lits assign formula in
@@ -181,7 +190,7 @@ rec dpll [n] formula assign =
 				   let prog fc = (dpll formula
 					            (set [n] m (Just False : Maybe Bool) assign)) in
                case fc of 
-                 SAT assign [pf] -> SAT assign [pf]
+                 SAT assign pf -> SAT assign pf
                  UNSAT     ->
                     dpll formula 
                       (set [n] m (Just True : Maybe Bool) assign)

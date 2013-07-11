@@ -11,7 +11,9 @@ module Paper where
    * automatic inference of [ord]
 -}
 
--- Prelude for examples
+---------------------------------------------------------
+-- Prelude for examples in the paper
+---------------------------------------------------------
 
 data Bool : Type where
   True 
@@ -66,7 +68,7 @@ ind eq x y =
 log void : Type
 void = True = False
 
----------------------------------
+---------------------------------------------------------
 
 -- Theorems about lt, eq, etc.
 
@@ -177,15 +179,18 @@ ind minus_le x y h1 h2 =
 log not : Bool -> Bool
 not b = if b then False else True
 
-
 prog div : Nat -> Nat -> Nat
 rec div n m = if (lt n m) then 0
     else (plus 1 (div (minus n m) m))
 
+prog gyre : Bool -> Bool
+rec  gyre x = gyre x
+
+prog is_brillig : Bool -> Bool
+is_brillig x = not (gyre x) 
+
 log div63 : div 6 3 = 2
 div63 = join   
-  -- change to refl? note, 100 is NOT enough
-  -- maybe no # should tell the type inferencer to do as many as necessary. 
 
 -- This one doesn't work (some of the TRUSTME holes can't be filled in).
 log div_le_bad : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
@@ -282,7 +287,7 @@ rec silly x = case x of
   Succ Zero -> x
   Succ (Succ n) -> Succ (silly (Succ n))
 
-log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ log) -> (silly n = n)
+log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ L) -> (silly n = n)
 ind lemma_silly n pf = 
   case n [n_eq] of 
     Zero -> unfold void in 
@@ -302,6 +307,9 @@ diverge f x = (y : Nat) -> (f x = y) -> void
 
 -- can't prove this
 -- log silly_diverge : diverge silly 0
+
+-- also can't prove this one. Infinite loops give us no information.
+-- log lemma_silly' : (k : Nat) -> (n : Nat) -> (silly n = k) -> (k = n)
 
 data Maybe (a : Type 0) : Type 0 where
   Just    of ( _ : a @ prog)

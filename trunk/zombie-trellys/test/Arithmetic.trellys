@@ -17,7 +17,7 @@ ind mult n = \m .
 
 
 minus : Nat -> Nat -> Nat
-ind minus n m =
+ind minus n = \m .
    case n [cn] of
      Zero -> Zero
      Succ pred -> case m [cm] of
@@ -61,45 +61,6 @@ rec div n m =
     Zero -> Zero
     Succ pred -> let prog rc = div (minus pred m) m in
                  Succ rc
-
-prog div' : Nat -> Nat -> Nat
-rec div' n m =
-  case n of
-    Zero -> Zero
-    Succ pred -> Succ (div' (minus pred m) m)
-
--- log eqdivs : (m : Nat) -> (n:Nat) -> (div m n = div' m n)
-
-{-
---- this won't work, but it seems like there should be a way 
--- to annotate to make it work.
-log eqdivs :  (m : Nat) -> (n:Nat) -> (div m n = div' m n)
-eqdivs m n = 
-  unfold 1 (div m n) in
-  unfold 1 (div' m n) in
-  let _ = (conv _ 
-            by (unfold 1 (let prog rc [_] = div1 (minus pred m1) m1 in
-                   Succ rc))
-				at x . (rec div'1 n1 =
-            \ m1 . (case n1 [_] of
-                Zero -> Zero 
-                Succ pred -> x)))) 
-      : (((rec div'1 n1 =
-            \ m1 . (case n1 [_] of
-                Zero -> Zero 
-                Succ pred -> 
-                   Succ (div'1 (minus pred m1) m1))) 
-         : Nat -> Nat -> Nat) m n) = 
-       (((rec div1 n1 =
-            \ m1 . (case n1 [_] of
-                Zero -> Zero 
-                Succ pred -> 
-                   let prog rc [_] = div1 (minus pred m1) m1 in
-                   Succ rc))
-         : Nat -> Nat -> Nat) m n))
-  in _ 
--}
-
 
 minus_same_zero : (n : Nat) -> (minus n n = 0)
 ind minus_same_zero n =
@@ -170,6 +131,7 @@ plus_associates = ind pa i = \j k .
 --               in let e3 = (_ : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
                -- move the `Succ` inside both sides
                in (_ : (plus (plus i j) k) = (plus i (plus j k)))
+
 
 main : Nat
 main = plus 2 3
