@@ -1,0 +1,5 @@
+The layout aware Parsec parser.
+
+Used by both zombie trellys and nax.  Might make more sense to create
+a separate cabal package for this, but for now it's included using -i
+for ghc and hs-source-dirs for cabal.

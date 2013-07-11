@@ -1,0 +1,94 @@
+#Set debug_morph
+#Set debug_subst
+#Set debug_tpof
+#Set suppress_eqterm_stack
+
+#Set print_commands
+Set respect_strategies
+
+Fix nat : * = 
+        self n . ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                   (C conv n to nat by refl, unfold) 
+    ,
+    zero : nat = 
+         conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
+         to nat 
+         by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+            [ unfold ; substself ]
+           
+    ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]
+
+Fix add : nat -> nat -> nat =
+    \ n : nat . \ m : nat .
+
+     ((conv    
+      ((conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+                 by [ unfold; substself ] , refl)
+        (\n :: nat . nat))
+     to (nat -> nat) -> nat -> nat
+     by  ((refl -> eval) -> eval -> eval) , refl)
+     (\ pred : nat . (succ (add pred m)))
+     m)
+
+
+Define nat_elim : ! n : nat . 
+                  ! C : (nat => *) . 
+                  (! n : nat. (C (succ n))) -> 
+                  (C zero) -> 
+                  (C n) =
+  \ n : nat .
+  (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+
+
+
+
+# atype takes a nat and returns the type of a function that takes n nats.
+Fix atype : nat -> * =
+    conv
+       \n : nat . 
+             (nat_elim n
+              (\ n :: nat . *)
+              (conv (\n' : nat . nat -> (atype n'))
+               to (! n' : nat . ((\ n :: nat . *) (succ n')))
+               by refl, (! n' : nat . eval))
+              (conv nat to ((\ n :: nat . *) zero) by refl, eval)
+              )
+   to nat -> * 
+   by (! n : nat . eval), refl
+
+
+
+
+# Chomp consumes n natural number arguments, then returns zero. 
+Fix chomp_n : ! n : nat . (atype n)  =
+  conv
+   \n : nat . 
+      (nat_elim n
+        (\ n' :: nat . (atype n'))
+          # Succ branch
+          conv 
+           (\pred : nat . \ m : nat . (chomp_n pred))
+          to (! pred : nat . ((\ n' :: nat . (atype n')) (succ pred)))
+          by refl, (! pred : nat . [eval; (unfold refl); eval; (refl (unfold refl)); 
+                                    eval; (unfold refl refl refl refl) ; eval ])
+          # Zero branch
+          conv zero 
+            to ((\ n' :: nat . (atype n')) zero) 
+            by refl, [eval; (unfold refl); (refl unfold);  eval; (unfold refl refl refl refl); eval]
+        )
+   to (! n : nat . (atype n))
+   by (! n : nat . eval), refl
+
+Eval zero
+Eval ((conv (chomp_n (succ zero))
+        to nat -> (atype zero)
+        by [(refl (unfold unfold)) ; eval; (unfold refl); eval; (unfold refl refl refl refl); eval] , 
+            (refl -> (refl unfold)))
+       zero)

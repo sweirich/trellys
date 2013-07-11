@@ -1,0 +1,204 @@
+module Lambdaint where
+
+
+data String : Type where
+     Empstr : String
+    | Str0  : String -> String
+    | Str1  : String -> String
+
+data Bool : Type where
+ False : Bool
+| True : Bool
+
+data MaybeStep : Type where
+CntStep : MaybeStep
+|Step : Term -> MaybeStep
+
+data Term : Type where
+      Var : String-> Term
+     |App : Term -> Term -> Term
+|Lambdabs : String -> Term -> Term
+
+
+data Context : Type where
+      Base : Context
+     | Ct : Context -> Term -> Context
+     | VC : Term -> Context -> Context
+-- restrict term to lamdba abstraction??
+
+data RedexT : Type where
+  Redex : Term -> String -> Term -> RedexT
+-- (Redex t1 x t2) represents the redex (App (Lambdabs x t2) t1)
+
+data Decomp : Type where
+   Deco : Context -> RedexT -> Decomp 
+ | CntDeco : Decomp 
+
+type and : Bool -> Bool-> Bool
+prog and = \(b:Bool)(b2:Bool) ->
+     case b {b_eq} of
+      True -> b2
+    | False -> False
+
+type isLambda : Term -> Bool
+ prog isLambda = \(l:Term) ->
+   case l {l_eq} of 
+     Lambdabs l' t' -> True
+    |App l' t' -> False
+    |Var l' -> False
+
+
+type legalcxt : Context -> Bool
+prog rec legalcxt (t:Context)=
+     case t {t_eq} of
+     Base -> True
+    |Ct p' r' -> legalcxt p'
+    |VC p' r'-> and (isLambda p')
+                 (legalcxt r')
+   
+data UnitT : Type where
+  Unit : UnitT
+
+type decompose : Term -> Decomp
+prog rec decompose (t:Term) =
+  case t {t_eq} of 
+    Var t' -> CntDeco 
+  | Lambdabs t' r' -> CntDeco 
+  | App t1 t2 -> 
+            case(decompose t1) {decot1} of
+                  CntDeco-> 
+                    (case(decompose t2) {decot2} of
+                       CntDeco-> 
+                         (case t1 {t1_eq} of
+                            Var nm -> CntDeco
+                          | App u v -> CntDeco
+                          -- FIXME: We should guard this to insure that t2 is a lambda...
+                          | Lambdabs x t1' -> Deco Base (Redex t2 x t1'))
+                      |Deco cxt r -> Deco(VC t1 cxt) r)
+                 |Deco cxt r -> Deco(Ct cxt t2) r
+
+
+
+
+
+{-
+type testterm : Term 
+prog testterm =
+ (App (Lambdabs Empstr (Var Empstr)) (Lambdabs (Str0 Empstr) (Var (Str0 Empstr))))
+
+theorem decompose_test0 : decompose (Var (Str1 Empstr)) = CntDeco
+proof decompose_test0 = join 20 20
+
+theorem decompose_test1 : decompose testterm = (Deco Base testterm)
+proof decompose_test1 = join 20 20
+
+theorem decompose_test2 : decompose (App testterm (Var (Str1 Empstr))) = 
+                          (Deco (Ct Base (Var (Str1 Empstr))) testterm)
+proof decompose_test2 = join 20 20
+-}
+type plug : Context -> Term -> Term
+  prog rec plug (c: Context) (t:Term) =
+    case c {c_eq} of
+                Base-> t
+               |Ct c' t'->  App (plug c' t) t'               
+               |VC v c' ->   App v (plug  c' t)
+
+
+ 
+type eq_str : String -> String -> Bool
+prog rec eq_str (t:String)(s:String) =
+  case t {t_eq} of
+    Empstr -> (case s {s_eq} of
+            Empstr -> True
+          | Str0 s' -> False
+          | Str1 s' -> False)
+    | Str0 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s'-> (eq_str t' s') 
+           |Str1 s' -> False)
+    | Str1 t' -> (case s {s_eq} of  
+            Empstr -> False
+           |Str0 s' -> False 
+           |Str1 s' -> (eq_str t' s'))
+
+
+
+type substitute : Term -> String -> Term -> Term
+   prog rec substitute (t :Term) (s:String) (t1: Term)=
+        
+       
+          case t1 {t1_eq} of 
+                   Var x' -> (case eq_str s x' {eqstr_eq} of
+                           True -> t
+                          |False -> t1)
+                 |Lambdabs s' t' ->  (case (eq_str s s') {eqstr_eq} of
+                           True -> t1
+                          |False -> Lambdabs s' (substitute t s t') )
+                 |App t2 t3 -> App (substitute t s t2)
+                                   (substitute t s t3)
+
+{-
+theorem substitute_test1 : substitute (Var(Str1 Empstr)) (Str0 Empstr)  (Lambdabs Empstr (Var (Str0 Empstr)))= (Lambdabs Empstr(Var(Str1 Empstr)))
+proof substitute_test1 = join 20 20
+-}
+      
+type step : Term -> MaybeStep
+  prog step = \(t:Term) ->
+    case (decompose t) {compt_eq} of
+         Deco c t1->( case t1 {t1_eq} of
+                    Redex t2 x t3 -> Step (plug c (substitute t2 x t3)))  
+       | CntDeco-> CntStep  
+
+data StepSpec : (t1:Term) (t2:Term) -> Type where
+  CtxtBetaV : (c:Context) -> (x:String) -> (t:Term) -> 
+              (xa:String) -> (ta:Term) ->
+              [u1:t1 = (plug c (App (Lambdabs x t) (Lambdabs xa ta)))] ->
+              [u2:t2 = (plug c (substitute (Lambdabs xa ta) x t))] ->
+              StepSpec t1 t2
+
+-- need correct definition of term_of_redex; this is just a dummy
+type term_of_redex : RedexT -> Term
+prog term_of_redex = \(r:RedexT) -> (Var Empstr)
+
+axiom decomp_term : forall (t:Term). decompose t !
+
+Inductive decompose_plug : forall(t1:Term){t1_term}(c:Context)(r:RedexT)(v:decompose t1 = (Deco c r)).
+                           (plug c (term_of_redex r) = t1) :=
+   case t1 {t1_eq} t1_term of
+     Var nm -> let u1 = join 100 100 : CntDeco = decompose (Var nm);
+                   u2 = conv u1 at (CntDeco = (decompose ~t1_eq)); 
+                   u3 = trans u2 v : CntDeco = Deco c r
+               in contra u3
+    | Lambdabs s t ->   let u1 = morejoin { t1_term,sym t1_eq}:  CntDeco = decompose t1;
+                            u3 = trans u1 v : CntDeco =Deco c r
+                           in contra u3 
+    | App t2 t3 -> 
+         case decompose t2 {t2_eq} decomp_term t2 of
+             Deco c' r' -> 
+                let ih = decompose_plug t2 (ord t1_eq) c' r' (sym t2_eq)
+                in ih
+            | CntDeco -> False
+           
+
+theorem step_sound : forall(t1:Term)(t2:Term)(u:step t1 = (Step t2)).exists(v:StepSpec t1 t2). v!
+proof step_sound = join 20 20
+
+type reduce : Term -> Term 
+ prog rec reduce (t:Term) =
+   case step t {stp_eq} of
+     CntStep-> t
+    |Step t1-> reduce t1 
+    
+
+Inductive eqstr_refl : forall (s:String) {s_term} . eq_str s s = True :=
+   case s { s_eq } s_term of
+      Empstr -> morejoin { sym s_eq, s_term } : eq_str s s = True
+   | Str0 s' -> let ih = eqstr_refl s' (ord s_eq) : eq_str s' s' = True;
+                    step = morejoin {sym s_eq, s_term} : eq_str s s = eq_str s' s'
+ 
+                in trans step ih
+   | Str1 s' -> let ih = eqstr_refl s' (ord s_eq) : eq_str s' s' = True;
+                      step = morejoin {sym s_eq, s_term} : eq_str s s= eq_str s' s'
+
+                 in trans step ih   
+

@@ -1,0 +1,74 @@
+subcore
+
+Prog : prog -> { cmd }+ .
+
+Def : cmd -> DEFINE ID COLON oterm EQ oterm .
+SetFlag : cmd -> SET ID .
+UnsetFlag : cmd -> UNSET ID .
+ListFlags : cmd -> LISTFLAGS.
+EvalCmd : cmd -> EVALCMD oterm.
+FixCmd : cmd -> FIXCMD binding { COMMA binding }* .
+
+Lam : oterm -> LAM ID colon oterm DOT oterm .
+Self : oterm -> SELF ID DOT oterm .
+Fix : oterm -> FIX binding { COMMA binding }* IN oterm .
+Let : oterm -> LET ID COLON term EQ term IN oterm .
+CbvArrow : oterm -> term ARROW oterm .
+CbnArrow : oterm -> term FATARROW oterm .
+Pi : oterm -> PI ID colon term DOT oterm .
+Check : oterm -> term COLON oterm .
+Term : oterm -> term.
+
+Colon : colon -> COLON.
+Dcolon : colon -> DCOLON.
+
+App : term -> LP term { term }+ RP .
+Star : term -> STAR.
+Var  : term -> ID.
+Conv : term -> CONV oterm TO oterm BY (* the following are proofs: *) term COMMA term .
+Trans : term -> LS oterm { SEMI oterm }+ RS .
+Parens : term -> LP oterm RP .
+
+(* these are really proof constructs *)
+Substself : term -> SUBSTSELF .
+Unfold : term -> UNFOLD .
+Eval : term -> EVAL [ LA UNFOLD RA ].
+Refl : term -> REFL .
+
+Binding : binding -> ID COLON oterm EQ oterm .
+
+COLON=":".
+DCOLON="::".
+EQ="=".
+SEMI=";".
+STAR="*".
+LET="let".
+COMMA=",".
+UNFOLD="unfold".
+REFL="refl".
+DEFINE="Define".
+IN="in".
+SET="Set".
+UNSET="Unset".
+LISTFLAGS="ListFlags".
+LAM="\\".
+PI="!".
+ARROW="->".
+FATARROW="=>".
+SELF="self".
+SUBSTSELF="substself".
+FIX="fix".
+TO="to".
+EVAL="eval".
+FIXCMD="Fix".
+EVALCMD="Eval".
+BY="by".
+CONV="conv".
+LP="(".
+RP=")".
+LS="[".
+RS="]".
+LA="<".
+RA=">".
+DOT=".".
+ID = {{['a'-'z' 'A'-'Z' '_']['0'-'9' '\'' '_' 'a'-'z' 'A'-'Z' '\'']*}} .

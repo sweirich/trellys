@@ -1,0 +1,16 @@
+trell
+
+AP : a -> PF p.
+AT : a -> TERM t.
+
+ProofApp : p -> LP p { a }+ RP .
+ProofVar : p -> VAR .
+
+TermApp : t -> LP t { a }+ RP .
+TermVar : t -> VAR .
+
+LP = "(".
+RP = ")".
+PF = "$pf".
+TERM = "$term".
+VAR = {{ ['a'-'z']+}}.

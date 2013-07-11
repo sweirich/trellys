@@ -1,0 +1,12 @@
+To compile, you need OCaml.  I used OCaml 3.11.2, and I do not believe
+I am using any advanced features.
+
+Then just run "make".
+
+Tests are in tests/, particularly tests/encode.sub.
+
+The grammar for the language is in subcore.gra.  I have a tool called gt 
+(https://github.com/jjmeyer0/gt) which generates most of the other OCaml
+source files from that .gra file.
+
+The source code that was not auto-generated is all in main.ml.
