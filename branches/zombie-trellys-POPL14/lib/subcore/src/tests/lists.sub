@@ -1,0 +1,256 @@
+# Set debug_morph
+#Set debug_subst
+# Set debug_tpof
+#Set suppress_eqterm_stack
+
+#Set print_commands
+
+Fix nat : * = 
+          self n . ! C : (nat -> *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                     (C conv n to nat by refl, unfold) 
+      ,
+      zero : nat = 
+           conv \ C : nat -> * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
+           to nat 
+           by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+              [ unfold ; substself ]
+             
+      ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]
+
+
+Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
+    mkunit : unit =
+           conv \ C : unit -> * . \ u : (C mkunit) . u 
+           to unit
+           by (! C : refl . (! z : refl . (C unfold))),
+              [ unfold ; substself ]
+
+
+#Fix renat : * = self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold))),
+#      rezero : renat = 
+#        conv \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . zcase
+#        to renat
+#        by (! C : refl . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . (C unfold)))),
+#           [unfold ; substself],
+#
+#      resucc : renat -> renat =
+#       conv 
+#        \ n : renat .
+#           \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
+#       to ! n: renat . renat
+#       by 
+#        (! n : renat . (! C : refl . (! zcase : refl . (! scase : refl . (C ([(unfold refl); eval])))))),
+#        (! n : renat . [unfold; substself] )
+
+# This is a tricker cast, because it requires reducing a beta-redex.
+# 
+# The type of the lamba-term being converted is: 
+#     (! n : renat . (! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . (C (resucc n)))))) 
+# We want to change this to (! n :renat . renat) 
+# We can work in both directions to some common
+# type. Let's start with the simpler direction, taking
+#     (! n : renat . renat) 
+# to the common type.
+# If we supply the following 'conversion context'
+#     (! n : renat . unfold) 
+# We will get
+#     (! n : renat . self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold))))
+# by unfolding the *inner* renat, yielding the inner 'self n . ...' term
+# The next step is a little trickier, because we have to take into account the term that we are casting. The top level term is 
+#         \ n : renat .
+#            \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
+# and we want to convert this *inner* self term:
+#         self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold)))
+# Which corresponds to the inner \-abstraction:
+#            \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
+# The `selfsubst` command substitutes this \lambda abstraction for 'n' in the body of self (and drops the outer 'self n.'). 
+# So, given the 'from' type
+#     (! n : renat . self n . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv n to renat by refl, unfold))))
+# a term
+#     \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)
+# and a conversion context:
+#     (! n : renat . substself )
+# we get 
+#     (! n : renat . ! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv (\ C : renat -> * .   \zcase : (C rezero)  . \scase : (! n : renat . (C (resucc n))) . (scase n)) to renat by refl, unfold))))
+# 
+# Rather doing the unfolding of renat and then the selfsubst in sequence, we combine them and do it in one go, using morphing sequencing:
+#     (! n : renat . [unfold; substself] )
+
+
+# Back to the other direction. We started with the type for resucc:
+#     (! n : renat . (! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . (C (resucc n)))))) 
+# and want to get to the type
+#     (! n : renat . (! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! m : renat . (C (resucc m))) . (C conv ** to renat by refl, unfold)))))
+# where ** is the term corresponding to the inner abstraction in the definition of resucc above.
+# Modulo renaming of the bound variables for the `scase` branch, what we need to do is change the range type:
+#     (C (resucc n))
+# to
+#     (C conv ** to renat by refl, unfold)))))
+# The remainder of the type:
+#     (! n : renat . (! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . [***] )))) 
+# is exactly the same, so we can just use the refl operator in those positions:
+#     (! n : refl . (! C : refl . (! zcase : refl . (! scase : refl . [***] )))) 
+# Back to casting
+#     (C (resucc n))
+# to
+#     (C conv ** to renat by refl, unfold)))))
+# First, we can unfold resucc. We want to keep `n` as it was, so we use refl. 
+# So, we use 
+#     (C (unfold refl))
+# To get (alpha-renaming variables in the definition of resucc for clarity)
+#     (C 
+#       (conv 
+#        \ m : renat .
+#           \ C : renat -> * .   \zcase : (C rezero)  . \scase : (! p : renat . (C (resucc p))) . (scase m)
+#       to ! m: renat . renat
+#       by 
+#        (! m : renat . (! C : refl . (! zcase : refl . (! scase : refl . (C ([(unfold refl)  ; eval])))))),
+#        (! m : renat . [unfold; substself] ))
+#       n
+#      )
+# This is a beta-redex (convs don't block beta reduction), so we morph it with eval, yielding
+#     (C (\ C : (renat -> *) . (\ zcase : (C rezero) . (\ scase : (! n' : renat . (C (resucc n'))) . (scase n)))))
+# Plugged into [***] in the context (FIXME: There should be a )
+#     (! n : renat . (! C : (renat -> *) . (! zcase : (C rezero) . (! scase : (! n : renat . (C (resucc n))) . [***] )))) 
+
+Fix bool : * = self b . ! C : (bool -> *). (C true) -> (C false) -> (C conv b to bool by refl, unfold) ,
+      true : bool =
+           conv \ C : bool -> * . \ trueCase : (C true) . \ falseCase : (C false) . trueCase
+           to bool
+           by (! C : refl . (! trueCase : refl . (! falseCase : refl . (C unfold)))),
+              [ unfold ; substself ],
+      false : bool =
+           conv \ C : bool -> * . \ trueCase : (C true) . \ falseCase : (C false) . falseCase
+           to bool
+           by (! C : refl . (! trueCase : refl . (! falseCase : refl . (C unfold)))),
+              [ unfold ; substself ]
+
+
+Fix list : * -> * = \ A : * . self l . ! C : (! b:*. (list b) -> *) .  
+                       ! nilCase : (C A (nil A)) .
+                       ! consCase : (! x : A . ! xs : (list A).  (C A (cons A x xs))) .
+                        (C A (conv l to (list A) by refl , [(unfold refl); eval])),
+    nil : ! A : * . (list A) = 
+         \ A : * .
+         conv                      
+            \C : (!b:*. (list b) -> *) . 
+            \ nilCase : (C A (nil A)) . 
+            \ consCase : (! x:A . ! xs : (list A) . (C A (cons A x xs))) .
+            nilCase
+        to  (list A)
+      by (! C : refl . ! nilCase : refl . ! consCase : refl . (C refl ([(unfold refl); eval]))),
+         ( [(unfold refl); eval; substself]),
+
+    cons: ! A : * . A -> (list A) -> (list A) =  
+       \ A : * . \x:A  . \xs:(list A) . 
+       conv 
+          \C : (! b:* . (list b) -> *) .
+          \nilCase : (C A (nil A)) .
+            \ consCase : (! x:A . ! xs : (list A) . (C A (cons A x xs))) .
+               (consCase x xs)
+       to 
+         (list A)
+       by 
+         (! C : refl . (! nilCase:refl . (!consCase:refl. (C refl [(unfold refl refl refl);eval])))),
+         [(unfold refl); eval; substself]
+
+
+Fix len : !A:* . (list A) -> nat = 
+  conv
+   \A : * . \l : (list A) . 
+         ((conv l 
+          to 
+           ! C : (! b:*. (list b) -> *) .  
+             ! nilCase : (C A (nil A)) .
+             ! consCase : (! x : A . ! xs : (list A).  (C A (cons A x xs))) .
+             (C A l)
+           by [(unfold refl); eval; substself],refl)
+           (\b:* . \wc : (list b) . nat)                            # C 
+           (conv zero 
+               to ((\ b : * . (\ wc : (list b) . nat)) A (nil A))   #  nilCase
+               by refl, eval)
+           (\ x:A . \xs : (list A) . 
+               (conv
+                 (succ (len A xs))
+               to ((\ b : * . (\ wc : (list b) . nat)) A (cons A x xs))
+               by refl,eval))
+           )
+   to 
+     (! A : * . ((list A) -> nat))
+   by   (! A : refl . (! l : refl . eval)), refl
+      
+
+ #   (\ wc : A . \ rest : (C (list a)) . succ rest))
+
+
+# doesn't seem that conversion targets are well-typed -- e.g. I had
+#     (vec n A)
+# and didn't get a complaint (until morphing failed).
+Fix vec :  * -> nat -> * =  \ A : * . \n : nat . self l . ! C : (! b : * . (! m:nat. (vec b m) -> *)) .  
+                       ! vnilCase : (C A zero (vnil A)) .
+                       ! vconsCase : (!p:nat . (! x : A . ! xs : (vec A p).  (C A (succ p) (vcons A p x xs)))) .
+                        (C A n (conv l to (vec A n) by refl , [(unfold refl refl); eval])),
+    vnil : ! A : * . (vec A zero) = 
+         \ A : * . 
+        conv                      
+            \C : (!b:*. !m:nat . (vec b m) -> *) . 
+            \ vnilCase : (C A zero (vnil A)) . 
+            \ vconsCase : (!p:nat . (! x:A . ! xs : (vec A p) . (C A (succ p) (vcons A p x xs)))) .
+            vnilCase
+        to  (vec A zero)
+        by (! C : refl . ! vnilCase : refl . ! vconsCase : refl . (C refl refl ([(unfold refl); eval]))),
+           [(unfold refl refl); eval; substself],
+
+    vcons:  ! A : * . ! n : nat . A -> (vec A n) -> (vec A (succ n)) =  
+      \ A : * .\ n : nat .
+       \x:A  . \xs:(vec A n) . 
+       conv 
+         \C : (! b:* . (!p:nat . (vec b p) -> *)) .
+          \vnilCase : (C A zero (vnil A)) .
+          \vconsCase : (!p:nat . (! x:A . ! xs : (vec A p ) . (C A (succ p) (vcons A p x xs)))) .
+               (vconsCase n x xs)
+       to 
+          (vec A (succ n))
+       by 
+        (! C : refl . (! vnilCase:refl . (!vconsCase:refl. (C refl refl [(unfold refl refl refl refl);eval])))),
+        [(unfold refl refl); eval; substself]
+
+
+Fix list2 : * -> * = \ A : * . self l . ! C : ((list2 A) -> *) .  
+                       ! nilCase : (C (nil2 A)) .
+                       ! consCase : (! x : A . ! xs : (list2 A).  (C (cons2 A x xs))) .
+                        (C (conv l to (list2 A) by refl , [(unfold refl); eval])),
+    nil2 : ! A : * . (list2 A) = 
+         \ A : * . 
+        conv                      
+            \C : ((list2 A) -> *) . 
+            \ nilCase : (C (nil2 A)) . 
+            \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
+            nilCase
+        to  (list2 A)
+        by (! C : refl . ! nilCase : refl . ! consCase : refl . (C ([(unfold refl); eval]))),
+           [(unfold refl); eval; substself],
+
+    cons2: ! A : * . A -> (list2 A) -> (list2 A) =  
+       \ A : * . \x:A  . \xs:(list2 A) . 
+       conv 
+          \C : ((list2 A) -> *) .
+          \nilCase : (C (nil2 A)) .
+            \ consCase : (! x:A . ! xs : (list2 A) . (C (cons2 A x xs))) .
+               (consCase x xs)
+     to 
+        (list2 A)
+     by 
+       (! C : refl . (! nilCase:refl . (!consCase:refl. (C [(unfold refl refl refl);eval])))),
+       [(unfold refl); eval; substself]
+
+  
+
+
+

@@ -1,0 +1,155 @@
+#Set debug_morph
+#Set debug_subst
+#Set debug_tpof
+#Set suppress_eqterm_stack
+
+#Set print_commands
+
+#Set debug_eval
+
+#ListFlags
+
+Set respect_strategies
+
+Fix nat : * = 
+        self n . ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> 
+                   (C conv n to nat by refl, unfold) 
+    ,
+    zero : nat = 
+         conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . z 
+         to nat 
+         by (! C : refl . (! s : refl . (! z : refl . (C unfold)))),
+            [ unfold ; substself ]
+           
+    ,
+    succ : nat -> nat = 
+         \ n : nat . 
+           conv \ C : nat => * . \ s : (! n : nat. (C (succ n))) . \ z : (C zero) . (s n) 
+           to nat
+           by ( ! C : refl . refl -> refl -> (C [ (unfold refl) ; eval ])) ,
+              [ unfold ; substself ]
+
+# this just allows us to eliminate a nat in other code, without doing an explicit conv there.
+Define nat_elim : ! n : nat . 
+                  ! C : (nat => *) . 
+                  (! n : nat. (C (succ n))) -> 
+                  (C zero) -> 
+                  (C n) =
+  \ n : nat .
+  (conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+
+Define nat_elim_simple : 
+  ! n :: nat . 
+  ! C : *.
+  (! n : nat. C) -> 
+  C -> 
+  C =
+  \ n :: nat .
+  \ C : *.
+  \ s : (! n : nat. C).
+  \ z : C.
+  conv
+  ((conv n to ! C : (nat => *) . (! n : nat. (C (succ n))) -> (C zero) -> (C n) 
+             by [ unfold ; substself ] , refl)
+     (\x::nat.C)
+     conv s to (! n : nat. ((\x::nat.C) (succ n))) by refl , (! n : refl . eval)
+     conv z to ((\x::nat.C) zero) by refl, eval)
+  to C
+  by eval , refl
+
+
+Fix add : nat -> nat -> nat =
+    \ n : nat . \ m : nat .
+       (conv
+          (nat_elim n
+            (\ n :: nat . nat))
+         to ((nat -> nat) -> nat -> nat)
+         by ((refl -> [ (refl (unfold refl)); eval]) -> eval -> eval), refl
+         (\ p : nat . (succ (add p m))) 
+         m)
+
+###### uncomment to add 1 and 1
+#Set suppress_lam_types              ### to make the output easier to read
+#Eval (add (succ zero) (succ zero))
+######
+
+Fix unit : * = self u . ! C : (unit -> *). (C mkunit) -> (C conv u to unit by refl, unfold) ,
+    mkunit : unit =
+         conv \ C : unit -> * . \ u : (C mkunit) . u 
+         to unit
+         by (! C : refl . (! z : refl . (C unfold))),
+            [ unfold ; substself ]
+
+
+Fix void : * = self u. ! C : (void -> *). (C conv u to void by refl, unfold)
+
+# Equality supports elimination over a predicate C which depends on the RHS of the
+# equality and the equality proof itself (see the type of C in the definitions).
+
+Fix eq : ! A : *. A => A => * = 
+         \ A : * . \ a :: A . \ b :: A . 
+           self p. ! C : (! b :: A . (eq A a b) => *) .
+           (C a (eqrefl A a)) ->
+           (C b conv p to (eq A a b) by refl , [ (unfold A a b) ; eval ] )
+      ,
+      eqrefl : ! A : * . ! a :: A . (eq A a a) = 
+         \ A : * . \ a :: A .
+         conv
+         \ C : (! b :: A. (eq A a b) => *) .
+         \ p : (C a (eqrefl A a)). p
+         to (eq A a a)
+         by (! C : refl . ! p : refl . (C a [ (unfold A a) ; eval ])) , [ (unfold A a a) ; eval ; substself ]
+
+# This eqconv is for the common case where we want to eliminate over a predicate C which
+# depends only on the RHS of the equality, not the equality proof itself.
+
+Define eqconv : ! A : *. ! a :: A . ! b :: A . ! C : (A => *) . (C a) -> (eq A a b) -> (C b) =
+  \ A : *. \ a :: A. \ b :: A . \ C : A => * . \ u : (C a) . \ p : (eq A a b) .
+    conv
+      ((conv p to (! C : (! b :: A . (eq A a b) => *) .
+                  (C a (eqrefl A a)) -> 
+                  (C b p))
+              by [ (unfold A a b) ; eval ; substself ] , refl)
+       (\ x :: A . \ u :: (eq A a x) . (C x))
+       conv u 
+       to ((\ x :: A . (\ u :: (eq A a x) . (C x))) a (eqrefl A a))
+       by refl, eval)
+     to (C b)
+     by eval, refl
+
+# Set debug_morph
+
+Fix addZ : ! n:nat . (eq nat (add n zero) n) =
+  \ n : nat .
+    conv
+    (nat_elim n
+       (\ n::nat. (eq nat (add n zero) n))
+       (\ n:nat. 
+          conv
+          (eqconv nat (add n zero)
+            n
+            (\x::nat . (eq nat (add (succ n) zero) (succ x)))
+            (conv (eqrefl nat (add (succ n) zero))
+             to ((\ x :: nat . (eq nat (add (succ n) zero) (succ x))) (add n zero))
+             by (eq nat refl [ (unfold (unfold n) zero) ; eval ; (unfold refl refl refl refl); eval ])  , eval )
+            (addZ n))
+          to ((\ n :: nat . (eq nat (add n zero) n)) (succ n))
+          by eval , eval )
+       conv (eqrefl nat (add zero zero))
+       to ((\x::nat.(eq nat (add x zero) x)) zero)
+       by (eq refl refl [ (unfold unfold refl) ; eval ; (unfold refl refl refl refl) ; eval ]) , eval)
+      to (eq nat (add n zero) n)
+      by eval , refl
+
+Define not_zero_eq_one : (eq nat zero (succ zero)) -> void =
+  \ x : (eq nat zero (succ zero)) .
+    fix et : nat => * = (\x::nat. (nat_elim_simple x * (\p:nat.void) unit)) in
+    conv
+    (eqconv nat zero (succ zero)  
+       et
+       conv mkunit to (et zero) by refl, [ (unfold unfold) ; eval; (unfold refl refl refl refl); eval ]
+       x)
+    to void
+    by [(unfold (unfold refl));eval; (unfold refl refl refl refl); eval] , refl
+       

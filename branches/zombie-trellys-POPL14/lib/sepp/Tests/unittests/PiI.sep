@@ -1,0 +1,1191 @@
+module PiI where
+
+-- Disable experimental implicit arguments support
+flag ImplicitArgs false
+
+-- Section 2
+data Nat : Type where
+  Z : Nat
+| S : (x:Nat) -> Nat
+
+data Vec : [a:Type] [n:Nat] -> Type where
+   VNil : [q:n = Z] -> Vec a n
+ | VCons : [m:Nat] -> [q:n = S m] ->
+     (x:a)->(xs:Vec a m) ->Vec a n
+
+
+
+-- Section 3
+
+Recursive plus : (x:Nat) (y:Nat) -> Nat :=
+    case x {x_eq} of
+      Z -> y
+    | S x' -> S (plus x' y)
+
+
+-- Section 4
+
+Program id : [a:Type] (x:a) -> a := x
+
+
+-- Section 5
+Theorem id_is_id_term :
+  forall (a:Type)(x:a)(x_term:x!).
+      (id [a] x = x) := 
+    join 100 : 
+      (id [a] (tcast x by x_term) = x)
+
+Theorem id_is_id :
+  forall (a:Type)(x:a).id [a] x = x :=
+   termcase x {x_term} of
+    abort ->
+     let u1 = join 100 
+            : id [a] (abort a) = (abort a)
+     in conv u1 
+         at (id [a] ~x_term = ~x_term)
+  | ! -> id_is_id_term a x x_term
+
+
+-- Section 6
+
+-- In the sep implementation, refl, sym, and trans are reserved
+-- identifiers, so we add an 'x' for these examples. 
+
+-- Figure 10:
+Theorem reflx : forall (a:Type)(t:a).t = t := join 0 0
+
+Theorem symx : forall (a:Type)(b:Type)(t1:a)(t2:b)
+      (p:t1 = t2).(t2 = t1) := conv (reflx a t1) at ~p = t1
+
+Theorem transx : forall (a:Type)(b:Type)(c:Type)(t1:a)(t2:b)(t3:c)(p:t1 = t2)(q:t2 = t3).(t1 = t3) :=
+   conv p at t1 = ~q
+
+
+
+
+data Bool : Type where
+    True : Bool
+  | False : Bool
+
+
+-- Figure 11: 
+
+infixr 8 &&
+
+Program (&&) : (x:Bool)(y:Bool) -> Bool :=
+  case x {x_eq} of
+     True -> y
+   | False -> False
+
+Theorem and_commutes :
+  forall(x:Bool)(y:Bool)(x_term:x!)(y_term:y!).
+     (x && y) = (y && x) :=
+     case x {x_eq} x_term of
+       True ->
+         (case y {y_eq} y_term of
+            True -> 
+              let u1 = join 100 : (True && True) = (True && True)
+              in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
+          | False -> 
+              let u1 = join 100 : (True && False) = (False && True)
+              in conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
+      | False ->
+         (case y {y_eq} y_term of
+            True -> 
+              let u1 = join 100  : (False && True) = (True && False)
+              in autoconv u1 -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq)
+          | False -> 
+              let u1 = join 100 : (False && False) = (False && False)
+              in autoconv u1) -- conv u1 at (~x_eq && ~y_eq) = (~y_eq && ~x_eq))
+
+
+Theorem morejoin_and_commutes :
+ forall(x:Bool)(y:Bool)(x_term:x!)(y_term:y!).
+   (x && y) = (y && x) :=
+ case x {x_eq} x_term of
+   True ->
+    (case y {y_eq} y_term of
+      True -> morejoin {sym x_eq,sym y_eq,x_term,y_term}
+    | False -> morejoin {sym x_eq,sym y_eq,x_term,y_term})
+ | False ->
+    (case y {y_eq} y_term of
+      True -> morejoin {sym x_eq,sym y_eq,x_term,y_term}
+    | False -> morejoin {sym x_eq,sym y_eq,x_term,y_term})
+
+
+
+-- Figure 12
+
+data List : [a:Type] -> Type where
+   Nil : List a
+ | Cons : (x:a) -> (xs:List a) -> List a
+
+Recursive append : 
+  [b:Type] (xs:List b) (ys:List b)  -> List b :=
+    case xs {xs_eq} of
+       Nil -> ys
+     | Cons x xs' -> Cons [b] x (append [b] xs' ys)
+
+
+-- Figure 13
+
+Inductive append_term : 
+  forall(a:Type)(xs:List a){xs_term}(ys:List a)(ys_term:ys!).
+     (append [a] xs ys)! :=
+   case xs {xs_eq} xs_term of
+      Nil -> let u1 = morejoin {sym xs_eq, xs_term, ys_term} : append [a] xs ys = ys
+             in conv ys_term at ~(sym u1) !
+    | Cons x xs' -> 
+        let ih = append_term [a] xs' (ord xs_eq : xs' < xs) ys ys_term;
+            x_term = value x : x!;
+            unroll_app = morejoin {sym xs_eq,xs_term,ys_term }
+                       :  append [a] xs ys = Cons [a] x (append [a] xs' ys);
+            u1 = value (Cons [a] ~x_term ~ih)
+        in conv u1 at ~(sym unroll_app) !
+
+
+-- Figure 14
+
+Inductive append_assoc_term :
+  forall (a:Type) (xs:List a){xs_term} 
+      (ys:List a)(ys_term:ys!)(zs:List a)(zs_term:zs!) .
+    append [a] xs (append [a] ys zs) = 
+     append [a] (append [a] xs ys) zs :=
+   let term_xs_ys = append_term [a] xs xs_term ys ys_term;
+       term_ys_zs = append_term [a] ys ys_term zs zs_term
+   in case xs {xs_eq} xs_term of
+       Nil ->
+        let u1 = morejoin {sym xs_eq, ys_term, xs_term} 
+               : ys = append [a] xs ys;
+            u2 = morejoin {sym xs_eq, xs_term} 
+               : append [a] xs (tcast (append [a] ys zs) by term_ys_zs)
+                 =  append [a] ys zs;
+            u3 = morejoin {sym xs_eq, xs_term, ys_term} 
+               : ys = append [a] xs ys
+        in conv u2 at append [a] xs (append [a] ys zs) =  append [a] ~u3 zs
+
+     | Cons x xs' ->
+        let unroll_app = morejoin {sym xs_eq,xs_term, term_ys_zs} 
+                 : append [a] xs (append [a] ys zs)
+                   = Cons [a] x (append [a] xs' (append [a] ys zs));
+            ih = append_assoc_term [a] xs' (ord xs_eq) ys ys_term zs zs_term;
+            u1 = conv unroll_app at 
+                   append [a] xs (append [a] ys zs) = Cons [a] x ~ih;
+            u2 = morejoin {sym xs_eq, xs_term, ys_term} 
+               : append [a] xs ys = Cons [a] x (append [a] xs' ys);
+            term_xs'_ys = append_term [a] xs' (value xs') ys ys_term;
+            u3  = morejoin {sym xs_eq, xs_term,ys_term} 
+                : (append [a] (append [a] xs ys) zs)
+                   = (append [a] (Cons [a] x (append [a] xs' ys)) zs);
+            u4 = morejoin {zs_term, ys_term, value x, term_xs'_ys} 
+               : append [a] (Cons [a] x (append [a] xs' ys)) zs
+                  = Cons [a] x (append [a] (append [a] xs' ys) zs);
+            u5 = trans u3 u4 
+               : append [a] (append [a] xs ys) zs
+                 = Cons [a] x (append [a] (append [a] xs' ys) zs)
+        in conv u1 at append [a] xs (append [a] ys zs) = ~(sym u5)
+
+-- Utilities, not in the paper
+
+Theorem cons_term_head : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). x ! :=
+  termcase x {x_term} of
+     abort -> contraabort (aborts (Cons [a] ~x_term xs)) p
+   | ! -> x_term
+
+Theorem cons_term_tail : forall(a:Type)(x:a)(xs:List a)(p:(Cons [a] x xs) !). xs ! :=
+  termcase xs {xs_term} of
+     abort -> contraabort (aborts (Cons [a] x ~xs_term)) p
+   | ! -> xs_term
+
+
+
+-- Figure 15
+Theorem append_assoc :
+  forall (a:Type) (xs:List a)(ys:List a)(zs:List a).
+    append [a] xs (append [a] ys zs) = 
+      append [a] (append [a] xs ys) zs :=
+  termcase xs {xs_term} of
+     abort ->
+      let aleft = join 100 :
+           (append [a] (abort (List a)) (append [a] ys zs)) = (abort (List a));
+          aright = join 100 :
+           (abort (List a)) = (append [a] (append [a] (abort (List a)) ys) zs);
+          u1 =  trans aleft aright
+      in conv u1 at
+          append [a] ~xs_term (append [a] ys zs) =
+          append [a] (append [a] ~xs_term ys) zs
+   | ! ->
+      termcase ys {ys_term} of
+         abort ->
+          let aleft = morejoin {xs_term} :
+               (append [a] xs (append [a] (abort (List a)) zs)) = 
+                 (abort (List a)) ;
+              aright = morejoin {xs_term} :
+                 (abort (List a)) = 
+                    (append [a] (append [a] xs (abort (List a))) zs);
+              u1 = trans aleft aright
+          in conv u1 at
+                append [a] xs (append [a] ~ys_term zs) =
+                append [a] (append [a] xs ~ys_term) zs
+       | ! ->
+        termcase zs {zs_term} of
+          abort -> 
+             let aleft = morejoin {xs_term,ys_term} :
+                    (append [a] xs (append [a] ys (abort (List a)))) = 
+                       abort (List a);
+                 a_x_y_term = append_term a xs xs_term ys ys_term;
+                 aright = morejoin {xs_term,ys_term,a_x_y_term} :
+                    (abort (List a)) = 
+                       (append [a] (append [a] xs ys) (abort (List a)));
+                 u1 = trans aleft aright
+              in conv u1 at
+                  append [a] xs (append [a] ys ~zs_term) =
+                    append [a] (append [a] xs ys) ~zs_term
+       | ! -> append_assoc_term [a] xs xs_term ys ys_term zs zs_term
+
+-- Section 7
+
+data Term : Type where
+    S : Term
+  | K : Term
+  | App : Term -> Term -> Term
+
+
+
+
+-- Utilities, not in the paper
+
+Theorem and_term : forall(x:Bool)(y:Bool)(x_term:x!)(y_term:y!).(x && y) ! :=
+        case x {x_eq} x_term of
+          True -> let u1 = morejoin {x_term,y_term,sym x_eq} 
+                         : y = (x && y)
+                  in conv y_term at ~(u1) !
+         |False -> let u1 = morejoin {x_term,y_term,sym x_eq} 
+                          : False = (x && y)
+                   -- An example of using autoconv; it uses the proof False = (x && y)...
+                   in autoconv (valax False) -- conv valax False at ~(u1) !
+
+
+-- Figure 16
+
+Recursive isValue : (t:Term) -> Bool :=
+  case t {t_eq} of
+    K -> True
+   |S -> True
+   |App l r -> (case l {l_eq} of
+                   K -> isValue r
+                 | S -> isValue r
+                 | App l' r' -> (case l' {l'_eq} of
+                                    S -> isValue r' && isValue r
+                                  | K -> False
+                                  | App a b -> False))
+
+
+Inductive isValue_term : forall (t:Term){t_term}.isValue t ! :=
+  case t {t_eq} t_term of
+    K -> let u1 = morejoin {t_term, sym t_eq} 
+                : True = isValue t
+         in conv valax True at  ~u1 !
+   |S -> let u1 = morejoin {t_term, sym t_eq} 
+                : True = isValue t
+         in conv valax True at  ~u1 !
+   | App l r ->
+      case l {l_eq} (valax l) of
+        K -> let u1 = isValue_term r (ord t_eq)
+                    : isValue r !;
+                 u2 = morejoin {sym t_eq, sym l_eq, t_term, valax r}
+                    : isValue r = isValue t
+        in conv u1 at ~u2 !
+       |S -> let u1 = isValue_term r (ord t_eq)
+                    : isValue r !;
+                 u2 = morejoin {sym t_eq, sym l_eq, t_term, valax r}
+                    : isValue r = isValue t
+              in conv u1 at ~u2 !
+       |App l' r' ->
+          case l' {l'_eq} valax l' of
+            S -> let ih_r = isValue_term r (ord t_eq : r < t);
+                     ih_r' = isValue_term r'
+                              (ordtrans (ord l_eq : r' < l) (ord t_eq : l < t));
+                     u1 = and_term (isValue r') (isValue r) ih_r' ih_r;
+                                
+                     u2 = morejoin {sym t_eq,sym l_eq,sym l'_eq, t_term, valax l,valax l'}
+                        : ((isValue r' && isValue r) = isValue t)
+                 in conv u1 at ~u2 !
+           | K -> let u1 = morejoin {sym t_eq,sym l_eq,sym l'_eq,t_term,valax l,valax l'} 
+                         : False = isValue t
+                  in conv valax False at ~u1 !
+           | App a b ->
+                  let u1 = morejoin {sym t_eq,sym l_eq,sym l'_eq,t_term,valax l,valax l'}
+                         : False = isValue t
+                  in conv valax False at ~u1 !
+
+
+-- Figure 17
+
+-- Predicate to determine if a term is a redex.
+Program isRedex : (t:Term) -> Bool :=
+  case t {t_eq} of
+      K -> False
+    | S -> False
+    | App f1 t1 ->
+       case f1 {f2_eq} of
+           K -> False
+         | S -> False
+         | App f2 t2 -> 
+             case f2 {f2_eq} of
+                K -> isValue t1 && isValue t2
+              | S -> False
+              | App f2 t3 ->
+                 case f2 {f2_eq} of
+                   K -> False
+                 | S -> isValue t1 && isValue t2 && isValue t3
+                 | App f3 t4 -> False
+
+Program isRedex : (t:Term) -> Bool :=
+ case t {t_eq} of
+   K -> False
+ | S -> False
+ | App f1 t1 ->
+    case f1 {f2_eq} of
+      K -> False
+    | S -> False
+    | App f2 t2 ->
+       case f2 {f2_eq} of
+         K -> isValue t1 && isValue t2
+       | S -> False
+       | App f2 t3 ->
+           case f2 {f2_eq} of
+             K -> False
+           | S -> isValue t1 && 
+                  isValue t2 && 
+                  isValue t3
+           | App f3 t4 -> False
+
+
+Inductive isRedex_terminates : forall (t:Term){t_term}.isRedex t ! :=
+  case t {t_eq} t_term of
+      K -> let u1 = morejoin {sym t_eq,t_term} : False = isRedex t
+           in conv valax False at ~u1!
+    | S -> let u1 = morejoin {sym t_eq,t_term} : False = isRedex t
+           in conv valax False at ~u1!
+    | App f1 t1 ->
+       case f1 {f1_eq} valax f1 of
+           K -> 
+             let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1} : False = isRedex t
+             in conv valax False at ~u1!
+         | S -> 
+              let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1} : False = isRedex t
+              in conv valax False at ~u1!
+         | App f2 t2 -> 
+            case f2 {f2_eq} valax f2 of
+               K -> let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1,sym f2_eq, valax f2} 
+                           : (isValue t1 && isValue t2) = isRedex t;
+                        u2 = and_term (isValue t1) (isValue t2)
+                                (isValue_term t1 (valax t1)) (isValue_term t2 (valax t2))
+                    in conv u2 at ~u1!
+             | S -> 
+                let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1,sym f2_eq, valax f2} 
+                       : False = isRedex t
+                in conv valax False at ~u1!                                
+             | App f3 t3 ->
+                case f3 {f3_eq} valax f3 of
+                   K -> 
+                    let u1 =  morejoin {sym t_eq,sym f1_eq,t_term,valax f1,sym f2_eq, valax f2, sym f3_eq, valax f3} 
+                           : False = isRedex t
+                    in conv valax False at ~u1!
+                 | App f3 t4 -> 
+                    let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1,sym f2_eq, valax f2, sym f3_eq, valax f3} 
+                           : False = isRedex t
+                    in conv valax False at ~u1!                                
+                 | S ->
+                    let u1 = morejoin {sym t_eq,sym f1_eq,t_term,valax f1,sym f2_eq, valax f2, sym f3_eq, valax f3}                                      
+                           : (isValue t1 && isValue t2 && isValue t3) = isRedex t;
+                        u2 = and_term (isValue t2) (isValue t3)
+                               (isValue_term t2 (valax t2)) (isValue_term t3 (valax t3));
+                        u3 = and_term (isValue t1) (isValue t2 && isValue t3) (isValue_term t1 (valax t1)) u2
+                    in conv u3 at ~u1!
+
+
+
+
+
+data RedexProp : (t:Term)  -> Type where
+ RedexK : (t1:Term) -> (t2:Term) ->
+    [p:t = App (App K t1) t2] ->
+    [p1:isValue t1 = True] ->
+    [p2:isValue t2 = True] -> 
+    RedexProp t
+|RedexS :
+  (t1:Term) -> (t2:Term) -> (t3:Term) ->
+  [p:t = App (App (App S t1) t2) t3] ->
+  [p1:isValue t1 = True] ->
+  [p2:isValue t2 = True] ->
+  [p3:isValue t3 = True] ->
+  RedexProp t
+
+
+-- Utilities, not in the paper
+
+Theorem and_right : forall (t1:Bool)(t2:Bool)(p:(t1 && t2) = True).(t2 = True) :=
+   termcase t1 {t1_term} of
+     abort -> let u1 = morejoin {sym t1_term} : (abort Bool) = ((abort Bool) && t2);
+                  u2 = conv u1 at (abort Bool) = (~t1_term && t2)
+              in contraabort u2 (conv valax True at ~(sym p) !)
+    | ! -> termcase t2 {t2_term} of
+             abort ->
+               let u1 = morejoin {t1_term, sym t2_term} : (abort Bool) = (t1 && (abort Bool));
+                   u2 = conv u1 at (abort Bool) = (t1 && ~t2_term)
+               in contraabort u2 (conv valax True at ~(sym p) !)
+           | ! -> case t1 {t1_eq} t1_term of
+                   True -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : t2 = (t1 && t2)
+                           in trans u3 p
+                 | False -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : False = (t1 && t2)
+                            in contra (trans u3 p)
+
+Theorem and_left : forall (t1:Bool)(t2:Bool)(p:(t1 && t2) = True).(t1 = True) :=
+   termcase t1 {t1_term} of
+     abort -> let u1 = morejoin {sym t1_term} : (abort Bool) = ((abort Bool) && t2);
+                  u2 = conv u1 at (abort Bool) = (~t1_term && t2)
+              in contraabort u2 (conv valax True at ~(sym p) !)
+    | ! -> termcase t2 {t2_term} of
+             abort ->
+               let u1 = morejoin {t1_term, sym t2_term} : (abort Bool) = (t1 && (abort Bool));
+                   u2 = conv u1 at (abort Bool) = (t1 && ~t2_term)
+               in contraabort u2 (conv valax True at ~(sym p) !)
+           | ! -> case t1 {t1_eq} t1_term of
+                   True -> sym t1_eq
+                 | False -> let u3 = morejoin {t1_term,t2_term,sym t1_eq}
+                                : False = (t1 && t2)
+                            in contra (trans u3 p)
+
+
+Program redexProp : (t:Term)[p:isRedex t = True] -> RedexProp t :=
+  case t {t_eq} of
+     K -> abort (RedexProp t) -- Contradiction, since isRedex t = True
+   | S -> abort (RedexProp t) -- Contradiction, since isRedex t = True
+   | App f1 t1 ->
+      case f1 {f1_eq} of
+         K -> abort (RedexProp t) -- Contradiction, since isRedex t = True
+       | S -> abort (RedexProp t) -- Contradiction, since isRedex t = True
+       | App f2 t2 ->
+           case f2 {f2_eq} of
+              K -> let [u1] = (conv sym t_eq at t = App ~(sym f1_eq) t1)
+                            : t = App (App f2 t2) t1;
+                       [u2] = (conv u1 at t = App (App ~(sym f2_eq) t2) t1)
+                            : t = App (App K t2) t1;
+                       [u3] = morejoin { u2, valax t2, valax t1} 
+                            : isRedex t = (isValue t1 && isValue t2);
+                       [u4] = trans (sym p) u3 
+                            : True = (isValue t1 && isValue t2)
+                   in RedexK t t2 t1 [u2]
+                         [and_right (isValue t1) (isValue t2) (sym u4)]
+                         [and_left (isValue t1) (isValue t2) (sym u4)]
+             | S ->  abort (RedexProp t) -- Contradiction, since isRedex t = True
+             | App f3 t3 ->
+                 case f3 {f3_eq} of
+                    K -> abort (RedexProp t) -- Contradiction
+                  | App f4 t4 -> abort (RedexProp t) -- Contradiction
+                  | S ->
+                      let [u1] = (conv sym t_eq at t = App ~(sym f1_eq) t1)
+                               : t = App (App f2 t2) t1;
+                          [u2] = (conv u1 at t = App (App ~(sym f2_eq) t2) t1)
+                               : t = App (App (App f3 t3) t2) t1;
+                          [u3] = conv u2 at t = App (App (App ~(sym f3_eq) t3) t2) t1;
+                          [u4] = morejoin { u3, valax t3, valax t2, valax t1} 
+                               : isRedex t = (isValue t1 && isValue t2 && isValue t3);
+                          [u5] = trans (sym u4) p 
+                               : (isValue t1 && isValue t2 && isValue t3) = True
+                      in RedexS t t3 t2 t1 [u3]
+                          [and_right (isValue t2) (isValue t3) 
+                            (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                          [and_left (isValue t2) (isValue t3) 
+                            (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                          [and_left (isValue t1) (isValue t2 && isValue t3) u5]             
+
+Theorem redexPropTerm : 
+  forall(t:Term)(p:isRedex t = True). redexProp t [p] ! :=
+   termcase t {t_term} of
+      abort -> 
+       let isredex_t_aborts = aborts (isRedex ~t_term) 
+                            : ((abort Bool) = (isRedex t));
+           isredex_t_terminates = (conv valax True at ~(sym p) !) 
+                                : (isRedex t) !
+       in  contraabort isredex_t_aborts isredex_t_terminates
+   | ! -> 
+       case t {t_eq} t_term of
+         K -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
+              in contra (equiv 3 : False = True)
+       | S -> let u1 = morejoin {t_term,sym t_eq} : False = isRedex t
+              in contra (equiv 3 : False = True)
+       | App f1 t1 ->
+          case f1 {f1_eq} (valax f1) of
+             K -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App K t1;
+                      u1 = morejoin {t_term, t_eq'} : False = isRedex t
+                  in contra (equiv 3 : False = True)
+           | S -> let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : t = App S t1;
+                      u1 = morejoin {t_term, t_eq'} : False = isRedex t
+                  in contra (equiv 3 : False = True)
+           | App f2 t2 ->
+              let t_eq' = (conv sym t_eq at t = App ~(sym f1_eq) t1) : (t = App (App f2 t2) t1)
+              in case f2 {f2_eq} (valax f2) of
+                  K -> let t_eq'' = conv t_eq' at t = App (App ~(sym f2_eq) t2) t1; -- t = App (App K t2) t1
+                           u3 = morejoin {t_term, t_eq''} : isRedex t = (isValue t1 && isValue t2);
+                           u4 = trans (sym p) u3 : True = (isValue t1 && isValue t2);
+                           u6 = morejoin {t_term,t_eq''} :
+                                  redexProp t [p] = RedexK t t2 t1 [t_eq'']
+                                                   [and_right (isValue t1) (isValue t2) (sym u4)]
+                                                   [and_left (isValue t1) (isValue t2) (sym u4)];
+                           res_term = valax (RedexK (tcast t by t_term) t2 t1 [t_eq'']
+                                              [and_right (isValue t1) (isValue t2) (sym u4)]
+                                              [and_left (isValue t1) (isValue t2) (sym u4)])                                                
+
+                       in conv res_term at ~(sym u6) !
+                 | S -> let t_eq'' = (conv t_eq' at t = App (App ~(sym f2_eq) t2) t1) : t = App (App S t2) t1;
+                            u1 = morejoin {t_term, t_eq''} : False = isRedex t
+                        in contra (equiv 3 : False = True)
+                 | App f3 t3 ->
+                     let t_eq'' = (conv t_eq' at t = (App (App ~(sym f2_eq) t2) t1)) :
+                                   t = App (App (App f3 t3) t2) t1 in
+                     case f3 {f3_eq} (valax f3) of
+                        K -> let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App K t3) t2) t1;
+                                 u1 = morejoin {t_term, t_eq'''} : False = isRedex t
+                             in contra (equiv 3 : False = True)
+                      | App f4 t4 -> 
+                             let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App (App f4 t4) t3) t2) t1;
+                                 u1 = morejoin {t_term, t_eq'''} : False = isRedex t
+                             in contra (equiv 3 : False = True)
+                      
+                      | S ->
+                             let t_eq''' = (conv t_eq'' at t = App (App (App ~(sym f3_eq) t3) t2) t1) :
+                                                t = App (App (App S t3) t2) t1;
+                                 u4 = morejoin { t_term, t_eq''', valax t3, valax t2, valax t1} :
+                                     isRedex t = (isValue t1 && isValue t2 && isValue t3);
+                                 u5 = trans (sym u4) p : (isValue t1 && isValue t2 && isValue t3) = True;
+                                 res = morejoin {t_term, t_eq'''} :
+                                    redexProp t [p] =
+                                       RedexS t t3 t2 t1 [t_eq''']
+                                        [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                        [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                        [and_left (isValue t1) (isValue t2 && isValue t3) u5];
+                                 res_term =  valax (RedexS (tcast t by t_term) t3 t2 t1 [t_eq''']
+                                            [and_right (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                            [and_left (isValue t2) (isValue t3) (and_right (isValue t1) (isValue t2 && isValue t3) u5)]
+                                            [and_left (isValue t1) (isValue t2 && isValue t3) u5])
+                             in conv res_term at ~(sym res) !                          
+
+
+
+
+Program step : (t:Term)[p:isRedex t = True] -> Term :=
+   case redexProp t [p] {redex_eq} of
+          RedexK t1 t2 [isapp] [isval1] [isval2] -> t1
+        | RedexS t1 t2 t3 [isapp] [isval1] [isval2] [isval3] -> App (App t1 t2) (App t1 t3)
+
+Program step : 
+ (t:Term)[p:isRedex t = True] -> Term :=
+ case redexProp t [p] {redex_eq} of
+   RedexK t1 t2 
+     [isapp] [isval1] [isval2] -> t1
+ | RedexS t1 t2 t3 
+     [isapp] [isval1] [isval2] [isval3] 
+    -> App (App t1 t2) (App t1 t3)
+
+Theorem step_terminates : 
+ forall (t:Term)(p:isRedex t = True).step t [p] ! :=
+   termcase t {t_term} of
+     abort -> let u1 = (aborts (isRedex ~t_term))
+                     : (abort Bool) = isRedex t;
+                  u2 = conv (valax True) at ~(sym p) !
+              in contraabort u1 u2
+    | ! ->
+   case redexProp t [p] {redex_eq} redexPropTerm t p of
+          RedexK t1 t2 [isapp] [isval1] [isval2] ->
+            let u1 = morejoin {sym redex_eq,t_term}
+                   : t1 = step t [p] 
+            in conv valax t1 at ~u1 !
+        | RedexS t1 t2 t3 [isapp] [isval1] [isval2] [isval3] ->
+            let u1 = morejoin {sym redex_eq,t_term}
+                   : App (App t1 t2) (App t1 t3) = step t [p];
+                terms = valax (App (App t1 t2) (App t1 t3))
+                      : App (App t1 t2) (App t1 t3) !
+            in conv terms at ~u1 !
+
+
+
+data Ctx : Type where
+    Box : Ctx
+  | C1 : Ctx -> Term -> Ctx
+  | C2 : (t:Term) -> [p:isValue t = True] 
+         -> Ctx ->  Ctx
+
+
+data Decomp : Type where
+  Dec : (c:Ctx) -> (t:Term) -> Decomp
+
+
+-- | Decompose a term into an evaluation context and redex. This
+-- | results in leftmost-outermost reduction.
+Recursive decompose : (t:Term) -> Decomp  :=
+  case isRedex t {redex_t} of
+      True -> Dec Box t
+    | False -> 
+       case t {e_eq} of
+          K -> Dec Box t
+        | S -> Dec Box t
+        | App x y -> 
+           case isValue x {x_val} of
+             True -> (case decompose y {y_eq} of
+                 Dec c' t' -> 
+                  Dec (C2 x [sym x_val] c') t')
+           | False -> (case decompose x {x_eq} of
+                 Dec c' t' -> 
+                  Dec (C1 c' y) t')
+
+-- Plugging a term into n evaluation context.  
+Recursive plug : (c:Ctx)(t:Term) -> Term :=
+  case c {c_eq} of
+      Box -> t
+    | C1 c' t' -> App (plug c' t) t' 
+    | C2 v [pf] c' -> App v (plug c' t)
+
+
+
+-- Decompose a term, reduce it, repeat...
+Recursive reduction : (t:Term) -> Term :=
+  case decompose t {dec_t} of
+    Dec c t' -> case isRedex t' {red_t'} of
+                  True -> reduction (plug c (step t' [sym red_t']))
+                 |False -> plug c t'
+
+
+-- Utility functions, not in paper
+
+Program dec_focus :  (d:Decomp) -> Term :=
+  case d {d_eq} of
+     Dec c t -> t
+
+Program dec_ctx :  (d:Decomp) -> Ctx :=
+  case d {d_eq} of
+     Dec c t -> c
+
+Theorem dec_ctx_inj : forall (c1:Ctx)(c2:Ctx)(t1:Term)(t2:Term)
+                              (c1_term:c1!)(c2_term:c2!)(t1_term:t1!)(t2_term:t2!)
+                         (p:Dec c1 t1 = Dec c2 t2).c1 = c2 :=
+   let u1 = join 0 : dec_ctx (Dec c1 t1) = dec_ctx (Dec c1 t1);
+       u1' = conv u1 at dec_ctx (Dec c1 t1) = dec_ctx ~p;
+       u2 = morejoin {c1_term,c2_term,t1_term,t2_term} : c1 = dec_ctx (Dec c1 t1);
+       u3 = morejoin {c1_term,c2_term,t1_term,t2_term} : c2 = dec_ctx (Dec c2 t2)
+   in  equiv 2
+
+
+Theorem dec_term_inj : forall (c1:Ctx)(c2:Ctx)(t1:Term)(t2:Term)
+                              (c1_term:c1!)(c2_term:c2!)(t1_term:t1!)(t2_term:t2!)
+                         (p:Dec c1 t1 = Dec c2 t2).t1 = t2 :=
+   let u1 = join 0 : dec_focus (Dec c1 t1) = dec_focus (Dec c1 t1);
+       u1' = conv u1 at dec_focus (Dec c1 t1) = dec_focus ~p;
+       u2 = morejoin {c1_term,c2_term,t1_term,t2_term} : t1 = dec_focus (Dec c1 t1);
+       u3 = morejoin {c1_term,c2_term,t1_term,t2_term} : t2 = dec_focus (Dec c2 t2)
+   in  equiv 3
+
+
+Inductive decompose_terminates : forall(t:Term){t_term}. decompose t ! := 
+  case isRedex t {redex_t} isRedex_terminates t t_term of
+      True -> let u1 = morejoin {t_term, sym redex_t} : Dec Box t = decompose t
+              in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
+    | False -> (case t {e_eq} t_term of
+                  K -> let u1 = morejoin {t_term, sym redex_t, sym e_eq} : Dec Box t = decompose t
+                       in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
+                | S -> let u1 = morejoin {t_term, sym redex_t, sym e_eq} : Dec Box t = decompose t
+                       in  conv (valax (Dec Box (tcast t by t_term))) at ~u1 !
+                | App x y -> (case isValue x {x_val} isValue_term x (valax x) of
+                                True -> let u1 [u1_eq] = ord e_eq : y < t
+                                        in  (case decompose y {y_eq} decompose_terminates y u1 of
+                                               Dec c' t' ->
+                                                 let u1 [u1_eq] =
+                                                        morejoin {sym x_val,sym e_eq, sym redex_t, sym y_eq, t_term, valax t'}
+                                                        : Dec (C2 x [sym x_val] c') t' = decompose t 
+                                                 in conv valax (Dec (C2 x [sym x_val] c') t') at ~u1!)
+                               | False -> let u1 [u1_eq] = ord e_eq : x < t
+                                          in (case decompose x {x_eq} decompose_terminates x u1 of
+                                                Dec c' t' ->
+                                                  let u2 [u2_eq] =
+                                                    morejoin {sym x_val, sym e_eq, sym redex_t, sym x_eq, t_term, valax t'}
+                                                      : Dec (C1 c' y) t' = decompose t
+                                                  in conv valax (Dec (C1 c' y) t') at ~u2!)))
+
+
+
+-- Section 7.3
+
+Recursive s_free : (t:Term) -> Bool :=
+  case t {t_eq} of
+      K -> True
+    | S -> False
+    | App t1 t2 -> s_free t1 && s_free t2
+
+
+-- Utility function, not in paper
+
+Inductive plug_terminates : forall (t1:Term)(t1_term:t1!)(c:Ctx){c_term}.plug c t1 ! :=
+  case c {c_eq} c_term of
+    Box -> let u1 = morejoin {t1_term,sym c_eq,c_term} 
+                  : t1 = plug c t1
+           in conv t1_term at ~u1!
+  | C1 c' t' -> let ih = plug_terminates t1 t1_term c' (ord c_eq);
+                    u1 = morejoin {sym c_eq,t1_term,c_term} 
+                       : (plug c t1) = App (plug c' t1) t'
+                in conv value (App ~ih t') at ~(sym u1)!
+  | C2 t' [q] c' -> let ih = plug_terminates t1 t1_term c' (ord c_eq);
+                        u1 = morejoin {sym c_eq,t1_term,c_term} 
+                           : (plug c t1) = App t' (plug c' t1)
+                in conv value (App t' ~ih) at ~(sym u1)!
+
+
+-- Utility function, not in paper
+axiom app_left_monotonic : forall(t1:Term)(t2:Term)(t3:Term)(p:t1 < t2).App t1 t3 < App t2 t3
+axiom app_right_monotonic : forall(t1:Term)(t2:Term)(t3:Term)(p:t1 < t2).App t3 t1 < App t3 t2
+Inductive plug_preserves_ord : forall(t1:Term)(t1_term:t1!)(t2:Term)(t2_term:t2!)(p:t1 < t2)(c:Ctx){c_term}.
+   plug c t1 < plug c t2 :=
+     case c {c_eq} c_term of
+       Box -> let u1 = morejoin {sym c_eq, c_term, t1_term} : t1 = plug c t1;
+                  u2 = morejoin {sym c_eq, c_term, t2_term} : t2 = plug c t2
+               in conv p at ~u1 < ~u2
+      |C1 c' t' -> let u1 = plug_preserves_ord t1 t1_term t2 t2_term p c' (ord c_eq);
+                       u2 = morejoin {sym c_eq,t1_term,c_term} : (plug c t1) = App (plug c' t1) t';
+                       u3 = morejoin {sym c_eq,t2_term,c_term} : (plug c t2) = App (plug c' t2) t';
+                       -- Can't directly use the next two lemmas...
+                       o1 = ord (sym u2) : plug c' t1 < plug c t1;
+                       o2 = ord (sym u3) : plug c' t2 < plug c t2;
+                       --
+                       u4 = app_left_monotonic (plug c' t1) (plug c' t2) t' u1
+                   in conv u4 at ~(sym u2) < ~(sym u3)
+      |C2 t' [q] c' -> 
+                   let u1 = plug_preserves_ord t1 t1_term t2 t2_term p c' (ord c_eq);
+                       u2 = morejoin {sym c_eq,t1_term,c_term} : (plug c t1) = App t' (plug c' t1);
+                       u3 = morejoin {sym c_eq,t2_term,c_term} : (plug c t2) = App t' (plug c' t2);
+                       -- Can't directly use the next two lemmas...
+                       o1 = ord (sym u2) : plug c' t1 < plug c t1;
+                       o2 = ord (sym u3) : plug c' t2 < plug c t2;
+                       --
+                       u4 [u4_eq] = app_right_monotonic (plug c' t1) (plug c' t2) t' u1
+                   in conv u4 at ~(sym u2) < ~(sym u3)
+
+Inductive plug_decompose_inv :
+  forall (t:Term)(t_term:t!)(t':Term)(t'_term:t'!)(c:Ctx){c_term}(p:decompose t = Dec c t').plug c t' = t :=
+  case isRedex t {redex_eq} isRedex_terminates t t_term of
+      True -> let u1 = morejoin {t_term,sym redex_eq } : decompose t = Dec Box t;
+                  u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                  u3 = morejoin {t_term,u2} :
+                        dec_focus (tcast (Dec c t) by u2) = t;
+                  u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                  u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                  u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                  u7 = morejoin {t_term} : plug Box t = t
+              in conv u7 at plug ~(sym u5) ~(sym u6) = t
+    | False -> (case t {e_eq} t_term of
+                  K -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                  dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                           u7 = morejoin {t_term} : plug Box t = t
+                       in conv u7 at plug ~(sym u5) ~(sym u6) = t
+                | S -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                  dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                           u7 = morejoin {t_term} : plug Box t = t
+                       in conv u7 at plug ~(sym u5) ~(sym u6) = t
+
+                | App x y -> (case isValue x {x_val} isValue_term x (valax x) of
+                                True -> (case decompose y {y_eq} (decompose_terminates y (valax y)) of
+                                          Dec c' t'' -> 
+                                             let u1 = morejoin {t_term, sym x_val, sym y_eq,sym e_eq, sym x_val, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C2 x [sym x_val] c') t'';
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C2 x [(sym x_val)] c') t'');
+                                                 ctx_term = valax (C2 x [sym x_val] c');                                                       
+                                                 u3 = dec_ctx_inj c (C2 x [sym x_val] c') t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : c = (C2 x [sym x_val] c');
+                                                 u4 = dec_term_inj c (C2 x [sym x_val] c') t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : t' = t'';
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_decompose_inv y (valax y) t'' (valax t'') c' u5 (sym y_eq):
+                                                          (plug c' t'' = y);
+                                                     -- plug c' t'' = y
+                                                 -- Before, I had the following for u6 and u7. Using 
+                                                 -- morejoin with u3 simplifies this...
+                                                 -- u6 = morejoin {valax x, valax c', valax t''} :
+                                                 --       (plug (C2 x [sym x_val] c') t'') =
+                                                 --         App x (plug c' t'');
+                                                 -- u7 = conv u6 at (plug ~(sym u3) ~(sym u4)) = App x (plug c' t'');
+                                                 u7 = morejoin {valax x, valax c', valax t'',u3,c_term} :
+                                                       (plug c t'') =
+                                                         App x (plug c' t'');
+                                                 -- plug c t'' = App x (plug c' t'')
+                                                 u8 = conv u7 at plug c t'' = App x ~ih;
+                                                 -- plug c t' = App x y
+                                                 u9 = conv u8 at plug c ~(sym u4) = ~e_eq
+                                                 -- plug c t' = t
+                                             in u9)
+                               | False -> (case decompose x {x_eq} decompose_terminates x (valax x) of
+                                          Dec c' t'' ->
+                                             let u1 = morejoin {t_term, sym x_val, sym x_eq,sym e_eq, sym x_val, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C1 c' y) t'';
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C1 c' y) t'');
+                                                 ctx_term = valax (C1 c' y);                                                                                                              
+                                                 u3 = dec_ctx_inj c (C1 c' y) t' t''  c_term ctx_term t'_term (valax t'') u2
+                                                       : c = (C1 c' y);
+                                                 u4 = dec_term_inj c (C1 c' y) t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : t' = t'';
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_decompose_inv x (valax x) t'' (valax t'') c' u5 (sym x_eq):
+                                                          (plug c' t'' = x);
+                                                     -- plug c' t'' = x
+                                                 u7 = morejoin {valax x, valax c', valax t'',u3,c_term} :
+                                                       (plug c t'') =
+                                                         App (plug c' t'') y;
+                                                 -- plug c t'' = App (plug c' t'') y
+                                                 u8 = conv u7 at plug c t'' = App ~ih y;
+                                                 -- plug c t' = App x y
+                                                 u9 = conv u8 at plug c ~(sym u4) = ~e_eq
+                                                 -- plug c t' = t
+                                             in u9)))
+
+
+Inductive decomp_preserves_s_free : forall(t:Term){t_term}(t':Term)(t'_term:t'!)(c:Ctx)(c_term:c!)
+                                (p:s_free t = True)(q:decompose t = Dec c t').(s_free t' = True) :=
+  case isRedex t {redex_t_eq} isRedex_terminates t t_term of
+          True -> let u1 = morejoin {t_term,sym redex_t_eq} : Dec Box t = decompose t;
+                      u2 = dec_term_inj Box c t t' (valax Box) c_term t_term t'_term (trans u1 q) : t = t'
+                  in conv p at s_free ~u2 = True
+        | False ->
+           case t {t_eq} t_term of
+              K -> let u1 = morejoin {t_term,sym t_eq} : Dec Box t = decompose t;
+                       u2 = dec_term_inj Box c t t' (valax Box) c_term t_term t'_term (trans u1 q) : t = t'
+                   in conv p at s_free ~u2 = True
+            | S -> let u1 = morejoin {t_term,sym t_eq} : False = s_free t
+                   in contra (trans u1 p)
+            | App t1 t2 ->
+               let u1 = morejoin {sym t_eq,t_term} : s_free t = (s_free t1 && s_free t2);
+                      t1_s_free = and_left (s_free t1) (s_free t2) (trans (sym u1) p);
+                         -- s_free t1 = True                      
+                      t2_s_free = and_right (s_free t1) (s_free t2) (trans (sym u1) p)
+                         -- s_free t2 = True
+                  in case isValue t1 {val_t1_eq} isValue_term t1 (valax t1) of
+                       True -> (case decompose t2 {dec_t2_eq} decompose_terminates t2 (valax t2) of
+                                 Dec c' t'' -> 
+                                  let u1 = morejoin {sym t_eq, t_term, sym val_t1_eq,sym redex_t_eq,sym dec_t2_eq}  :
+                                             decompose t = Dec (C2 t1 [sym val_t1_eq] c') t'';
+                                      ctx_term = valax (C2 t1 [sym val_t1_eq] c');
+                                      same_ctxs = trans (sym q) u1;
+                                      u2 = dec_term_inj c (C2 t1 [sym val_t1_eq] c') t' t'' c_term ctx_term t'_term (valax t'') same_ctxs
+                                                       : t' = t'';
+                                      u3 = conv sym dec_t2_eq at
+                                              decompose t2 = Dec c' ~(sym u2);
+                                              -- decompose t2 = Dec c' t'
+                                      ih = decomp_preserves_s_free t2 (ord t_eq) t'' (valax t'') c'
+                                              (valax c') t2_s_free (sym dec_t2_eq)
+                                  in conv ih at s_free ~(sym u2) = True)
+                     | False -> (case decompose t1 {dec_t1_eq} decompose_terminates t1 (valax t1) of
+                                 Dec c' t'' -> 
+                                  let u1 = morejoin {sym t_eq, t_term, sym val_t1_eq,sym redex_t_eq,sym dec_t1_eq}  :
+                                             decompose t = Dec (C1 c' t2) t'';
+                                      ctx_term = valax (C1 c' t2) : (C1 c' t2) !;
+                                      same_ctxs = trans (sym q) u1;
+                                      u2 = dec_term_inj c (C1 c' t2) t' t'' c_term ctx_term t'_term (valax t'') same_ctxs
+                                                       : t' = t'';
+                                      u3 = conv sym dec_t1_eq at
+                                              decompose t1 = Dec c' ~(sym u2);
+                                              -- decompose t2 = Dec c' t'
+                                      ih = decomp_preserves_s_free t1 (ord t_eq) t'' (valax t'') c'
+                                              (valax c') t1_s_free (sym dec_t1_eq)
+                                  in conv ih at s_free ~(sym u2) = True)
+
+
+Inductive plug_preserves_s_free :
+  forall (t:Term)(t_term:t!)(t':Term)(t'_term:t'!)(c:Ctx){c_term}(t'':Term)(t''_term:t''!)
+     (p:decompose t = Dec c t')(q1:s_free t = True)(q2:s_free t'' = True).(s_free (plug c t'') = True) :=
+  case isRedex t {redex_eq} isRedex_terminates t t_term of
+      True -> let u1 = morejoin {t_term,sym redex_eq } : decompose t = Dec Box t;
+                  -- Get a proof that c = Box       
+                  u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                  u3 = morejoin {t_term,u2} :
+                        dec_focus (tcast (Dec c t) by u2) = t;
+                  u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                  u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                  -- Prove plug c t'' = t''
+                  u6 = morejoin {u5,c_term,t''_term,u5} : t'' = plug c t''
+              in  conv q2 at s_free ~u6 = True 
+    | False -> (case t {e_eq} t_term of
+                  K -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           -- Get a proof that c = Box       
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                 dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           -- Prove plug c t'' = t''
+                           u6 = morejoin {u5,c_term,t''_term,u5} : t'' = plug c t''
+                       in conv q2 at s_free ~u6 = True 
+
+                 |S -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           -- Get a proof that c = Box       
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                 dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           -- Prove plug c t'' = t''
+                           u6 = morejoin {u5,c_term,t''_term,u5} : t'' = plug c t''
+                       in conv q2 at s_free ~u6 = True 
+                | App x y ->
+                      let s_free_t = morejoin {t_term,sym e_eq} : s_free t = (s_free x && s_free y);
+                          s_free_true = equiv 2 : ((s_free x && s_free y) = True);
+                          s_free_x = and_left (s_free x) (s_free y) s_free_true : s_free x = True;
+                          s_free_x_term = conv valax True at ~(sym s_free_x) !; 
+                          s_free_y = and_right (s_free x) (s_free y) s_free_true : s_free y = True;
+                          s_free_y_term = conv valax True at ~(sym s_free_y) !                          
+                      in
+
+                         (case isValue x {x_val} isValue_term x (valax x) of
+                                True -> (case decompose y {y_eq} (decompose_terminates y (valax y)) of
+                                          Dec c' dummy -> 
+                                             let u1 = morejoin {t_term, sym x_val, sym y_eq,sym e_eq, sym x_val, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C2 x [sym x_val] c') dummy;
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C2 x [(sym x_val)] c') dummy);
+                                                 ctx_term = valax (C2 x [sym x_val] c');                                                       
+                                                 u3 = dec_ctx_inj c (C2 x [sym x_val] c') t' dummy c_term ctx_term t'_term (valax dummy) u2
+                                                       : c = (C2 x [sym x_val] c');
+
+                                                 u4 = morejoin {u3,c_term, t''_term} :
+                                                       plug c t'' = App x (plug c' t'');
+                                                 plug_term = 
+                                                    plug_terminates t'' t''_term c' (valax c'): plug c' t'' !;
+                                                 u4_term = (conv
+                                                            valax (App x ~(plug_term))
+                                                          at ~(sym u4) !) : (plug c t'') !;
+
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_preserves_s_free
+                                                        y (valax y) dummy (valax dummy) c' u5
+                                                          t'' t''_term (sym y_eq) s_free_y q2
+                                                            : s_free (plug c' t'') = True;
+
+                        
+                                                 ih_term = (conv valax True at ~(sym ih) !) : s_free (plug c' t'') ! ;
+                                                 -- This should be derivable from `s_free (plug c' t'') !`
+                                                 plug_c'_term = plug_terminates t'' (t''_term) c' (valax c');
+
+                                                 
+                                                 u6 = morejoin {u4,u4_term,s_free_x,s_free_x_term,ih,ih_term,plug_c'_term} :
+                                                          s_free (plug c t'') = True
+                                             in u6)
+                               | False -> (case decompose x {x_eq} decompose_terminates x (valax x) of
+                                          Dec c' dummy -> 
+                                             let u1 = morejoin {t_term, sym x_val, sym x_eq,sym e_eq, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C1 c' y) dummy;
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C1 c' y) dummy);
+                                                 ctx_term = valax (C1 c' y);
+                                                 u3 = dec_ctx_inj c  (C1 c' y) t' dummy c_term ctx_term t'_term (valax dummy) u2
+                                                       : c = (C1 c' y);
+
+                                                 u4 = morejoin {u3,c_term, t''_term} :
+                                                       plug c t'' = App (plug c' t'') y;
+
+                                                 u4_term = plug_terminates t'' t''_term c' (valax c')
+                                                             : (plug c' t'') !;
+
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_preserves_s_free
+                                                        x (valax x) dummy (valax dummy) c' u5
+                                                          t'' t''_term (sym x_eq) s_free_x q2
+                                                            : s_free (plug c' t'') = True;
+
+                        
+                                                 ih_term = (conv valax True at ~(sym ih) !) : s_free (plug c' t'') ! ;
+                                                 plug_c'_term = plug_terminates t'' (t''_term) c' (valax c') :
+                                                     (plug c' t'') !;
+                                                 u6 = morejoin {u4,u4_term,s_free_y,s_free_y_term,ih,ih_term,plug_c'_term} :
+                                                          s_free (plug c t'') = True
+                                             in u6)))
+
+
+Theorem and_term_left : forall (t1:Bool)(t2:Bool)(p: (t1 && t2)!).t1! :=
+  termcase t1 {t1_term} of
+    abort -> contraabort (aborts (~t1_term && t2)) p
+  | ! -> t1_term
+
+
+Theorem and_term_right : forall (t1:Bool)(t2:Bool)(p: (t1 && t2)!).t2! :=
+  termcase t2 {t2_term} of
+    abort -> contraabort (aborts (t1 && ~t2_term)) p
+  | ! -> t2_term
+
+Theorem s_free_app_1 : forall (t:Term)(t1:Term)(t2:Term)(p:t = App t1 t2)
+   (q:s_free t = True).(s_free t1 = True) :=
+    termcase t {t_term} of
+      abort -> let abranch = aborts (s_free ~t_term) : (abort Bool) = s_free t;
+                   tbranch = (conv (valax True) at ~(sym q)!) : (s_free t) !
+               in contraabort abranch tbranch
+    | ! ->   
+     let u1 = morejoin {t_term, p} : s_free t = (s_free t1 && s_free t2);
+         u2 = (conv valax True at ~(trans (sym q) u1)!) : (s_free t1 && s_free t2) !;
+         t1_term =  (and_term_left (s_free t1) (s_free t2) u2) : (s_free t1) !;
+         t2_term =  (and_term_right (s_free t1) (s_free t2) u2) : (s_free t2) !         
+     in case s_free t1 {t1_eq} t1_term of
+          True -> sym t1_eq
+         |False ->
+           let v1 = morejoin {sym t1_eq, t1_term, t2_term} : (s_free t1 && s_free t2) = False;
+               v2 = trans u1 v1 : s_free t = False
+           in contra (trans (sym v2) q)
+
+
+Inductive plug_decompose_inv :
+  forall (t:Term)(t_term:t!)(t':Term)(t'_term:t'!)(c:Ctx){c_term}(p:decompose t = Dec c t').plug c t' = t :=
+  case isRedex t {redex_eq} isRedex_terminates t t_term of
+      True -> let u1 = morejoin {t_term,sym redex_eq } : decompose t = Dec Box t;
+                  u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                  u3 = morejoin {t_term,u2} :
+                        dec_focus (tcast (Dec c t) by u2) = t;
+                  u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                  u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                  u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                  u7 = morejoin {t_term} : plug Box t = t
+              in conv u7 at plug ~(sym u5) ~(sym u6) = t
+    | False -> (case t {e_eq} t_term of
+                  K -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                  dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                           u7 = morejoin {t_term} : plug Box t = t
+                       in conv u7 at plug ~(sym u5) ~(sym u6) = t
+                | S -> let u1 = morejoin {t_term,sym redex_eq,sym e_eq } : decompose t = Dec Box t;
+                           u2 = valax (Dec (tcast c by c_term) (tcast t' by t'_term));
+                           u3 = morejoin {t_term,u2} :
+                                  dec_focus (tcast (Dec c t) by u2) = t;
+                           u4 = trans (sym p) u1 : Dec c t' = Dec Box t;
+                           u5 = dec_ctx_inj c Box t' t c_term (valax Box) t'_term t_term u4 : c = Box;
+                           u6 = dec_term_inj c Box t' t c_term (valax Box) t'_term t_term u4 : t' = t;
+                           u7 = morejoin {t_term} : plug Box t = t
+                       in conv u7 at plug ~(sym u5) ~(sym u6) = t
+
+                | App x y -> (case isValue x {x_val} isValue_term x (valax x) of
+                                True -> (case decompose y {y_eq} (decompose_terminates y (valax y)) of
+                                          Dec c' t'' -> 
+                                             let u1 = morejoin {t_term, sym x_val, sym y_eq,sym e_eq, sym x_val, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C2 x [sym x_val] c') t'';
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C2 x [(sym x_val)] c') t'');
+                                                 ctx_term = valax (C2 x [sym x_val] c');                                                       
+                                                 u3 = dec_ctx_inj c (C2 x [sym x_val] c') t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : c = (C2 x [sym x_val] c');
+                                                 u4 = dec_term_inj c (C2 x [sym x_val] c') t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : t' = t'';
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_decompose_inv y (valax y) t'' (valax t'') c' u5 (sym y_eq):
+                                                          (plug c' t'' = y);
+                                                     -- plug c' t'' = y
+                                                 u7 = morejoin {valax x, valax c', valax t'',u3,c_term} :
+                                                       (plug c t'') =
+                                                         App x (plug c' t'');
+                                                 -- plug c t'' = App x (plug c' t'')
+                                                 u8 = conv u7 at plug c t'' = App x ~ih;
+                                                 -- plug c t' = App x y
+                                                 u9 = conv u8 at plug c ~(sym u4) = ~e_eq
+                                                 -- plug c t' = t
+                                             in u9)
+                               | False -> (case decompose x {x_eq} decompose_terminates x (valax x) of
+                                          Dec c' t'' ->
+                                             let u1 = morejoin {t_term, sym x_val, sym x_eq,sym e_eq, sym x_val, valax x, sym redex_eq} :
+                                                     decompose t = Dec (C1 c' y) t'';
+                                                 u2 = (trans (sym p) u1) -- : ((Dec c t') = (Dec (C2 x [sym x_val] c') t'))
+                                                       : (Dec c t' = Dec (C1 c' y) t'');
+                                                 ctx_term = valax (C1 c' y);                                                                                                              
+                                                 u3 = dec_ctx_inj c (C1 c' y) t' t''  c_term ctx_term t'_term (valax t'') u2
+                                                       : c = (C1 c' y);
+                                                 u4 = dec_term_inj c (C1 c' y) t' t'' c_term ctx_term t'_term (valax t'') u2
+                                                       : t' = t'';
+                                                 u5 = ord (sym u3) : c' < c;
+                                                 ih = plug_decompose_inv x (valax x) t'' (valax t'') c' u5 (sym x_eq):
+                                                          (plug c' t'' = x);
+                                                     -- plug c' t'' = x
+                                                 u7 = morejoin {valax x, valax c', valax t'',u3,c_term} :
+                                                       (plug c t'') =
+                                                         App (plug c' t'') y;
+                                                 -- plug c t'' = App (plug c' t'') y
+                                                 u8 = conv u7 at plug c t'' = App ~ih y;
+                                                 -- plug c t' = App x y
+                                                 u9 = conv u8 at plug c ~(sym u4) = ~e_eq
+                                                 -- plug c t' = t
+                                             in u9)))
+
+
+
+Inductive s_free_term : forall (t:Term){t_term}(p:s_free t = True).(reduction t) ! :=
+  case decompose t {dec_t_eq} (decompose_terminates t t_term) of
+    Dec c t' ->
+      case isRedex t' {t'_redex} (isRedex_terminates t' (valax t')) of
+        False -> let u1 = morejoin {sym dec_t_eq,t_term,valax c,valax t',sym t'_redex} :
+                                    reduction t = plug c t';
+                     u2 = plug_terminates t' (valax t') c (valax c)
+                 in  conv u2 at ~(sym u1) !
+       |True ->
+           let prop_term = redexPropTerm t' (sym t'_redex) in 
+           case redexProp t' [sym t'_redex] {prop_eq} prop_term of
+              RedexK t1 t2 [isapp] [isval1] [isval2] ->
+                 let -- Prove that t1 < t'
+                     o1 = ord (sym isapp) : (App K t1) < t';
+                     i0 {i0_eq} = App K t1;
+                     o2 = ord (sym i0_eq) : t1 < i0;
+                     o3 = conv o2 at t1 < ~i0_eq;
+                     o4 = ordtrans o3 o1 : t1 < t';
+                     -- Prove plug c t1 < plug c t'
+                     o5 = plug_preserves_ord t1 (valax t1) t' (valax t') o4 c (valax c); -- plug c t1 < plug c t'
+
+                     -- Need a proof `s_free (plug c t1) = True`
+                     u11 = plug_decompose_inv t t_term t' (valax t') c (valax c) (sym dec_t_eq);  -- plug c t' = t
+                     u13 = conv o5 at plug c t1 < ~u11; -- plug c t1 < t
+
+                     -- Prove that t1 is s_free
+                     v2 = morejoin {valax t', valax t1, valax t2, isapp} :
+                              s_free t' = ((True && s_free t1) && s_free t2);
+                     v3 = decomp_preserves_s_free t (t_term) t' (valax t') c (valax c) p (sym dec_t_eq) : s_free t' = True;
+                     v4 = trans (sym v3) v2 : True = ((True && s_free t1) && s_free t2);
+                     v5 = and_left (True && s_free t1) (s_free t2) (sym v4) : ((True && s_free t1) = True);
+                     t1_s_free = and_right True (s_free t1) v5 : s_free t1 = True;
+
+                     u1 = morejoin {valax t',t_term, sym dec_t_eq, sym t'_redex, sym prop_eq} :
+                           reduction t = reduction (plug c t1);
+                     plug_c_t1 = plug_preserves_s_free t t_term  t' (valax t') c (valax c) t1 (valax t1) (sym dec_t_eq) p t1_s_free;
+
+                     -- Apply Inductive Hypothesis                     
+                     ih = s_free_term (plug c t1) u13 plug_c_t1 : (reduction (plug c t1)) !
+                 in conv ih at ~(sym u1) !
+            | RedexS t1 t2 t3 [isapp] [isval1] [isval2] [isval3] ->
+                   let p' = decomp_preserves_s_free t t_term t' (valax t') c (valax c) p (sym dec_t_eq);
+                       p'' = conv p' at s_free ~isapp = True; -- App (App (App S t1) t2) t3 = True
+                       p3 = s_free_app_1 (App (App (App S t1) t2) t3) (App (App S t1) t2) t3
+                                  (join 0) p'' : s_free (App (App S t1) t2) = True;
+                       p4 = s_free_app_1 (App (App S t1) t2) (App S t1) t2 (join 10) p3 : s_free (App S t1) = True;
+                       p5 = s_free_app_1 (App S t1) S t1 (join 10) p4 : s_free S = True;
+                       p5_counter = join 10 : False = s_free S
+                   in contra (trans p5_counter p5)
+
+
+-- END OF PAPER EXAMPLES

@@ -1,0 +1,19 @@
+trell
+
+AP : a -> p.
+AT : a -> t.
+
+ProofApp : p -> LP p { a }+ RP .
+ProofConv : p -> CONV p BY p .
+ProofVar : p -> PVAR .
+
+TermApp : t -> LP t { a }+ RP .
+TermConv : t -> CONV t BY p .
+TermVar : t -> TVAR .
+
+LP = "(".
+RP = ")".
+CONV="conv".
+BY="by".
+PVAR = {{ '$' ['a'-'z']+}}.
+TVAR = {{ ['a'-'z']+}}.
