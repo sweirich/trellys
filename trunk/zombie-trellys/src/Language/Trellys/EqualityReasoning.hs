@@ -358,12 +358,12 @@ decompose sub e avoid (ATCon c args) = do
 decompose sub e avoid (ADCon c th params args) = do
   params' <- mapM (decompose True Erased avoid) params
   args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ ADCon c canonical params' args'
+  return $ ADCon c th params' args'
 decompose _ e avoid (AArrow k ex ep bnd) = do
   ((x,unembed->t1), t2) <- unbind bnd
   r1 <- decompose True e avoid t1
   r2 <- decompose True e (S.insert x avoid) t2
-  return (AArrow canonical canonical ep (bind (x, embed r1) r2))
+  return (AArrow k ex ep (bind (x, embed r1) r2))
 decompose _ e avoid (ALam th ty ep bnd) = do
   (x, body) <- unbind bnd 
   ty' <- decompose True Erased avoid ty
