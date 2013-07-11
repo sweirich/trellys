@@ -15,7 +15,7 @@ SHELL=/bin/bash
 # PASS are tests that *should* always pass.
 PASS=Prelude TypeTest CongruenceTests UnfoldTests \
      Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
-     AppendUni  NatElimination \
+     NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
