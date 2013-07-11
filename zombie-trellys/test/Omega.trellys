@@ -1,0 +1,20 @@
+module Omega where
+
+-- this declaration is rejected by the typechecker 
+-- because of the nonpositive occurrence. But it should
+-- be accepted.  However, pattern matching should only
+-- be allowed in the programmatic fragment.
+
+-- note that this datatype *is* first-order though.
+
+data D : Type where
+  MkD of (D -> D @ P)
+
+-- self application
+prog delta : D -> D     
+delta x = case x of 
+  MkD f -> f x 
+
+-- infinite loop
+prog omega : D 
+omega = delta (MkD delta)
