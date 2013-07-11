@@ -196,7 +196,12 @@ ind div_le_bad n m hm =
       unfold (le Zero n) in _
     False ->
       case n [n_eq] of
-        Zero -> TRUSTME
+        Zero -> case m of
+	          Zero ->
+		    let _ = (join : eq Zero Zero = True) in
+		      contra (_ : True = False)
+		  Succ m' -> let _ = (join : lt Zero (Succ m') = True) in
+		    contra (_ : True = False)
         Succ n' ->
 	  let _  = (pjoin : (div n m) = (if (lt n m) 
 					   then 0
@@ -234,7 +239,12 @@ ind div_le_helper n m hm =
         Answer Zero _ _ 
     False ->
       case n [n_eq] of
-        Zero -> TRUSTME
+        Zero -> case m of
+	          Zero ->
+		    let _ = (join : eq Zero Zero = True) in
+		      contra (_ : True = False)
+		  Succ m' -> let _ = (join : lt Zero (Succ m') = True) in
+		    contra (_ : True = False)
         Succ n' ->
 	  let _  = (pjoin : (div n m) = (if (lt n m) 
 					   then 0
