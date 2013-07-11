@@ -176,7 +176,8 @@ ta (OrdAx a) (ASmaller b1 b2) = do
              unless anySubterm $
                 err [DS "The right side of the equality supplied to ord ",
                      DS "should be a constructor application involving", DD zb1,
-                     DS "Here it is", DD cvs]
+                     DS "Here the equality is", DD tyA,
+                     DS "Which has the right hand side", DD cvs]
              return (AOrdAx ea zb1)
            _ -> err [DS "The right side of the equality supplied to ord ",
                      DS "must be a constructor application.",
@@ -495,8 +496,8 @@ ta a tyB = do
            case pf of 
              Nothing ->
                err [DS "When checking term", DD a, DS "against type",
-                    DD tyB,  DS ("(" ++ show tyB ++ ")"),
-                    DS "the distinct type", DD tyA, DS ("(" ++ show tyA ++"("),
+                    DD tyB,  -- DS ("(" ++ show tyB ++ ")"),
+                    DS "the distinct type", DD tyA, -- DS ("(" ++ show tyA ++"("),
                     DS "was inferred instead.",
                     DS "I was unable to prove:", DD theGoal]
              Just p -> do

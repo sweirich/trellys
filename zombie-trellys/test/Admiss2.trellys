@@ -1,8 +1,6 @@
 -- Smith's paradox, assuming a "magic" inversion principle.
 -- This doesn't currently work, due to subtleties with UnboxVal.
 
--- Needs to be compiled using --parallel.
-
 module Admiss2 where
 
 import Prelude

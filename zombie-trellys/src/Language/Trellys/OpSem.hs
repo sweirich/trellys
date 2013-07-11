@@ -72,7 +72,7 @@ erase (ACase a bnd _) = do
   (xeq, matchs) <- unbind bnd
   ECase <$> erase a <*> (mapM eraseMatch matchs)
 erase (ADomEq _) = return EJoin
-erase (ARanEq _ _) = return EJoin
+erase (ARanEq _ _ _) = return EJoin
 erase (AAtEq _) = return EJoin
 erase (ANthEq _ _) = return EJoin
 erase (ATrustMe _) = return ETrustMe

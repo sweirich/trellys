@@ -158,16 +158,17 @@ getType t@(ADomEq a) = do
                 return (th, ATyEq tyDom tyDom'))
     _ -> coreErr [DS "getType: ADomEq not applied to an equality between arrow types"]   
           
-getType (ARanEq a b) = do
-  (th,  aTy) <- aTs a
-  (th', bTy) <- aTs b
-  case aTy of
-    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | th == th' && eps == eps' -> do
+getType (ARanEq p a a') = do
+  (th,  pTy) <- getType p
+  (_, aTy) <- getType a
+  (_, aTy') <- getType a'
+  case pTy of
+    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | eps == eps' -> do
       unbindRes <- unbind2 bndTy bndTy'
       case unbindRes of
         Nothing -> coreErr [DS "getType: ARanEq incorrect equality type"]
         Just ((tyVar, unembed -> tyDom), tyRan, (_, unembed -> tyDom'), tyRan') -> do
-          return (th, ATyEq (subst tyVar b tyRan) (subst tyVar b tyRan'))
+          return (th, ATyEq (subst tyVar a tyRan) (subst tyVar a' tyRan'))
     _ -> coreErr [DS "getType: ARanEq not applied to an equality between arrow types"]
 
 getType t@(AAtEq a) = do
@@ -297,7 +298,8 @@ aTs (AApp ep a b ty) = do
       ((x, unembed -> tyB'), tyC) <- unbind bnd
       tyBEq <- aeq <$> erase tyB <*> erase tyB'
       unless tyBEq $
-        coreErr [DS "AApp dom mismatch", DD tyB, DS "vs", DD tyB']
+        coreErr [DS "AApp dom mismatch. Expected", DD tyB', DS "but found", DD tyB,
+                 DS "In the application", DD (AApp ep a b ty)]
       tyEq <- aeq <$> erase ty <*> erase (subst x b tyC)
       unless tyEq $ 
         coreErr [DS "AApp annotation mismatch. Application has type", DD (subst x b tyC), 
@@ -525,22 +527,22 @@ aTs (ADomEq a) = do
                 return (th, ATyEq tyDom tyDom'))
     _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]
 
-aTs (ARanEq a b) = do
-  (th,  aTy) <- aTs a
-  (th', bTy) <- aTs b
-  case aTy of
-    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | th == th' && eps == eps' -> do
+aTs (ARanEq p a a') = do
+  (th,pTy) <- aTs p
+  (_, aTy)  <- aTs a
+  (_, aTy') <- aTs a'
+  case pTy of
+    ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | eps == eps' -> do
       unbindRes <- unbind2 bndTy bndTy'
       case unbindRes of
         Nothing -> coreErr [DS "ARanEq incorrect equality type"]
         Just ((tyVar, unembed -> tyDom), tyRan, (_, unembed -> tyDom'), tyRan') -> do
-          domsEq <- aeq <$> erase tyDom <*> erase tyDom'
-          unless domsEq $
-            coreErr [DS "ARanEq applied to an equality between arrow types with different domains "]
-          bTyEq <- aeq <$> erase bTy <*> erase tyDom
-          unless bTyEq $
-            coreErr [DS "ARanEq value has wrong type"]
-          return (th, ATyEq (subst tyVar b tyRan) (subst tyVar b tyRan'))
+          asEq <- aeq <$> erase a <*> erase a'
+          unless asEq $
+            coreErr [DS "ARanEq: the erasures of", DD a, DS "and", DD a', DS "are not equal"]
+          aKc (subst tyVar a tyRan)
+          aKc (subst tyVar a' tyRan)
+          return (th, ATyEq (subst tyVar a tyRan) (subst tyVar a' tyRan'))
     _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
 
 aTs (AAtEq a) = do

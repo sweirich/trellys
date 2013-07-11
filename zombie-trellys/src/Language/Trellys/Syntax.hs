@@ -348,7 +348,7 @@ data ATerm =
   | ACase ATerm (Bind AName [AMatch]) (Theta,ATerm)
    -- Decomposing equalities
   | ADomEq ATerm
-  | ARanEq ATerm ATerm
+  | ARanEq ATerm ATerm ATerm
   | AAtEq ATerm
   | ANthEq Int ATerm
    -- the ATerm is the ascribed type
