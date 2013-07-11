@@ -1,0 +1,735 @@
+module StrongNat where
+
+
+import Prelude
+import Arithmetic
+import LessThanNat
+import LessThanNat_lt_eq_True -- ??? I guess trellys imports are not transitive ???
+
+-- * Strong induction
+--   ----------------
+
+-- Strong elimination / course-of-values (cov) induction / structural
+-- induction: allows recursion on any structural subterm, not just the
+-- predecessor.
+--
+--   cov : [p:Nat -> Type 0]
+--      -> ((n:Nat) -> ((m:Nat) -> [m < n] -> p m) -> p n)
+--      -> ((n:Nat) -> p n)
+
+-- The index trick used to implement cov
+-- -------------------------------------
+--
+-- This cov implementatoin depends on a (general) index trick [1] that
+-- captures the relation between weak and strong recursion.  You use
+-- cov when you want to write a recursive function r from Nat to some
+-- rng type T
+--
+--   r : (n:Nat) -> T
+--
+-- where (r n) may recurse on values smaller than (pred n), and so
+-- weak recursion won't work.  The /index trick/ is to instead define
+-- an r' by weak induction on i
+--
+--   r' : [i:Nat] -> (n:Nat) -> [n < i] -> T
+--
+-- where i is a dummy index used to make the weak induction work.
+-- Then r is defined in terms of r' by
+--
+--   r = \n . r' [S n] n [proof that n < S n]
+--
+-- So, how does r' work?  Well, since we assume that whenever (r n)
+-- recurses, say on n', that n' is less than n, say
+--
+--   r n = ... r n' and n' < n ...
+--
+-- we can make (r' [i] n [_]) recurse on a proof that n' < pred i,
+-- since integer less-than satisfies a strong transitivity law
+--
+--   strans : n' < n /\ n < i -> n' < pred i
+--
+-- I.e., r' is defined by
+--
+--   r' [i] n [n_lt_i] = ... r' [pred i] n' [strans (_:n' < n) (n_lt_i:n < i) : n' < pred i] ...
+--
+-- where the "..." is same as in r, and (_:n' < n) is some proof that
+-- n' < n (which exists by assumption).  Note that r' need not case on
+-- i directly, which is good, since doing so might require that i
+-- *not* be erased.
+--
+-- Note that the above generic index-trick transformation gives rise
+-- to a derived rule:
+--
+--   C, n:Nat, r': (m:Nat) -> [m < n] -> T |- e:T
+--   -------------------------------------------- StrongNatRec
+--   C |- r' n . e : Nat -> T
+--
+-- [1] like dummy Nat indices on datatypes as suggested by Aaron to
+--     work around the fact that we don't generate induction
+--     principles for each datatype.
+
+-- Some index-trick examples
+-- -------------------------
+--
+-- Below we show how to define cov via the index trick.  Here we give
+-- examples (fib, div) of using the index trick to define recursive
+-- functions directly.  These examples can also be implemented via
+-- cov, but these examples are less abstract than the descriptions of
+-- the index trick (above) and the cov implementation (below).
+--
+-- Fibonacci
+-- ~~~~~~~~~
+--
+-- Fibonacci (fib) is problematic because fib n recurses on n-1 and
+-- n-2.  We show how to define fib in two ways: using the index trick,
+-- and using tuples and the fact that |n - m| is uniformly bounded
+-- (here by 2) across all recursions fib m in fib n.
+--
+-- Index trick: we want
+--
+--   fib : Nat -> Nat
+--   fib = \n . case n of
+--              Z    -> Z
+--              S n' -> case n' of
+--                      Z     -> S Z
+--                      S n'' -> fib n' + fib n''
+--
+-- but the recursion fib n'' is not allowed .  But, we can use the
+-- index trick and first define
+--
+--   fib' : [i:Nat] -> (n:Nat) -> [n < i] -> Nat
+--   fib' = \[i] n [nlti] . case n of
+--              Z    -> Z
+--              S n' -> case n' of
+--                      Z     -> S Z
+--                      S n'' -> fib' [pred i] n'  [strans (_:n'  < n) n_lt_i]
+--                             + fib' [pred i] n'' [strans (_:n'' < n) n_lt_i]
+--
+-- and then
+--
+--   fib = \n . fib' [S n] n [_:n < S n].
+--
+-- Tuple trick: instead define
+--
+--   fib' : Nat -> (Nat,Nat) -- \n . (fib n, fib (n-1))
+--   fib' = \n . case n of
+--               Z    -> (Z,Z)
+--               S n' -> case n' of
+--                       Z     -> (S Z, Z)
+--                       S n'' -> let (fn', fn'') = fib' n' in
+--                                (fn' + fn'', fn')
+--
+-- and then
+--
+--   fib = fst . fib'.
+--
+-- Note that this trick works for any function with uniformly bounded
+-- recursion (in particular, any function which uses nested
+-- case-matches and recurses only on pattern-bound names): if f n
+-- recurses on m, for |n - m| <= k uniformly, then the helper function
+-- f' returns a k-tuple of (f n, ..., f (n-k+1)).  This is the same
+-- trick used in the solution of linear recurrences by linear
+-- combinations of powers of eigen values.
+--
+-- Division
+-- ~~~~~~~~
+--
+-- Ceiling division (div) is problematic because div m n recurses on
+-- (m - S n).  Since |m - (m - S n)| is not uniformly bounded, the
+-- tuple trick won't work, but the index trick will: we want
+--
+--   -- div m n = \ceiling{m/S n}
+--   div : Nat -> Nat -> Nat
+--   div = \m n . case m of
+--                Z -> Z
+--                S m' -> S (div (m - S n) n)
+--
+-- so we define
+--
+--   div' : [i:Nat] -> (n:Nat) -> [n < i] -> Nat -> Nat
+--   div' = \[i] n [n_lt_i] m .
+--          case n of
+--          Z    -> Z
+--          S m' -> S (div' [pred i] (m - S n) [strans (_:m - S n < m) n_lt_i])
+--
+-- and then
+--
+--   div = \m . div' [S m] m [_:m < S m].
+
+-- How the index trick is used in cov
+-- ----------------------------------
+--
+-- Recall the type of cov
+--
+--   cov : [p:Nat -> Type 0]
+--      -> ((n:Nat) -> ((m:Nat) -> [m < n] -> p m) -> p n)
+--      -> ((n:Nat) -> p n)
+--
+-- The second argument, f say, is a recursive template [2]
+--
+--   f : (n:Nat) -> ((m:Nat) -> [ltT m n] -> p m) -> p n
+--
+-- and f's second argument, gn say, is the recursion
+--
+--   gn : (m:Nat) -> [ltT m n] -> p m
+--
+-- The strategy of cov is to build the recursion gn and pass it to f
+-- to compute (p n).  The obvious approach is to define
+--
+--   g : (n:Nat) -> (m:Nat) -> [ltT m n] -> p m
+--
+-- by recursion on n and hence gn is (g n).  That was my first
+-- approach (commented out below), but my implementation had to case
+-- match on the less-than proof, meaning the less-than proof would
+-- have to made run-time [3], which is sloppy.
+--
+-- The index trick provides a better version of g.  We instead define
+-- g by recursion on a dummy index i
+--
+--   g : [i:Nat] -> (n:Nat) -> [ltT n i] -> ((m:Nat) -> [ltT m n] -> p m)
+--
+-- where gn is (g _ n _).  The implementation of g is easy.  Roughly
+--
+--   g = \[i] n [n_lt_i] m [m_lt_n] .
+--       f m (g [pred i] m [proof that m < pred i])
+--
+-- or erased, roughly
+--
+--   |g| = \n m . |f| m (|g| m)
+--
+-- which is quite nice :)
+--
+-- [2] cf. the recursive templates of type ((a -> b) -> (a -> b))
+--     passed to a Y-combinator).  For cov we have, roughly, a
+--     template of type (a -> (a -> b) -> b), and this connection is
+--     explored next.
+--
+-- [3] Like eliminating Prop to produce Set in Coq, which is not
+--     allowed there for the same reason my first cov implementation
+--     doesn't type check when the less-than proofs are erased.
+
+-- Our cov corresponds to (Y o flip) in LC
+-- ---------------------------------------
+--
+-- cov erases to
+--
+--   sn := |cov| = \ f . let g = (rec g . \ n . \ m . f m (g m))
+--                       in                     \ n . f n (g n)
+--
+-- which is "equivalent", as an untyped lambda term, to
+--
+--   Y o flip
+--
+-- for (o) = compose.
+--
+-- This is not surprising: strong elimination takes an f of the form
+--
+--   f := \ n g . body g,
+--
+-- where g is used in recursive positions in body, and produces a
+-- version of f that calls itself recursively, i.e.
+--
+--   sn f = \ n . body (sn f)
+--
+-- Hence
+--
+--   sn f = Y (\ g n . body g)
+--        = Y (flip (\ n g . body g))
+--        = Y (flip f)
+--
+-- Details for the above term sn: let
+--
+--   Y g   = g (Y g) -- E.g. \g . U (g o U), for U g = g g
+--   K x y = x
+--
+-- then we can rewrite sn as
+--
+--   \ f . let g = \g . K (\ m . f m (g m))
+--         in              \ n . f n (Y g n)
+--
+-- where
+--
+--   \ n . f n (Y g n) =   \ n . f n (g (Y g) n)
+--                     =   \ n . f n (\ m . f m (Y g m))
+--                     =   flip f    (\ m . f m (Y g m))
+--
+-- and so \n . f n (Y g n) is a fixed point of flip f, and so,
+-- assuming the equivalence of fixed points, we get
+--
+--   sn = Y o flip.
+cov : [p:Nat -> Type 0 @log]
+   -> ((n:Nat) -> ((m:Nat) -> [ltT m n @log] -> p m @log) -> p n @log)
+   -> ((n:Nat) -> p n)
+cov = \[p] f .
+  -- g _ n _ : (m:Nat) -> LT m n -> p m, and so proves p n via f
+  let g [_] = 
+   ((ind g [i] = \n [n_lt_i] m [m_lt_n] .
+       let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in       -- i = S (pred i)
+       let [m_lt_i'] [_] = lt_trans_pred m n i m_lt_n n_lt_i in -- m < pred i
+       f m (g [pred i] [ord i_eq] m [m_lt_i'])
+             ): [i:Nat] -> (n:Nat) -> [ltT n i@log] -> ((m:Nat) -> [ltT m n@log] -> p m))
+  in \n . f n (g [Succ n] n [m_lt_Sm n])
+
+{- And here's the first version of StrongNat.
+
+   It's totally broken as is, because it cases on the erased LT proof
+   (like eliminating Prop to produce Set in Coq).  Making the LT proof
+   run-time should fix it, but the above second version is much nicer.
+
+-- Strong elimination / course-of-values induction / structural
+-- induction: allows recursion on any structural subterm, not just the
+-- predecessor.
+strongNat : [p:Nat -> Type 0]
+         -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
+         -> ((n:Nat) -> p n)
+strongNat = \[p] f .
+  -- g n : (m:Nat) -> LT m n -> p m, and so proves p n via f
+  let g [_] = ((ind g n = case n [eq_n] of
+    -- m < 0, a contradiction
+    Zero    -> \m [lt_p] .
+      poe [p m] [lt_0__F [m] [conv lt_p by eq_n at h.LT m h]]
+    -- m < S n' -> m < n' \/ m = n'
+    Succ n' -> \m [lt_p] .
+      case (lt__lteq [m] [n'] [conv lt_p by eq_n at h.LT m h]) [_] of
+        -- m < n', so g n' recursively proves p m
+        InL lt_p'  -> g n' [ord eq_n] m [lt_p']
+        -- n' = m, so f proves p m via g n'
+        InR n_eq_m -> (conv (f n' (g n' [ord eq_n])) by n_eq_m at h.p h)
+           -- this is g's type annotation, is there a better way to do
+           -- this?
+           ): (n:Nat) -> ((m:Nat) -> [LT m n] -> p m))
+  in \n . f n (g n)
+-}
+
+-- * Logical division
+--   ----------------
+
+-- cf. Arithmetic.div
+--
+-- m `cdiv` n = \ceiling{ m / S n }
+
+-- Define the predicate here to avoid need for let defs in context
+cdiv_p : Nat -> Type 0
+cdiv_p = \w.Nat  -- NatElimination.constNat
+
+cdiv : Nat -> Nat -> Nat
+cdiv = \m n .
+       let f [f_def] = ((\m g . case m [m_eq] of
+         Zero    -> conv Zero by (join : Nat = cdiv_p m) at h.h
+         Succ m' -> let [lt_p] [_] = conv (s_minus_s__lt m' n)
+                                   by (sym Nat Nat m (Succ m') m_eq)
+                                   at m.ltT ((minus (Succ m') (Succ n))) m in
+                    unfold (cdiv_p (minus (Succ m') (Succ n))) in
+                    let recg [_] = (g (minus (Succ m') (Succ n)) [lt_p]) in 
+--                    let recg [_] = conv (g (minus (Succ m') (Succ n)) [lt_p])
+--                                   by (join : cdiv_p (minus (Succ m') (Succ n)) = Nat)
+--                                   at h.h in
+                    conv (Succ recg) by (join : Nat = cdiv_p m) at h.h
+                   ) : ((m:Nat) -> ((m_minus_sn:Nat) -> [ltT (m_minus_sn) m@log] -> cdiv_p m_minus_sn @log) -> cdiv_p m))
+       in conv (cov [cdiv_p] f m) by (join : cdiv_p m = Nat) at h.h
+
+-- Tests
+test_cdiv1 : cdiv 0 0 = 0
+test_cdiv1 = join
+
+test_cdiv2 : cdiv 1 0 = 1
+test_cdiv2 = join
+
+test_cdiv3 : cdiv 10 1 = 5
+test_cdiv3 = join 1000
+
+test_cdiv4 : cdiv 10 2 = 4
+test_cdiv4 = join 1000
+
+test_cdiv5 : cdiv 10 3 = 3
+test_cdiv5 = join 1000
+
+-- * Programmatic division and proofs it meets a specification
+--   ---------------------------------------------------------
+
+-- this version of fdiv diverges when n = 0
+prog fdiv : Nat -> Nat -> Nat
+rec fdiv m n = 
+  if (lt m n) 
+  then 0
+  else Succ (fdiv (minus m n) n)
+
+
+fdiv_caseT : (m:Nat) -> (n:Nat) -> [lt m n = True] -> fdiv m n = Zero
+fdiv_caseT = \m n [m_lt_n] .
+  unfold (fdiv m n) 
+  in _
+
+-- note, this case could occur even if fdiv diverges
+fdiv_caseF : (m:Nat) -> (n:Nat) -> [lt m n = False] 
+			  -> fdiv m n = Succ (fdiv (minus m n) n)
+fdiv_caseF = \m n [m_lt_n] .
+  unfold (fdiv m n) 
+  in unfold (fdiv (minus m n) n) 
+  in _
+
+
+data FdivTerm (n:Nat) (m : Nat)  : Type where
+  Val of (x:Nat) (fdiv m (Succ n) = x)
+
+fdiv_term : (m : Nat) -> (n : Nat) -> (FdivTerm m n)
+fdiv_term = \m n. 
+  unfold ((\n1. FdivTerm m n1 : Nat -> Type) n) in
+  (cov [\n1. FdivTerm m n1]
+    (\n. \ih. -- ((m':Nat) -> [ltT m' n @log] -> FdivTerm m m' @log)
+	   unfold ((\n1. FdivTerm m n1 : Nat -> Type) n) in
+	   if (lt n (Succ m)) 
+		then unfold (fdiv n (Succ m)) in
+		     (Val 0 _ : FdivTerm m n) 
+		else let _ = fdiv_caseF n (Succ m) [_] in
+		     let minus_n_sm = minus n (Succ m) in
+		     let x = (TRUSTME : lt (minus n (Succ m)) n = True) in
+			  let eq = (sg (minus n (Succ m)) n) in
+			  let x' = conv x by eq at h. h in
+			  unfold ((\n1. FdivTerm m n1 : Nat -> Type) minus_n_sm) in
+			  case (ih (minus n (Succ m)) [x'] : FdivTerm m (minus n (Succ m)))  of
+			     Val rc pf -> 
+				     let pf' = (_ : rc = (fdiv (minus n (Succ m)) (Succ m))) in
+				     let _ = (conv (join : Succ rc = Succ rc) 
+					           by pf' at h. Succ h = Succ rc
+								 : Succ (fdiv (minus n (Succ m)) (Succ m)) = Succ (rc)) in
+ 				     let H = (_ : fdiv n (Succ m) = (Succ rc)) in
+				     (Val (Succ rc) H : FdivTerm m n)
+		)
+	 n : FdivTerm m n)
+
+
+-- fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
+
+fdiv_ub_p : (m:Nat) -> Type 0
+fdiv_ub_p = \m . (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
+-- expand the definition of fdiv_ub_p: the expanded version helps the
+-- type checker, and doing this join with particular values of m
+-- inserted doesn't always work (but it works here because abstract m
+-- is a value).
+fdiv_ub_p_red : (m:Nat) ->
+    (fdiv_ub_p m
+  = ((n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True))
+fdiv_ub_p_red = \m . join
+-- other direction
+fdiv_ub_p_red' : (m:Nat) ->
+    ((n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True)
+  = fdiv_ub_p m
+fdiv_ub_p_red' = \m . join
+
+fdiv_ub_f_base : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = True]
+              -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
+fdiv_ub_f_base = \m n [m_lt_Sn] .
+  let    e1 [_] = (join : le (mult Zero (Succ n)) m = True)
+  in let e2 [_] = conv join
+                  by (fdiv_caseT m (Succ n) [m_lt_Sn])
+                  at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
+                          = le (mult h (Succ n)) m)
+
+  in conv e2 by e1 at h. le (mult (fdiv m (Succ n)) (Succ n)) m = h
+
+{- LP value restiction kills this (the fdiv):
+
+  in trans Bool Bool Bool
+            (le (mult (fdiv m (Succ n)) (Succ n)) m)
+            (le (mult Zero (Succ n)) Zero)
+            True
+            e1
+            e2
+-}
+
+
+-- m >= n -> m = n + (m - n)
+--
+-- proof by induction on n:
+--
+--   n = Z: Z + (m - Z) = m - Z    (join)
+--                      = m        (lemma)
+--
+--   n = S n': case m of
+--             Z: contradicts m >= n
+--             S m': m' = n' + (m' - n')       (by ih using m >= n -> m' >= n')
+--                      = n' + (S m' - S n')   (by join)
+--                   S n' + (S m' - S n')
+--                      = S (n' + (m' - n'))   (by join)
+--                   rewrite the first equality in the second.
+minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plus n (minus m n))
+ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
+  Zero    -> let m' [m'_eq] = minus m Zero in
+             let _ = (lemma_minus_zero_id m : minus m Zero = m) in
+				 let _ = (join : plus 0 m = m) in
+             let _ = (_ : m' = m) in
+				 _ 
+  Succ n' -> case m [m_eq] of
+    Zero    -> 
+	         contra (conv join
+                       by (conv m_lt_n
+                           by m_eq, n_eq
+                           at m n. lt m n = False)
+                       at h . h = True)
+
+    Succ m' -> let [m'_lt_n'] [_] = conv (conv m_lt_n
+                                        by m_eq, n_eq
+                                        at m n . lt m n = False)
+                                  by (join : lt (Succ m') (Succ n') = lt m' n')
+                                  at h . h = False
+               in 
+					let ih [_] = minus_plus_id n' [ord n_eq] m' [m'_lt_n'] in
+					let v1 [v1_eq] = minus m' n' in
+					let v2 [v2_eq] = minus (Succ m') (Succ n') in	
+					let _ = (join : minus (Succ m') (Succ n') = minus m' n') in
+					let _ = v1 = v2 in
+               let eq1 [_] = (join : Succ (plus n' v1)
+                                      = plus (Succ n') v1) in
+               let eq2 [_] = conv (conv join by ih at h . Succ m' = Succ h)
+                                by eq1 at h . Succ m' = h 
+               in conv eq2 by (sym Nat Nat m (Succ m') m_eq),
+                              (sym Nat Nat n (Succ n') n_eq)
+                  at m n . m = (plus n (minus m n))
+
+m_lt_n__Sm_lt_Sn' : (m : Nat) -> (n : Nat) -> lt m n = True -> lt (Succ m) (Succ n) = True
+m_lt_n__Sm_lt_Sn' = \m n m_lt_n . conv (m_lt_n__Sm_lt_Sn m n
+                                        (conv m_lt_n by (sg m n) at t.t))
+                                  by (gs (Succ m) (Succ n))
+                                  at t.t
+
+plus_le : (m:Nat) -> (n:Nat) -> (k:Nat) -> le (plus k m) (plus k n) = le m n
+plus_le = \m n . ind plus_le k = case k [k_eq] of
+  Zero    -> conv join by (sym Nat Nat k Zero k_eq)
+             at k . le (plus k m) (plus k n) = le m n
+  Succ k' -> let ih [_] = plus_le k' [ord k_eq]
+             in let v0 [_] = plus k' m
+             in let v1 [_] = plus k' n 
+				 in let v2 [_] = plus (Succ k') m
+				 in let v3 [_] = plus (Succ k') n
+				 in let eq1 = (join : Succ (plus k' m) = plus (Succ k') m)
+				 in let eq2 = (join : Succ (plus k' n) = plus (Succ k') n)
+             in let step [_] = (join : le v0 v1 = le (Succ v0) (Succ v1))
+             in _
+{-             in let step' [_] = conv step
+                                by (sym Nat Nat k (Succ k') k_eq)
+                                at k . le (plus k' m) (plus k' n)
+                                     = le (plus k m) (plus k n)
+             in conv ih by step' at h . h = le m n
+-}
+
+-- plus_le isn't directly applicable due to LP value restriction and
+-- it can't prove the specializing via let because of the let-P-in-L
+-- restriction :P
+--plus_le : (m:Nat) => (n:Nat) => (k:Nat) -> le (plus k m) (plus k n) = le m n
+--plus_le = \m n k . plus_le m n k
+
+-- LP restriction trouble
+-- ----------------------
+{-
+plus_le_specialized : (m:Nat) => (n:Nat) =>
+  le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n)))
+      (plus (Succ n) (minus m (Succ n)))
+  =
+  le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+      (minus m (Succ n))
+-}
+-- LP value restriction proof
+{-
+plus_le_specialized = \m n .
+  plus_le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+            (minus m (Succ n))
+            (Succ n)
+-}
+-- let-P-in-L proof
+--
+-- Results in:
+--
+--     Program variables can't be bound with let expressions in
+--     Logical contexts because they would be normalized when the
+--
+-- Is this a concern here?  I.e., I'm producing an equality, and
+-- equalities are already normalized (they're values by definition).
+{-
+plus_le_specialized = \m n . let prog d [d_eq] = (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+  in conv (plus_le d (minus m (Succ n)) (Succ n)) by d_eq at
+     h . le (plus (Succ n) h) (plus (Succ n) (minus m (Succ n))) = le h (minus m (Succ n))
+-}
+-- For now I will attempt to adapt the proof of plus_le :P
+
+plus_le_specialized : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
+  =
+  le (mult (fdiv m n) n)
+      m
+plus_le_specialized = TRUSTME -- SCW
+{-
+  \m n . ind plus_le k = case k [k_eq] of
+  Zero    -> 
+             conv join by (sym Nat Nat k Zero k_eq)
+             at k . le (plus k (mult (fdiv m n) n))
+                        (plus k m)
+                    =
+                    le (mult (fdiv m n) n)
+                        m
+  Succ k' -> let ih [_] = plus_le k' [ord k_eq]
+             in let step [_] = (join : le (plus k' (mult (fdiv m n) n))
+                                           (plus k' m)
+                                     = le (plus (Succ k') (mult (fdiv m n) n))
+                                           (plus (Succ k') m))
+             in let step' [_] = conv step
+                                by (sym Nat Nat k (Succ k') k_eq)
+                                at k . le (plus k' (mult (fdiv m n) n))
+                                           (plus k' m)
+                                     = le (plus k (mult (fdiv m n) n))
+                                           (plus k m)
+             in conv ih by step' at h . h = le (mult (fdiv m n) n) m
+-}
+
+not_lt_S__pred : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False] -> m = Succ (pred m)
+not_lt_S__pred = \m n [m_lt_n] . case m [m_eq] of
+  Zero    -> let [e1] [_] = (conv m_lt_n by m_eq at m . lt m (Succ n) = False)
+             in contra (conv e1 by (join : lt Zero (Succ n) = True) at h . h = False)
+  -- need to do this more often: join's type can be inferred from the context
+  Succ m' -> conv join by (sym Nat Nat m (Succ m') m_eq) at m . m = Succ (pred m)
+-- this is just s_minus_s__lt specialized to ltT = lt
+s_minus_s__lt' : (m:Nat) -> (n:Nat) -> lt (minus (Succ m) (Succ n)) (Succ m) = True
+s_minus_s__lt' = \m n . conv (s_minus_s__lt m n)
+                        by (gs (minus (Succ m) (Succ n)) (Succ m))
+                        at t.t
+
+fdiv_ub_f_step : (m:Nat) -> (n:Nat) -> [lt m (Succ n) = False @log]
+              -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
+              -> le (mult (fdiv m (Succ n)) (Succ n)) m = True -- fdiv_ub_p m n
+fdiv_ub_f_step = \m n [m_lt_Sn] gm .
+  let    e1 [_] = conv join by (fdiv_caseF m (Succ n) [m_lt_Sn])
+                  at h . (le (mult (fdiv m (Succ n)) (Succ n)) m
+                          = le (mult h (Succ n)) m)
+  -- plus works here even tho mult is defined in terms of plus ... 
+  -- they both reduce to plus
+{-  in let e2 [_] = conv e1 by (join : (mult (Succ (fdiv (minus m (Succ n)) (Succ n))) (Succ n))
+                                   = (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))))
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = le h m -}
+  in let e2 [_] = (TRUSTME : 
+       le (mult (fdiv m (Succ n)) (Succ n)) m
+     = le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) m)
+  in let e3 [_] = conv e2 by (minus_plus_id (Succ n) m [m_lt_Sn])
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) h
+  {-
+  -- (L P) value restriction here ... maybe I can specialize the lemma?
+  in let e4 [_] = conv e3 by (plus_le (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))
+                                      (minus m (Succ n))
+                                      (Succ n))
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = h
+  -}
+  in let e4 [_] = conv e3 by (plus_le_specialized (minus m (Succ n)) (Succ n) (Succ n))
+                  at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+                       = h
+  in let m_eq [_] = not_lt_S__pred m n [m_lt_Sn]
+  in let m_eq' [_] = sym Nat Nat m (Succ (pred m)) m_eq
+  in let e5 [_] = conv e4 by m_eq at h . le (mult (fdiv m (Succ n)) (Succ n)) m
+     = le (mult (fdiv (minus h (Succ n)) (Succ n)) (Succ n)) (minus h (Succ n))
+  in let ih1 [_] = gm (minus m (Succ n))
+                     [conv (s_minus_s__lt' (pred m) n) by m_eq'
+                      at m . lt (minus m (Succ n)) m = True]
+  -- couldn't get fdiv_ub_p to join here, but introduce it as lemma
+  -- fdiv_ub_p_red above worked ???
+  in let ih2 [_] = conv ih1 by (fdiv_ub_p_red (minus m (Succ n))) at t.t
+{-
+                   by (join 1000: fdiv_ub_p (minus m (Succ n))
+                            = ((k:Nat) -> le (mult (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
+                                             (minus m (Succ n)) = True))
+
+                   at t.t
+-}
+  in let ih [_] = ih2 n
+  in conv e4 by ih at h . le (mult (fdiv m (Succ n)) (Succ n)) m = h
+
+-- combine base and step
+fdiv_ub_f' : (m:Nat) -> ((k:Nat) -> [lt k m = True] -> fdiv_ub_p k @log)
+         -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f' = \m gm n . case (lt m (Succ n)) [m_lt_n] of
+  True  -> fdiv_ub_f_base m n [m_lt_n]
+  False -> fdiv_ub_f_step m n [m_lt_n] gm
+
+-- massage lt=True into ltT
+fdiv_ub_f'' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log)
+         -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub_f'' = \m gm .
+  let gm' [_] = (\k [k_lt_m] .
+                 gm k [conv k_lt_m by (sg k m) at t.t]
+              : (k:Nat) -> [lt k m = True] -> fdiv_ub_p k)
+  in fdiv_ub_f' m gm'
+
+-- massage return types into fdiv_ub_p
+fdiv_ub_f : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> fdiv_ub_p m
+fdiv_ub_f = \m . conv (fdiv_ub_f'' m) by (fdiv_ub_p_red' m)
+                 at t . ((k:Nat) -> [ltT k m @log] -> fdiv_ub_p k @log) -> t
+
+-- prove fdiv_ub by cov
+fdiv_ub' : (m:Nat) -> fdiv_ub_p m
+fdiv_ub' = cov [fdiv_ub_p] fdiv_ub_f
+
+-- expand fdiv_ub_p to get human-friendly (ha) version
+fdiv_ub : (m:Nat) -> (n:Nat) -> le (mult (fdiv m (Succ n)) (Succ n)) m = True
+fdiv_ub = \m . conv (fdiv_ub' m) by (fdiv_ub_p_red m) at t.t
+
+-- Using thunks to avoid specialization of plus_le above
+-- -----------------------------------------------------
+--
+-- See http://groups.google.com/group/trellys-team/msg/f898720ccd40aee0
+
+-- Stephanie suggested the specialization above might be avoided by
+-- using thunks.  I couldn't figure out how to prove the thunked
+-- version, but I was able to instantiate and use the thunked version.
+-- Vilhelm later proved a (different) thunked lemma by adding a
+-- termination case axiom: see ./Thunky_plus_assoc.trellys.
+
+-- This version slightly different from Stephanie's suggestion: the
+-- returned equality is not between thunks.
+axiom plus_le_thunk : (m: Unit -> Nat @prog) -> (n: Unit -> Nat @prog) -> (k: Unit -> Nat @prog)
+               -> le (plus (k U) (m U)) (plus (k U) (n U))
+                  = le (m U) (n U)
+{- Some failed proofs:
+-- this fails because k is checked logically: there is no FOVal for functions
+plus_le_thunk = \m n k . plus_le   (k U) (m U) (n U)
+-- this fails because (k U) is not a value (LP value restriction)
+plus_le_thunk = \m n k . plus_le (k U) (m U) (n U)
+-- Induction is also out of the question.
+-}
+
+{- The non-thunked statement:
+instantiate : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
+  =
+  le (mult (fdiv m n) n)
+      m
+-}
+instantiate : (m:Nat) -> (n:Nat) -> (k:Nat)
+             -> le (plus ((\ _ . k : Unit -> Nat) U)
+                           ((\ _ . mult (fdiv m n) n : Unit -> Nat) U))
+                    (plus ((\ _ . k : Unit -> Nat) U)
+                           ((\ _ . m : Unit -> Nat) U))
+              = le ((\ _ . mult (fdiv m n) n : Unit -> Nat) U)
+                    ((\ _ . m : Unit -> Nat) U)
+instantiate = \ m n k . plus_le_thunk (\ _ . mult (fdiv m n) n : Unit -> Nat)
+                                          (\ _ . m : Unit -> Nat)
+                                          (\ _ . k : Unit -> Nat)
+
+-- Using the generic thunked lemma to prove the special case
+-- plus_le_specialized
+use : (m:Nat) -> (n:Nat) -> (k:Nat) ->
+  le (plus k (mult (fdiv m n) n))
+      (plus k m)
+  =
+  le (mult (fdiv m n) n)
+      m
+use = \ m n k . conv instantiate m n k
+                by (join : ((\ _ . k : Unit -> Nat) U) = k)
+                 , (join : ((\ _ . mult (fdiv m n) n : Unit -> Nat) U)
+                         =         mult (fdiv m n) n)
+                 , (join : ((\ _ . m : Unit -> Nat) U) = m)
+                at k p m .
+                   le (plus k p) (plus k m)
+                   =
+                   le p m

@@ -1,0 +1,33 @@
+module JoinTest where
+
+import Prelude
+
+-- * programmatic Nat identity
+prog idNat : Nat -> Nat
+idNat = \x . x
+
+prog g : (n : Nat) -> idNat n = n
+g = \x . join
+
+-- * logical large elimination on Nat
+
+p : Type 0
+p = Nat
+
+h : Nat -> Type 0
+h = \n.p
+
+duh : (n:Nat) -> h n = p
+duh = \n.join
+
+-- * again, but all at once
+
+duh' : (p : Type 0) -> (n:Nat) -> (\n.p : Nat -> Type 0) n = p
+duh' = \p n . join
+
+-- * again, but here the join fails ???
+-- (Yes, our handling of lets and top-level definitions are a bit inconsistent... --Vilhelm)
+huh : (p : Type 0) -> (n:Nat) -> (\n.p : Nat -> Type 0) n = p
+huh = \p n .
+  let h [eq] = (\n.p : Nat -> Type 0) in
+  conv (join : h n = p) by eq at x.x n = p

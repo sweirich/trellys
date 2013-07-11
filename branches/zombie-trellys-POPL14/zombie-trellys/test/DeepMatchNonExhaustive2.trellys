@@ -1,0 +1,21 @@
+module DeepMatchNonExhaustive2 where
+
+-- Bug reported by Stephanie.
+
+import Prelude
+import Fin
+
+data Formula (n : Nat) : Type 0 where
+  Var of (var  :Fin n)
+  And of (left :Formula n) (right :Formula n)
+  Lit of (litb :Bool)
+
+log formula_eq : [n : Nat] -> (x:Formula n) -> (y:Formula n)
+                  -> Bool
+formula_eq = \ [n] x .
+ ind fe y =
+   case x [x_eq] , y [y_eq] of
+      Var x1 , Var y1 -> TRUSTME
+      And x10 y10 , _ -> TRUSTME
+      Lit b1, Lit b2 -> TRUSTME
+
