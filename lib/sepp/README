@@ -1,3 +1,0 @@
-Compile with "cabal install"
-
-Then run a test file with "sep --file filename.sep"
