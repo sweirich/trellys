@@ -137,8 +137,10 @@ ind le_trans x =
     Zero -> \ y z h1 h2 . (join : le Zero z = True)
     Succ x' -> \  y z h1 h2 .
          case y , z of
- 	   Zero , _ -> TRUSTME
-	   _ , Zero -> TRUSTME
+ 	   Zero , _       -> let _ = (join : le (Succ x') Zero = False) in
+	                       contra (_ : True = False)
+	   Succ y' , Zero -> let _ = (join : le (Succ y') Zero = False) in
+	                       contra (_ : True = False)
 	   Succ y' , Succ z' ->
 	     let _  = (pjoin : le (Succ x') (Succ y') = le x' y') in
 	     let _  = (pjoin : le (Succ y') (Succ z') = le y' z') in
