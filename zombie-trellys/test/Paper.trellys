@@ -106,19 +106,44 @@ ind le_refl x =
       let ih = (le_refl x' [ord x_eq] : le x' x' = True) in
         _
 
--- These three should be provable (they are similar to versions
--- in LessThanNat_*.trellys), though I leave them for now.
 log le_Succ : (x : Nat) -> (y : Nat) 
               -> le x y = True -> le x (Succ y) = True
-le_Succ = TRUSTME
+ind le_Succ x y h = 
+  case x [x_eq] , y of
+    Zero , y -> 
+      let _ = (join : le Zero y = True) in
+      let _ = (join : le Zero (Succ y) = True) in
+        _
+    Succ x , Zero -> 
+      let _ = (join : le (Succ x) Zero = False) in
+        contra (_ : True = False)
+    Succ x' , Succ y' ->
+      let _  = (pjoin : le (Succ x') (Succ y') = le x' y') in
+      let ih = (le_Succ x' [ord x_eq] y' h
+                  : le x' (Succ y') = True) in
+      let _  = (pjoin : le (Succ x') (Succ y) = le x' y) in
+        _
 
 log le_Succ_cong : (x : Nat) -> (y : Nat) 
               -> le x y = True -> le (Succ x) (Succ y) = True
-le_Succ_cong = TRUSTME
+le_Succ_cong x y h =
+  let _ = (pjoin : le (Succ x) (Succ y) = le x y) in
+    h
 
 log le_trans : (x : Nat) -> (y : Nat) -> (z : Nat)
              -> (le x y = True) -> (le y z = True) -> (le x z = True)
-le_trans = TRUSTME
+ind le_trans x =
+  case x [x_eq] of 
+    Zero -> \ y z h1 h2 . (join : le Zero z = True)
+    Succ x' -> \  y z h1 h2 .
+         case y , z of
+ 	   Zero , _ -> TRUSTME
+	   _ , Zero -> TRUSTME
+	   Succ y' , Succ z' ->
+	     let _  = (pjoin : le (Succ x') (Succ y') = le x' y') in
+	     let _  = (pjoin : le (Succ y') (Succ z') = le y' z') in
+	     let ih = (le_trans x' [ord x_eq] y' z' h1 h2) in
+  	       le_Succ_cong x'  z' ih
 
 log succ_minus_one : (x:Nat) -> minus (Succ x) 1 = x
 ind succ_minus_one x =
@@ -192,7 +217,8 @@ is_brillig x = not (gyre x)
 log div63 : div 6 3 = 2
 div63 = join   
 
--- This one doesn't work (some of the TRUSTME holes can't be filled in).
+-- This one doesn't work (the TRUSTME hole can't be filled in).
+{-
 log div_le_bad : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
 ind div_le_bad n m hm = 
   case (lt n m) [lt_pf] of
@@ -227,6 +253,7 @@ ind div_le_bad n m hm =
 -- But alas, we can't, because (div (minus n m) m) is programmatic.
 --          let _ = (le_Succ_cong (div (minus n m) m) (minus n m) ih) in
 	    TRUSTME
+-}
 
 -- But, undeterred we plow on!
 
