@@ -67,6 +67,7 @@ fail:
 	@./expect_error DeepMatchError5 "Each branch should have 2 patterns, but"
 	@./expect_error DeepMatchNonExhaustive1 "Patterns in case-expression not exhaustive."
 	@./expect_error DeepMatchNonExhaustive2 "Patterns in case-expression not exhaustive."
+	@./expect_error DeepMatchTooFewPatterns "should take 2 constructors"
 
 extraction: $(foreach p,$(PASS),$(p).extraction) 
 

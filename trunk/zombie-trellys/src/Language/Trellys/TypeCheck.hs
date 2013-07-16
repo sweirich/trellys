@@ -1208,7 +1208,7 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = (do
   (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
   (d, bbar, delta, cons) <- lookupDType s sTy
   when (null alts && not (null cons)) $
-    err [DS "Patterns in case-expression not exhaustive."]
+    err $[DS "Patterns in case-expression not exhaustive."]
   let buildMatch :: AConstructorDef -> TcMonad (AMatch, Theta)
       buildMatch (AConstructorDef c args) = do
         relevantAlts <- filter (\(p,_) -> case p of 
@@ -1247,13 +1247,15 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = (do
 -- see if there is any commonality in the name of the pattern variables, and if so
 -- give back a list of them.
 -- If none are given, use the default ones.
+-- The list we construct always has the same length as the default list, even if some 
+-- patterns (incorrectly) provided more or fewer (in order to give better error messages).
 suggestedNames :: [String] -> [Pattern] -> [String]
 suggestedNames deflt (PatVar _ : rest) = suggestedNames deflt rest
 suggestedNames deflt (PatCon _ args : rest) =
   zipWith (\new old -> case new of 
                            Nothing -> old
                            Just s -> s)
-          (map (suggestedName . fst) args)
+          (map (suggestedName . fst) args ++ repeat Nothing)
           (suggestedNames deflt rest)
 suggestedNames deflt [] = deflt
 
