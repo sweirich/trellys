@@ -74,7 +74,7 @@ data DispInfo = DI
 initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
-              verbose = False,
+              verbose = True,
               dispAvoid = S.empty
          }
 
@@ -460,9 +460,10 @@ instance Display ATerm where
       dty <- display ty     
       dn <- display n
       dbody <- display body
-      return $ text "\\" <+> dn 
-        <+> (if isVerbose then colon <+> dty else empty)
-        <+> text "." $$ (nest 4 dbody)
+      return $ sep [text "\\" <+> dn 
+                     <+> (if isVerbose then colon <+> dty else empty)
+                     <+> text ".",
+                    nest 2 dbody]
   display (AApp ep a b ty) = do 
     da <- display a 
     db <- display b
@@ -499,10 +500,13 @@ instance Display ATerm where
       dxs <- mapM display xs
       dtemplate <- display template
       dty <- display ty
-      return $ text "conv" <+> da
-                $$ nest 2 (text "by" <+> hsep dpfs)
-                $$ nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate)
-                $$ (if isVerbose then nest 2 (colon <+> dty) else empty)
+      let templateLine = case (xs, template) of
+                     ([x], AVar x') | x==x' -> empty
+                     _ -> nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate)
+      return $ sep [text "conv" <+> da,
+                    nest 2 (text "by" <+> hsep dpfs),
+                    templateLine,
+                    if isVerbose then nest 2 (colon <+> dty) else empty]
   display (AContra a aTy) = do
     da <- display a
     daTy <- display aTy
@@ -529,10 +533,10 @@ instance Display ATerm where
       dn <- display n
       dm <- display m
       dbody <- display body
-      return $ parens (text "ind" <+> dn <+> bindParens ep dm 
-                         <+> (if isVerbose then colon <+> dty else empty)
-                         <+> text "="
-                        $$ nest 2 dbody)
+      return . parens $ sep [text "ind" <+> dn <+> bindParens ep dm 
+                               <+> (if isVerbose then colon <+> dty else empty)
+                               <+> text "=",
+                             nest 2 dbody]
   display (ARec ty ep bnd) = 
     lunbind bnd $ \((n,m), body) -> do
       isVerbose <- asks verbose
@@ -550,9 +554,9 @@ instance Display ATerm where
       dm <- display m
       da <- display a
       db <- display b
-      return $ text "let" <+> dn <+> brackets dm <+> text "="
-                     <+> da <+> text "in"
-                $$ nest 2 db
+      return $ sep [text "let" <+> dn <+> brackets dm <+> text "="
+                       <+> da <+> text "in",
+                    nest 2 db]
   display (ACase a bnd (th,ty)) =
     lunbind bnd $ \(n,mtchs) -> do
       da <- display a

@@ -1,0 +1,11 @@
+module DeepMatchTooFewPatterns where
+
+import Prelude
+
+data D : Type where
+  d of (x : Nat) (y : Nat)
+
+bad : D -> Nat
+bad a = 
+  case a of
+    d x -> 0

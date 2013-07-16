@@ -14,8 +14,8 @@ import Language.Trellys.GenericBind
 import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
-import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ
+--import Language.Trellys.PrettyPrint
+--import Text.PrettyPrint.HughesPJ
 
 import Unbound.LocallyNameless.Types (GenBind)
 
@@ -318,35 +318,29 @@ astep (AApp eps a b ty) = do
                     -- liftIO . putStrLn $ "Not a conv value" ++ show b
                     return Nothing
                 else case a of
-                  AConv v bs convBnd (eraseToHead->AArrow resTh resEx resEps resTyBnd) -> do
-                    let update updatee var newDom oldRan mapBody = case updatee of
-                          ALam th (eraseToHead -> AArrow lvl tyEx tyEps tyBnd) eps' bnd -> do
-                            (lamVar,rawBody) <- unbind bnd
-                            let body = subst lamVar (AVar var) rawBody
-                            return $ ALam th 
-                                          (AArrow lvl tyEx tyEps $ bind (var,embed newDom) oldRan) 
-                                          eps' 
-                                          (bind var $ mapBody body)
-                          ARec (eraseToHead -> AArrow lvl tyEx tyEps tyBnd) eps' bnd -> do
-                            ((f,recVar),rawBody) <- unbind bnd
-                            ((tyVar,unembed -> dom),rawRan) <- unbind tyBnd
-                            let body = subst recVar (AVar var) rawBody
-                            return $ ARec (AArrow lvl tyEx tyEps $ bind (var,embed newDom) oldRan)
-                                          eps'
-                                          (bind (f,var) $ mapBody body)
-                          AInd (eraseToHead -> AArrow lvl tyEx tyEps tyBnd) eps' bnd -> do
-                            ((f,recVar),rawBody) <- unbind bnd
-                            ((tyVar,unembed -> dom),rawRan) <- unbind tyBnd
-                            let body = subst recVar (AVar var) rawBody
-                            return $ AInd (AArrow lvl tyEx tyEps $ bind (var,embed newDom) oldRan)
-                                          eps'
-                                          (bind (f,var) $ mapBody body)
-                          _ -> mzero                        
-                        mkConv ps xs template res term = AConv term ps (bind xs template) res
+                  AConv v bs convBnd toTy@(eraseToHead->AArrow resTh resEx resEps resTyBnd) -> do
+                    let update updatee newTy convInput convOutput = 
+                          case updatee of
+                            ALam th oldTy eps' bnd -> do
+                              (x,body) <- unbind bnd
+                              return $ ALam th 
+                                            newTy
+                                            eps' 
+                                            (bind x     $ convOutput x $ subst x (convInput x) body)
+                            ARec oldTy eps' bnd -> do
+                              ((f,x),body) <- unbind bnd
+                              return $ ARec newTy
+                                            eps'
+                                            (bind (f,x) $ convOutput x $ subst x (convInput x) body)
+                            AInd oldTy eps' bnd -> do
+                              ((f,x),body) <- unbind bnd
+                              return $ AInd newTy
+                                            eps'
+                                            (bind (f,x) $ convOutput x $ subst x (convInput x) body)
+                            _ -> mzero                        
                     (xs,template) <- unbind convBnd
                     runMaybeT $ case (template,xs,bs) of                      
                       (AVar x,[xx],[(p,Runtime)]) | x == xx -> do
-                        -- liftIO . putStrLn $ "Yay, the interesting case"                   
                         (_, ATyEq (AArrow si srcEx  srcEps  srcTyBnd)
                                   (AArrow ri resEx' resEps' resTyBnd')) <- lift $ aTs p
                         guard $ si == ri                                           
@@ -358,51 +352,63 @@ astep (AApp eps a b ty) = do
                           guard $ dom1 == dom2
                           guard $ ran1 == ran2
                         ( (tyVar, unembed -> srcDom), srcRan,
-                          (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
+                          (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd                        
                         x' <- fresh $ string2Name "x'"
-                        x0 <- fresh $ string2Name "x"
-                        x1 <- fresh $ string2Name "x"
-                        symDom <- symEq srcDom resDom $ ADomEq p
-                        let y' = AConv (AVar tyVar)
-                                       [(symDom, Runtime)]
-                                       (bind [x'] $ AVar x')
-                                       srcDom
-                            p' = AConv p
-                                       [ (ADomEq p, Runtime)
-                                       , (AJoin srcRan 0 (subst tyVar y' srcRan) 0 CBV, Runtime) ]
-                                       (bind [x0,x1] $
-                                          ATyEq (AArrow si srcEx srcEps $
-                                                        bind (tyVar, embed $ AVar x0) (AVar x1))
-                                                (AArrow ri resEx resEps $
-                                                        bind (tyVar ,embed resDom) resRan)) 
-                                       (ATyEq (AArrow si srcEx srcEps $
-                                                      bind (tyVar, embed resDom) $
-                                                           subst tyVar y' srcRan)
-                                              (AArrow ri resEx resEps $
-                                                      bind (tyVar, embed resDom) resRan))
-                        v' <- update (subst tyVar y' v) tyVar resDom srcRan $
-                                mkConv [(ARanEq p y' (AVar tyVar), Runtime)]
-                                       [x']
-                                       (AVar x')
-                                       resRan
+                        let convInput :: AName -> ATerm
+                            convInput z =       AConv (AVar z)
+                                                      [(ADomEq p, Runtime)]
+                                                      (bind [x'] $ AVar x')
+                                                      srcDom
+                        let convOutput :: AName {- the input -}
+                                          -> ATerm {- the body -}
+                                          -> ATerm
+                            convOutput z body = AConv body
+                                                      [(ARanEq p (convInput z) (AVar z), Runtime)]
+                                                      (bind [x'] $ AVar x')
+                                                      (subst tyVar (AVar z) resRan)
+                        v' <- update v toTy convInput convOutput 
                         return $ AApp eps v' b ty
                       (AArrow srcTh srcEx srcEps srcTyBnd,_,_) -> do
                         ( (tyVar, unembed -> srcDom), srcRan,
                           (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
-                        let adjust f (bi,epsi) = do (b'i,t) <- f bi
+
+{-                        let adjust f (bi,epsi) = do (b'i,t) <- f bi
                                                     return ((b'i,epsi),t)
                         (b's, froms) <- fmap unzip . forM bs . adjust $ \bi -> do
                                           (Logic, ATyEq fromTy toTy) <- lift $ aTs bi
-                                          (fromTy,) <$> symEq fromTy toTy bi
-                        let y' = AConv (AVar tyVar)
-                                       b's
-                                       (bind xs srcDom)
-                                       (substs (zip xs froms) srcDom)
-                        v' <- update (subst tyVar y' v) tyVar resDom srcRan $
-                                mkConv (bs ++ [(AJoin y' 0 (AVar tyVar) 0 CBV,Runtime)])
-                                       (xs ++ [tyVar])
-                                       srcRan
-                                       resRan
+                                          (fromTy,) <$> symEq fromTy toTy bi -}
+                        froms   <- mapM (\pf_ep ->
+                                             case pf_ep of                                               
+                                               (ATyEq ty1 ty2, Erased) -> 
+                                                  return ty1
+                                               (_ , Erased) -> error "astep: malformed erased proof, not an eq"
+                                               (pf , Runtime) -> do
+                                                  (Logic, ATyEq ty1 ty2) <- lift $ getType pf
+                                                  return ty1)
+                                        bs
+                        symm_bs <- mapM (\pf_ep ->
+                                             case pf_ep of
+                                               (ATyEq ty1 ty2, Erased) -> 
+                                                  return (ATyEq ty2 ty1, Erased)
+                                               (_ , Erased) -> error "astep: malformed erased proof, not an eq"
+                                               (pf , Runtime) -> do
+                                                  (Logic, ATyEq ty1 ty2) <- lift $ getType pf
+                                                  symmPf <- symEq ty1 ty2 pf
+                                                  return (symmPf, Runtime))
+                                        bs
+                        let convInput :: AName -> ATerm
+                            convInput z =  AConv (AVar z)
+                                                 symm_bs
+                                                 (bind xs srcDom)
+                                                 (substs (zip xs froms) srcDom)
+                        let convOutput :: AName {- the input -}
+                                          -> ATerm {- the body -}
+                                          -> ATerm
+                            convOutput z body = AConv body
+                                                      (bs ++ [(AJoin (convInput z) 0 (AVar z) 0 CBV,Runtime)])
+                                                      (bind (xs++[tyVar]) $ srcRan)
+                                                      (subst tyVar (AVar z) resRan)
+                        v' <- update v toTy convInput convOutput
                         return $ AApp eps v' b ty
                       _ ->  mzero
                   (ALam _ _ _ bnd) -> do

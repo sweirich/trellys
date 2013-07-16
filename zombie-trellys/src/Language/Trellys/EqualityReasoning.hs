@@ -789,15 +789,15 @@ smartSteps hyps a n = do
 -- Uses the union-find structor of the problem state.
 smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
 smartStep a = do
-  --liftIO . putStrLn $ "About to step " ++ (render . disp $ a)
-  -- _ <- lift $ aTs a 
+  --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) ++ "\ni.e.\n" ++ show a
+  _ <- lift $ aTs a 
   --liftIO . putStrLn $ "It typechecks, so far"
 
   _ <- genEqs a
   maybeCtx <- lift $ aCbvContext a
   case maybeCtx of
     Just (CbvContext hole ctx, flavour, b) -> do
-       --(liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b))
+       --liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b)
        names <- gets naming
        candidates <- classMembersExplain (names BM.! b)
        let cs = [(c,b',p)
@@ -846,7 +846,7 @@ smartStepLet (CbvContext hole a) b = do
   pf_a_ba'  <- transTerm a a' (subst hole b a') pf_a_a' pf_a'_ba'
   pf_ba_ba' <- transTerm (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
 
---  (liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
+  --(liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
 
   return (subst hole b a',
           ALet Erased 
@@ -858,7 +858,7 @@ smartStepLet (CbvContext hole a) b = do
 -- Uses just the operational semantics, not equational reasoning
 dumbStep :: ATerm -> TcMonad (Maybe (ATerm,ATerm))
 dumbStep a = do
---  (liftIO . putStrLn $ "Trying to dumb-step " ++ (render . disp $  a))
+  --(liftIO . putStrLn $ "Trying to dumb-step " ++ (render . disp $  a))
   ma' <- astep a
   case ma' of
     Nothing -> return Nothing

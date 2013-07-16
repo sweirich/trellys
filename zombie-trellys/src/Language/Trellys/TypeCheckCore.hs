@@ -28,6 +28,10 @@ import Language.Trellys.Syntax
 import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
 import Language.Trellys.TypeMonad
 
+--Stuff used for debugging.
+import Language.Trellys.PrettyPrint
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
+
 -------------------
 -------------------
 -- Just accessing the type of a core-language term
@@ -148,6 +152,7 @@ getType (ALet ep bnd annot) = return annot
 
 getType (ACase a bnd annot) = return annot
 
+-- From (A->A')=(B->B'), conclude B=A. Note the built-in application of symmetry!
 getType t@(ADomEq a) = do
   (th, aTy) <- aTs a
   case aTy of
@@ -155,7 +160,7 @@ getType t@(ADomEq a) = do
       unbind2 bndTy bndTy' >>=
         maybe (coreErr [DS "getType: ADomEq applied to incorrect equality type"])
               (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
-                return (th, ATyEq tyDom tyDom'))
+                return (th, ATyEq tyDom' tyDom))
     _ -> coreErr [DS "getType: ADomEq not applied to an equality between arrow types"]   
           
 getType (ARanEq p a a') = do
@@ -366,7 +371,8 @@ aTs (AConv a prfs bnd ty) = do
   toEq   <- aeq <$> erase ty  <*> erase aTy2
   unless fromEq $
     coreErr [DS "AConv: the term", DD a, DS "has type", DD aTy,
-             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1]
+             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1,
+             DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
   unless toEq $ 
     coreErr [DS "AConv: the conv-expression was annotated as", DD ty, 
              DS "but substituting the RHSs of the equations into the template creates the type", DD aTy2]
@@ -517,6 +523,7 @@ aTs (ACase a bnd (th,ty)) = do
                        DS "and the branches"] ++ (map DD ths)  
   return (th , ty)     
 
+-- From (A->A')=(B->B'), conclude B=A. Note the built-in application of symmetry!
 aTs (ADomEq a) = do
   (th, aTy) <- aTs a
   case aTy of
@@ -524,7 +531,7 @@ aTs (ADomEq a) = do
       unbind2 bndTy bndTy' >>=
         maybe (coreErr [DS "ADomEq applied to incorrect equality type"])
               (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
-                return (th, ATyEq tyDom tyDom'))
+                return (th, ATyEq tyDom' tyDom))
     _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]
 
 aTs (ARanEq p a a') = do
@@ -540,8 +547,9 @@ aTs (ARanEq p a a') = do
           asEq <- aeq <$> erase a <*> erase a'
           unless asEq $
             coreErr [DS "ARanEq: the erasures of", DD a, DS "and", DD a', DS "are not equal"]
-          aKc (subst tyVar a tyRan)
-          aKc (subst tyVar a' tyRan)
+          -- Check that the resulting arrow type is well-formed:
+          _ <- aTs (subst tyVar a tyRan)
+          _ <- aTs (subst tyVar a' tyRan')
           return (th, ATyEq (subst tyVar a tyRan) (subst tyVar a' tyRan'))
     _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
 
