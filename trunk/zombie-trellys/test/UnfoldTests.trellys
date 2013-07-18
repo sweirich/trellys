@@ -6,6 +6,37 @@ import Prelude
 -- Stepping rules for annotated things (including cast-shuffling)
 -----------------------------------------------------------------
 
+-- Ordinary stepping rules (without any conv-related complications)
+
+step_lam : ((\n . n) : Nat->Nat) Zero = Zero
+step_lam = 
+  unfold ((\n . n : Nat->Nat) Zero) in
+    _
+
+idnat_ind : Nat -> Nat
+ind idnat_ind n = 
+  case n [n_eq] of 
+    Zero -> Zero
+    Succ n' -> Succ (idnat_ind n' [ord n_eq])
+
+step_ind : (idnat_ind 2 = 2)
+step_ind = 
+  unfold (idnat_ind 2) in
+     _
+
+prog idnat_rec : Nat -> Nat
+rec idnat_rec n =
+  case n of
+    Zero -> Zero
+    Succ n' -> Succ (idnat_rec n')
+
+step_rec : (idnat_rec 2 = 2)
+step_rec = 
+  unfold (idnat_rec 2) in
+    _
+
+-- Stepping rules for when a conv interfers with a beta redex.
+
 -- Stepping a function with a conv applied to it.
 converted_lam : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
 converted_lam p b = 
@@ -29,6 +60,7 @@ converted_ind p b =
   let _ = (_ : ((conv ((ind f n = n) : Nat->Nat) by p at x.x) b)
              = b) in
     U
+
 
 -- Stepping a function with a conv applied to it, when the function has a 
 -- dependent type.
@@ -58,6 +90,19 @@ converted_rec_dep p b q =
          = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
     U
 
+{-
+-- The same thing, with a rec that actually makes a recursive call.
+-- FIXME
+converted_reallyrec_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
+		        -> (q : Nat = Bool)
+		        -> Unit
+converted_reallyrec_dep p b q = 
+  unfold 5 ((conv ((rec f n = f n) : (n:Nat)->T1 n) by p at x.x) b) in
+--  let _ = (_ : ((conv ((rec f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b)
+--         = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
+    blerg
+-}
+
 -- The same thing with an ind instead of a lam
 converted_ind_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
 		     -> (q : Nat = Bool)
@@ -83,6 +128,14 @@ converted_rec_2 p q b =
   unfold ((conv ((rec f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b) in
   let _ = (_ : ((conv ((rec f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b)
              = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
+    U
+
+-- The same thing, with a rec that actually makes a recursive call.
+converted_reallyrec_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
+converted_reallyrec_2 p q b = 
+  unfold 1 ((conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b) in
+  let _ = (_ : (conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b
+             = Succ ((conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b)) in
     U
 
 -- The same thing, with an ind instead of a lam
@@ -112,9 +165,15 @@ ind_step =
 
 -- Stepping an ind with dependent type with a conversion
 -- applied to it.
-
 {-
 
+-- This test breaks because it tries to apply the (bogus) rule
+--  case (conv a) of ... ~> case a of ...
+-- which is obviously not type-preserving if the conv changes
+-- the top-level datatype constructor of the scrutinee.
+--
+-- In fact, the term should be stuck, so this example should be rejected
+-- (rather than the current behaviour of crashing at the check Core stage).
 
 ind_step_conv : 
   (p : ((x:Nat)->(x=x)) = ((y:Bool)->(y=y))) ->
@@ -124,10 +183,11 @@ ind_step_conv p =
     _
 -}
 
-
 -----------------------------------------------------------------
 -- Stepping things which are stuck, by using equational reasoning
 -----------------------------------------------------------------
+
+{-
 
 log f : Nat -> Nat
 f = \x.x
@@ -139,3 +199,4 @@ foo = \n.
   unfold 2 (f (pred n)) in 
     _
 
+-}

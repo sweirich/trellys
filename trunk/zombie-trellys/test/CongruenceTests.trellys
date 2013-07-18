@@ -37,6 +37,12 @@ decompose_dcon_arg = \p . _
 log decompose_dcon_erased_arg : (mkT1 a [a] : T1 atype) = (mkT1 a [a1] : T1 atype)
 decompose_dcon_erased_arg = _
 
+--this one tests the use of "canonical" in decompose
+prog progZero : Unit -> Nat
+rec progZero _ = Zero
+log decompose_decon_th : Succ Zero = Succ (progZero U)
+decompose_decon_th = unfold (Succ (progZero U)) in _
+
 log decompose_arrow_rng : (atype = btype) -> ((Nat -> atype) = (Nat -> btype))
 decompose_arrow_rng = \p . _
 
@@ -86,6 +92,7 @@ decompose_tyeq_rhs = \p. _
 log decompose_join : (join : a = a) = (join : a1 = a1)
 decompose_join = _
 
+-- These two exercise the use of "canonical" in decompose.
 log decompose_join_stepcount : (join 1 1 : (a = a)) = (join 2 2 : (a = a))
 decompose_join_stepcount = _
 
@@ -154,4 +161,3 @@ decompose_case_branch = \p. _
 log decompose_case_branch_binding : (f=f1) ->  (case n [_] of { Zero -> a ; Succ n' -> f n'} : atype)
                                              = (case n [_] of { Zero -> a ; Succ n' -> f1 n'} : atype)
 decompose_case_branch_binding = \p. _
-
