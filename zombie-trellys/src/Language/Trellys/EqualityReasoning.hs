@@ -39,7 +39,7 @@ import Data.Ix
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
 import Debug.Trace
 
 -- In the decompose function, we will need to "canonicalize" certain fields
@@ -174,7 +174,7 @@ fuseProofs ((x,Erased):xs) ps =  do
 data AnnotProof = 
     AnnAssum Orientation (Maybe ATerm,ATerm,ATerm)
   | AnnRefl ATerm ATerm
-  | AnnCong ATerm [(AName,ATerm,ATerm,Maybe AnnotProof)]
+  | AnnCong ATerm [(AName,ATerm,ATerm,Maybe AnnotProof)] ATerm ATerm
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
  deriving Show
 
@@ -202,7 +202,7 @@ checkProof tyA tyB (Cong template ps)  =  do
                                               p' <- checkProof subA subB p
                                               return (x, subA, subB, Just p'))
                  ps
-  return $ AnnCong template subpfs
+  return $ AnnCong template subpfs tyA tyB
 checkProof tyA tyC (CongTrans template ps q)  = do
   (tyB, tq) <- synthProof tyC q
   subAs <- match (map (\(x,_)->x) ps) template tyA
@@ -216,7 +216,7 @@ checkProof tyA tyC (CongTrans template ps q)  = do
                                               return (x, subA, subB, Just p'))
                  ps
   return $ AnnTrans tyA tyB tyC
-            (AnnCong template subpfs)
+            (AnnCong template subpfs tyA tyB)
             tq
 
 -- generate AnnotProof's for a list of equations [ep,tyA,tyB]
@@ -237,14 +237,15 @@ simplProof ::  AnnotProof -> AnnotProof
 simplProof p@(AnnAssum _ _) = p
 simplProof p@(AnnRefl _ _) = p
 simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (simplProof q)
-simplProof (AnnCong template ps) =  let (template', ps') = simplCong (template,[]) ps 
-                                    in (AnnCong template' ps')
+simplProof (AnnCong template ps tyA tyB) =  
+ let (template', ps') = simplCong (template,[]) ps 
+ in (AnnCong template' ps' tyA tyB)
   where simplCong (t, acc) [] = (t, reverse acc)
         simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
            simplCong (subst x tyA t, acc) ps
         simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
            simplCong (subst x tyA t, acc) ps
-        simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs)):ps) =
+        simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs _ _)):ps) =
            simplCong (subst x subT t, acc) (subPs++ps)
         simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
 
@@ -258,9 +259,14 @@ genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symmTerm tyA tyB a
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
 genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0 CBV)
-genProofTerm (AnnCong template ps) = do
-  let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
-  let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
+genProofTerm (AnnCong template ps tyA tyB) = do
+  -- One might think it should be possible to reconstruct tyA and tyB from 
+  -- the template and the subproofs, like so:
+  --   let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
+  --   let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
+  -- But in fact that doesn't work, because we intentionally throw away some information
+  -- from the template and replace it with `canonical'. So we need to keep the 
+  -- unmutilated template instances around also.
   subpfs <- mapM (\(x,subA,subB,p) -> case p of 
                                       Nothing -> return (ATyEq subA subB, Erased)
                                       Just p' -> (,Runtime) <$> genProofTerm p')
@@ -359,7 +365,7 @@ decompose sub e avoid (ATCon c args) = do
 decompose sub e avoid (ADCon c th params args) = do
   params' <- mapM (decompose True Erased avoid) params
   args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ ADCon c th params' args'
+  return $ ADCon c canonical params' args'
 decompose _ e avoid (AArrow k ex ep bnd) = do
   ((x,unembed->t1), t2) <- unbind bnd
   r1 <- decompose True e avoid t1
@@ -684,14 +690,19 @@ isAnyValue (ATrustMe _) = True
    Return None if the term is a value, or if it can already step. -}
 aCbvContext :: ATerm -> TcMonad (Maybe (CbvContext, ValueFlavour, ATerm))
 aCbvContext (ACumul a lvl) = inCtx (\a -> ACumul a lvl) <$> aCbvContext a
-aCbvContext (ADCon c th params args) = go [] args
-  where go _ [] = return Nothing
-        go prefix ((a,ep) :args) | isAnyValue a || ep==Erased = go ((a,ep):prefix) args
-                                 | otherwise = do
-           hole <- fresh (string2Name "hole")
-           return $ Just (CbvContext hole (ADCon c th params (reverse prefix ++ [(AVar hole,Runtime)] ++ args)),
-                          AnyValue,
-                          a)
+-- fixme: think about the dcon case some more. 
+--  The problem is that if a dcon is stuck on a single non-value argument, and we use 
+--  equational reasoning to replace that arg with a value, then the entire expression
+--  is a value, so it still doesn't step, which violates the specification of aCbvContext.
+aCbvContext (ADCon c th params args) = return Nothing 
+-- aCbvContext (ADCon c th params args) = go [] args
+--   where go _ [] = return Nothing
+--         go prefix ((a,ep) :args) | isAnyValue a || ep==Erased = go ((a,ep):prefix) args
+--                                  | otherwise = do
+--            hole <- fresh (string2Name "hole")
+--            return $ Just (CbvContext hole (ADCon c th params (reverse prefix ++ [(AVar hole,Runtime)] ++ args)),
+--                           AnyValue,
+--                           a)
 aCbvContext (AApp Erased a b ty) = inCtx (\a -> AApp Erased a b ty) <$> aCbvContext a
 aCbvContext (AApp Runtime a b ty) | not (isFunctionValue a) = do
   hole <- fresh (string2Name "hole")
@@ -837,6 +848,9 @@ smartStep a = do
 -- steps the term ctx[b] , which is stuck on the non-value b.
 smartStepLet :: CbvContext -> ATerm -> TcMonad (ATerm, ATerm)
 smartStepLet (CbvContext hole a) b = do
+  --liftIO . putStrLn $ "About to smartStepLet the term\n" ++ render (nest 2 (disp a))
+  --                     ++ "\nby replacing the subterm\n" ++ render (nest 2 (disp b))
+
   hole_eq <- fresh $ string2Name "hole_eq"
   (Just (a', pf_a_a')) <- dumbStep a  --This should always succeed, or aCbvContext lied to us.
   

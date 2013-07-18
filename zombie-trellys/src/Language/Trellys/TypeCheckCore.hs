@@ -693,8 +693,9 @@ underMatch ::  Theta                -- the theta of the scrutinee
 underMatch th ty idxs cons xeq fun (AMatch c bnd) = do
   (xs, a) <- unbind bnd
   case find (\(AConstructorDef c' _) -> c'==c) cons of
-    Nothing -> coreErr [DS "AMatch: Trying to match against the constructor", DD c,
-                        DS "which is not a constructor of the datatype."]
+    Nothing -> coreErr ([DS "AMatch: Trying to match against the constructor", DD c,
+                         DS "which is not a constructor of the datatype.",
+                         DS "The possible contructors that can be used are"] ++ map DD cons)
     Just (AConstructorDef _ cargs) -> do
       unless (aTeleLength cargs == aTeleLength xs) $
         coreErr [DS "AMatch: Branch expects", DD (aTeleLength xs), DS "arguments",

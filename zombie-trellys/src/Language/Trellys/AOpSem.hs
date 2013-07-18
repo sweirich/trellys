@@ -14,8 +14,9 @@ import Language.Trellys.GenericBind
 import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
---import Language.Trellys.PrettyPrint
---import Text.PrettyPrint.HughesPJ
+--Stuff used for debugging.
+import Language.Trellys.PrettyPrint
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
 
 import Unbound.LocallyNameless.Types (GenBind)
 
@@ -297,6 +298,7 @@ astep (AArrow _ _ _ _) = return Nothing
 astep (ALam _ _ _ _) = return Nothing
 
 astep (AApp eps a b ty) = do
+  --liftIO . putStrLn $ "considering the application" ++ render (disp (AApp eps a b ty))
   stepA <- astep a
   case stepA of
     Just (AAbort t) -> return . Just $ AAbort t
@@ -304,45 +306,29 @@ astep (AApp eps a b ty) = do
     Nothing         -> do
       aval <- isConvAValue a
       if not aval
-        then return Nothing
+        then do 
+          --liftIO . putStrLn $ render (disp a) ++ " , the a, is not a conv-value, so there!"
+          return Nothing
         else do
           stepB <- astep b
           case stepB of
             Just (AAbort t) -> return . Just $ AAbort t
             Just b'         -> return . Just $ AApp eps a b' ty
             Nothing         -> do
-              -- liftIO . putStrLn $ "a is a conv value"                   
+              --liftIO . putStrLn $ "Neither a nor b steps."
               bval <- isConvAValue b
               if not bval
                 then do
-                    -- liftIO . putStrLn $ "Not a conv value" ++ show b
+                    --liftIO . putStrLn $ render (disp b) ++ " is not a conv-value, so there!"
                     return Nothing
                 else case a of
-                  AConv v bs convBnd toTy@(eraseToHead->AArrow resTh resEx resEps resTyBnd) -> do
-                    let update updatee newTy convInput convOutput = 
-                          case updatee of
-                            ALam th oldTy eps' bnd -> do
-                              (x,body) <- unbind bnd
-                              return $ ALam th 
-                                            newTy
-                                            eps' 
-                                            (bind x     $ convOutput x $ subst x (convInput x) body)
-                            ARec oldTy eps' bnd -> do
-                              ((f,x),body) <- unbind bnd
-                              return $ ARec newTy
-                                            eps'
-                                            (bind (f,x) $ convOutput x $ subst x (convInput x) body)
-                            AInd oldTy eps' bnd -> do
-                              ((f,x),body) <- unbind bnd
-                              return $ AInd newTy
-                                            eps'
-                                            (bind (f,x) $ convOutput x $ subst x (convInput x) body)
-                            _ -> mzero                        
+                  -- If a is a converted value we have to do something smart.
+                  AConv funv bs convBnd toTy@(eraseToHead->AArrow resTh resEx resEps resTyBnd) -> do
                     (xs,template) <- unbind convBnd
-                    runMaybeT $ case (template,xs,bs) of                      
+                    case (template,xs,bs) of                      
                       (AVar x,[xx],[(p,Runtime)]) | x == xx -> do
                         (_, ATyEq (AArrow si srcEx  srcEps  srcTyBnd)
-                                  (AArrow ri resEx' resEps' resTyBnd')) <- lift $ aTs p
+                                  (AArrow ri resEx' resEps' resTyBnd')) <- aTs p
                         guard $ si == ri                                           
                         guard $ srcEps == resEps
                         guard $ resEps == resEps'
@@ -354,36 +340,30 @@ astep (AApp eps a b ty) = do
                         ( (tyVar, unembed -> srcDom), srcRan,
                           (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd                        
                         x' <- fresh $ string2Name "x'"
-                        let convInput :: AName -> ATerm
-                            convInput z =       AConv (AVar z)
+                        let convInput :: ATerm -> ATerm
+                            convInput v =       AConv v
                                                       [(ADomEq p, Runtime)]
                                                       (bind [x'] $ AVar x')
                                                       srcDom
-                        let convOutput :: AName {- the input -}
+                        let convOutput :: ATerm {- the input value -}
                                           -> ATerm {- the body -}
                                           -> ATerm
-                            convOutput z body = AConv body
-                                                      [(ARanEq p (convInput z) (AVar z), Runtime)]
+                            convOutput v body = AConv body
+                                                      [(ARanEq p (convInput v) v, Runtime)]
                                                       (bind [x'] $ AVar x')
-                                                      (subst tyVar (AVar z) resRan)
-                        v' <- update v toTy convInput convOutput 
-                        return $ AApp eps v' b ty
+                                                      (subst tyVar v resRan)
+                        runMaybeT $ 
+                          convOutput b <$> stepFun funv (convInput b)
                       (AArrow srcTh srcEx srcEps srcTyBnd,_,_) -> do
                         ( (tyVar, unembed -> srcDom), srcRan,
                           (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
-
-{-                        let adjust f (bi,epsi) = do (b'i,t) <- f bi
-                                                    return ((b'i,epsi),t)
-                        (b's, froms) <- fmap unzip . forM bs . adjust $ \bi -> do
-                                          (Logic, ATyEq fromTy toTy) <- lift $ aTs bi
-                                          (fromTy,) <$> symEq fromTy toTy bi -}
                         froms   <- mapM (\pf_ep ->
                                              case pf_ep of                                               
                                                (ATyEq ty1 ty2, Erased) -> 
                                                   return ty1
                                                (_ , Erased) -> error "astep: malformed erased proof, not an eq"
                                                (pf , Runtime) -> do
-                                                  (Logic, ATyEq ty1 ty2) <- lift $ getType pf
+                                                  (Logic, ATyEq ty1 ty2) <- getType pf
                                                   return ty1)
                                         bs
                         symm_bs <- mapM (\pf_ep ->
@@ -392,47 +372,32 @@ astep (AApp eps a b ty) = do
                                                   return (ATyEq ty2 ty1, Erased)
                                                (_ , Erased) -> error "astep: malformed erased proof, not an eq"
                                                (pf , Runtime) -> do
-                                                  (Logic, ATyEq ty1 ty2) <- lift $ getType pf
+                                                  (Logic, ATyEq ty1 ty2) <- getType pf
                                                   symmPf <- symEq ty1 ty2 pf
                                                   return (symmPf, Runtime))
                                         bs
-                        let convInput :: AName -> ATerm
-                            convInput z =  AConv (AVar z)
+                        let convInput :: ATerm -> ATerm
+                            convInput v =  AConv v
                                                  symm_bs
                                                  (bind xs srcDom)
                                                  (substs (zip xs froms) srcDom)
-                        let convOutput :: AName {- the input -}
+                        let convOutput :: ATerm {- the input -}
                                           -> ATerm {- the body -}
                                           -> ATerm
-                            convOutput z body = AConv body
-                                                      (bs ++ [(AJoin (convInput z) 0 (AVar z) 0 CBV,Runtime)])
+                            convOutput v body = AConv body
+                                                      (bs ++ [(AJoin (convInput v) 0 v 0 CBV,Runtime)])
                                                       (bind (xs++[tyVar]) $ srcRan)
-                                                      (subst tyVar (AVar z) resRan)
-                        v' <- update v toTy convInput convOutput
-                        return $ AApp eps v' b ty
-                      _ ->  mzero
-                  (ALam _ _ _ bnd) -> do
-                    (x,body) <- unbind bnd
-                    return . Just $ subst x b body
-                  (ARec _ _ bnd) -> do
-                    ((f,x),body) <- unbind bnd
-                    return . Just . subst f a $ subst x b body
-                  (AInd (eraseToHead -> AArrow i ex epsArr tyBnd) _ bnd) -> do
-                    -- We can't use unbind2 here, because bnd and tyBnd have
-                    -- different numbers of variables.
-                    ((f,x),body)                    <- unbind bnd
-                    ( (tyVar,unembed -> ty1), ty2 ) <- unbind tyBnd
-                    x'  <- fresh $ string2Name "y"
-                    p   <- fresh $ string2Name "p"
-                    let tyArr2 = AArrow i ex       epsArr . bind (x', embed $ ty1)
-                               $ tyArr1
-                        tyArr1 = AArrow i Inferred Erased . bind (p,  embed $ ASmaller (AVar x') (AVar x))
-                               $ (subst tyVar (AVar x') ty2)
-                        lam    = ALam Logic tyArr2 epsArr   . bind x'
-                               . ALam Logic tyArr1 Erased   . bind p
-                               $ AApp epsArr a (AVar x') (subst tyVar (AVar x') ty2)
-                    return . Just . subst x b $ subst f lam body
-                  _ -> return Nothing
+                                                      (subst tyVar v resRan)
+                        runMaybeT $
+                          convOutput b <$> stepFun funv (convInput b)
+                      _ ->  do
+                              --liftIO . putStrLn $ "somehow we ended up in the 'other' case?"
+                              mzero
+                  -- Otherwise, if a is not a converted value, it is either a function value or the 
+                  -- application is stuck, so we let stepFun do its thing.
+                  _ -> do
+                         --liftIO . putStrLn $ "None of the conv cases triggered"
+                         runMaybeT (stepFun a b)
 
 astep (AAt _ _) = return Nothing
 
@@ -604,6 +569,32 @@ astep (ANthEq _ _) = return Nothing
 astep (ATrustMe _) = return Nothing
 
 astep (ASubstitutedFor a _) = return $ Just a
+
+
+-- Beta-reduce an application of a lam, rec, or ind.
+stepFun :: ATerm -> ATerm -> MaybeT TcMonad ATerm
+stepFun (ALam _ _ _ bnd) b = do
+  (x,body) <- unbind bnd
+  return  $ subst x b body
+stepFun a@(ARec _ _ bnd) b = do
+  ((f,x),body) <- unbind bnd
+  return $ subst f a $ subst x b body
+stepFun a@(AInd (eraseToHead -> AArrow i ex epsArr tyBnd) _ bnd) b = do
+  -- We can't use unbind2 here, because bnd and tyBnd have
+  -- different numbers of variables.
+  ((f,x),body)                    <- unbind bnd
+  ( (tyVar,unembed -> ty1), ty2 ) <- unbind tyBnd
+  x'  <- fresh $ string2Name "y"
+  p   <- fresh $ string2Name "p"
+  let tyArr2 = AArrow i ex       epsArr . bind (x', embed $ ty1)
+             $ tyArr1
+      tyArr1 = AArrow i Inferred Erased . bind (p,  embed $ ASmaller (AVar x') (AVar x))
+             $ (subst tyVar (AVar x') ty2)
+      lam    = ALam Logic tyArr2 epsArr   . bind x'
+             . ALam Logic tyArr1 Erased   . bind p
+             $ AApp epsArr a (AVar x') (subst tyVar (AVar x') ty2)
+  return $ subst x b $ subst f lam body
+stepFun _ _ = mzero
 
 
 -- Step the term for at most n steps, or until it is stuck.
