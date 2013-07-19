@@ -64,7 +64,7 @@ extractTerm a = do
   extractTerm' (AApp Erased a b ty) = do
     ea <- extractTerm a
     return $ parens (ea <+> text "()")
-  extractTerm' (AUnboxVal a) = extractTerm' a
+  extractTerm' (AUnbox a) = extractTerm' a
   extractTerm' (ABox a th) = extractTerm' a
   extractTerm' (AAbort ty) = return $ parens (text "raise Abort")
   extractTerm' (AConv a pfs templ ty) = do
@@ -160,12 +160,12 @@ extractType a = do
 --Note that this will take applications of type-level lambdas to
 -- just "unit", which requires patching with Obj.magic later. 
 -- Similarly for case and let.
--- On the other hand, application of type constructors is handled.
+-- On the other hand, application of datatype constructors is handled.
     extractType' (AApp ep a b ty) = return $ text "unit"
     extractType' (ALet ep bnd (th,val)) = return $ text "unit"
     extractType' (ACase a bnd (th,ty)) = return $ text "unit"
     extractType' (AAt a th) = extractType a
-    extractType' (AUnboxVal a) = extractType a
+    extractType' (AUnbox a) = extractType a
     extractType' (ABox a th) = extractType a
     extractType' (ATyEq a b) = return $ text "unit"
     extractType' (AConv a pfs templ ty) = error "extracting conv type?" --fixme: not sure what to do here

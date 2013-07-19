@@ -429,7 +429,7 @@ instance Display ATerm where
     return $ text ("?" ++ show v) <+> colon <+> da
   display (ACumul a level) = display a
   display (AType level) = return $ text "Type" <+> int level
-  display (AUnboxVal a) = do
+  display (AUnbox a) = do
     isVerbose <- asks verbose                     
     da <- display a
     return $ (if isVerbose

@@ -42,7 +42,7 @@ erase (ALam _ _ ep bnd) = do
 erase (AApp Runtime a b ty) = EApp  <$> erase a <*> erase b
 erase (AApp Erased a b ty)  = EIApp <$> erase a
 erase (AAt a th) = EAt <$> erase a <*> pure th
-erase (AUnboxVal a) = erase a
+erase (AUnbox a) = erase a
 erase (ABox a th) = erase a
 erase (AAbort _) = return EAbort
 erase (ATyEq a b) = ETyEq <$> erase a <*> erase b
@@ -98,7 +98,7 @@ eraseTele _ = error "Impossible, but GHC can't tell that the above pattern match
 -- does not introduce erased lets anywhere, so it should not be a problem.
 eraseToHead :: ATerm -> ATerm
 eraseToHead (ACumul a i) = eraseToHead a
-eraseToHead (AUnboxVal a) = eraseToHead a
+eraseToHead (AUnbox a) = eraseToHead a
 eraseToHead (ABox a th) = eraseToHead a
 eraseToHead (AConv a _ _ _) = eraseToHead a
 eraseToHead (ASubstitutedFor a _) = eraseToHead a
