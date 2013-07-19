@@ -152,8 +152,8 @@ disunify ls l0 rs r0 = go l0 r0
     go (AAt a th) (AAt a' th') | th == th' =
       AAt <$> go a a' <*> pure th
     
-    go (AUnboxVal a) (AUnboxVal a') =
-      AUnboxVal <$> go a a'
+    go (AUnbox a) (AUnbox a') =
+      AUnbox <$> go a a'
     
     go (ABox a th) (ABox a' th') | th == th' =
       ABox <$> go a a' <*> pure th
@@ -401,11 +401,11 @@ astep (AApp eps a b ty) = do
 
 astep (AAt _ _) = return Nothing
 
-astep (AUnboxVal a) = do
+astep (AUnbox a) = do
   stepA <- astep a
   case stepA of
     Just (AAbort t) -> return . Just $ AAbort t
-    Just a'         -> return . Just $ AUnboxVal a'
+    Just a'         -> return . Just $ AUnbox a'
     Nothing         -> case a of
       ABox a' th  ->
         return $ Just a'
@@ -415,7 +415,7 @@ astep (AUnboxVal a) = do
           (AVar x,[x'],[(b,eps)]) | x == x' -> do
             y <- fresh $ string2Name "y"
             return . Just
-                   . AUnboxVal
+                   . AUnbox
                    $ ABox (AConv v [(AAtEq b,eps)] (bind [y] $ AVar y) tyRes)
                           th
           (AAt tyFrom th'',_,_) | th == th'' -> do

@@ -327,8 +327,6 @@ ind lemma_silly n pf =
 		   let not_zero = ((\pf . contra (_ : (Succ n') = 0)) : (m = 0) -> void) in
          let ih = lemma_silly m [ord n_eq] not_zero in
 			let _  = (join : (silly (Succ (Succ n'))) = Succ (silly (Succ n'))) in
-			-- why can't CC derive this last equality?
-			let _  = (conv _ by ih at x . (Succ x = silly n) : Succ m = silly n) in
          _
 
 log diverge : (f : Nat -> Nat @ prog) -> (x : Nat) -> Type

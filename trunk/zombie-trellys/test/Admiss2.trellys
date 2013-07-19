@@ -40,8 +40,6 @@ rec f _ =
   mkT (\x . case x [_] of 
               Zero -> Zero
               Succ x' -> UNBOX (fst (f U)) x')
-      TRUSTME
-{-
       (\total .
          case (total 1) [_] of
            hasValue y p -> 
@@ -57,14 +55,28 @@ rec f _ =
                                                             Zero -> Zero
                                                             Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
                                     hasValue z _))
--}
 
+-- This is just the body of f, copy-pasted.
 log t : T
 t =
   mkT (\x . case x [_] of 
               Zero -> Zero
               Succ x' -> UNBOX (fst (f U)) x')
-      TRUSTME
+      (\total .
+         case (total 1) [_] of
+           hasValue y p -> 
+             unfold 5 (UNBOX ((\x. case x [_] of
+                                     Zero -> Zero
+                                     Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1) in
+               case (magic f y p) [_] of
+                 hasValueT t q -> 
+                      snd t
+                          (\x1 . case (total (Succ x1)) [_] of
+                                  hasValue z r ->                                     
+                                    unfold 5 (UNBOX ((\x. case x [_] of
+                                                            Zero -> Zero
+                                                            Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
+                                    hasValue z _))
 
 log t_spec : t = f U
 t_spec = pjoin 
@@ -80,3 +92,6 @@ t_total = ind ih x =
       case (ih x' [ord eq_x] ) [_] of
         hasValue y p ->
           hasValue y _
+
+log paradox : Void
+paradox = snd t t_total

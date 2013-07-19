@@ -899,11 +899,13 @@ ts tsTm =
 adjustTheta :: Theta -> ATerm -> ATerm -> TcMonad (Theta, ATerm, ATerm)
 adjustTheta th a aTy = do
   isVal <- isEValue <$> erase a
-  if isVal 
-    then case eraseToHead aTy of
-      (AAt ty' th') -> adjustTheta th' (AUnboxVal a) ty'
-      _  -> return (th, a, aTy)
-    else return (th, a, aTy)
+  case eraseToHead aTy of
+   (AAt ty' th') -> 
+       case (isVal, th) of
+         (True, _)        -> adjustTheta th' (AUnbox a) ty'
+         (False, Logic)   -> adjustTheta th' (AUnbox a) ty'
+         (False, Program) -> adjustTheta Program (AUnbox a) ty'
+   _  -> return (th, a, aTy)
 
 -- | Take a term which perhaps has an inferred arrow type (that is, (x1:A1)=>...(xn:An)=>B), 
 -- and replace the xs with unification variables.

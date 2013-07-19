@@ -52,11 +52,11 @@ getType (AUniVar x ty) =  do
 getType (ACumul a j) = return (Logic, AType j) 
                        -- should aTs require that cumul used only for logical types?
 getType (AType i) = return (Logic, AType (i+1))                       
-getType deriv@(AUnboxVal a) = do
+getType deriv@(AUnbox a) = do
   (_, atTy) <- getType a 
   case eraseToHead atTy of 
      (AAt ty th) -> return (th, ty)
-     _  -> coreErr [DS "getType: argument of AUnboxVal should have an @-type, but has type", 
+     _  -> coreErr [DS "getType: argument of AUnbox should have an @-type, but has type", 
                     DD atTy,
                     DS ("\n in (" ++ show deriv ++ ")") ]
 getType (ATCon c _) = do
@@ -236,14 +236,16 @@ aTs (ACumul a j) = do
 
 aTs (AType i) = return $ (Logic, AType (i+1))
 
-aTs deriv@(AUnboxVal a) = do
-  ea <- erase a
-  unless (isEValue ea) $
-    coreErr [DS "Argument of AUnboxVal should be a value, but is", DD a, DS $"i.e. " ++ show a]
-  (_, atTy) <- aTs a
+aTs deriv@(AUnbox a) = do
+  isVal <- isEValue <$> erase a
+  (aTh, atTy) <- aTs a
   case eraseToHead atTy of
-    (AAt ty th) -> do aKc ty; return (th, ty)
-    _  -> coreErr [DS "Argument of AUnboxVal should have an @-type, but has type", DD atTy,
+    (AAt ty th) -> do aKc ty
+                      case (isVal, aTh) of
+                        (True,  _)   -> return (th,ty)      -- T_UnboxVal
+                        (_, Logic)   -> return (th,ty)      -- T_UnboxL
+                        (_, Program) -> return (Program,ty) -- T_UnboxP
+    _  -> coreErr [DS "Argument of AUnbox should have an @-type, but has type", DD atTy,
                    DS ("\n when checking (" ++ show deriv ++ ")") ]
 
 aTs (ATCon c idxs) = do

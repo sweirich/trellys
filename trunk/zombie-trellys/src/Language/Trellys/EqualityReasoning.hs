@@ -382,7 +382,7 @@ decompose _ e avoid (AApp ep t1 t2 ty) =
           <*> (decompose True Erased avoid ty)
 decompose sub e avoid (AAt t th) =
   AAt <$> (decompose True e avoid t) <*> pure th
-decompose sub e avoid (AUnboxVal t) = AUnboxVal <$> (decompose True e avoid t)
+decompose sub e avoid (AUnbox t) = AUnbox <$> (decompose True e avoid t)
 decompose sub e avoid (ABox t th) = ABox <$> (decompose True e avoid t) <*> pure th
 decompose _ e avoid (AAbort t) = AAbort <$> (decompose True Erased avoid t)
 decompose _ e avoid (ATyEq t1 t2) =
@@ -482,7 +482,7 @@ match vars (AApp ep t1 t2 ty) (AApp ep' t1' t2' ty') =
    `mUnion` match vars t2 t2'
    `mUnion` match vars ty ty'
 match vars (AAt t _) (AAt t' _) = match vars t t'
-match vars (AUnboxVal t) (AUnboxVal t') = match vars t t'
+match vars (AUnbox t) (AUnbox t') = match vars t t'
 match vars (ABox t th) (ABox t' th') = match vars t t'
 match vars (AAbort t) (AAbort t') = match vars t t'
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
@@ -667,7 +667,7 @@ isAnyValue (ATCon _ _) = True
 isAnyValue (AArrow _ _ _ _) = True
 isAnyValue (ALam _ _ _ _) = True
 isAnyValue (AAt _ _) = True
-isAnyValue (AUnboxVal a) = isAnyValue a
+isAnyValue (AUnbox a) = isAnyValue a
 isAnyValue (AAbort _) = True
 isAnyValue (ATyEq _ _) = True
 isAnyValue (AJoin _ _ _ _ _) = True
@@ -737,7 +737,7 @@ aCbvContext (ATCon _ _) = return Nothing
 aCbvContext (AArrow _ _ _ _) = return Nothing
 aCbvContext (ALam _ _ _ _) = return Nothing
 aCbvContext (AAt _ _) = return Nothing
-aCbvContext (AUnboxVal _) = return Nothing --already a value.
+aCbvContext (AUnbox _) = return Nothing --already a value.
 aCbvContext (AAbort _) = return Nothing
 aCbvContext (ATyEq _ _) = return Nothing
 aCbvContext (AJoin _ _ _ _ _) = return Nothing

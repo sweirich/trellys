@@ -324,7 +324,7 @@ data ATerm =
   -- ET_appPlus and ET_appMinus. The last expression is the type of the entire application:
   | AApp Epsilon ATerm ATerm ATerm
   | AAt ATerm Theta
-  | AUnboxVal ATerm
+  | AUnbox ATerm
   | ABox ATerm Theta
   | AAbort ATerm
   | ATyEq ATerm ATerm
@@ -429,9 +429,9 @@ aTeleAsArgs (ACons (unrebind->((x,ty,ep),tele))) =
 --------------------------------------
 
 {- Suppose that somewhere inside a typing derivation we have
-   (AUnboxVal x) for some variable x, and then want to substitute
+   (AUnbox x) for some variable x, and then want to substitute
    (ABox a) for x, where a is some non-value expression.  If we just
-   constructed the derivation (AUnboxVal (ABox a)) it would violate
+   constructed the derivation (AUnbox (ABox a)) it would violate
    the value restriction of Unbox.
 
    This case is actually very common for the regularity premise of the
@@ -451,7 +451,7 @@ aTeleAsArgs (ACons (unrebind->((x,ty,ep),tele))) =
 simplUnboxBox :: Rep a => a -> a
 simplUnboxBox = RL.everywhere (RL.mkT simplUnboxBoxOnce)
   where simplUnboxBoxOnce :: ATerm -> ATerm 
-        simplUnboxBoxOnce (AUnboxVal (ABox a _)) = a
+        simplUnboxBoxOnce (AUnbox (ABox a _)) = a
         simplUnboxBoxOnce a = a
 
 simplSubst :: Subst b a => Name b -> b -> a -> a
