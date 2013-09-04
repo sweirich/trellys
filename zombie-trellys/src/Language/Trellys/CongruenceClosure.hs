@@ -1,14 +1,16 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, FlexibleInstances, FlexibleContexts,
-              TemplateHaskell ,
-    RankNTypes #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, 
+             FlexibleInstances, FlexibleContexts, ViewPatterns,
+             TemplateHaskell, RankNTypes #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
  Constant(..), EqConstConst(..), EqBranchConst(..), Equation, WantedEquation(..),
  Proof(..),
   ProblemState, proofs, bindings, naming,
-  newState, recordName, propagate, 
-  classMembersExplain,
+  newState, freshConstant, propagate, 
+  recordName, recordInhabitant, recordUniVar,
+  guessVars, classMembersExplain,
+  dumpState,
   unify, -- main function, runState is run for UniM monad  
 ) where
 
@@ -32,23 +34,34 @@ module Language.Trellys.CongruenceClosure(
 import Prelude hiding (pi)
 import Control.Monad 
 import Control.Applicative
-import Data.Array.MArray
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
+import Data.List (intercalate, intersperse)
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
 
-import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), isAUniVar, uniVars)
+-- We need to know a little bit about the ATerm datatype in order to handle AType specially,
+ -- and to do the occurs check.
+import Language.Trellys.Syntax (ATerm(AType), AName, Label, Proof(..), uniVars)
+import Language.Trellys.OpSem (eraseToHead)
 
-newtype Constant = Constant Int
-  deriving (Eq, Ord, Enum, Ix, Num)
+--Stuff used for debugging.
+import Language.Trellys.PrettyPrint
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
+import Debug.Trace
+
+
+data Constant = UniverseConstant Int --used to represent "Type l"
+              | AtomConstant Int  --used to represent all other terms.              
+  deriving (Eq, Ord)
 
 instance Show Constant where
-  show (Constant n) = show n
+  show (AtomConstant n) = show n
+  show (UniverseConstant l) = "Type" ++ show l
 
 -- given equations a = b
 data EqConstConst = EqConstConst Constant Constant
@@ -65,11 +78,12 @@ type Equation = Either EqConstConst EqBranchConst
 
 -- Information we keep about a given equivalence class of constants
 data ClassInfo  = ClassInfo {
-  classMembers  :: Set Constant,                  -- All elements in the class
-  classVars     :: Set (AName,Constant),    -- All variables that are elements of the class; 
-                                                  ---  also remember which c they correspond to.
-  classApps     :: Set (Label, [Constant]), -- All applications that are elements of the class
-  essentialVars :: Set AName                -- variables that occur _inside_ _all_ members of the class
+  classMembers     :: Set Constant,            -- All elements in the class
+  classVars        :: Set (AName,Constant),    -- All variables that are elements of the class; 
+                                                 ---  also remember which c they correspond to.
+  classApps        :: Set (Label, [Constant]), -- All applications that are elements of the class
+  classInhabitants :: Set Constant             -- Constants whose type is this constant. 
+
 }
 
 instance Show ClassInfo where
@@ -84,7 +98,7 @@ combineInfo a b =
   ClassInfo (S.union (classMembers a) (classMembers b))
             (S.union (classVars a) (classVars b))
             (S.union (classApps a) (classApps b))
-            (S.intersection (essentialVars a) (essentialVars b))
+            (S.union (classInhabitants a) (classInhabitants b))
 
 -- Union-Find representatives.
 type Reprs = Map Constant (Either (Proof, Constant) ClassInfo)
@@ -108,7 +122,8 @@ data ProblemState = ProblemState {
 --  types       :: Map Constant Constant,       --Maps constants representing expressions to constants
 --                                              -- representing the type of the expression.
 
-  unboundVars :: Set AName,           --Set of variables that can still be assigned.
+  unboundVars :: Map AName Constant,  --The variables that can still be assigned, 
+                                         -- with their types.
   bindings    :: Map AName Constant,  --Assignment to unification variables
   proofs      :: Map WantedEquation Proof,
 
@@ -117,7 +132,37 @@ data ProblemState = ProblemState {
 }
 
 
+-- Print out the current state of the congruence closure algorithm.
+dumpState :: (MonadIO m) => ProblemState -> m ()
+dumpState st = 
+  --liftIO $ putStrLn $ show (reprs st)
+  liftIO $ mapM_ printClass (M.toList (reprs st))
+  where showConst :: Constant -> String
+        showConst c = render (disp (naming st BM.!> c))
+        printClass :: (Constant, (Either (Proof, Constant) ClassInfo)) -> IO ()
+        printClass (c, Left _) = 
+          putStrLn $ "The constant " ++ showConst c ++ " is also somewhere in the map"
+        printClass (_, Right info) = 
+          putStrLn $ "Equivalence class:\n {"
+                     ++ intercalate ", " (map showConst (S.toList $ classMembers info)) 
+                     ++ "}\n"
+                     ++ "has inhabitants:\n {"
+                     ++ intercalate ", " (map showConst (S.toList $ classInhabitants info)) 
+                     ++ "}"
+
+-- | Allocate a constant which is not mentioned in 'reprs'.
+freshConstant :: (Monad m) => StateT ProblemState m Constant
+freshConstant = do
+  st <- get
+  if M.null (reprs st)
+     then return $ AtomConstant 0
+     else case (M.findMax (reprs st)) of
+            (UniverseConstant _,_) -> return $ AtomConstant 0
+            (AtomConstant n,_)     -> return $ AtomConstant (n+1)
+
 -- | Allocate a new name (Constant) for a subterm.
+-- Note that (AType l) is treated specially, to avoid infinite regress.
+-- TODO: maybe we don't need to treat it specially after all?
 recordName :: (Applicative m, Monad m) => ATerm -> StateT ProblemState m Constant
 recordName a = do
   existing <- BM.lookup a <$> gets naming
@@ -125,20 +170,30 @@ recordName a = do
     Just c -> 
       return c
     Nothing -> do
-      st <- get
-      let c = if M.null (reprs st)
-                then 0
-                else fst (M.findMax (reprs st)) + 1
+      c <- case a of
+             (AType l) -> return $ UniverseConstant l
+             _         -> freshConstant
       let singletonClass = ClassInfo{ classMembers = S.singleton c,
-                                      classVars = case isAUniVar a of
-                                                    Nothing -> S.empty
-                                                    Just x -> S.singleton (x, c),
+                                      classVars = S.empty,
                                       classApps = S.empty,
-                                      essentialVars = uniVars a }
+                                      classInhabitants = S.empty }
+      st <- get
       put (st{ reprs = M.insert c (Right singletonClass) (reprs st),
-               unboundVars = (unboundVars st) `S.union` (uniVars a),
                naming = BM.insert a c (naming st) })
       return c
+
+-- | Record that c is a unification variable, with name x and type cTy.
+recordUniVar :: (Monad m) => Constant -> AName -> Constant -> StateT ProblemState m ()
+recordUniVar c x cTy = do
+  (_, c', inf) <- findExplainInfo c
+  setRepr c' (Right inf{ classVars = S.insert (x,c) (classVars inf) })
+  modify (\st -> st{ unboundVars = M.insert x cTy (unboundVars st)})
+
+-- | Record that c is one of the inhabitants of cTy.
+recordInhabitant :: (Monad m) => Constant -> Constant -> StateT ProblemState m ()
+recordInhabitant c cTy = do
+  (_, cTy', inf) <- findExplainInfo cTy
+  setRepr cTy' (Right inf{ classInhabitants = c `S.insert` classInhabitants inf})
 
 -- The list contains all the constants in the state, together with
 --   * if the contant itself represents a variable, the name of the variable.
@@ -148,7 +203,7 @@ newState =
   ProblemState{reprs = M.empty,
                uses = M.empty,
                lookupeq = M.empty,
-               unboundVars = S.empty,
+               unboundVars = M.empty,
                bindings = M.empty,
                proofs = M.empty,
                naming = BM.empty}
@@ -157,16 +212,16 @@ newState =
 --  state to keep track of the problem state, plus list for making nondeterministic choices.
 --
 -- The Union-Find structure does not do any backtracking, so those functions are more polymorphic
--- andn live in (Monad m) => (StateT (ProblemState proof) m).
+-- and live in (Monad m) => (StateT (ProblemState proof) m).
 type UniM a = StateT ProblemState [] a
 
 -- Sets the union-find representative
 setRepr :: (Monad m) => Constant -> (Either (Proof, Constant) ClassInfo) -> StateT ProblemState m ()
 setRepr c val = modify (\st -> st{ reprs = M.insert c val (reprs st) })
 
-giveBinding :: AName -> Constant -> UniM ()
+giveBinding :: (Monad m) => AName -> Constant -> StateT ProblemState m ()
 giveBinding x val = modify (\st -> st{ bindings = M.insert x val (bindings st), 
-                                       unboundVars = S.delete x (unboundVars st) })
+                                       unboundVars = M.delete x (unboundVars st) })
 
 giveProof :: WantedEquation -> Proof -> UniM ()
 giveProof e p = modify (\st -> st{ proofs  = M.insert e p (proofs st) })
@@ -281,63 +336,138 @@ mplusCut m1 m2 = StateT $
                         in
                           if not (null r1) then r1 else r2
 
-type Tracer = forall a. String -> WantedEquation -> a -> a
+{-
+tracing :: String -> WantedEquation -> UniM a -> UniM a
+tracing msg (WantedEquation c1 c2) a = do
+  names <- gets naming
+  trace (msg ++ " "    ++ (render (parens (disp (names BM.!> c1))))
+               ++ " == " ++ (render (parens (disp (names BM.!> c2)))))
+        a
+-}
 
--- If an equation is already in the congruence closure we can discard it.
-unifyDelete :: Tracer -> WantedEquation -> UniM ()
-unifyDelete tracer  (WantedEquation a b) = do
+tracing :: String -> WantedEquation -> UniM a -> UniM a
+tracing msg eq = id
+
+-- If a wanted equation is already in the congruence closure we can discard it.
+unifyDelete :: WantedEquation -> UniM ()
+unifyDelete (WantedEquation a b) = do
   (p, a', ia) <- findExplainInfo a
   (q, b', ib) <- findExplainInfo b
   guard (a' == b')
   giveProof (WantedEquation a b) (RawTrans p (RawSymm q))
-  tracer "Deleted" (WantedEquation a b) (return ())
+  tracing "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
-unifyBind :: Tracer -> WantedEquation -> UniM  ()
-unifyBind tracer (WantedEquation a b) = do
+
+-- This is hacky, way to nondeterministic, fix later
+unifyBind :: WantedEquation -> UniM  ()
+unifyBind  (WantedEquation a b) = do
   (_, _, ia) <- findExplainInfo a
   (_, _, ib) <- findExplainInfo b
   unbounds <- gets unboundVars
+  names <- gets naming
+  (x,c) <- lift (S.toList $ classVars ia)
+  guard (x `M.member` unbounds)
+  let xTy = unbounds M.! x
+  (_,_,xTyInfo) <- (findExplainInfo xTy)
+  -- Don't backtrack over which member of the equivalence class gets picked.
+  d <- cut $ do
+    --if possible we prefer picking b itself, for simpler equality proofs.
+    d <- lift (b : (S.toList $ classMembers ib))
+    guard $ not (x `S.member` uniVars (names BM.!> d))-- occurs check
+    guard $ d `S.member` (classInhabitants xTyInfo) -- typing check
+    return d
+  {-  trace (render . disp $ [ DS "The equivalence class of b contains"]
+             ++ map (DD . (names BM.!>)) (S.toList $ classMembers ib)
+             ++ [DS "In addition, we need something of type", DD (names BM.!> xTy),
+                 DS "so the candidates are"]
+             ++ map (DD . (names BM.!>)) (S.toList $ classInhabitants xTyInfo)
+             ++ [DS "We pick", DD (names BM.!> d)]) $ -}
+  giveBinding x d
+  propagate [(RawRefl, Left $ EqConstConst c b)]
+  --Now the equation ought to be trivial:
+  unifyDelete (WantedEquation a b)
+  tracing "Bound" (WantedEquation a b) (return ())
+
+{-
+unifyBind :: WantedEquation -> UniM  ()
+unifyBind  (WantedEquation a b) = do
+  (_, _, ia) <- findExplainInfo a
+  (_, _, ib) <- findExplainInfo b
+  unbounds <- gets unboundVars
+  names <- gets naming
   let candidates = [ (x,c) | (x,c) <- (S.toList $ classVars ia), 
-                             (x `S.member` unbounds), 
-                             not (x `S.member` (essentialVars ib)) ]
+                             (x `M.member` unbounds),
+                             let xTy = unbounds M.! x, 
+                             (_,_,xTyInfo) <- lift (findExplainInfo xTy),
+                             --if possible we prefer picking b itself.
+                             d <- b:(S.toList $ classMembers ib),  
+                             not (x `S.member` uniVars (names BM.!> d)) ] --occurs check
   guard $ not (null candidates) 
   let (x,c):_ = candidates    --If there are several variables, we don't care which one gets picked.
   giveBinding x b
   propagate [(RawRefl, Left $ EqConstConst c b)]
   --Now the equation ought to be trivial:
-  unifyDelete tracer (WantedEquation a b)
-  tracer "Bound" (WantedEquation a b) (return ())
-
+  unifyDelete (WantedEquation a b)
+  tracing "Bound" (WantedEquation a b) (return ())
+-}
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
-unifyDecompose :: Tracer -> Set WantedEquation -> WantedEquation -> UniM ()
-unifyDecompose tracer visited (WantedEquation a b) = do
+unifyDecompose :: Set WantedEquation -> WantedEquation -> UniM ()
+unifyDecompose visited (WantedEquation a b) = do
   (p, _, ia) <- findExplainInfo a
   (q, _, ib) <- findExplainInfo b
   (fa, as) <- lift $ S.toList $ classApps ia
   (fb, bs) <- lift $ S.toList $ classApps ib
   guard (fa == fb)
-  tracer "About to Decompose" (WantedEquation a b) $ do
-    unify tracer (S.insert (WantedEquation a b) visited) (zipWith WantedEquation as bs)
+  tracing "About to Decompose" (WantedEquation a b) $ do
+    unify (S.insert (WantedEquation a b) visited) (zipWith WantedEquation as bs)
     -- Now the equation should be trivial:
-    unifyDelete tracer (WantedEquation a b)
+    unifyDelete (WantedEquation a b)
     return ()
-  tracer "Decomposed" (WantedEquation a b) (return ())
+  tracing "Decomposed" (WantedEquation a b) (return ())
 
 -- Unify takes a list of wanted equations, and makes assignments to unification
 -- variables to make all the equations true.
 -- It also tracks a set of "visited" equations (think depth-first-search) in order to
 -- not get stuck in a loop.
-unify :: Tracer -> Set WantedEquation -> [WantedEquation] -> UniM ()
-unify tracer visited [] = return ()
-unify tracer visited (WantedEquation a b : wanted) = do
-           guard (not (S.member (WantedEquation a b) visited))
-           unifyDelete tracer (WantedEquation a b)
-            `mplusCut`
-            unifyBind tracer (WantedEquation a b)
-            `mplusCut` 
-            (do unifyBind tracer (WantedEquation b a) ; unifyDelete tracer (WantedEquation a b))
-            `mplusCut`
-            unifyDecompose tracer visited (WantedEquation a b)
-           unify tracer visited wanted
+unify ::  Set WantedEquation -> [WantedEquation] -> UniM ()
+unify visited [] = return ()
+unify  visited (WantedEquation a b : wanted) = do
+  guard (not (S.member (WantedEquation a b) visited))
+  unifyDelete (WantedEquation a b)
+   `mplusCut`
+   unifyBind (WantedEquation a b)
+   `mplusCut` 
+   (do unifyBind (WantedEquation b a) ; unifyDelete (WantedEquation a b))
+   `mplusCut`
+   unifyDecompose visited (WantedEquation a b)
+  unify visited wanted
 
+-- | Take all remaining unbound variables, and just fill them in with any random
+--   term from the context.
+--
+-- This function is a temporary hack. Eventually unification and guessing should be 
+--  unified into a single constraint system.
+guessVars :: (Monad m, MonadPlus m, MonadIO m) => StateT ProblemState m ()
+guessVars = do
+  names <- gets naming
+  unbounds <- gets unboundVars
+  forM_ (M.toList unbounds)
+        (\(x, xTy) -> do
+           (p, _, inf) <- findExplainInfo xTy
+           -- liftIO $ putStrLn $ "Trying to decide what to pick for " ++ show x
+           -- liftIO $ putStrLn $ "The set of inhabitants is: "
+           --                      ++ intercalate ", "  (map (render . disp . (names BM.!>))
+           --                                                (S.toList $ classInhabitants inf))
+           let candidates = [ c | c <- (S.toList $ classInhabitants inf), 
+                                  S.null (uniVars (names BM.!> c)) ] --huge hack.
+--                             not (x `S.member` uniVars (names BM.!> c)) ] --occurs check
+           guard (not $ null candidates)
+           let a = head $ candidates
+           liftIO $ putStrLn $ "Setting a var of type ("
+                                ++ render (disp (names BM.!> xTy))
+                                ++ ") to be ("
+                                ++ render (disp (names BM.!> a))
+                                ++ ")."
+           giveBinding x a)
+        

@@ -381,6 +381,7 @@ isValue (Type _)           = return True
 isValue (Arrow _ _ _)      = return True
 isValue (Lam _ _)          = return True
 isValue (App _ _ _)        = return False
+isValue (Explicitize a)    = isValue a
 isValue (Smaller _ _)      = return True
 isValue (OrdAx _)          = return True
 isValue (OrdTrans _ _)     = return True

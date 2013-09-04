@@ -245,6 +245,11 @@ instance Display Term where
      df <- display f
      dx <- display x
      return $ wrapf f df <+> wraparg x (bindParens ep dx)
+
+  display (Explicitize e) = do
+     de <- display e
+     return $ parens (text "!" <> de)
+
   display (Paren e) = do
      de <- display e
      return $ (parens de)
@@ -350,7 +355,8 @@ instance Display Term where
   display InferMe = return $ text "_"
 
   display (SubstitutedFor  a x) = display a 
-  display (SubstitutedForA a x) = display a                                
+  display (SubstitutedForA a x) = display a
+
 
 instance Display Match where
   display (Match c bd) =
@@ -598,6 +604,7 @@ instance Display AMatch where
 
 instance Disp ADecl where
   disp (ASig x th ty) = 
+--    disp th <+> text (show x) <+> colon <+> disp ty
     disp th <+> disp x <+> colon <+> disp ty
   disp (ADef x a) = do
     disp x <+> text "=" <+> disp a

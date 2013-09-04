@@ -438,7 +438,7 @@ termCase = do
              reservedOp "->"
              expr <?> "aborts branch"
 
-    -- Exprinates case
+    -- Terminates case
     te <- do reservedOp "|"
              reservedOp "!"
              v <- identifier
@@ -544,6 +544,7 @@ funapp = do
 
 factor = choice [ inferme   <?> "a placeholder (_)"
                 , varOrCon <?> "a variable or zero-argument data constructor"
+                , explicitize <?> "an atomic expression with !"
                 , uniVar <?> "a questionmark (?)"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
@@ -575,6 +576,10 @@ expBind =           (,Runtime) <$> variableOrWild
 impOrExpBind :: LParser (TName,Epsilon)
 impOrExpBind = impBind <|> expBind
 
+explicitize :: LParser Term
+explicitize = do 
+  reservedOp "!"
+  Explicitize <$> factor
 
 typen :: LParser Term
 typen =

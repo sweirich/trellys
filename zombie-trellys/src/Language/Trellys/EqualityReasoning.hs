@@ -5,7 +5,7 @@
     TupleSections, TypeFamilies #-}
 
 module Language.Trellys.EqualityReasoning 
-  (prove, uneraseTerm, smartSteps, zonkTerm, zonkTele) 
+  (prove, solveConstraints, uneraseTerm, smartSteps, zonk, zonkTerm, zonkTele) 
 where
 
 import Generics.RepLib hiding (Arrow,Con,Refl)
@@ -14,10 +14,12 @@ import Language.Trellys.GenericBind
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
-import Language.Trellys.Environment(UniVarBindings, setUniVars, warn)
+import Language.Trellys.Environment(UniVarBindings, setUniVars, lookupUniVar,
+                                   Constraint(..), Constraints, getConstraints, clearConstraints,
+                                   warn)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
-import Language.Trellys.TypeCheckCore --(aGetTh, getType)
+import Language.Trellys.TypeCheckCore (aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
 import Control.Arrow (first, second, Kleisli(..), runKleisli)
@@ -26,7 +28,7 @@ import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.ST
 import Control.Monad.State.Strict
 import Control.Monad.Error.Class
-import Data.Maybe (isJust,fromJust)
+import Data.Maybe (isJust,fromJust,isNothing)
 import qualified Data.Set as S
 import Data.Set (Set)
 import Data.List (intercalate)
@@ -39,8 +41,9 @@ import Data.Ix
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
+import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render, vcat, colon)
 import Debug.Trace
+import Language.Trellys.TypeCheckCore (aTs)
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -322,15 +325,17 @@ congTerm (tyA,tyB,pf) x template = do
 
 -- | To zonk a term (this word comes from GHC) means to replace all occurances of 
 -- unification variables with their definitions.
-zonkTerm :: (Applicative m, MonadState UniVarBindings m) => ATerm -> m ATerm
-zonkTerm a = do
-  bindings <- get
+
+zonk :: (Rep a, Applicative m, MonadState (b,UniVarBindings) m) => a -> m a
+zonk a = do
+  bindings <- gets snd
   return $ zonkWithBindings bindings a
 
-zonkTele :: (Applicative m, MonadState UniVarBindings m) => ATelescope -> m ATelescope
-zonkTele tele = do
-  bindings <- get
-  return $ zonkWithBindings bindings tele
+zonkTerm :: (Applicative m, MonadState (b,UniVarBindings) m) => ATerm -> m ATerm
+zonkTerm = zonk
+
+zonkTele :: (Applicative m, MonadState (b,UniVarBindings) m) => ATelescope -> m ATelescope
+zonkTele  = zonk
 
 zonkWithBindings :: Rep a => UniVarBindings -> a -> a
 zonkWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
@@ -542,10 +547,25 @@ mUnion x y = M.union <$> x <*> y
 
 -- Take a term to think about, and name each subterm in it as a seperate constant,
 -- while at the same time propagating equations relating terms to their subterms.
+-- Further, we similarly decompose the type of the term, and record the fact that
+--  this term inhabits it.
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
-genEqs :: (Monad m, Applicative m, Fresh m) => ATerm -> StateT ProblemState m Constant
+genEqs :: ATerm -> StateT ProblemState TcMonad Constant
 genEqs t = do
   a <- recordName t
+
+  (_,tTy) <- lift $ getType t
+  --TODO: maybe getType should call zonkTerm, to match the behaviour of ts?
+  ztTy <- lift $ zonkTerm tTy
+  aTy <- if isAType tTy
+           then recordName ztTy
+           else genEqs ztTy
+  recordInhabitant a aTy
+
+  case (eraseToHead t) of 
+    AUniVar x _ -> recordUniVar a x aTy
+    _           -> return ()
+
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
   let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
   bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
@@ -564,21 +584,15 @@ genEqs t = do
 
 -- Given a binding in the context, name all the intermediate terms in its type.
 -- If the type is an equation, we also add the equation itself.
-processHyp :: (Monad m, Applicative m, Fresh m) => (Theta,ATerm, ATerm) -> StateT ProblemState m ()
+processHyp :: (Theta,ATerm, ATerm) -> StateT ProblemState TcMonad ()
 processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
+  _  <- genEqs n
   a1 <- genEqs t1
   a2 <- genEqs t2
   propagate [(RawAssumption (Just n,t1,t2), 
              Left $ EqConstConst a1 a2)]
-processHyp (th,n,t) = genEqs t >> return ()
-
-traceFun :: Bimap ATerm Constant -> String -> WantedEquation -> a -> a
-traceFun naming msg (WantedEquation c1 c2) =
-        trace (msg ++ " "    ++ (render (parens (disp (naming BM.!> c1))))
-                   ++ " == " ++ (render (parens (disp (naming BM.!> c2)))))
-
-noTraceFun :: String -> WantedEquation -> a -> a
-noTraceFun msg eq = id
+processHyp (th,n,t) = do
+  genEqs n >> return ()
 
 -- "Given the context, please prove this other equation."
 prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
@@ -588,8 +602,9 @@ prove hyps (lhs, rhs) = do
                      c1 <- genEqs lhs
                      c2 <- genEqs rhs
                      return (c1,c2)
-  let sts = flip execStateT st1 $ do
-              unify noTraceFun S.empty [WantedEquation c1 c2]
+  let sts = flip execStateT st1 $
+              unify S.empty 
+                    [WantedEquation c1 c2]
   case sts of
     [] -> return Nothing
     st:_ -> 
@@ -622,6 +637,30 @@ prove hyps (lhs, rhs) = do
                   . zonkWithBindings bndgs) pf
          return $ Just tm
 
+instance Disp [(Theta, ATerm, ATerm)] where
+  disp hyps = 
+    vcat $ map (\(th,a,b) ->
+                    disp a <+> colon <+> disp b {- <+> text ("(" ++ show b ++")") -})
+               hyps
+
+-- "Given the context, fill in any remaining evars"
+solveConstraints :: [(Theta,ATerm,ATerm)] -> TcMonad ()
+solveConstraints hyps = do
+   cs   <- getConstraints
+   cs'  <- filterM (\(ShouldHaveType x _) -> isNothing <$> lookupUniVar x) cs
+   cs'' <- mapM (\(ShouldHaveType x ty) -> ShouldHaveType x <$> zonkTerm ty) cs'
+   when (not (null cs'')) $ do
+     --liftIO $ putStrLn ("In the context\n" ++
+     --                    render (nest 4 (disp hyps)))
+     st <- flip execStateT newState $ do
+            mapM_ processHyp hyps
+            mapM_ (\(ShouldHaveType x ty) -> genEqs (AUniVar x ty))
+                  cs''
+            guessVars
+     let bndgs = M.map ((naming st) BM.!>)  (bindings st)
+     oldBndgs <- gets snd
+     setUniVars bndgs
+     clearConstraints
 
 -------------------------------------------------------
 
@@ -801,7 +840,7 @@ smartSteps hyps a n = do
 smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
 smartStep a = do
   --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) ++ "\ni.e.\n" ++ show a
-  _ <- lift $ aTs a 
+  _ <- lift $ getType a 
   --liftIO . putStrLn $ "It typechecks, so far"
 
   _ <- genEqs a
@@ -825,7 +864,7 @@ smartStep a = do
                  . associateProof) p
            let a' = subst hole b' ctx
            (do 
-               _ <- lift $ aTs a'
+               _ <- lift $ getType a'
                cong_pf <- lift $ congTerm (b, b', pf) hole ctx
                --(liftIO . putStrLn $ "Stepped by existing equality to " ++ (render . disp $ a'))
                return $ Just (a', cong_pf))

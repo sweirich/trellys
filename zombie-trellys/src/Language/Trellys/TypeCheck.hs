@@ -25,7 +25,7 @@ import Language.Trellys.TestReduction
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
 
-import Control.Applicative ((<$>), (<*>), pure)
+import Control.Applicative ((<$>))
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
 
@@ -113,7 +113,7 @@ kcTele :: Telescope -> TcMonad ATelescope
 kcTele [] = return AEmpty
 kcTele ((x,ty,ep):tele') = do
    ety <- kcElabFirstOrder ty
-   etele' <- extendCtx (ASig (translate x) Program ety) $ kcTele tele'
+   etele' <- extendCtxSolve (ASig (translate x) Program ety) $ kcTele tele'
    return (ACons (rebind (translate x,embed ety,ep) etele'))
 
 -- | Type analysis
@@ -130,30 +130,35 @@ ta (Paren a) ty = ta a ty
 
 ta tm (ASubstitutedFor ty x) = ta tm ty
 
-ta (UniVar x) ty = return (AUniVar (translate x) ty)
+ta (UniVar x) ty = do
+  addConstraint (ShouldHaveType (translate x) ty)
+  return (AUniVar (translate x) ty)
   --currently all univars in the source program are distinct, 
   -- so we don't have to check for a binding of x.
 
 -- rule T_join
-ta (Join s1 s2 strategy) (ATyEq a b) =
+ta (Join s1 s2 strategy) (ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
-  do 
-     t1E <- erase a
-     t2E <- erase b
-{-
-     t1E <- erase =<< substDefs a
-     t2E <- erase =<< substDefs b
--}
-     -- Test the astep code
-     --testReduction =<< substDefs a
-     --testReduction =<< substDefs b
-     -- End astep test
-     joinable <- join s1 s2 t1E t2E strategy
-     unless joinable $
-       err [DS "The erasures of terms", DD a, DS "and", DD b,
-            DS "are not joinable."]
-     return (AJoin a s1 b s2 strategy)
+
+  -- Although we aren't changing the context, the operational semantics
+  -- will not work well with uninstantiated evars, so we insert a solve here...
+  -- (TODO: maybe refine this to only solve for vars that actually occur in a or b?)
+  solveConstraints =<< getAvailableEqs
+  za <- zonkTerm a
+  zb <- zonkTerm b
+
+  t1E <- erase za
+  t2E <- erase zb
+  -- Test the astep code
+  --testReduction =<< substDefs a
+  --testReduction =<< substDefs b
+  -- End astep test
+  joinable <- join s1 s2 t1E t2E strategy
+  unless joinable $
+    err [DS "The erasures of terms", DD za, DS "and", DD zb,
+         DS "are not joinable."]
+  return (AJoin a s1 b s2 strategy)
 
     -- rule T_ord
 ta (OrdAx a) (ASmaller b1 b2) = do
@@ -235,7 +240,7 @@ ta (Lam lep lbody) arr@(AArrow _ ex aep abody) = do
              DS "does not match arrow annotation", DD aep])
 
   -- typecheck the function body and get its theta
-  (ebody, th) <- extendCtx (ASig (translate x) Program tyA) $ do
+  (ebody, th) <- extendCtxSolve (ASig (translate x) Program tyA) $ do
              ebody <- ta body tyB
              (th,_) <- getType ebody
              return (ebody, th)
@@ -277,7 +282,7 @@ ta (Ind ep lbnd) arr@(AArrow k ex aep abnd) = do
                          (AArrow k Explicit Erased (bind (z, embed smallerType) xTyB)))
   -- Finally we can typecheck the fuction body in an extended environment
   (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
-                 extendCtx (ASig y Logic tyA) $ do
+                 extendCtxSolve (ASig y Logic tyA) $ do
                    ea <- ta a tyB
                    eaTh <- aGetTh ea
                    return (ea, eaTh)
@@ -312,7 +317,7 @@ ta (Rec ep lbnd) arr@(AArrow k ex aep abnd) = do
   let tyB = subst dumb_y (AVar y) dumb_tyB
 
   ea <- extendCtx (ASig f Program arr) $
-          extendCtx (ASig y Program tyA) $
+          extendCtxSolve (ASig y Program tyA) $
             ta a tyB
 
   -- perform the FV and value checks if in T_RecImp
@@ -357,8 +362,8 @@ ta (Let th' ep bnd) tyB =
       
     -- premise 2
     (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
-                 extendCtx (ASig (translate y) Logic 
-                            (ATyEq (AVar (translate x)) ea)) $ do
+                 extendCtxSolve (ASig (translate y) Logic 
+                                (ATyEq (AVar (translate x)) ea)) $ do
                    eb <- ta b tyB
                    th <- aGetTh eb
                    return (eb,th)
@@ -386,7 +391,7 @@ ta (Unfold n a b) tyB = do
    (ea', p) <- smartSteps availableEqs ea n
    x   <- fresh $ string2Name "unfolds"
    y   <- fresh $ string2Name "_"
-   (eb)  <- extendCtx (ASig x Logic (ATyEq ea ea'))
+   (eb)  <- extendCtxSolve (ASig x Logic (ATyEq ea ea'))
                  $ ta b tyB      
    th <- aGetTh eb
    --return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
@@ -649,6 +654,14 @@ ts tsTm =
          (_, adjust_y, adjust_ty) <- adjustTheta th (AVar (translate y)) zty
          return (adjust_y, adjust_ty)
 
+    ts' (Explicitize a) = do
+      do (th,ty) <- ts a
+         hasInf <- hasInferreds ty
+         unless hasInf $
+           err [ DS "Requested to make explicitize", DD a,
+                 DS "but there are no inferred arguments in its type", DD ty]
+         (th,) <$> explicitizeInferreds ty
+
     -- Rule T_type
     ts' (Type l) = return (AType l,  AType (l + 1))
 
@@ -660,7 +673,7 @@ ts tsTm =
          (etyATh, tytyA) <- getType etyA
          (etyB, etyBTh, tytyB) <- 
            -- this was Program instead of etyATh, why?
-           extendCtx (ASig (translate x) etyATh etyA) $ do 
+           extendCtxSolve (ASig (translate x) etyATh etyA) $ do 
              (etyB, tytyB) <- ts tyB
              etyBTh <- aGetTh etyB
              return (etyB, etyBTh, tytyB)
@@ -858,10 +871,10 @@ ts tsTm =
           err [DS "The variable", DD y, DS "was marked as L but checks at P"]
         -- premise 2
         (eb,tyB, bTh) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
-                      extendCtx (ASig (translate x) th' tyA) $ do
-                        (eb, tyB) <- ts b
-                        bTh <- aGetTh eb
-                        return (eb, tyB, bTh)
+                         extendCtxSolve (ASig (translate x) th' tyA) $ do
+                            (eb, tyB) <- ts b
+                            bTh <- aGetTh eb
+                            return (eb, tyB, bTh)
         -- premise 3
         aKc tyB
 
@@ -900,7 +913,7 @@ adjustTheta :: Theta -> ATerm -> ATerm -> TcMonad (Theta, ATerm, ATerm)
 adjustTheta th a aTy = do
   isVal <- isEValue <$> erase a
   case eraseToHead aTy of
-   (AAt ty' th') -> 
+   (AAt ty' th') ->
        case (isVal, th) of
          (True, _)        -> adjustTheta th' (AUnbox a) ty'
          (False, Logic)   -> adjustTheta th' (AUnbox a) ty'
@@ -912,10 +925,27 @@ adjustTheta th a aTy = do
 instantiateInferreds :: ATerm -> ATerm -> TcMonad (ATerm,ATerm)
 instantiateInferreds a (eraseToHead -> AArrow _ Inferred ep bnd) = do
   ((x,unembed->aTy),bTy) <- unbind bnd
-  u <- AUniVar <$> (fresh (string2Name "")) <*> (pure aTy)
-  let bTy' = subst x u bTy
-  instantiateInferreds (AApp ep a u bTy') bTy'
+  n <- fresh (string2Name "")
+  addConstraint (ShouldHaveType n aTy)
+  let bTy' = subst x (AUniVar n aTy) bTy
+  instantiateInferreds (AApp ep a (AUniVar n aTy) bTy') bTy'
 instantiateInferreds a aTy = return (a, aTy)
+
+-- | Is 'a' an arrow type that has inferred arguments?
+hasInferreds :: ATerm -> TcMonad Bool
+hasInferreds (eraseToHead -> AArrow _ Inferred ep bnd) = return True
+hasInferreds (eraseToHead -> AArrow _ Explicit ep bnd) = do
+  ((x,_),bTy) <- unbind bnd
+  hasInferreds bTy
+hasInferreds _ = return False
+
+-- | Make all the inferred arguments of an arrow type explicit.
+explicitizeInferreds :: ATerm -> TcMonad ATerm 
+explicitizeInferreds (eraseToHead -> AArrow th _ ep bnd) = do
+  ((x,aTy),bTy) <- unbind bnd
+  bTy' <- explicitizeInferreds bTy
+  return $ AArrow th Explicit ep (bind (x,aTy) bTy')
+explicitizeInferreds a = return a 
 
 --------------------------------------------------------
 -- Using the typechecker for decls and modules and stuff
@@ -939,7 +969,10 @@ tcModule :: [AModule]        -- ^ List of already checked modules (including the
          -> Module           -- ^ Module to check.
          -> TcMonad AModule  -- ^ The same module with all Decls checked and elaborated.
 tcModule defs m' = do 
-  let importedModules = filter (\x -> (ModuleImport (aModuleName x)) `elem` moduleImports m') defs
+  -- Doing this filter is not good because it makes the language fail "regularity", 
+  --  i.e. one of the imported types may not be well-formed (because it assumed a bigger context)
+  --let importedModules = filter (\x -> (ModuleImport (aModuleName x)) `elem` moduleImports m') defs
+  let importedModules = defs
   checkedEntries <- extendCtxMods importedModules $ 
                       do
                         cutoff <- length <$> getCtx
@@ -1142,8 +1175,15 @@ getAvailableEqs = do
                          Just <$> adjustTheta th (AVar x) zty)
                      context
 
-
-
+----------------------------------------------------------
+-- Work in an extended context, then try to solve any remaining unification vars.
+extendCtxSolve :: (Rep a) => ADecl -> TcMonad a -> TcMonad a
+extendCtxSolve d m =
+  extendCtx d
+            (do 
+               res <- m
+               solveConstraints =<< getAvailableEqs
+               zonk res)
 
 -------------------------------------
 -- Elaborating complex pattern matches

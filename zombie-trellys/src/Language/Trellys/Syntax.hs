@@ -85,6 +85,8 @@ data Term = Var TName    -- | variables
           | Lam Epsilon (Bind TName Term)
           -- | Applications, tagged with stage
           | App Epsilon Term Term
+          -- | Concrete syntax is !e
+          | Explicitize Term          
           -- | A let expression (bound name, equality name, value)
           | Let Theta Epsilon (Bind (TName, TName, Embed Term) Term)
           -- | Dependent functions: (x : A )_{ep} -> B
@@ -265,6 +267,10 @@ isVar _         = Nothing
 isAVar :: ATerm -> Bool
 isAVar (AVar _) = True
 isAVar _        = False
+
+isAType :: ATerm -> Bool
+isAType (AType _) = True
+isAType _ = False
 
 isTyEq :: Term -> Maybe (Term, Term)
 isTyEq (Pos _ t) = isTyEq t

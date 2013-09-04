@@ -5,11 +5,12 @@
 module Language.Trellys.Environment
   (
    Env,
-   UniVarBindings,
+   UniVarBindings, Constraint(..), Constraints,
    getFlag,
    emptyEnv,
    lookupTy, lookupTyMaybe, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
    lookupUniVar, setUniVar, setUniVars,
+   addConstraint, getConstraints, clearConstraints,
    getDefaultTheta, withDefaultTheta, 
    getCtx, getLocalCtx, extendCtx, extendCtxTele, extendCtxs, extendCtxsGlobal,
    extendCtxMods,
@@ -26,11 +27,12 @@ import Language.Trellys.Error
 
 import Language.Trellys.GenericBind
 
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ hiding (first)
 import Text.ParserCombinators.Parsec.Pos(SourcePos)
 import Control.Monad.Reader
 import Control.Monad.Error
 import Control.Monad.State
+import Control.Arrow(first,second)
 
 import Data.List
 import Data.Maybe (listToMaybe, catMaybes)
@@ -60,6 +62,12 @@ data Env = Env { ctx :: [ADecl],
 -- | Bindings of unification variables
 type UniVarBindings = Map AName ATerm
 
+-- | Outstanding constraints to be solved.
+-- (eventually will make this also have equations, probably?)
+data Constraint = ShouldHaveType AName ATerm
+  deriving (Show)
+type Constraints = [Constraint]
+
 -- | The initial environment.
 emptyEnv :: [Flag] -> Env
 emptyEnv fs = Env { ctx = [] , 
@@ -73,23 +81,35 @@ instance Disp Env where
   disp e = vcat [disp decl | decl <- ctx e]
 
 -- | Find the binding of a unification variable
-lookupUniVar :: (MonadState UniVarBindings m) => AName -> m (Maybe ATerm)
-lookupUniVar x = liftM (M.lookup x) get
+lookupUniVar :: (MonadState (a,UniVarBindings) m) => AName -> m (Maybe ATerm)
+lookupUniVar x = liftM (M.lookup x) (gets snd)
 
 -- | Set the binding of a unification variable
-setUniVar :: (MonadState UniVarBindings m, MonadError Err m, MonadReader Env m) => 
+setUniVar :: (MonadState (a,UniVarBindings) m, MonadError Err m, MonadReader Env m) => 
              AName -> ATerm -> m ()
 setUniVar x a = do
-  alreadyPresent <- liftM (M.member x) get
-  when alreadyPresent $
-    err [DS "internal error: tried to set an already bound unification variable", DD x]
-  modify (M.insert x a)
+  alreadyPresent <- liftM (M.member x) (gets snd)
+  when alreadyPresent $ do
+    old <- liftM2 (M.!) (gets snd) (return x)
+    err [DS ("internal error: tried to set an already bound unification variable " ++ show x),
+         DS "it had value", DD old,
+         DS "and tried to set it to", DD a]
+  modify (second $ M.insert x a)
 
 -- | Set multiple unification variables at once.
-setUniVars :: (MonadState UniVarBindings m, MonadError Err m, MonadReader Env m) => 
+setUniVars :: (MonadState (a,UniVarBindings) m, MonadError Err m, MonadReader Env m) => 
              UniVarBindings -> m ()
 setUniVars bnds =
   mapM_ (uncurry setUniVar) (M.toList bnds)
+
+addConstraint ::  MonadState (Constraints,a) m => Constraint -> m ()
+addConstraint c = modify (first (c:))
+
+getConstraints :: MonadState (Constraints,a) m => m Constraints
+getConstraints = gets fst
+
+clearConstraints :: MonadState (Constraints,a) m => m ()
+clearConstraints = modify (first (const []))
 
 -- | Determine if a flag is set
 getFlag :: (MonadReader Env m) => Flag -> m Bool
