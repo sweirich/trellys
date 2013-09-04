@@ -32,12 +32,12 @@ vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
           VCons [n'] [n_eq] x xs -> VCons [n'] [n_eq] (f x) (vmap [n'] [ord n_eq] xs) 
 
 
-log head : [A : Type 0] -> [n:Nat] -> Vector A (Succ n) -> A
+log head : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> A
 head = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t -> f
 
-log tail : [A : Type 0] -> [n:Nat] -> Vector A (Succ n) -> Vector A n
+log tail : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> Vector A n
 tail = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t ->
@@ -49,8 +49,8 @@ log lookup : [A: Type 0] => [n:Nat] -> Fin n -> Vector A n -> A
 lookup = \ [A] . 
   ind recFin [n] = \ f v . 
     case f [f_eq] of
-      FZ [m][m_eq] -> head [A][m] v
-      FS [m][m_eq] fm -> recFin [m] [ord m_eq] fm (tail [A][m] v)
+      FZ [m][m_eq] -> head v
+      FS [m][m_eq] fm -> recFin [m] [ord m_eq] fm (tail v)
 
 
 -- create a vector with n copies of its argument
@@ -66,8 +66,8 @@ log set : [A:Type 0] => [n:Nat] -> (m:Fin n) ->  (a:A @ log) -> Vector A n -> Ve
 set = \ [A] . 
   ind set [n] = \ m a v.
        case m [n_eq] of 
-         FZ [p][p_eq] -> VCons [p][_] a (tail [A][p] v)
-         FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail [A][p] v))
+         FZ [p][p_eq] -> VCons [p][_] a (tail v)
+         FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail v))
 
 
 {-

@@ -16,6 +16,7 @@ import LessThanNat_lt_eq_True
 --   convert IZero = IZero
 --   convert (ISucc x) = ISucc (convert x)
 
+
 data Index (n:Nat) : Type 0 where
   IZero 
   ISucc of [n':Nat] [Succ n' = n] (Index n')
@@ -29,6 +30,8 @@ ind convert [n] = \i . case i [i_eq] of
                            by n'_eq
                            at n . Index (Succ n)
 
+
+
 convert_id : [n : Nat] -> (i : Index n) -> convert [n] i = i
 ind convert_id [n] = \i . case i [i_eq] of
   IZero -> let [i_eq'] [_] = sym (Index n) (Index n) i (IZero ) i_eq in
@@ -36,7 +39,7 @@ ind convert_id [n] = \i . case i [i_eq] of
   ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
                            let ih [_] = convert_id [n'] [ord n'_eq'] i' in
                            let step [_] = (join : convert [n] ((ISucc [n'] [n'_eq] i') : Index ?)
-                                                = (ISucc [Succ n'] [(join : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i') : Index ?)) in
+                                                = (ISucc [Succ n'] [(_ : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i') : Index ?)) in
                            let [i_eq'] [_] = sym (Index n) (Index n) i (ISucc [n'] [n'_eq] i') i_eq in
                            let eq [_] =
                               conv step by [Succ (Succ n') = n], [Succ n' = n'], [(join : Succ (Succ n') = Succ (Succ n')) = n'_eq], ih, i_eq'
