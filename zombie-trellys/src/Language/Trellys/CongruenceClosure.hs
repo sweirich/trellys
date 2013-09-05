@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
- Constant(..), EqConstConst(..), EqBranchConst(..), Equation, WantedEquation(..),
+ Constant, EqConstConst(..), EqBranchConst(..), Equation, WantedEquation(..),
  Proof(..),
   ProblemState, proofs, bindings, naming,
   newState, freshConstant, propagate, 
@@ -36,32 +36,24 @@ import Control.Monad
 import Control.Applicative
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IM
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
-import Data.List (intercalate, intersperse)
+import Data.List (intercalate)
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
-
--- We need to know a little bit about the ATerm datatype in order to handle AType specially,
- -- and to do the occurs check.
-import Language.Trellys.Syntax (ATerm(AType), AName, Label, Proof(..), uniVars)
-import Language.Trellys.OpSem (eraseToHead)
+-- We need to know a little bit about the ATerm datatype in order to do the occurs check.
+import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars)
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
 import Debug.Trace
 
-
-data Constant = UniverseConstant Int --used to represent "Type l"
-              | AtomConstant Int  --used to represent all other terms.              
-  deriving (Eq, Ord)
-
-instance Show Constant where
-  show (AtomConstant n) = show n
-  show (UniverseConstant l) = "Type" ++ show l
+type Constant = Int
 
 -- given equations a = b
 data EqConstConst = EqConstConst Constant Constant
@@ -101,7 +93,7 @@ combineInfo a b =
             (S.union (classInhabitants a) (classInhabitants b))
 
 -- Union-Find representatives.
-type Reprs = Map Constant (Either (Proof, Constant) ClassInfo)
+type Reprs = IntMap (Either (Proof, Constant) ClassInfo)
                                         -- (p:i=i', i')
 type ExplainedEquation = (Proof, Equation)
 type ExplainedEqBranchConst = (Proof, EqBranchConst)
@@ -136,7 +128,7 @@ data ProblemState = ProblemState {
 dumpState :: (MonadIO m) => ProblemState -> m ()
 dumpState st = 
   --liftIO $ putStrLn $ show (reprs st)
-  liftIO $ mapM_ printClass (M.toList (reprs st))
+  liftIO $ mapM_ printClass (IM.toList (reprs st))
   where showConst :: Constant -> String
         showConst c = render (disp (naming st BM.!> c))
         printClass :: (Constant, (Either (Proof, Constant) ClassInfo)) -> IO ()
@@ -154,11 +146,10 @@ dumpState st =
 freshConstant :: (Monad m) => StateT ProblemState m Constant
 freshConstant = do
   st <- get
-  if M.null (reprs st)
-     then return $ AtomConstant 0
-     else case (M.findMax (reprs st)) of
-            (UniverseConstant _,_) -> return $ AtomConstant 0
-            (AtomConstant n,_)     -> return $ AtomConstant (n+1)
+  if IM.null (reprs st)
+     then return 0
+     else case (IM.findMax (reprs st)) of
+            (n,_)     -> return (n+1)
 
 -- | Allocate a new name (Constant) for a subterm.
 -- Note that (AType l) is treated specially, to avoid infinite regress.
@@ -170,15 +161,13 @@ recordName a = do
     Just c -> 
       return c
     Nothing -> do
-      c <- case a of
-             (AType l) -> return $ UniverseConstant l
-             _         -> freshConstant
+      c <- freshConstant
       let singletonClass = ClassInfo{ classMembers = S.singleton c,
                                       classVars = S.empty,
                                       classApps = S.empty,
                                       classInhabitants = S.empty }
       st <- get
-      put (st{ reprs = M.insert c (Right singletonClass) (reprs st),
+      put (st{ reprs = IM.insert c (Right singletonClass) (reprs st),
                naming = BM.insert a c (naming st) })
       return c
 
@@ -200,7 +189,7 @@ recordInhabitant c cTy = do
 --   * the set of all variables that occurs in the term that the constant represents.
 newState :: ProblemState
 newState =
-  ProblemState{reprs = M.empty,
+  ProblemState{reprs = IM.empty,
                uses = M.empty,
                lookupeq = M.empty,
                unboundVars = M.empty,
@@ -217,7 +206,7 @@ type UniM a = StateT ProblemState [] a
 
 -- Sets the union-find representative
 setRepr :: (Monad m) => Constant -> (Either (Proof, Constant) ClassInfo) -> StateT ProblemState m ()
-setRepr c val = modify (\st -> st{ reprs = M.insert c val (reprs st) })
+setRepr c val = modify (\st -> st{ reprs = IM.insert c val (reprs st) })
 
 giveBinding :: (Monad m) => AName -> Constant -> StateT ProblemState m ()
 giveBinding x val = modify (\st -> st{ bindings = M.insert x val (bindings st), 
@@ -243,7 +232,7 @@ findExplains ids = liftM unzip $ mapM findExplain ids
 
 findExplainInfo :: Monad m => Constant -> StateT ProblemState m (Proof,Constant,ClassInfo)
 findExplainInfo x = do
-  content <- return (M.!) `ap` (gets reprs) `ap` return x
+  content <- return (IM.!) `ap` (gets reprs) `ap` return x
   case content of
     Left (p, x') -> do
        (q,x'',info) <- findExplainInfo x'
