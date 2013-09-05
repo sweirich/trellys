@@ -45,13 +45,17 @@ import qualified Data.Bimap as BM
 import Data.List (intercalate)
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
+
+import Language.Trellys.PrettyPrint
+import Text.PrettyPrint.HughesPJ ( render)
 -- We need to know a little bit about the ATerm datatype in order to do the occurs check.
 import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars)
 
 --Stuff used for debugging.
-import Language.Trellys.PrettyPrint
+{-
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
 import Debug.Trace
+-}
 
 type Constant = Int
 
@@ -96,7 +100,6 @@ combineInfo a b =
 type Reprs = IntMap (Either (Proof, Constant) ClassInfo)
                                         -- (p:i=i', i')
 type ExplainedEquation = (Proof, Equation)
-type ExplainedEqBranchConst = (Proof, EqBranchConst)
 
 data ProblemState = ProblemState {
   -- union-find structure mapping constants to their representative.
