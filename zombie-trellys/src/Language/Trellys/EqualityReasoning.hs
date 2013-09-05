@@ -3,6 +3,7 @@
     GeneralizedNewtypeDeriving, ViewPatterns,
     UndecidableInstances, OverlappingInstances, TypeSynonymInstances, 
     TupleSections, TypeFamilies #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
   (prove, solveConstraints, uneraseTerm, smartSteps, zonk, zonkTerm, zonkTele) 
@@ -10,40 +11,34 @@ where
 
 import Generics.RepLib hiding (Arrow,Con,Refl)
 import qualified Generics.RepLib as RL
-import Language.Trellys.GenericBind 
+import Language.Trellys.GenericBind hiding (avoid)
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(UniVarBindings, setUniVars, lookupUniVar,
-                                   Constraint(..), Constraints, getConstraints, clearConstraints,
+                                   Constraint(..), getConstraints, clearConstraints,
                                    warn)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
 import Language.Trellys.TypeCheckCore (aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
-import Control.Arrow (first, second, Kleisli(..), runKleisli)
+import Control.Arrow (first, Kleisli(..), runKleisli)
 import Control.Applicative 
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
-import Control.Monad.ST
 import Control.Monad.State.Strict
 import Control.Monad.Error.Class
-import Data.Maybe (isJust,fromJust,isNothing)
+import Data.Maybe (fromJust,isNothing)
 import qualified Data.Set as S
 import Data.Set (Set)
-import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Map (Map)
-import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.Function (on)
-import Data.Ix
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render, vcat, colon)
-import Debug.Trace
-import Language.Trellys.TypeCheckCore (aTs)
+import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, render, vcat, colon)
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -74,22 +69,27 @@ instance Canonical Explicitness where
 associateProof :: Proof -> Proof
 associateProof (RawAssumption h) = RawAssumption h
 associateProof RawRefl = RawRefl
-associateProof (RawSymm p) = RawSymm (associateProof p)
+associateProof (RawSymm p) = case associateProof p of
+                               RawRefl -> RawRefl
+                               p'      -> RawSymm p'
 associateProof (RawTrans p q) = rawTrans (associateProof p) (associateProof q)
 associateProof (RawCong l ps) = RawCong l (map associateProof ps)
 
 -- This is a smart constructor for RawTrans
 rawTrans :: Proof -> Proof -> Proof
 rawTrans RawRefl p = p
+rawTrans p RawRefl = p
 rawTrans (RawTrans p q) r = maybeCancel p (rawTrans q r)
-  where maybeCancel :: Proof -> Proof -> Proof
-        maybeCancel p           (RawTrans (RawSymm q) r) | p==q = r
-        maybeCancel (RawSymm p) (RawTrans q r)           | p==q = r
-        maybeCancel p q = RawTrans p q
 rawTrans p q = RawTrans p q
+--where
+maybeCancel :: Proof -> Proof -> Proof
+maybeCancel p           (RawTrans (RawSymm q) r) | p==q = r
+maybeCancel (RawSymm p) (RawTrans q r)           | p==q = r
+maybeCancel p q = RawTrans p q
+
 
 -- ********** SYMMETRIZATION PHASE
--- Next we simplify the Proofs into this datatype, which gets rid of
+-- Next we simplify the Proofs into Raw1Proofs, which gets rid of
 -- the Symm constructor by pushing it up to the leaves of the tree.
 
 data Orientation = Swapped | NotSwapped
@@ -120,7 +120,8 @@ symmetrizeProof (RawSymm (RawCong l ps)) = Raw1Cong l (map (symmetrizeProof . Ra
 -- while a CheckProof doesn't.
 
 data SynthProof =
-    AssumTrans Orientation (Maybe ATerm,ATerm,ATerm) CheckProof
+    Assum Orientation (Maybe ATerm,ATerm,ATerm) 
+  | AssumTrans Orientation (Maybe ATerm,ATerm,ATerm) CheckProof
   deriving Show
 data CheckProof =
     Synth SynthProof
@@ -130,6 +131,7 @@ data CheckProof =
  deriving Show
 
 transProof :: CheckProof -> CheckProof -> CheckProof
+transProof (Synth (Assum o h)) p = Synth (AssumTrans o h p)
 transProof (Synth (AssumTrans o h p)) q = Synth (AssumTrans o h (transProof p q))
 transProof Refl q = q
 transProof (Cong l ps) (Synth q) = CongTrans l ps q
@@ -137,13 +139,15 @@ transProof (Cong l ps) Refl = Cong l ps
 transProof (Cong l ps) (Cong _ qs) = Cong l (zipWith transSubproof ps qs)
 transProof (Cong l ps) (CongTrans _ qs r) = CongTrans l (zipWith transSubproof ps qs) r
 transProof (CongTrans l ps (AssumTrans o h q)) r =  CongTrans l ps (AssumTrans o h (transProof q r))
+transProof (CongTrans l ps (Assum o h)) r =  CongTrans l ps (AssumTrans o h r)
 
 transSubproof :: (AName, Maybe CheckProof) -> (AName, Maybe CheckProof) -> (AName, Maybe CheckProof)
-transSubproof (x,Nothing) (_,Nothing) = (x, Nothing)
 transSubproof (x,Just p)  (_,Just q)  = (x, Just $ transProof p q)
+transSubproof (x,Nothing) (_,Nothing) = (x, Nothing)
+transSubproof (_,_) (_,_) = error "transSubProof: erased/nonerased mismatch (internal error)"
 
 fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m CheckProof
-fuseProof (Raw1Assumption o h) = return $ Synth (AssumTrans o h Refl)
+fuseProof (Raw1Assumption o h) = return $ Synth (Assum o h)
 fuseProof (Raw1Refl) = return $ Refl
 fuseProof (Raw1Trans Raw1Refl q) = fuseProof q
 fuseProof (Raw1Trans (Raw1Assumption o h) q) =  Synth . AssumTrans o h <$> (fuseProof q)
@@ -170,6 +174,8 @@ fuseProofs ((x,Runtime):xs) (p:ps) =  do
 fuseProofs ((x,Erased):xs) ps =  do
   ps' <- fuseProofs xs ps
   return $ (x, Nothing):ps'
+fuseProofs [] (_:_) = error "fuseProofs: too few variables (internal error)"
+fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 
 -- ************ ANNOTATION PHASE
 -- Having normalized the proof, in the next phase we annotate it by all the subterms involved.
@@ -183,6 +189,10 @@ data AnnotProof =
 
 -- [synthProof B p] takes a SynthProof of A=B and returns A and the corresponding AnnotProof
 synthProof :: (Applicative m, Fresh m) => ATerm -> SynthProof -> m (ATerm,AnnotProof)
+synthProof tyB (Assum NotSwapped h@(n,tyA,tyC)) = do
+  return $ (tyA, AnnAssum NotSwapped h)
+synthProof tyB (Assum Swapped h@(n,tyA,tyC)) = do
+  return $ (tyC, AnnAssum Swapped h)
 synthProof tyB (AssumTrans NotSwapped h@(n,tyA,tyC) p) = do
   q <- checkProof tyC tyB p
   return $ (tyA, AnnTrans tyA tyC tyB (AnnAssum NotSwapped h) q)
@@ -222,15 +232,6 @@ checkProof tyA tyC (CongTrans template ps q)  = do
             (AnnCong template subpfs tyA tyB)
             tq
 
--- generate AnnotProof's for a list of equations [ep,tyA,tyB]
-checkProofs :: (Applicative m, Fresh m) =>
-                [(Epsilon, ATerm, ATerm)] -> [CheckProof] -> m [(ATerm,ATerm,Maybe AnnotProof)]
-checkProofs [] [] = return []
-checkProofs ((Runtime,tyA,tyB):goals) (p:ps) = do
-  pt <- checkProof tyA tyB p
-  ((tyA, tyB, Just pt) :) <$>  (checkProofs goals ps)
-checkProofs ((Erased,tyA,tyB):goals) ps =
-  ((tyA, tyB, Nothing) :) <$> (checkProofs goals ps)
 
 -- ************* SIMPLIFICATION PHASE
 -- We simplify the annotated proof by merging any two adjacent Congs into a single one,
@@ -243,15 +244,18 @@ simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (sim
 simplProof (AnnCong template ps tyA tyB) =  
  let (template', ps') = simplCong (template,[]) ps 
  in (AnnCong template' ps' tyA tyB)
-  where simplCong (t, acc) [] = (t, reverse acc)
-        simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
-           simplCong (subst x tyA t, acc) ps
-        simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
-           simplCong (subst x tyA t, acc) ps
-        simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs _ _)):ps) =
-           simplCong (subst x subT t, acc) (subPs++ps)
-        simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
-
+--where 
+simplCong :: (ATerm, [(AName,ATerm,ATerm,Maybe AnnotProof)])
+          -> [(AName,ATerm,ATerm,Maybe AnnotProof)] 
+          -> (ATerm, [(AName,ATerm,ATerm,Maybe AnnotProof)])
+simplCong (t, acc) [] = (t, reverse acc)
+simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
+   simplCong (subst x tyA t, acc) ps
+simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
+   simplCong (subst x tyA t, acc) ps
+simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs _ _)):ps) =
+   simplCong (subst x subT t, acc) (subPs++ps)
+simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
 
 -- ************* TERM GENERATION PHASE
 -- Final pass: now we can generate the Trellys Core proof terms.
@@ -328,8 +332,8 @@ congTerm (tyA,tyB,pf) x template = do
 
 zonk :: (Rep a, Applicative m, MonadState (b,UniVarBindings) m) => a -> m a
 zonk a = do
-  bindings <- gets snd
-  return $ zonkWithBindings bindings a
+  bndgs <- gets snd
+  return $ zonkWithBindings bndgs a
 
 zonkTerm :: (Applicative m, MonadState (b,UniVarBindings) m) => ATerm -> m ATerm
 zonkTerm = zonk
@@ -338,11 +342,11 @@ zonkTele :: (Applicative m, MonadState (b,UniVarBindings) m) => ATelescope -> m 
 zonkTele  = zonk
 
 zonkWithBindings :: Rep a => UniVarBindings -> a -> a
-zonkWithBindings bindings = RL.everywhere (RL.mkT zonkTermOnce)
+zonkWithBindings bndgs = RL.everywhere (RL.mkT zonkTermOnce)
   where zonkTermOnce :: ATerm -> ATerm
-        zonkTermOnce (AUniVar x ty) = case M.lookup x bindings of
+        zonkTermOnce (AUniVar x ty) = case M.lookup x bndgs of
                                         Nothing -> (AUniVar x ty)
-                                        Just a -> zonkWithBindings bindings a
+                                        Just a -> zonkWithBindings bndgs a
         zonkTermOnce a = a
 
 
@@ -567,9 +571,9 @@ genEqs t = do
     _           -> return ()
 
   (s,ss) <- runWriterT (decompose False Runtime S.empty t)
-  let ssRuntime = filter (\(ep,name,term) -> ep==Runtime) ss
-  bs <- mapM genEqs (map (\(ep,name,term) -> term) $ ssRuntime)
-  let label = (bind (map (\(ep,name,term)->(name,ep)) ss) s)
+  let ssRuntime = filter (\(ep,x,term) -> ep==Runtime) ss
+  bs <- mapM genEqs (map (\(ep,x,term) -> term) $ ssRuntime)
+  let label = (bind (map (\(ep,x,term)->(x,ep)) ss) s)
   propagate [(RawRefl,
              Right $ EqBranchConst label bs a)]
 
@@ -577,7 +581,7 @@ genEqs t = do
     --If the head of t is erased, we record an equation saying so.
     sErased <- erase s
     let ((_,x,s1):_) = ssRuntime
-    when (sErased `aeq` EVar (translate x)) $
+    when (sErased `aeq` EVar (translate x)) $ 
       propagate [(RawAssumption (Nothing, t, s1),
                  Left $ EqConstConst a (head bs))]
   return a
@@ -612,7 +616,7 @@ prove hyps (lhs, rhs) = do
            pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
                                                 (naming st BM.! rhs)) in
         do
-{-
+
          let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
          let symmetrized = symmetrizeProof zonkedAssociated
          fused <- fuseProof symmetrized
@@ -626,7 +630,7 @@ prove hyps (lhs, rhs) = do
          liftIO $ putStrLn $ "Fused: \n" ++ show fused
          liftIO $ putStrLn $ "Checked: \n" ++ show checked
          liftIO $ putStrLn $ "Simplified: \n" ++ show simplified
--}
+
          setUniVars bndgs
          tm <- (genProofTerm 
                   <=< return . simplProof
@@ -636,12 +640,6 @@ prove hyps (lhs, rhs) = do
                   . associateProof 
                   . zonkWithBindings bndgs) pf
          return $ Just tm
-
-instance Disp [(Theta, ATerm, ATerm)] where
-  disp hyps = 
-    vcat $ map (\(th,a,b) ->
-                    disp a <+> colon <+> disp b {- <+> text ("(" ++ show b ++")") -})
-               hyps
 
 -- "Given the context, fill in any remaining evars"
 solveConstraints :: [(Theta,ATerm,ATerm)] -> TcMonad ()
@@ -661,6 +659,7 @@ solveConstraints hyps = do
      oldBndgs <- gets snd
      setUniVars bndgs
      clearConstraints
+
 
 -------------------------------------------------------
 
@@ -692,6 +691,7 @@ isConstructorValue _ = False
 -- case about the constructor of the term, like here.
 isAnyValue :: ATerm -> Bool
 isAnyValue (ACumul a lvl) = isAnyValue a
+isAnyValue (AType lvl) = True
 isAnyValue (ADCon c th params args) = all (isAnyValue . fst) args
 isAnyValue (AApp ep a b ty) = False
 isAnyValue (ALet Runtime bnd _) = False
@@ -728,7 +728,7 @@ isAnyValue (ATrustMe _) = True
    be plugged into the hole to let the expression make progress.
    Return None if the term is a value, or if it can already step. -}
 aCbvContext :: ATerm -> TcMonad (Maybe (CbvContext, ValueFlavour, ATerm))
-aCbvContext (ACumul a lvl) = inCtx (\a -> ACumul a lvl) <$> aCbvContext a
+aCbvContext (ACumul a lvl) = inCtx (\hole -> ACumul hole lvl) <$> aCbvContext a
 -- fixme: think about the dcon case some more. 
 --  The problem is that if a dcon is stuck on a single non-value argument, and we use 
 --  equational reasoning to replace that arg with a value, then the entire expression
@@ -742,7 +742,7 @@ aCbvContext (ADCon c th params args) = return Nothing
 --            return $ Just (CbvContext hole (ADCon c th params (reverse prefix ++ [(AVar hole,Runtime)] ++ args)),
 --                           AnyValue,
 --                           a)
-aCbvContext (AApp Erased a b ty) = inCtx (\a -> AApp Erased a b ty) <$> aCbvContext a
+aCbvContext (AApp Erased a b ty) = inCtx (\hole -> AApp Erased hole b ty) <$> aCbvContext a
 aCbvContext (AApp Runtime a b ty) | not (isFunctionValue a) = do
   hole <- fresh (string2Name "hole")
   return $ Just (CbvContext hole (AApp Runtime (AVar hole) b ty), FunctionValue, a) 
@@ -752,7 +752,7 @@ aCbvContext (AApp Runtime a b ty) | isFunctionValue a && not (isAnyValue b) = do
 aCbvContext (AApp Runtime a b ty) | otherwise = return Nothing
 aCbvContext (ALet Erased bnd ty) = do
   ((x,xeq,unembed->a), b) <- unbind bnd
-  inCtx (\b -> ALet Erased (bind (x,xeq,embed a) b) ty) <$> aCbvContext b
+  inCtx (\hole -> ALet Erased (bind (x,xeq,embed a) hole) ty) <$> aCbvContext b
 aCbvContext (ALet Runtime bnd ty) = do
   ((x,xeq,unembed->a),b) <- unbind bnd
   if (isAnyValue a)
@@ -766,12 +766,13 @@ aCbvContext (ACase a bnd ty) | not (isConstructorValue a) = do
   hole <- fresh (string2Name "hole")
   return $ Just (CbvContext hole (ACase (AVar hole) bnd ty), ConstructorValue, a)
 aCbvContext (ACase a bnd ty) | otherwise = return Nothing
-aCbvContext (ABox a th) = inCtx (\a -> ABox a th) <$> aCbvContext a
-aCbvContext (AConv a pfs bnd resTy) = inCtx (\a -> AConv a pfs bnd resTy) <$> aCbvContext a
-aCbvContext (ASubstitutedFor a x) = inCtx (\a -> ASubstitutedFor a x) <$> aCbvContext a
+aCbvContext (ABox a th) = inCtx (\hole -> ABox hole th) <$> aCbvContext a
+aCbvContext (AConv a pfs bnd resTy) = inCtx (\hole -> AConv hole pfs bnd resTy) <$> aCbvContext a
+aCbvContext (ASubstitutedFor a x) = inCtx (\hole -> ASubstitutedFor hole x) <$> aCbvContext a
 -- The rest of the cases are already values:
 aCbvContext (AUniVar x ty) = return Nothing
 aCbvContext (AVar _) = return Nothing
+aCbvContext (AType _) = return Nothing
 aCbvContext (ATCon _ _) = return Nothing
 aCbvContext (AArrow _ _ _ _) = return Nothing
 aCbvContext (ALam _ _ _ _) = return Nothing
@@ -801,9 +802,14 @@ inCtx ctx (Just (CbvContext hole ctx', flavour, subterm)) =
            Just (CbvContext hole (ctx ctx'), flavour, subterm)
 
 ---- Some misc. utility functions
-
 firstM :: Monad m => (a -> m b) -> (a,c) -> m (b,c)
 firstM = runKleisli . first . Kleisli
+
+instance Disp [(Theta, ATerm, ATerm)] where
+  disp hyps = 
+    vcat $ map (\(th,a,b) ->
+                    disp a <+> colon <+> disp b {- <+> text ("(" ++ show b ++")") -})
+               hyps
 
 instance Disp EqConstConst where
   disp (EqConstConst a b) = text (show a) <+> text "=" <+> text (show b)
@@ -814,15 +820,14 @@ instance Disp (EqBranchConst) where
 instance Disp (Proof, Equation) where 
   disp (p, eq) = disp p <+> text ":" <+> disp eq
 
-
 -- In a given context, try to make a step n times, using equational reasoning
 -- if it gets stuck.
 -- Returns (a', p : a = a') where a' the term that it stepped to.
 smartSteps ::  [(Theta,ATerm,ATerm)] -> ATerm -> Int -> TcMonad (ATerm, ATerm)
-smartSteps hyps a n = do
+smartSteps hyps b m = do
   flip evalStateT newState $ do 
     mapM_ processHyp hyps
-    steps a n
+    steps b m
  where steps :: ATerm -> Int -> StateT ProblemState TcMonad (ATerm,ATerm)
        steps a 0 = return $ (a, AJoin a 0 a 0 CBV)
        steps a n = do

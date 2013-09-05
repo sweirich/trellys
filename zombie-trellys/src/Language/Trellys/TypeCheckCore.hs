@@ -29,8 +29,10 @@ import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
 import Language.Trellys.TypeMonad
 
 --Stuff used for debugging.
+{-
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
+-}
 
 -------------------
 -------------------

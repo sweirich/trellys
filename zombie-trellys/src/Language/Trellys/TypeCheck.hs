@@ -994,8 +994,8 @@ tcEntries (Def n term : decls) = do
           th <- aGetTh eterm
           -- Put the elaborated version of term 
           -- into the context.
-          extendCtxsGlobal [ASig (translate n) th ty, 
-                            ADef (translate n) eterm] $
+          extendCtxsGlobal [ADef (translate n) eterm,
+                            ASig (translate n) th ty] $
             tcEntries decls
         Just (theta,ty) -> do
             eterm <- ta term ty 
@@ -1007,8 +1007,8 @@ tcEntries (Def n term : decls) = do
             -- declaration, then we don't add a new signature.
             --
             -- Put the elaborated version of term into the context.
-            extendCtxsGlobal [ASig (translate n) theta ty, 
-                              ADef (translate n) eterm] $
+            extendCtxsGlobal [ADef (translate n) eterm,
+                              ASig (translate n) theta ty] $
               tcEntries decls
     die term' =
       extendSourceLocation (unPosFlaky term) term $
@@ -1030,8 +1030,8 @@ tcEntries (Axiom n th ty : decls) = do
   tyTh <- aGetTh ety
   unless (tyTh <= th) $
     err [DS "The variable", DD n, DS "was marked as L, but", DD ty, DS "checks at P"]
-  extendCtxsGlobal [ASig (translate n) th ety, 
-                    ADef (translate n) (ATrustMe ety)] $
+  extendCtxsGlobal [ADef (translate n) (ATrustMe ety),
+                    ASig (translate n) th ety] $
     tcEntries decls
 
 -- rule Decl_data
