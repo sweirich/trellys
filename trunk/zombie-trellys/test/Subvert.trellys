@@ -42,8 +42,9 @@ ind convert_id [n] = \i . case i [i_eq] of
                                                 = (ISucc [Succ n'] [(_ : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i') : Index ?)) in
                            let [i_eq'] [_] = sym (Index n) (Index n) i (ISucc [n'] [n'_eq] i') i_eq in
                            let eq [_] =
-                              conv step by [Succ (Succ n') = n], [Succ n' = n'], [(join : Succ (Succ n') = Succ (Succ n')) = n'_eq], ih, i_eq'
-                              at is1 is2 is3 ci i . convert [n] i = (ISucc [is2] [is3] ci : Index is1)
+                              ((conv step by ih, i_eq'
+                                 at ci i . convert [n] i = (ISucc [Succ n'] [(join : Succ (Succ n') = Succ (Succ n'))] ci : Index (Succ (Succ n'))))
+			        : convert [n] i = (ISucc [n'] [n'_eq] i' : Index n))
                            in conv eq by i_eq' at ii . convert [n] i = ii
 
 -- Garrin's suggestion (non-Haskell): leverage dependent types to use

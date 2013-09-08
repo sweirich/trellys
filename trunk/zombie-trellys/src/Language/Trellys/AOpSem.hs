@@ -51,13 +51,13 @@ correspondingVarName (TwoVars  _ _ y'') = y''
 symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
 symEq a b pab = do
   x <- fresh $ string2Name "x"
-  return . AConv (AJoin a 0 a 0 CBV) [(pab,Runtime)] (bind [x] $ ATyEq (AVar x) a) $ ATyEq b a
+  return . AConv (AJoin a 0 a 0 CBV) [pab] (bind [x] $ ATyEq (AVar x) a) $ ATyEq b a
 
 -- composeEq A C (pAB : A = B) (pBC : B = C) : A = C
 composeEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
 composeEq a c pab pbc = do
   x <- fresh $ string2Name "x"
-  return . AConv pab [(pbc,Runtime)] (bind [x] . ATyEq a $ AVar x) $ ATyEq a c
+  return . AConv pab [pbc] (bind [x] . ATyEq a $ AVar x) $ ATyEq a c
 
 unbind2M :: (MonadPlus m, Fresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
          => GenBind order card p1 t1
@@ -172,10 +172,9 @@ disunify ls l0 rs r0 = go l0 r0
       guard $ length xs == length xs' -- This is the only reason we bring xs' in scope
       template'' <- go template template'
       AConv <$> go a a'
-            <*> (zipWithM (\(b,eps) (b',eps') -> do
-                              guard $ eps == eps'
+            <*> (zipWithM (\b b' -> do
                               b'' <- go b b'
-                              pure (b'',eps))
+                              pure b'')
                           bs bs')
             <*> pure (bind xs template'')
             <*> go res res'
@@ -263,9 +262,6 @@ disunify ls l0 rs r0 = go l0 r0
     go (ATrustMe a) (ATrustMe a') =
       go a a'
 
-    go (ASubstitutedFor a x) (ASubstitutedFor a' x') | x == x' =
-      ASubstitutedFor <$> go a a' <*> pure x'
-    
     go _ _ =
       mzero
 
@@ -326,7 +322,7 @@ astep (AApp eps a b ty) = do
                   AConv funv bs convBnd toTy@(eraseToHead->AArrow resTh resEx resEps resTyBnd) -> do
                     (xs,template) <- unbind convBnd
                     case (template,xs,bs) of                      
-                      (AVar x,[xx],[(p,Runtime)]) | x == xx -> do
+                      (AVar x,[xx],[p]) | x == xx -> do
                         (_, ATyEq (AArrow si srcEx  srcEps  srcTyBnd)
                                   (AArrow ri resEx' resEps' resTyBnd')) <- aTs p
                         guard $ si == ri                                           
@@ -342,14 +338,14 @@ astep (AApp eps a b ty) = do
                         x' <- fresh $ string2Name "x'"
                         let convInput :: ATerm -> ATerm
                             convInput v =       AConv v
-                                                      [(ADomEq p, Runtime)]
+                                                      [ADomEq p]
                                                       (bind [x'] $ AVar x')
                                                       srcDom
                         let convOutput :: ATerm {- the input value -}
                                           -> ATerm {- the body -}
                                           -> ATerm
                             convOutput v body = AConv body
-                                                      [(ARanEq p (convInput v) v, Runtime)]
+                                                      [ARanEq p (convInput v) v]
                                                       (bind [x'] $ AVar x')
                                                       (subst tyVar v resRan)
                         runMaybeT $ 
@@ -357,24 +353,13 @@ astep (AApp eps a b ty) = do
                       (AArrow srcTh srcEx srcEps srcTyBnd,_,_) -> do
                         ( (tyVar, unembed -> srcDom), srcRan,
                           (_,     unembed -> resDom), resRan ) <- unbind2M srcTyBnd resTyBnd
-                        froms   <- mapM (\pf_ep ->
-                                             case pf_ep of                                               
-                                               (ATyEq ty1 ty2, Erased) -> 
-                                                  return ty1
-                                               (_ , Erased) -> error "astep: malformed erased proof, not an eq"
-                                               (pf , Runtime) -> do
+                        froms   <- mapM (\pf -> do
                                                   (Logic, ATyEq ty1 ty2) <- getType pf
                                                   return ty1)
                                         bs
-                        symm_bs <- mapM (\pf_ep ->
-                                             case pf_ep of
-                                               (ATyEq ty1 ty2, Erased) -> 
-                                                  return (ATyEq ty2 ty1, Erased)
-                                               (_ , Erased) -> error "astep: malformed erased proof, not an eq"
-                                               (pf , Runtime) -> do
+                        symm_bs <- mapM (\pf -> do
                                                   (Logic, ATyEq ty1 ty2) <- getType pf
-                                                  symmPf <- symEq ty1 ty2 pf
-                                                  return (symmPf, Runtime))
+                                                  symEq ty1 ty2 pf)
                                         bs
                         let convInput :: ATerm -> ATerm
                             convInput v =  AConv v
@@ -385,7 +370,7 @@ astep (AApp eps a b ty) = do
                                           -> ATerm {- the body -}
                                           -> ATerm
                             convOutput v body = AConv body
-                                                      (bs ++ [(AJoin (convInput v) 0 v 0 CBV,Runtime)])
+                                                      (bs ++ [AJoin (convInput v) 0 v 0 CBV])
                                                       (bind (xs++[tyVar]) $ srcRan)
                                                       (subst tyVar v resRan)
                         runMaybeT $
@@ -412,11 +397,11 @@ astep (AUnbox a) = do
       AConv (ABox v th) bs convBnd (AAt tyRes th') | th == th' -> do
         (xs,template) <- unbind convBnd
         case (template,xs,bs) of
-          (AVar x,[x'],[(b,eps)]) | x == x' -> do
+          (AVar x,[x'],[b]) | x == x' -> do
             y <- fresh $ string2Name "y"
             return . Just
                    . AUnbox
-                   $ ABox (AConv v [(AAtEq b,eps)] (bind [y] $ AVar y) tyRes)
+                   $ ABox (AConv v [AAtEq b] (bind [y] $ AVar y) tyRes)
                           th
           (AAt tyFrom th'',_,_) | th == th'' -> do
             return . Just $ AConv v bs (bind xs tyFrom) tyRes
@@ -453,18 +438,17 @@ astep (AConv a bs bnd ty) = do
             Just (template'', corrs) -> do
               let outers = M.fromList $ zip ys  bs
                   inners = M.fromList $ zip ys' bs'
-                  eq :: Correspondence -> MaybeT TcMonad (ATerm,Epsilon)
+                  eq :: Correspondence -> MaybeT TcMonad ATerm
                   eq (LeftVar  l)     = MaybeT . pure $ M.lookup l outers
                   eq (RightVar r)     = MaybeT . pure $ M.lookup r inners
-                  eq (TwoVars  l r _) = do (oeq,oeps)        <- eq $ LeftVar  l
-                                           (ieq,ieps)        <- eq $ RightVar r
+                  eq (TwoVars  l r _) = do oeq        <- eq $ LeftVar  l
+                                           ieq        <- eq $ RightVar r
                                            -- TODO: replace aTs with some getType function
                                            (_, ATyEq ta  tb) <- lift $ aTs ieq
                                            (_, ATyEq tb' tc) <- lift $ aTs oeq
                                            guard $ tb == tb'
                                              -- XXX Should always succeed by soundness
-                                           eqtrans           <- composeEq ta tc ieq oeq
-                                           pure (eqtrans, orEps oeps ieps)
+                                           composeEq ta tc ieq oeq
                   bnd'' = bind (map correspondingVarName corrs) template''
               mbs'' <- runMaybeT $ mapM eq corrs
               case mbs'' of
@@ -520,8 +504,8 @@ astep (ACase a bnd ty) = do
           -- argsTele    = Δ'm
           (_,indicesTele, AConstructorDef _ argsTele) <- lookupDCon c
           b's <- case (template,xs,bs) of
-            (AVar x,[x'],[(b,eps)]) | x == x' ->
-              pure $ map (\i -> (ANthEq i b,eps)) [1..aTeleLength indicesTele]
+            (AVar x,[x'],[b]) | x == x' ->
+              pure $ map (\i -> ANthEq i b) [1..aTeleLength indicesTele]
             (ATCon tcon' fromIndices,_,_) | tcon == tcon' ->
               -- indices     = As
               -- fromIndices = B's
@@ -529,8 +513,7 @@ astep (ACase a bnd ty) = do
               pure $ zipWith3 (\aj b'j bj -> ( AConv (AJoin aj 0 aj 0 CBV)
                                                      bs
                                                      (bind xs $ ATyEq aj b'j)
-                                                     (ATyEq aj bj)
-                                             , Erased ))
+                                                     (ATyEq aj bj)))
                               indices fromIndices resIndices
             _ -> mzero
           v's <- casepush indicesTele resIndices b's
@@ -544,7 +527,7 @@ astep (ACase a bnd ty) = do
         go [] [] = return ([],[])
         go ((v,eps):vs) ((y,e,eps'):tele') | eps == eps' = do
           (v's,ys) <- go vs tele'
-          let b's = zipWith (\(vi,epsi) (v'i,_) -> (AJoin vi 0 v'i 0 CBV,epsi)) vs v's
+          let b's = zipWith (\(vi,epsi) (v'i,_) -> AJoin vi 0 v'i 0 CBV) vs v's
               v'  = AConv v
                           (bs ++ b's)
                           (bind (xs ++ ys) e)
@@ -567,9 +550,6 @@ astep (AAtEq  _) = return Nothing
 astep (ANthEq _ _) = return Nothing
 
 astep (ATrustMe _) = return Nothing
-
-astep (ASubstitutedFor a _) = return $ Just a
-
 
 -- Beta-reduce an application of a lam, rec, or ind.
 stepFun :: ATerm -> ATerm -> MaybeT TcMonad ATerm

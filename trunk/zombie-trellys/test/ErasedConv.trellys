@@ -29,8 +29,8 @@ easy_goal = conv (join : f x [atype] a = f x [atype] a)
 
 goal : ((\x . f x [atype] a) : Nat -> Nat) = ((\x . f x [btype] b) : Nat -> Nat)
 goal =  conv (join : ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] a) : Nat -> Nat))
-		    by [atype = btype], p
-        at t1 t2  . ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [t1] t2) : Nat -> Nat)
+		    by p
+        at t2  . ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] t2) : Nat -> Nat)
 
 
 

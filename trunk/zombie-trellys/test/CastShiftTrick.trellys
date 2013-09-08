@@ -46,7 +46,7 @@ thm = let symp [w] = sym tX tX x x' p in
       let eq   [w] = trans' (tY x) (tY x') (tY x)
                      y
                      y'
-                     (conv y' by symp at h.tY h)
+                     (conv y' by symp at h.tY h @prog)
                      q join in
       -- (f x y = f x (conv y')) : tZ
       let eq1  [w] = conv join by eq at h.f x y = f x h in
@@ -55,7 +55,7 @@ thm = let symp [w] = sym tX tX x x' p in
       let eq   [w] = conv join by p at h.f x = f h in
       -- (conv (f x) = f x') : (y:tY x') -> tZ
       let eq   [w] = trans' ((y:tY x' @log) -> tZ) ((y:tY x @log) -> tZ) ((y:tY x' @log) -> tZ)
-                     (conv f x by p at h.((y : tY h @log) -> tZ))
+                     (conv f x by p at h.((y : tY h @log) -> tZ)@prog)
                      (f x)
                      (f x')
                      join eq in
@@ -70,7 +70,7 @@ thm = let symp [w] = sym tX tX x x' p in
       -- (f x y = f x' y') : tZ
       let eq3  [w] = trans4' tZ tZ tZ tZ
                      (f x y)
-                     (f x (conv y' by symp at h . tY h))
+                     (f x (conv y' by symp at h . tY h @log))
                      ((conv f x by p at h . ((y : tY h @log) -> tZ)) y')
                      (f x' y')
                      eq1 join eq2

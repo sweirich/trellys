@@ -12,7 +12,7 @@ module Language.Trellys.Environment
    lookupUniVar, setUniVar, setUniVars,
    addConstraint, getConstraints, clearConstraints,
    getDefaultTheta, withDefaultTheta, 
-   getCtx, getLocalCtx, extendCtx, extendCtxTele, extendCtxsGlobal,
+   getCtx, getLocalCtx, extendCtx, extendCtxs, extendCtxTele, extendCtxsGlobal,
    extendCtxMods,
    extendHints,
    extendSourceLocation, getSourceLocation,

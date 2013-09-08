@@ -51,7 +51,6 @@ fail:
 	@./expect_error DuplicateSignature "Duplicate type signature"
 	@./expect_error SigDefBug "The variable p was not found"
 	@./expect_error bad_datatype "occurs in non-positive position"
-	@./expect_error ErasedConvBad "is marked erased"
 	@./expect_error Test_T_Let_1_FV "appear in the erasure of the body"
 	@./expect_error Test_T_Let_2_FV_1 "appear in the erasure of the body"
 	@./expect_error Test_T_Let_2_FV_2 "appear in the erasure of the body"
