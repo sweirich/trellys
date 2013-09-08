@@ -23,7 +23,6 @@ import Language.Trellys.AOpSem (astep)
 import Language.Trellys.TypeCheckCore (aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
-import Control.Arrow (first, Kleisli(..), runKleisli)
 import Control.Applicative 
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.State.Strict
@@ -126,8 +125,8 @@ data SynthProof =
 data CheckProof =
     Synth SynthProof
   | Refl
-  | Cong ATerm [(AName, Maybe CheckProof)]
-  | CongTrans ATerm [(AName, Maybe CheckProof)] SynthProof
+  | Cong ATerm [(AName, CheckProof)]
+  | CongTrans ATerm [(AName, CheckProof)] SynthProof
  deriving Show
 
 transProof :: CheckProof -> CheckProof -> CheckProof
@@ -141,10 +140,8 @@ transProof (Cong l ps) (CongTrans _ qs r) = CongTrans l (zipWith transSubproof p
 transProof (CongTrans l ps (AssumTrans o h q)) r =  CongTrans l ps (AssumTrans o h (transProof q r))
 transProof (CongTrans l ps (Assum o h)) r =  CongTrans l ps (AssumTrans o h r)
 
-transSubproof :: (AName, Maybe CheckProof) -> (AName, Maybe CheckProof) -> (AName, Maybe CheckProof)
-transSubproof (x,Just p)  (_,Just q)  = (x, Just $ transProof p q)
-transSubproof (x,Nothing) (_,Nothing) = (x, Nothing)
-transSubproof (_,_) (_,_) = error "transSubProof: erased/nonerased mismatch (internal error)"
+transSubproof :: (AName, CheckProof) -> (AName,  CheckProof) -> (AName, CheckProof)
+transSubproof (x,p)  (_,q)  = (x, transProof p q)
 
 fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m CheckProof
 fuseProof (Raw1Assumption o h) = return $ Synth (Assum o h)
@@ -165,15 +162,13 @@ fuseProof (Raw1Cong bnd ps) = do
   (xs, template) <- unbind bnd  
   Cong template <$> fuseProofs xs ps
 
-fuseProofs :: (Applicative m, Fresh m) => [(AName,Epsilon)] -> [Raw1Proof] -> m [(AName,Maybe CheckProof)]
+fuseProofs :: (Applicative m, Fresh m) => [(AName,Epsilon)] -> [Raw1Proof] -> m [(AName,CheckProof)]
 fuseProofs [] [] = return []
 fuseProofs ((x,Runtime):xs) (p:ps) =  do
   p' <- fuseProof p
   ps' <- fuseProofs xs ps
-  return $ (x,Just p'):ps'
-fuseProofs ((x,Erased):xs) ps =  do
-  ps' <- fuseProofs xs ps
-  return $ (x, Nothing):ps'
+  return $ (x,p'):ps'
+fuseProofs ((x,Erased):xs) ps =  fuseProofs xs ps
 fuseProofs [] (_:_) = error "fuseProofs: too few variables (internal error)"
 fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 
@@ -183,7 +178,7 @@ fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 data AnnotProof = 
     AnnAssum Orientation (Maybe ATerm,ATerm,ATerm)
   | AnnRefl ATerm ATerm
-  | AnnCong ATerm [(AName,ATerm,ATerm,Maybe AnnotProof)] ATerm ATerm
+  | AnnCong ATerm [(AName,ATerm,ATerm,AnnotProof)] ATerm ATerm
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
  deriving Show
 
@@ -205,28 +200,24 @@ checkProof :: (Applicative m, Fresh m) => ATerm -> ATerm -> CheckProof -> m Anno
 checkProof _ tyB (Synth p) = snd <$> synthProof tyB p
 checkProof tyA tyB Refl = return $ AnnRefl tyA tyB
 checkProof tyA tyB (Cong template ps)  =  do
-  subAs <- match (map (\(x,_)->x) ps) template tyA
-  subBs <- match (map (\(x,_)->x) ps) template tyB
-  subpfs <- mapM (\(x,mp) -> let subA = fromJust $ M.lookup x subAs
-                                 subB = fromJust $ M.lookup x subBs
-                             in case mp of 
-                                  Nothing -> return (x,subA,subB,Nothing)
-                                  Just p -> do
-                                              p' <- checkProof subA subB p
-                                              return (x, subA, subB, Just p'))
+  subAs <- match (map fst ps) template tyA
+  subBs <- match (map fst ps) template tyB
+  subpfs <- mapM (\(x,p) -> do 
+                              let subA = fromJust $ M.lookup x subAs
+                              let subB = fromJust $ M.lookup x subBs
+                              p' <- checkProof subA subB p
+                              return (x, subA, subB, p'))
                  ps
   return $ AnnCong template subpfs tyA tyB
 checkProof tyA tyC (CongTrans template ps q)  = do
   (tyB, tq) <- synthProof tyC q
-  subAs <- match (map (\(x,_)->x) ps) template tyA
-  subBs <- match (map (\(x,_)->x) ps) template tyB
-  subpfs <- mapM (\(x,mp) -> let subA = fromJust $ M.lookup x subAs
-                                 subB = fromJust $ M.lookup x subBs
-                             in case mp of 
-                                  Nothing -> return (x,subA,subB,Nothing)
-                                  Just p -> do
-                                              p' <- checkProof subA subB p
-                                              return (x, subA, subB, Just p'))
+  subAs <- match (map fst ps) template tyA
+  subBs <- match (map fst ps) template tyB
+  subpfs <- mapM (\(x,p) -> do
+                              let subA = fromJust $ M.lookup x subAs
+                              let subB = fromJust $ M.lookup x subBs
+                              p' <- checkProof subA subB p
+                              return (x, subA, subB, p'))
                  ps
   return $ AnnTrans tyA tyB tyC
             (AnnCong template subpfs tyA tyB)
@@ -245,15 +236,15 @@ simplProof (AnnCong template ps tyA tyB) =
  let (template', ps') = simplCong (template,[]) ps 
  in (AnnCong template' ps' tyA tyB)
 --where 
-simplCong :: (ATerm, [(AName,ATerm,ATerm,Maybe AnnotProof)])
-          -> [(AName,ATerm,ATerm,Maybe AnnotProof)] 
-          -> (ATerm, [(AName,ATerm,ATerm,Maybe AnnotProof)])
+simplCong :: (ATerm, [(AName,ATerm,ATerm, AnnotProof)])
+          -> [(AName,ATerm,ATerm,AnnotProof)] 
+          -> (ATerm, [(AName,ATerm,ATerm, AnnotProof)])
 simplCong (t, acc) [] = (t, reverse acc)
 simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
    simplCong (subst x tyA t, acc) ps
-simplCong (t, acc) ((x,tyA,_,Just (AnnRefl _ _)):ps) = 
+simplCong (t, acc) ((x,tyA,_,AnnRefl _ _):ps) = 
    simplCong (subst x tyA t, acc) ps
-simplCong (t, acc) ((x,tyA,tyB,Just (AnnCong subT subPs _ _)):ps) =
+simplCong (t, acc) ((x,tyA,tyB,AnnCong subT subPs _ _):ps) =
    simplCong (subst x subT t, acc) (subPs++ps)
 simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
 
@@ -267,16 +258,7 @@ genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
 genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0 CBV)
 genProofTerm (AnnCong template ps tyA tyB) = do
-  -- One might think it should be possible to reconstruct tyA and tyB from 
-  -- the template and the subproofs, like so:
-  --   let tyA = substs (map (\(x,subA,subB,_) -> (x,subA)) ps) template
-  --   let tyB = substs (map (\(x,subA,subB,_) -> (x,subB)) ps) template
-  -- But in fact that doesn't work, because we intentionally throw away some information
-  -- from the template and replace it with `canonical'. So we need to keep the 
-  -- unmutilated template instances around also.
-  subpfs <- mapM (\(x,subA,subB,p) -> case p of 
-                                      Nothing -> return (ATyEq subA subB, Erased)
-                                      Just p' -> (,Runtime) <$> genProofTerm p')
+  subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm p)
                  ps                                            
   return (AConv (AJoin tyA 0 tyA 0 CBV)
                 subpfs
@@ -291,7 +273,7 @@ genProofTerm (AnnTrans tyA tyB tyC p q) = do
 transTerm :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
 transTerm tyA tyB tyC p q = do
   x <- fresh (string2Name "x")
-  return $ AConv p [(q,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyC)
+  return $ AConv p [q] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyC)
 
 -- From (tyA=tyB) conclude (tyA=tyB), but in a way that only uses the
 -- hypothesis in an erased position.
@@ -302,13 +284,13 @@ uneraseTerm tyA tyB p = do
   pErased <- erase p
   if S.null (fv pErased :: Set EName)
     then return p
-    else return $ AConv (AJoin tyA 0 tyA 0 CBV) [(p,Runtime)] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
+    else return $ AConv (AJoin tyA 0 tyA 0 CBV) [p] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symmTerm :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
 symmTerm tyA tyB p = do
   x <- fresh (string2Name "x")
-  return $ AConv (AJoin tyA 0 tyA 0 CBV) [(p,Runtime)] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
+  return $ AConv (AJoin tyA 0 tyA 0 CBV) [p] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
 
 -- From (tyA=tyB), conclude [tyA/x]template = [tyB/x]template
 -- For simplicity this function doesn't handle n-ary conv or erased subterms.
@@ -318,7 +300,7 @@ congTerm (tyA,tyB,pf) x template = do
   return (AConv (AJoin (subst x tyA template) 0 
                        (subst x tyA template) 0
                        CBV)
-                [(pf,Runtime)]
+                [pf]
                 (bind [y] (ATyEq (subst x tyA template) (subst x (AVar y) template)))
                 (ATyEq (subst x tyA template)
                        (subst x tyB template)))
@@ -405,7 +387,7 @@ decompose _ _ avoid t@(AJoin a i b j strategy) =
 decompose _ e avoid (AConv t1 ts bnd ty) =  do
   (xs, t2) <- unbind bnd
   r1 <- decompose True e avoid t1
-  rs <- mapM (firstM $ decompose True Erased avoid) ts
+  rs <- mapM (decompose True Erased avoid) ts
   r2 <- decompose True Erased (S.union (S.fromList xs) avoid) t2
   ty' <- decompose True Erased avoid ty
   return (AConv r1 rs (bind xs r2) ty')
@@ -451,8 +433,6 @@ decompose _ e avoid (ANthEq i a) =
   ANthEq i <$> decompose True e avoid a
 decompose _ _ avoid (ATrustMe t) = 
   ATrustMe <$> (decompose True Erased avoid t)
-decompose _ e avoid (ASubstitutedFor t x) =
-  ASubstitutedFor <$> (decompose True e avoid t) <*> pure x
 
 decomposeMatch :: (Monad m, Applicative m, Fresh m) => 
                   Epsilon -> Set AName -> AMatch -> WriterT [(Epsilon,AName,ATerm)] m AMatch
@@ -466,6 +446,8 @@ decomposeMatch e avoid (AMatch c bnd) = do
 --   such that (substs (toList (match vars template t)) template) == t
 -- Precondition: t should actually be a substitution instance of template, with those vars.
 
+-- Todo: currently this matches the erased parts of the terms also, but
+-- that should never be needed.
 match :: (Applicative m, Monad m, Fresh m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
@@ -501,7 +483,7 @@ match vars (AJoin a _ b _ _) (AJoin a' _ b' _ _) =
 match vars (AConv t1 t2s bnd ty) (AConv t1' t2s' bnd' ty') = do
   Just (_, t3, _, t3') <- unbind2 bnd bnd'
   match vars t1 t1'
-   `mUnion` (foldr M.union M.empty <$> zipWithM (match vars `on` fst) t2s t2s')
+   `mUnion` (foldr M.union M.empty <$> zipWithM (match vars) t2s t2s')
    `mUnion` match vars t3 t3'
    `mUnion` match vars ty ty'
 match vars (AContra t1 t2) (AContra t1' t2') =
@@ -534,7 +516,6 @@ match vars (ARanEq p t1 t2) (ARanEq p' t1' t2') =
 match vars (AAtEq  t)     (AAtEq  t')      = match vars t t'
 match vars (ANthEq _ t)   (ANthEq _ t')    = match vars t t'
 match vars (ATrustMe t)   (ATrustMe t')    = match vars t t'
-match vars (ASubstitutedFor t _) (ASubstitutedFor t' _) = match vars t t'
 match _ t t' = error $ "internal error: match called on non-matching terms "
                        ++ show t ++ " and " ++ show t' ++ "."
 
@@ -616,7 +597,7 @@ prove hyps (lhs, rhs) = do
            pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
                                                 (naming st BM.! rhs)) in
         do
-
+{-
          let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
          let symmetrized = symmetrizeProof zonkedAssociated
          fused <- fuseProof symmetrized
@@ -630,7 +611,7 @@ prove hyps (lhs, rhs) = do
          liftIO $ putStrLn $ "Fused: \n" ++ show fused
          liftIO $ putStrLn $ "Checked: \n" ++ show checked
          liftIO $ putStrLn $ "Simplified: \n" ++ show simplified
-
+-}
          setUniVars bndgs
          tm <- (genProofTerm 
                   <=< return . simplProof
@@ -699,7 +680,6 @@ isAnyValue (ALet Erased (unsafeUnbind -> ((x,xeq,unembed->a),b)) _) = isAnyValue
 isAnyValue (ACase a bnd _) = False
 isAnyValue (ABox a th) = isAnyValue a
 isAnyValue (AConv a pfs bnd resTy) = isAnyValue a
-isAnyValue (ASubstitutedFor a x) = isAnyValue a
 isAnyValue (AUniVar x ty) = True
 isAnyValue (AVar _) = True
 isAnyValue (ATCon _ _) = True
@@ -768,7 +748,6 @@ aCbvContext (ACase a bnd ty) | not (isConstructorValue a) = do
 aCbvContext (ACase a bnd ty) | otherwise = return Nothing
 aCbvContext (ABox a th) = inCtx (\hole -> ABox hole th) <$> aCbvContext a
 aCbvContext (AConv a pfs bnd resTy) = inCtx (\hole -> AConv hole pfs bnd resTy) <$> aCbvContext a
-aCbvContext (ASubstitutedFor a x) = inCtx (\hole -> ASubstitutedFor hole x) <$> aCbvContext a
 -- The rest of the cases are already values:
 aCbvContext (AUniVar x ty) = return Nothing
 aCbvContext (AVar _) = return Nothing
@@ -801,10 +780,8 @@ inCtx ctx Nothing = Nothing
 inCtx ctx (Just (CbvContext hole ctx', flavour, subterm)) =
            Just (CbvContext hole (ctx ctx'), flavour, subterm)
 
----- Some misc. utility functions
-firstM :: Monad m => (a -> m b) -> (a,c) -> m (b,c)
-firstM = runKleisli . first . Kleisli
 
+-- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
   disp hyps = 
     vcat $ map (\(th,a,b) ->

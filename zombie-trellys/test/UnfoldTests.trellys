@@ -72,7 +72,7 @@ data T2 (b:Bool) : Type where
   mkT2
 
 converted_lam_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
-		     -> (q : Nat = Bool)   --This is just used to be able to state what it should reduce to
+		     -> (q : Bool = Nat)   --This is just used to be able to state what it should reduce to
 		     -> Unit
 converted_lam_dep p b q = 
   unfold ((conv ((\n . mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
@@ -82,7 +82,7 @@ converted_lam_dep p b q =
 
 -- The same thing with a rec instead of a lam
 converted_rec_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
-		     -> (q : Nat = Bool)
+		     -> (q : Bool = Nat)
 		     -> Unit
 converted_rec_dep p b q = 
   unfold ((conv ((rec f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
@@ -105,7 +105,7 @@ converted_reallyrec_dep p b q =
 
 -- The same thing with an ind instead of a lam
 converted_ind_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
-		     -> (q : Nat = Bool)
+		     -> (q : Bool = Nat)
 		     -> Unit
 converted_ind_dep p b q = 
   unfold ((conv ((ind f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
@@ -117,32 +117,32 @@ converted_ind_dep p b q =
 -- conv already having an arrow type.
 converted_lam_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
 converted_lam_2 p q b = 
-  unfold ((conv ((\n . Succ n) : Nat->Nat) by p,q at x y. x->y) b) in
-  let _ = (_ : ((conv ((\n . Succ n) : Nat->Nat) by p,q at x y. x->y) b)
+  unfold ((conv ((\n . Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
+  let _ = (_ : ((conv ((\n . Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
              = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
     U
 
 -- The same thing, with an rec instead of a lam
 converted_rec_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
 converted_rec_2 p q b = 
-  unfold ((conv ((rec f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b) in
-  let _ = (_ : ((conv ((rec f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b)
+  unfold ((conv ((rec f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
+  let _ = (_ : ((conv ((rec f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
              = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
     U
 
 -- The same thing, with a rec that actually makes a recursive call.
 converted_reallyrec_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
 converted_reallyrec_2 p q b = 
-  unfold 1 ((conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b) in
-  let _ = (_ : (conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b
-             = Succ ((conv ((rec f n = Succ (f n)) : Nat->Nat) by p,q at x y. x->y) b)) in
+  unfold 1 ((conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
+  let _ = (_ : (conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b
+             = Succ ((conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)) in
     U
 
 -- The same thing, with an ind instead of a lam
 converted_ind_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
 converted_ind_2 p q b = 
-  unfold ((conv ((ind f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b) in
-  let _ = (_ : ((conv ((ind f n = Succ n) : Nat->Nat) by p,q at x y. x->y) b)
+  unfold ((conv ((ind f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
+  let _ = (_ : ((conv ((ind f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
              = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
     U
 

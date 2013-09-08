@@ -743,17 +743,12 @@ convExpr = do
   reserved "conv"
   a <- expr
   reserved "by"
-  bs <- commaSep1 erasedProof
+  bs <- commaSep1 expr
   reserved "at"
   xs <- many1 variable
   dot
   c <- expr
   return $ Conv a bs (bind xs c)
-  where erasedProof = do tm <- brackets expr
-                         return (tm,Erased)
-                      <|>
-                      do tm <- expr
-                         return (tm,Runtime)
 
 contra :: LParser Term
 contra = do

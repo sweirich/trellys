@@ -128,8 +128,6 @@ ta (Pos p t) ty =
 
 ta (Paren a) ty = ta a ty
 
-ta tm (ASubstitutedFor ty x) = ta tm ty
-
 ta (UniVar x) ty = do
   addConstraint (ShouldHaveType (translate x) ty)
   return (AUniVar (translate x) ty)
@@ -397,6 +395,47 @@ ta (Unfold n a b) tyB = do
    --return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
    return (ALet Runtime (bind (x, y, embed p) eb) (th, tyB))
 
+-- Checking version of the Conv rule
+--Todo: zonking. This is slightly involved, since there are many subterms.
+ta (Conv b as bnd) ty =
+      do (xs,c) <- unbind bnd
+         let chkTy pf = do
+               (epf,pfTy) <- ts pf  
+               pfTh <- aGetTh epf
+               unless (pfTh==Logic) $
+                 err [DS "equality proof", DD pf, 
+                      DS "should check at L but checks at P"]
+               case eraseToHead pfTy of
+                ATyEq tyA1 tyA2 -> return $ (epf, tyA1, tyA2)
+                _ -> err $ [DS "The second arguments to conv must be equality proofs,",
+                            DS "but here has type", DD pfTy]
+         atys <- mapM chkTy as
+         atytys <- zipWithM (\x (_,tyA1,_) -> do (th,tytyA1) <- getType tyA1
+                                                 return $ ASig x th tytyA1)
+                              (map translate xs)
+                              atys
+
+         ec <- extendCtxs (reverse atytys) $
+                 kcElab c
+
+         let ecA1 = simplSubsts (zip (map translate xs) (map (\(_,lhs,_)->lhs) atys)) ec
+         let ecA2 = simplSubsts (zip (map translate xs) (map (\(_,_,rhs)->rhs) atys)) ec
+        
+         eb <- ta b ecA1 
+
+         let exs = map translate xs
+         let eas = map (\(ea,_,_)->ea) atys
+
+         ecA2_erased <- erase ecA2
+         ty_erased <- erase ty
+         unless (ecA2_erased `aeq` ty_erased) $
+           err [DS "The conv expression", DD (Conv b as bnd), DS "was ascribed the type", DD ty,
+                DS "but substituting the RHSs of the proof terms creates the type", DD ecA2,
+                DS "Their erasures,", DD ty_erased, DS "and", DD ecA2_erased, DS "are not equal"]
+
+         return (AConv eb eas (bind exs ec) ty)
+
+
 -- rule T_At
 ta (At ty th') (AType i) = do 
    ea <- ta ty (AType i)
@@ -473,11 +512,6 @@ ta InferMe (ATyEq ty1 ty2) = do
 
 ta InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
 
--- pass through SubstitutedFor
-ta (SubstitutedFor a x) tyA = do
-  ea <- ta a tyA
-  return (ASubstitutedFor ea (translate x))
-
 -- rule T_chk
 ta a tyB = do
   (ea,tyA) <- ts a 
@@ -514,7 +548,7 @@ ta a tyB = do
                       then zonkTerm ea
                       else do
                          x <- fresh (string2Name "x")
-                         zonkTerm $ AConv ea [(p,Runtime)] (bind [x] (AVar x)) ztyB
+                         zonkTerm $ AConv ea [p] (bind [x] (AVar x)) ztyB
          else err [DS "When checking term", DD a, DS "against type",
                    DD ztyB,  DS ("(" ++ show ztyB ++ ")"),
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
@@ -563,7 +597,7 @@ coerce a tyA tyB = do
                       then Just <$> zonkTerm a
                       else do
                          x <- fresh (string2Name "x")
-                         Just <$> (zonkTerm $ AConv a [(p,Runtime)] (bind [x] (AVar x)) ztyB)
+                         Just <$> (zonkTerm $ AConv a [p] (bind [x] (AVar x)) ztyB)
 
 -- | Checks a list of terms against a telescope of types
 -- with the proviso that each term needs to check at Logic.
@@ -626,286 +660,250 @@ unCheckable _ = False
 -- | type synthesis
 -- Returns (elaborated term, type of term)
 ts :: Term -> TcMonad (ATerm,ATerm)
-ts tsTm =
-  do (etsTm, typ) <- ts' tsTm
-     return $ (etsTm, aDelPosParenDeep typ)
-  where
-    ts' :: Term -> TcMonad (ATerm,ATerm)
-    ts' (Pos p t) =
-      extendSourceLocation p t $       
-        ts' t
+ts (Pos p t) =
+  extendSourceLocation p t $       
+    ts t
 
-    ts' (Paren a) = ts' a
+ts (Paren a) = ts a
 
-    -- Rule T_var/T_unboxVal/T_fo
-    {- Variables are special, because both the intro and elimination
-       rules for @ always apply, so without loss of generality we can
-       eagerly apply unbox to the type we looked up from the
-       context. While we are at it, we apply as well.       
+-- Rule T_var/T_unboxVal/T_fo
+{- Variables are special, because both the intro and elimination
+   rules for @ always apply, so without loss of generality we can
+   eagerly apply unbox to the type we looked up from the
+   context. While we are at it, we apply as well.       
 
-       Note/todo/wontfix: currently T_unboxVal and T_fo are only ever
-       applied to variables in the surface language, not other kinds
-       of values, even though that is also allowed in the core
-       language.
-     -}
-    ts' (Var y) =
-      do (th,ty) <- lookupTy (translate y)
-         zty <- zonkTerm ty
-         (_, adjust_y, adjust_ty) <- adjustTheta th (AVar (translate y)) zty
-         return (adjust_y, adjust_ty)
+   Note/todo/wontfix: currently T_unboxVal and T_fo are only ever
+   applied to variables in the surface language, not other kinds
+   of values, even though that is also allowed in the core
+   language.
+ -}
+ts (Var y) =
+  do (th,ty) <- lookupTy (translate y)
+     zty <- zonkTerm ty
+     (_, adjust_y, adjust_ty) <- adjustTheta th (AVar (translate y)) zty
+     return (adjust_y, adjust_ty)
 
-    ts' (Explicitize a) = do
-      do (th,ty) <- ts a
-         hasInf <- hasInferreds ty
-         unless hasInf $
-           err [ DS "Requested to make explicitize", DD a,
-                 DS "but there are no inferred arguments in its type", DD ty]
-         (th,) <$> explicitizeInferreds ty
+ts (Explicitize a) = do
+  do (th,ty) <- ts a
+     hasInf <- hasInferreds ty
+     unless hasInf $
+       err [ DS "Requested to make explicitize", DD a,
+             DS "but there are no inferred arguments in its type", DD ty]
+     (th,) <$> explicitizeInferreds ty
 
-    -- Rule T_type
-    ts' (Type l) = return (AType l,  AType (l + 1))
+-- Rule T_type
+ts (Type l) = return (AType l,  AType (l + 1))
 
 
-    -- Rule T_pi
-    ts' (Arrow ex ep body) =
-      do ((x,unembed -> tyA), tyB) <- unbind body
-         etyA <- kcElabFirstOrder tyA
-         (etyATh, tytyA) <- getType etyA
-         (etyB, etyBTh, tytyB) <- 
-           -- this was Program instead of etyATh, why?
-           extendCtxSolve (ASig (translate x) etyATh etyA) $ do 
-             (etyB, tytyB) <- ts tyB
-             etyBTh <- aGetTh etyB
-             return (etyB, etyBTh, tytyB)
-         unless (etyATh == Logic) $
-            err [DS "domain of an arrow type must check logically, but", DD tyA, DS "checks at P"]
-         unless (etyBTh == Logic) $
-            err [DS "co-domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
-         case (eraseToHead tytyA, eraseToHead tytyB) of
-           (AType n, AType m) -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
-           (AType _, _)       -> err [DD tyB, DS "is not a type."]
-           (_,_)              -> err [DD tyA, DS "is not a type.", 
-                                      DS "It has type", DD tytyA]
+-- Rule T_pi
+ts (Arrow ex ep body) =
+  do ((x,unembed -> tyA), tyB) <- unbind body
+     etyA <- kcElabFirstOrder tyA
+     (etyATh, tytyA) <- getType etyA
+     (etyB, etyBTh, tytyB) <- 
+       -- this was Program instead of etyATh, why?
+       extendCtxSolve (ASig (translate x) etyATh etyA) $ do 
+         (etyB, tytyB) <- ts tyB
+         etyBTh <- aGetTh etyB
+         return (etyB, etyBTh, tytyB)
+     unless (etyATh == Logic) $
+        err [DS "domain of an arrow type must check logically, but", DD tyA, DS "checks at P"]
+     unless (etyBTh == Logic) $
+        err [DS "co-domain of an arrow type must check logically, but", DD tyB, DS "checks at P"]
+     case (eraseToHead tytyA, eraseToHead tytyB) of
+       (AType n, AType m) -> return $ (AArrow (max n m) ex ep  (bind (translate x,embed etyA) etyB), AType (max n m))
+       (AType _, _)       -> err [DD tyB, DS "is not a type."]
+       (_,_)              -> err [DD tyA, DS "is not a type.", 
+                                  DS "It has type", DD tytyA]
 
-    -- Rules T_tcon and T_acon 
-    ts' (TCon c args) =
-      do (delta, lev, _) <- lookupTCon (translate c)
-         unless (length args == aTeleLength delta) $
-           err [DS "Datatype constructor", DD c, 
-                DS $ "should have " ++ show (aTeleLength delta) ++
-                    " parameters, but was given", DD (length args)]
-         eargs <- taLogicalTele args delta
-         return (ATCon (translate c) (map fst eargs), (AType lev))
+-- Rules T_tcon and T_acon 
+ts (TCon c args) =
+  do (delta, lev, _) <- lookupTCon (translate c)
+     unless (length args == aTeleLength delta) $
+       err [DS "Datatype constructor", DD c, 
+            DS $ "should have " ++ show (aTeleLength delta) ++
+                " parameters, but was given", DD (length args)]
+     eargs <- taLogicalTele args delta
+     return (ATCon (translate c) (map fst eargs), (AType lev))
 
-    -- Rule D | _dcon
-    
-    ts' (DCon c args) = do
-         (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
-         let numParams = aTeleLength delta
-         unless (numParams == 0) $
-           err [DS "Can only synthesize the type when there are no params"]
-         teleRes <- taTele args deltai 
-         let (eargs,eths) = unzip teleRes
-         aKc (ATCon tname [])
-         return $ (ADCon (translate c) (maximum (minBound:eths)) 
-                   [] eargs, ATCon tname [])
-    
+-- Rule D | _dcon
 
-    -- rule T_app
-    ts' tm@(App ep a b) =
-      do (eaPreinst, tyPreinst) <- ts a
-         (ea,tyArr) <- instantiateInferreds eaPreinst tyPreinst        
-         case eraseToHead tyArr of
-           AArrow _ ex epArr bnd -> do
-             ((x,tyA),tyB) <- unbind bnd
-             unless (ep == epArr) $
-               err [DS "Application annotation", DD ep, DS "in", DD tm,
-                    DS "doesn't match arrow annotation", DD epArr]
+ts (DCon c args) = do
+     (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
+     let numParams = aTeleLength delta
+     unless (numParams == 0) $
+       err [DS "Can only synthesize the type when there are no params"]
+     teleRes <- taTele args deltai 
+     let (eargs,eths) = unzip teleRes
+     aKc (ATCon tname [])
+     return $ (ADCon (translate c) (maximum (minBound:eths)) 
+               [] eargs, ATCon tname [])
 
-             -- check the argument, at the "A" type
-             eb <- ta b (unembed tyA)
 
-             -- Erased arguments must terminate
-             when (ep==Erased) $ do
-               ebTh <- aGetTh eb
-               unless (ebTh==Logic) $
-                 err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
+-- rule T_app
+ts tm@(App ep a b) =
+  do (eaPreinst, tyPreinst) <- ts a
+     (ea,tyArr) <- instantiateInferreds eaPreinst tyPreinst        
+     case eraseToHead tyArr of
+       AArrow _ ex epArr bnd -> do
+         ((x,tyA),tyB) <- unbind bnd
+         unless (ep == epArr) $
+           err [DS "Application annotation", DD ep, DS "in", DD tm,
+                DS "doesn't match arrow annotation", DD epArr]
 
-             zea <- zonkTerm ea
-             ztyB <- zonkTerm tyB
+         -- check the argument, at the "A" type
+         eb <- ta b (unembed tyA)
 
-             -- check that the result kind is well-formed
-             let b_for_x_in_B = simplSubst x eb ztyB
-             aKc b_for_x_in_B
-             return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
-           _ -> err [DS "ts: expected arrow type, for term ", DD a,
-                     DS ". Instead, got", DD tyArr]
+         -- Erased arguments must terminate
+         when (ep==Erased) $ do
+           ebTh <- aGetTh eb
+           unless (ebTh==Logic) $
+             err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
 
-    -- rule T_smaller
-    ts' (Smaller a b) = do
-      (ea,_) <- ts a
-      (eb,_) <- ts b
-      zea <- zonkTerm ea
-      return $ (ASmaller zea eb, AType 0)
+         zea <- zonkTerm ea
+         ztyB <- zonkTerm tyB
 
-    -- rule T_ordtrans
-    ts' (OrdTrans a b) = do
-      (ea,tyA) <- ts a
-      eaTh <- aGetTh ea
-      unless (eaTh == Logic) $
-        err [DS "The ordering proof", DD a, DS "should check at L but checks at P"]
-      (eb,tyB) <- ts b
-      ebTh <- aGetTh eb
-      unless (ebTh== Logic) $
-        err [DS "The ordering proof", DD b, DS "should check at L but checks at P"]
-      zea <- zonkTerm ea
-      ztyA <- zonkTerm tyA
-      case (eraseToHead ztyA, eraseToHead tyB) of 
-        (ASmaller a1 a2, ASmaller b1 b2) -> do
-          a2_eq_b1 <- a2 `aeqSimple` b1
-          unless (a2_eq_b1) $
-            err [DS "The middle terms of the inequalities given to ordtrans must match, ",
-                 DS "but here they are", DD a2, DS "and", DD b1]
-          return $ (AOrdTrans zea eb, ASmaller a1 b2)
-        _ -> err [DS "The arguments to ordtrans must be proofs of <, ",
-                  DS "here they have types", DD tyA, DS "and", DD tyB]
+         -- check that the result kind is well-formed
+         let b_for_x_in_B = simplSubst x eb ztyB
+         aKc b_for_x_in_B
+         return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
+       _ -> err [DS "ts: expected arrow type, for term ", DD a,
+                 DS ". Instead, got", DD tyArr]
 
-    -- rule T_eq
-    ts' (TyEq a b) = do
-      (ea,_) <- ts a 
-      (eb,_) <- ts b 
-      zea <- zonkTerm ea
-      return $ (ATyEq zea eb, AType 0)
+-- rule T_smaller
+ts (Smaller a b) = do
+  (ea,_) <- ts a
+  (eb,_) <- ts b
+  zea <- zonkTerm ea
+  return $ (ASmaller zea eb, AType 0)
 
-    -- rule T_conv
-    -- Elaborating this is complicated, because we use two different strategies for the Runtime and Erased
-    -- elements of as. For Runtime elements we synthesize a type and and elaborated term in one go.
-    -- For Erased ones, we substitute them into the template c, elaborate the template, and then dig out the 
-    -- elaborated a from the elaborated template.
+-- rule T_ordtrans
+ts (OrdTrans a b) = do
+  (ea,tyA) <- ts a
+  eaTh <- aGetTh ea
+  unless (eaTh == Logic) $
+    err [DS "The ordering proof", DD a, DS "should check at L but checks at P"]
+  (eb,tyB) <- ts b
+  ebTh <- aGetTh eb
+  unless (ebTh== Logic) $
+    err [DS "The ordering proof", DD b, DS "should check at L but checks at P"]
+  zea <- zonkTerm ea
+  ztyA <- zonkTerm tyA
+  case (eraseToHead ztyA, eraseToHead tyB) of 
+    (ASmaller a1 a2, ASmaller b1 b2) -> do
+      a2_eq_b1 <- a2 `aeqSimple` b1
+      unless (a2_eq_b1) $
+        err [DS "The middle terms of the inequalities given to ordtrans must match, ",
+             DS "but here they are", DD a2, DS "and", DD b1]
+      return $ (AOrdTrans zea eb, ASmaller a1 b2)
+    _ -> err [DS "The arguments to ordtrans must be proofs of <, ",
+              DS "here they have types", DD tyA, DS "and", DD tyB]
 
+-- rule T_eq
+ts (TyEq a b) = do
+  (ea,_) <- ts a 
+  (eb,_) <- ts b 
+  zea <- zonkTerm ea
+  return $ (ATyEq zea eb, AType 0)
+
+-- Synthesising version of rule T_conv
 --Todo: zonking. This is slightly involved, since there are many subterms.
-    ts' (Conv b as bnd) =
-      do (xs,c) <- unbind bnd
-         let chkTy (pf,Runtime) x = do
-               (epf,pfTy) <- ts pf  
-               pfTh <- aGetTh epf
-               unless (pfTh==Logic) $
-                 err [DS "equality proof", DD pf, 
-                      DS "should check at L but checks at P"]
-               case eraseToHead pfTy of
-                ATyEq tyA1 tyA2 -> return $ (Just epf, SubstitutedForA tyA1 x, SubstitutedForA tyA2 x)
-                _ -> err $ [DS "The second arguments to conv must be equality proofs,",
-                            DS "but here has type", DD pfTy]
-             chkTy (isTyEq -> Just (tyA1,tyA2) ,Erased) x = do
-               return (Nothing, SubstitutedFor tyA1 x, SubstitutedFor tyA2 x)
-             chkTy (pf, Erased) _ = 
-                err [DS "erased conv proofs should be equalities, but here it is", DD pf]
-         atys <- zipWithM chkTy as xs
+ts (Conv b as bnd) =
+  do (xs,c) <- unbind bnd
+     let chkTy pf = do
+           (epf,pfTy) <- ts pf  
+           pfTh <- aGetTh epf
+           unless (pfTh==Logic) $
+             err [DS "equality proof", DD pf, 
+                  DS "should check at L but checks at P"]
+           case eraseToHead pfTy of
+            ATyEq tyA1 tyA2 -> return $ (epf, tyA1, tyA2)
+            _ -> err $ [DS "The second arguments to conv must be equality proofs,",
+                        DS "but here has type", DD pfTy]
+     atys <- mapM chkTy as
+     atytys <- zipWithM (\x (_,tyA1,_) -> do (th,tytyA1) <- getType tyA1
+                                             return $ ASig x th tytyA1)
+                          (map translate xs)
+                          atys
 
+     ec <- extendCtxs (reverse atytys) $
+             kcElab c
 
-         let cA1 = simplSubsts (zip xs (map (\(_,x,_)->x) atys)) c
-         ecA1 <- kcElab cA1
-         let cA2 = simplSubsts (zip xs (map (\(_,_,x)->x) atys)) c
-         ecA2 <- kcElab cA2
-        
-         eb <- ta b ecA1 
+     let ecA1 = simplSubsts (zip (map translate xs) (map (\(_,lhs,_)->lhs) atys)) ec
+     let ecA2 = simplSubsts (zip (map translate xs) (map (\(_,_,rhs)->rhs) atys)) ec
+    
+     eb <- ta b ecA1 
 
-         let exs = map translate xs
-         let ec = unsubstitute ecA2
-         let lhss = extractSubstitution ecA1
-         let rhss = extractSubstitution ecA2
-         let elaborateProof (Just ea, _,_) x = return (ea, Runtime)
-             elaborateProof (Nothing, _,_) x =
-               case (M.lookup x lhss, M.lookup x rhss) of
-                 (Just etyA1, Just etyA2) -> return (ATyEq etyA1 etyA2, Erased)
-                 _ -> err [DS "The variable", DD x, 
-                           DS "does not occur in the conv template expression"]
-         eas <- zipWithM elaborateProof atys exs
+     -- Check that the resulting type is well-formed.
+     aKc ecA2
 
-         erasedEc <- erase ec
-         let chkErased (pf,Runtime) _ = return ()
-             chkErased (pf,Erased) var = do
-               when (translate var `S.member` fv erasedEc) $
-                   err [DS "Equality proof", DD pf, DS "is marked erased",
-                        DS "but the corresponding variable", DD var,
-                        DS "appears free in the erased term", DD erasedEc]
-         zipWithM_ chkErased as xs
+     let exs = map translate xs
+     let eas = map (\(ea,_,_)->ea) atys
 
-         return (AConv eb eas (bind exs ec) ecA2, ecA2)
+     return (AConv eb eas (bind exs ec) ecA2, ecA2)
 
 -- Datatype injectivity. This is rough-and-ready, since it will be merged into the 
 -- congruence closure implementation rather than being exposed in the surface language.
-    ts' (InjDCon a i) =
-      do (ea,_) <- ts a
-         (_, ty) <- getType (AInjDCon ea i)
-         return (AInjDCon ea i, ty)
+ts (InjDCon a i) =
+  do (ea,_) <- ts a
+     (_, ty) <- getType (AInjDCon ea i)
+     return (AInjDCon ea i, ty)
 
-    -- rule T_annot
-    ts' (Ann a tyA) =
-      do etyA <- kcElab tyA
-         ea <- ta a etyA
-         zetyA <- zonkTerm etyA
-         return (ea, zetyA)
+-- rule T_annot
+ts (Ann a tyA) =
+  do etyA <- kcElab tyA
+     ea <- ta a etyA
+     zetyA <- zonkTerm etyA
+     return (ea, zetyA)
 
-    -- pass through SubstitutedFor
-    ts' (SubstitutedFor a x) =
-     do (ea,tyA) <- ts' a
-        return (ASubstitutedFor ea (translate x), tyA)
+-- the synthesis version of rules T_let1 and T_let2
+ts (Let th' ep bnd) =
+ do -- begin by checking syntactic -/L requirement and unpacking binding
+    when (ep == Erased && th' == Program) $
+      err [DS "Implicit lets must bind logical terms."]
+    ((x,y,unembed->a),b) <- unbind bnd
+    -- premise 1
+    (ea,tyA) <- ts a
+    aTh <- aGetTh ea
+    unless (aTh <= th') $
+      err [DS "The variable", DD y, DS "was marked as L but checks at P"]
+    -- premise 2
+    (eb,tyB, bTh) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
+                     extendCtxSolve (ASig (translate x) th' tyA) $ do
+                        (eb, tyB) <- ts b
+                        bTh <- aGetTh eb
+                        return (eb, tyB, bTh)
+    -- premise 3
+    aKc tyB
 
-    -- pass through SubstitutedForA
-    ts' (SubstitutedForA ea x) = do
-      (th, eaTy) <- getType ea
-      zea <- zonkTerm ea
-      return (ASubstitutedFor zea (translate x), eaTy)
+    -- premises 4 and 5
+    bE <- erase eb
+    when (translate y `S.member` fv bE) $
+      err [DS "The equality variable bound in a let is not allowed to",
+           DS "appear in the erasure of the body, but here", DD y,
+           DS "appears in the erasure of", DD b]
+    when (ep == Erased && translate x `S.member` fv bE) $
+      err [DS "The variables bound in an implicit let are not allowed to",
+           DS "appear in the erasure of the body, but here", DD x,
+           DS "appears in the erasure of", DD b]
 
-    -- the synthesis version of rules T_let1 and T_let2
-    ts' (Let th' ep bnd) =
-     do -- begin by checking syntactic -/L requirement and unpacking binding
-        when (ep == Erased && th' == Program) $
-          err [DS "Implicit lets must bind logical terms."]
-        ((x,y,unembed->a),b) <- unbind bnd
-        -- premise 1
-        (ea,tyA) <- ts a
-        aTh <- aGetTh ea
-        unless (aTh <= th') $
-          err [DS "The variable", DD y, DS "was marked as L but checks at P"]
-        -- premise 2
-        (eb,tyB, bTh) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
-                         extendCtxSolve (ASig (translate x) th' tyA) $ do
-                            (eb, tyB) <- ts b
-                            bTh <- aGetTh eb
-                            return (eb, tyB, bTh)
-        -- premise 3
-        aKc tyB
+    zea <- zonkTerm ea
+    return (ALet ep (bind (translate x, translate y,embed zea) eb) 
+            (max th' bTh,tyB), tyB)
 
-        -- premises 4 and 5
-        bE <- erase eb
-        when (translate y `S.member` fv bE) $
-          err [DS "The equality variable bound in a let is not allowed to",
-               DS "appear in the erasure of the body, but here", DD y,
-               DS "appears in the erasure of", DD b]
-        when (ep == Erased && translate x `S.member` fv bE) $
-          err [DS "The variables bound in an implicit let are not allowed to",
-               DS "appear in the erasure of the body, but here", DD x,
-               DS "appears in the erasure of", DD b]
+-- T_at
+ts (At tyA th') = do
+  (ea,s) <- ts tyA
+  eaTh <- aGetTh ea
+  case (eaTh,eraseToHead s) of
+    (Logic, AType i) -> return (AAt ea th',s)
+    (Program,AType i) -> err [DS "Types should check at L, but", DD tyA, DS "checks at P"]
+    (_,_)             -> err [DS "Argument to @ should be a type, here it is", DD tyA, DS "which has type", DD s]
 
-        zea <- zonkTerm ea
-        return (ALet ep (bind (translate x, translate y,embed zea) eb) 
-                (max th' bTh,tyB), tyB)
-
-    -- T_at
-    ts' (At tyA th') = do
-      (ea,s) <- ts tyA
-      eaTh <- aGetTh ea
-      case (eaTh,eraseToHead s) of
-        (Logic, AType i) -> return (AAt ea th',s)
-        (Program,AType i) -> err [DS "Types should check at L, but", DD tyA, DS "checks at P"]
-        (_,_)             -> err [DS "Argument to @ should be a type, here it is", DD tyA, DS "which has type", DD s]
-
-    ts' tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
-                    DS "Please add an annotation.",
-                    DS "NB: This error happens when you misspell,",
-                    DS "so check your spelling if you think you did annotate."]
+ts tm = err $ [DS "Sorry, I can't infer a type for:", DD tm,
+                DS "Please add an annotation.",
+                DS "NB: This error happens when you misspell,",
+                DS "so check your spelling if you think you did annotate."]
 
 -- | Take an annotated term which typechecks at aTy, and try to
 --   apply as many Unboxing rules as possible.

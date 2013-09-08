@@ -354,10 +354,6 @@ instance Display Term where
   display TrustMe = return $ text "TRUSTME"
   display InferMe = return $ text "_"
 
-  display (SubstitutedFor  a x) = display a 
-  display (SubstitutedForA a x) = display a
-
-
 instance Display Match where
   display (Match c bd) =
     lunbind bd $ \ (vs, ubd) -> do
@@ -592,7 +588,6 @@ instance Display ATerm where
   display (ATrustMe a) = do
     da <- display a
     return $ parens (text "TRUSTME" <+> colon <+> da)
-  display (ASubstitutedFor a x) = display a
 
 instance Display AMatch where
   display (AMatch c bnd) = 

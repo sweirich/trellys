@@ -67,7 +67,7 @@ add' =
     conv
       (primrec
         [constNat]
-        (conv m by (join: Nat = (constNat 0)) at x.x)
+        (conv m by (join: Nat = (constNat 0)) at x.(x@log))
         (\n.\mn.conv (Succ (conv mn by (join: (constNat n) = Nat) at x.x))
                   by (join: Nat = (constNat (Succ n))) at x.x)
         n)

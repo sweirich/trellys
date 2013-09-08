@@ -118,7 +118,6 @@ extractTerm a = do
                           2
                           (vcat emtchs))                           
   extractTerm' (ATrustMe ty) = return $ parens (text "raise Trustme")
-  extractTerm' (ASubstitutedFor a _) = extractTerm' a
   extractTerm' a = err [DS "internal error: extractTerm' called on a noninformative subterm.", DD a]
 
 extractMatch :: AName -> ATelescope -> ATerm -> TcMonad Doc
@@ -172,7 +171,6 @@ extractType a = do
     extractType' (ASmaller a b) = return $ text "unit"
     extractType' (AAbort ty) = err [DS "Can't extract abort in a type position"]
     extractType' (ATrustMe ty) = err [DS "Can't extract TRUSTME in a type position"]
-    extractType' (ASubstitutedFor a _) = extractType' a
     extractType' _ = err [DS "internal error: extractType' called on a a non-typeformer"]
 
 extractConstructorDef :: AConstructorDef -> TcMonad Doc

@@ -108,7 +108,7 @@ data Term = Var TName    -- | variables
           -- | The 'unfold' expression, only present in the surface language.
           | Unfold Int Term Term
           -- | @conv a by b at C@
-          | Conv Term [(Term,Epsilon)] (Bind [TName] Term)
+          | Conv Term [Term] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- If a proves (c a1 .. an)=(c b1 .. bn),  then (injectivity a i) proves ai=bi
@@ -134,12 +134,6 @@ data Term = Var TName    -- | variables
           -- | The TRUSTME form.
           | InferMe
           -- | Concrete syntax is an underscore.
-          | SubstitutedFor Term TName
-          -- Marks where a term was substituted for a variable; used in elaborating
-          --  the erased parts of conv-expressions.
-          | SubstitutedForA ATerm TName
-          -- Marks where an aterm was substituted for a variable; used in elaborating
-          --  the proved parts of conv-expressions. 
           
 -- | A 'Match' represents a case alternative. The first 'TName' is the
 -- constructor name, the rest of the 'TName's are pattern variables
@@ -172,14 +166,7 @@ delPosParenDeep = everywhere (mkT delPosParen)
   where delPosParen :: Term -> Term
         delPosParen (Pos _ tm)             = tm
         delPosParen (Paren tm)             = tm
-        delPosParen (SubstitutedFor  tm _) = tm
         delPosParen tm                     = tm
-
-aDelPosParenDeep :: ATerm -> ATerm
-aDelPosParenDeep = everywhere (mkT aDelPosParen)
-  where aDelPosParen :: ATerm -> ATerm 
-        aDelPosParen (ASubstitutedFor a _) = a
-        aDelPosParen a                     = a
 
 -- | Partial inverse of Pos
 unPos :: Term -> Maybe SourcePos
@@ -193,18 +180,6 @@ unPosDeep = something (mkQ Nothing unPos)
 -- | Tries to find a Pos inside a term, otherwise just gives up.
 unPosFlaky :: Term -> SourcePos
 unPosFlaky t = fromMaybe (newPos "unknown location" 0 0) (unPosDeep t)
-
--- | replace all the (SubstitutedFor a x) with just x
-unsubstitute :: ATerm -> ATerm 
-unsubstitute = everywhere (mkT unsubstituteHere)
-  where unsubstituteHere (ASubstitutedFor _ x) = (AVar x)
-        unsubstituteHere e = e
-
--- | Gather all the terms occuring in ASubstitutedFor subterms.
-extractSubstitution :: ATerm -> Map AName ATerm
-extractSubstitution = everything M.union (mkQ M.empty mapping) 
-  where mapping (ASubstitutedFor a x)   = M.singleton x a
-        mapping _ = M.empty
 
 data ConstructorNames = ConstructorNames {
                           tconNames :: Set TName,
@@ -260,7 +235,6 @@ type Telescope = [(TName,Term,Epsilon)]
 isVar :: Term -> Maybe TName
 isVar (Pos _ t) = isVar t
 isVar (Paren t) = isVar t
-isVar (SubstitutedFor t x) = isVar t
 isVar (Var n)   = Just n
 isVar _         = Nothing
 
@@ -275,14 +249,12 @@ isAType _ = False
 isTyEq :: Term -> Maybe (Term, Term)
 isTyEq (Pos _ t) = isTyEq t
 isTyEq (Paren t) = isTyEq  t
-isTyEq (SubstitutedFor t x) = isTyEq t
 isTyEq (TyEq ty0 ty1) = Just (delPosParenDeep ty0, delPosParenDeep ty1)
 isTyEq _ = Nothing
 
 isNumeral :: Term -> Maybe Int
 isNumeral (Pos _ t) = isNumeral t
 isNumeral (Paren t) = isNumeral t
-isNumeral (SubstitutedFor t x) = isNumeral t
 isNumeral (DCon c []) | c==string2Name "Zero" = Just 0
 isNumeral (DCon c [(t,Runtime)]) | c==string2Name "Succ" =
   do n <- isNumeral t ; return (n+1)
@@ -336,7 +308,7 @@ data ATerm =
   | ATyEq ATerm ATerm
   | AJoin ATerm Int ATerm Int EvaluationStrategy
   -- The last term is the type of the entire case-expression
-  | AConv ATerm [(ATerm,Epsilon)] (Bind [AName] ATerm) ATerm
+  | AConv ATerm [ATerm] (Bind [AName] ATerm) ATerm
   | AInjDCon ATerm Int
   -- First ATerm is proof, second is the type annotation.
   | AContra ATerm ATerm
@@ -359,7 +331,6 @@ data ATerm =
   | ANthEq Int ATerm
    -- the ATerm is the ascribed type
   | ATrustMe ATerm
-  | ASubstitutedFor ATerm AName
   
 {-
           -- | ATermination case

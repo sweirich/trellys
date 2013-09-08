@@ -198,9 +198,6 @@ getType (ANthEq i a) = do
 getType (ATrustMe ty) = do
   return (Logic, ty)
 
-getType (ASubstitutedFor a _) = getType a
-
-
 
 -------------------
 -------------------
@@ -352,23 +349,17 @@ aTs (AJoin a i b j strategy) = do
 aTs (AConv a prfs bnd ty) = do
   (xs, template) <- unbind bnd
   etemplate <- erase template
-  let runtimeVars = fv etemplate
   (th, aTy) <- aTs a
   unless (length xs == length prfs) $
     coreErr [DS "AConv length mismatch"]
-  eqs <-  let processPrf _ (pf,Runtime) = do
-                              pfTy <- aTsLogic pf
-                              case eraseToHead pfTy of
-                                ATyEq a1 a2 -> return (a1, a2)
-                                _           -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
-                                                        DD pfTy,
-                                                        DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
-              processPrf x (ATyEq a1 a2, Erased) = do
-                              when (translate x `S.member` runtimeVars) $
-                                   coreErr [DS "AConv not erased var"]
-                              return (a1, a2)
-              processPrf _ (_, Erased) = coreErr [DS "AConv malformed irrelevant eq"]
-           in zipWithM processPrf xs prfs
+  eqs <-  let processPrf pf = do
+                            pfTy <- aTsLogic pf
+                            case eraseToHead pfTy of
+                              ATyEq a1 a2 -> return (a1, a2)
+                              _           -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
+                                                      DD pfTy,
+                                                      DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
+           in mapM processPrf prfs
   let aTy1 = substs (zip xs (map fst eqs)) template
   let aTy2 = substs (zip xs (map snd eqs)) template
   fromEq <- aeq <$> erase aTy <*> erase aTy1
@@ -577,8 +568,6 @@ aTs (ANthEq i a) = do
 aTs (ATrustMe ty) = do
   aKc ty
   return (Logic, ty)
-
-aTs (ASubstitutedFor a _) = aTs a
 
 -- Synthesize a type and enforce that it can be checked at L, using FO if necessary.
 aTsLogic :: ATerm -> TcMonad ATerm

@@ -76,7 +76,6 @@ erase (ARanEq _ _ _) = return EJoin
 erase (AAtEq _) = return EJoin
 erase (ANthEq _ _) = return EJoin
 erase (ATrustMe _) = return ETrustMe
-erase (ASubstitutedFor a _) = erase a
 
 eraseMatch  :: (Fresh m, Applicative m) => AMatch -> m EMatch
 eraseMatch (AMatch c bnd) = do
@@ -101,7 +100,6 @@ eraseToHead (ACumul a i) = eraseToHead a
 eraseToHead (AUnbox a) = eraseToHead a
 eraseToHead (ABox a th) = eraseToHead a
 eraseToHead (AConv a _ _ _) = eraseToHead a
-eraseToHead (ASubstitutedFor a _) = eraseToHead a
 eraseToHead a = a
 
 {-
@@ -406,8 +404,6 @@ isValue (TerminationCase _ _)     = return False
 isValue TrustMe            = return True
 isValue InferMe            = return False --Hm, dunno.
 isValue (Unfold _ _ b)     = isValue b  --acts like erased let
-isValue (SubstitutedFor  a _) = isValue a
-isValue (SubstitutedForA a _) = isEValue <$> erase a
 
 -- | checks if an erased term is a value.
 isEValue :: ETerm -> Bool
