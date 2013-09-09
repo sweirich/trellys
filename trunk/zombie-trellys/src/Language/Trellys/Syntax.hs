@@ -610,7 +610,7 @@ uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere)
         uniVarsHere  _ = S.empty
 
 -- Labels for non-atomic terms.
-type Label = Bind [(AName,Epsilon)] ATerm
+type Label = Bind [AName] ATerm
 
 instance Eq Label where
   (==) = aeq

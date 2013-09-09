@@ -58,6 +58,9 @@ instance Canonical EvaluationStrategy where
 instance Canonical Explicitness where
   canonical = Explicit
 
+instance Canonical ATerm where
+   canonical = AVar (string2Name "erased")
+
 -- ********** ASSOCIATION PHASE 
 -- In a first pass, we associate all uses of trans to the right, which
 -- lets us simplify subproofs of the form (trans h (trans (symm h) p))
@@ -162,13 +165,12 @@ fuseProof (Raw1Cong bnd ps) = do
   (xs, template) <- unbind bnd  
   Cong template <$> fuseProofs xs ps
 
-fuseProofs :: (Applicative m, Fresh m) => [(AName,Epsilon)] -> [Raw1Proof] -> m [(AName,CheckProof)]
+fuseProofs :: (Applicative m, Fresh m) => [AName] -> [Raw1Proof] -> m [(AName,CheckProof)]
 fuseProofs [] [] = return []
-fuseProofs ((x,Runtime):xs) (p:ps) =  do
+fuseProofs (x:xs) (p:ps) =  do
   p' <- fuseProof p
   ps' <- fuseProofs xs ps
   return $ (x,p'):ps'
-fuseProofs ((x,Erased):xs) ps =  fuseProofs xs ps
 fuseProofs [] (_:_) = error "fuseProofs: too few variables (internal error)"
 fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 
@@ -332,118 +334,116 @@ zonkWithBindings bndgs = RL.everywhere (RL.mkT zonkTermOnce)
         zonkTermOnce a = a
 
 
--- 'decompose False avoid t' returns a new term 's' where each immediate
--- subterm of 't' that does not mention any of the variables in 'avoid'
--- has been replaced by a fresh variable. The mapping of the
--- introduced fresh variables is recorded in the writer monad, along with whether
--- the variable occurs in an unerased position or not.
--- The boolean argument tracks whether we are looking at a subterm or at the original term,
--- the epsilon tracks whether we are looking at a subterm in an erased position of the original term.
+-- 'decompose False avoid t' returns a new term 's' where each
+-- immediate subterm of 't' that does not mention any of the variables
+-- in 'avoid' has been replaced by a fresh variable. Furthermore, any
+-- erased parts of the term are canonicalized.  The mapping of the
+-- introduced fresh variables is recorded in the writer monad.  The
+-- boolean argument tracks whether we are looking at a subterm or at
+-- the original term.
 
 decompose :: (Monad m, Applicative m, Fresh m) => 
-             Bool -> Epsilon -> Set AName -> ATerm -> WriterT [(Epsilon,AName,ATerm)] m ATerm
-decompose True e avoid t | S.null (S.intersection avoid (fv t)) = do
+             Bool -> Set AName -> ATerm -> WriterT [(AName,ATerm)] m ATerm
+decompose True avoid t | S.null (S.intersection avoid (fv t)) = do
   x <- fresh (string2Name "x")
-  tell [(e, x, t)]
+  tell [(x, t)]
   return $ AVar x
-decompose _ _ avoid t@(AVar _) = return t
-decompose _ _ avoid t@(AUniVar _ _) = return t
-decompose sub e avoid (ACumul t l) = ACumul <$> (decompose True e avoid t) <*> pure l
-decompose _ _ avoid t@(AType _) = return t
-decompose sub e avoid (ATCon c args) = do
-  args' <- mapM (decompose True e avoid) args
+decompose _ avoid t@(AVar _) = return t
+decompose _ avoid t@(AUniVar _ _) = return t
+decompose _ avoid (ACumul t l) = ACumul <$> (decompose True avoid t) <*> pure l
+decompose _ avoid t@(AType _) = return t
+decompose _ avoid (ATCon c args) = do
+  args' <- mapM (decompose True avoid) args
   return $ ATCon c args'
-decompose sub e avoid (ADCon c th params args) = do
-  params' <- mapM (decompose True Erased avoid) params
-  args' <- mapM (\(a,ep) -> (,ep) <$> (decompose True (e `orEps` ep) avoid a)) args
-  return $ ADCon c canonical params' args'
-decompose _ e avoid (AArrow k ex ep bnd) = do
+decompose _ avoid (ADCon c th params args) = do
+  args' <- mapM (\(a,ep) -> case ep of
+                              Runtime -> (,Runtime) <$> (decompose True avoid a)
+                              Erased  -> return (canonical,Erased))
+                args
+  return $ ADCon c canonical (map (const canonical) params) args'
+decompose _ avoid (AArrow k ex ep bnd) = do
   ((x,unembed->t1), t2) <- unbind bnd
-  r1 <- decompose True e avoid t1
-  r2 <- decompose True e (S.insert x avoid) t2
+  r1 <- decompose True avoid t1
+  r2 <- decompose True (S.insert x avoid) t2
   return (AArrow k ex ep (bind (x, embed r1) r2))
-decompose _ e avoid (ALam th ty ep bnd) = do
+decompose _ avoid (ALam th ty ep bnd) = do
   (x, body) <- unbind bnd 
-  ty' <- decompose True Erased avoid ty
-  r <- decompose True e (S.insert x avoid) body
-  return (ALam th ty' ep (bind x r))
-decompose _ e avoid (AApp ep t1 t2 ty) = 
-  AApp ep <$> (decompose True e avoid t1) 
-          <*> (decompose True (e `orEps` ep) avoid t2)
-          <*> (decompose True Erased avoid ty)
-decompose sub e avoid (AAt t th) =
-  AAt <$> (decompose True e avoid t) <*> pure th
-decompose sub e avoid (AUnbox t) = AUnbox <$> (decompose True e avoid t)
-decompose sub e avoid (ABox t th) = ABox <$> (decompose True e avoid t) <*> pure th
-decompose _ e avoid (AAbort t) = AAbort <$> (decompose True Erased avoid t)
-decompose _ e avoid (ATyEq t1 t2) =
-  ATyEq <$> (decompose True e avoid t1) <*> (decompose True e avoid t2)
-decompose _ _ avoid t@(AJoin a i b j strategy) =
-  AJoin <$> (decompose True Erased avoid a) 
-        <*> pure canonical
-        <*> (decompose True Erased avoid b) 
-        <*> pure canonical
-        <*> pure canonical
-decompose _ e avoid (AConv t1 ts bnd ty) =  do
+  r <- decompose True (S.insert x avoid) body
+  return (ALam th canonical ep (bind x r))
+decompose _ avoid (AApp Runtime t1 t2 ty) = 
+  AApp Runtime <$> (decompose True avoid t1) 
+               <*> (decompose True avoid t2)
+               <*> (pure canonical)
+decompose _ avoid (AApp Erased t1 t2 ty) = 
+  AApp Erased  <$> (decompose True avoid t1) 
+               <*> (pure canonical)
+               <*> (pure canonical)
+decompose sub avoid (AAt t th) =
+  AAt <$> (decompose True avoid t) <*> pure th
+decompose _ avoid (AUnbox t) = AUnbox <$> (decompose True avoid t)
+decompose _ avoid (ABox t th) = ABox <$> (decompose True avoid t) <*> pure th
+decompose _ avoid (AAbort t) = return $ AAbort canonical
+decompose _ avoid (ATyEq t1 t2) =
+  ATyEq <$> (decompose True avoid t1) <*> (decompose True avoid t2)
+decompose _ avoid t@(AJoin a i b j strategy) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (AConv t1 ts bnd ty) =  do
   (xs, t2) <- unbind bnd
-  r1 <- decompose True e avoid t1
-  rs <- mapM (decompose True Erased avoid) ts
-  r2 <- decompose True Erased (S.union (S.fromList xs) avoid) t2
-  ty' <- decompose True Erased avoid ty
-  return (AConv r1 rs (bind xs r2) ty')
-decompose _ e avoid (AContra t ty) = 
-  AContra <$> (decompose True Erased avoid t) <*> (decompose True Erased avoid ty)
-decompose _ e avoid (AInjDCon a i) =
-  AInjDCon <$> (decompose True e avoid a) <*> pure i
-decompose _ e avoid (ASmaller t1 t2) =
-  ASmaller <$> (decompose True e avoid t1) <*> (decompose True e avoid t2)
-decompose _ e avoid (AOrdAx t1 t2) =
-  AOrdAx <$> (decompose True e avoid t1) <*> (decompose True Erased avoid t2)
-decompose _ e avoid (AOrdTrans t1 t2) =
-  AOrdTrans <$>  (decompose True e avoid t1) <*> (decompose True e avoid t2)
-decompose _ e avoid (AInd ty ep bnd) = do
+  r1 <- decompose True avoid t1
+  return (AConv r1 (map (const canonical) ts) (bind xs canonical) canonical)
+decompose _ avoid (AContra t ty) = 
+  return $ AContra canonical canonical
+decompose _ avoid (AInjDCon a i) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ASmaller t1 t2) =
+  ASmaller <$> (decompose True avoid t1) <*> (decompose True avoid t2)
+decompose _ avoid (AOrdAx t1 t2) =
+  return $ AOrdAx canonical canonical
+decompose _ avoid (AOrdTrans t1 t2) =
+  return $ AOrdAx canonical canonical
+decompose _ avoid (AInd ty ep bnd) = do
   ((x,y), t) <- unbind bnd
-  ty' <- decompose True Erased avoid ty
-  r <- decompose True e (S.insert x (S.insert y avoid)) t
-  return $ AInd ty' ep (bind (x,y) r)  
-decompose _ e avoid (ARec ty ep bnd) = do
+  r <- decompose True (S.insert x (S.insert y avoid)) t
+  return $ AInd canonical ep (bind (x,y) r)  
+decompose _ avoid (ARec ty ep bnd) = do
   ((x,y), t) <- unbind bnd
-  ty' <- decompose True Erased avoid ty
-  r <- decompose True e (S.insert x (S.insert y avoid)) t
-  return $ ARec ty' ep (bind (x,y) r)
-decompose _ e avoid (ALet ep bnd (th,ty)) = do
+  r <- decompose True (S.insert x (S.insert y avoid)) t
+  return $ ARec canonical ep (bind (x,y) r)
+decompose _ avoid (ALet Runtime bnd (th,ty)) = do
   ((x,y, unembed->t1), t2) <- unbind bnd
-  r1 <- decompose True (e `orEps` ep) avoid t1
-  r2 <- decompose True e (S.insert x (S.insert y avoid)) t2
-  ty' <- decompose True Erased avoid ty
-  return $ ALet ep (bind (x,y, embed r1) r2) (th,ty')
-decompose _ e avoid (ACase t1 bnd (th,ty)) = do
+  r1 <- decompose True avoid t1
+  r2 <- decompose True (S.insert x (S.insert y avoid)) t2
+  return $ ALet Runtime (bind (x,y, embed r1) r2) (th,canonical)
+decompose _ avoid (ALet Erased bnd (th,ty)) = do
+  ((x,y, unembed->t1), t2) <- unbind bnd
+  r2 <- decompose True (S.insert x (S.insert y avoid)) t2
+  return $ ALet Erased (bind (x,y, embed canonical) r2) (canonical,canonical)
+decompose _ avoid (ACase t1 bnd (th,ty)) = do
   (x, ms) <- unbind bnd
-  ty' <- decompose True Erased avoid ty
-  r1 <- decompose True e avoid t1
-  rs <- mapM (decomposeMatch e (S.insert x avoid)) ms
-  return (ACase r1 (bind x rs) (th,ty'))
-decompose _ e avoid (ADomEq a) =
-  ADomEq <$> decompose True e avoid a
-decompose _ e avoid (ARanEq p a b) =
-  ARanEq <$> decompose True e avoid p <*> decompose True e avoid a <*> decompose True e avoid b
-decompose _ e avoid (AAtEq a) =
-  AAtEq <$> (decompose True e avoid a)
-decompose _ e avoid (ANthEq i a) =
-  ANthEq i <$> decompose True e avoid a
-decompose _ _ avoid (ATrustMe t) = 
-  ATrustMe <$> (decompose True Erased avoid t)
+  r1 <- decompose True avoid t1
+  rs <- mapM (decomposeMatch (S.insert x avoid)) ms
+  return (ACase r1 (bind x rs) (canonical,canonical))
+decompose _ avoid (ADomEq a) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ARanEq p a b) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (AAtEq a) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ANthEq i a) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ATrustMe t) = 
+  return $ ATrustMe canonical
 
 decomposeMatch :: (Monad m, Applicative m, Fresh m) => 
-                  Epsilon -> Set AName -> AMatch -> WriterT [(Epsilon,AName,ATerm)] m AMatch
-decomposeMatch e avoid (AMatch c bnd) = do
+                  Set AName -> AMatch -> WriterT [(AName,ATerm)] m AMatch
+decomposeMatch avoid (AMatch c bnd) = do
   (args, t) <- unbind bnd
-  r <- (decompose True e (S.union (binders args) avoid) t)
+  r <- (decompose True (S.union (binders args) avoid) t)
   return $ AMatch c (bind args r)
 
 -- | match is kind of the opposite of decompose: 
 --   [match vars template t] returns the substitution s of terms for the variables in var,
---   such that (substs (toList (match vars template t)) template) == t
+--   such that (erase (substs (toList (match vars template t)) template)) == (erase t)
 -- Precondition: t should actually be a substitution instance of template, with those vars.
 
 -- Todo: currently this matches the erased parts of the terms also, but
@@ -457,65 +457,55 @@ match vars (ACumul t _) (ACumul t' _) = match vars t t'
 match vars (AType _) _ = return M.empty
 match vars (ATCon c params) (ATCon _ params') = 
   foldr M.union M.empty <$> zipWithM (match vars) params params'
-match vars (ADCon c _ params ts) (ADCon _ _ params' ts') = do
-   m1 <- foldr M.union M.empty <$> zipWithM (match vars) params params'
-   m2 <- foldr M.union M.empty <$> zipWithM (match vars `on` fst) ts ts'
-   return (m1 `M.union` m2)
+match vars (ADCon c _ _ args) (ADCon _ _ _ args') = do
+  foldr M.union M.empty <$> zipWithM (match vars `on` fst) args args'
 match vars (AArrow k ex ep bnd) (AArrow k' ex' ep' bnd') = do
   Just ((_,unembed -> t1), t2, (_,unembed -> t1'), t2') <- unbind2 bnd bnd'
   match vars t1 t1' `mUnion` match vars t2 t2'
---Fixme: think a bit about ty.
 match vars (ALam th ty ep bnd) (ALam th' ty' ep' bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'
-  match vars ty ty' `mUnion` match vars t t'
-match vars (AApp ep t1 t2 ty) (AApp ep' t1' t2' ty') =
+  match vars t t'
+match vars (AApp Runtime t1 t2 ty) (AApp _ t1' t2' ty') =
   match vars t1 t1' 
    `mUnion` match vars t2 t2'
-   `mUnion` match vars ty ty'
+match vars (AApp Erased t1 t2 ty) (AApp _ t1' t2' ty') =
+  match vars t1 t1' 
 match vars (AAt t _) (AAt t' _) = match vars t t'
 match vars (AUnbox t) (AUnbox t') = match vars t t'
 match vars (ABox t th) (ABox t' th') = match vars t t'
-match vars (AAbort t) (AAbort t') = match vars t t'
+match vars (AAbort t) (AAbort t') = return M.empty
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AJoin a _ b _ _) (AJoin a' _ b' _ _) = 
-  match vars a a' `mUnion` match vars b b'
+match vars (AJoin _ _ _ _ _) (AJoin _ _ _ _ _) = return M.empty
 match vars (AConv t1 t2s bnd ty) (AConv t1' t2s' bnd' ty') = do
-  Just (_, t3, _, t3') <- unbind2 bnd bnd'
   match vars t1 t1'
-   `mUnion` (foldr M.union M.empty <$> zipWithM (match vars) t2s t2s')
-   `mUnion` match vars t3 t3'
-   `mUnion` match vars ty ty'
-match vars (AContra t1 t2) (AContra t1' t2') =
-  match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AInjDCon a i) (AInjDCon a' i') = 
-  match vars a a'
+match vars (AContra t1 t2) (AContra t1' t2') = return M.empty
+match vars (AInjDCon a i) (AInjDCon a' i') = return M.empty
 match vars (ASmaller t1 t2) (ASmaller t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AOrdAx t1 t2) (AOrdAx t1' t2') = 
-  match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AOrdTrans t1 t2) (AOrdTrans t1' t2') =
-  match vars t1 t1' `mUnion` match vars t2 t2'
+match vars (AOrdAx t1 t2) (AOrdAx t1' t2') = return M.empty
+match vars (AOrdTrans t1 t2) (AOrdTrans t1' t2') = return M.empty
 match vars (AInd ty ep bnd) (AInd ty' ep' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
-  match vars ty ty' `mUnion` match vars t t'
+  match vars t t'
 match vars (ARec ty ep bnd) (ARec ty' ep' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
-  match vars ty ty' `mUnion` match vars t t'
-match vars (ALet ep bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
+  match vars t t'
+match vars (ALet Runtime bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
   Just ((_,_,unembed -> t1), t2, (_,_,unembed -> t1'), t2') <- unbind2 bnd bnd'
-  match vars t1 t1' `mUnion` match vars t2 t2' `mUnion` match vars ty ty'
+  match vars t1 t1' `mUnion` match vars t2 t2'
+match vars (ALet Erased bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
+  Just ((_,_,unembed -> t1), t2, (_,_,unembed -> t1'), t2') <- unbind2 bnd bnd'
+  match vars t2 t2'
 match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
   Just (_, alts, _, alts') <- unbind2 bnd bnd'
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
     `mUnion`  match vars t1 t1'
-    `mUnion`  match vars ty ty'
-match vars (ADomEq t)     (ADomEq t')      = match vars t t'
-match vars (ARanEq p t1 t2) (ARanEq p' t1' t2') = 
-     match vars p p' `mUnion` match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AAtEq  t)     (AAtEq  t')      = match vars t t'
-match vars (ANthEq _ t)   (ANthEq _ t')    = match vars t t'
-match vars (ATrustMe t)   (ATrustMe t')    = match vars t t'
+match vars (ADomEq t)     (ADomEq t')      = return M.empty
+match vars (ARanEq p t1 t2) (ARanEq p' t1' t2') = return M.empty
+match vars (AAtEq  t)     (AAtEq  t')      = return M.empty
+match vars (ANthEq _ t)   (ANthEq _ t')    = return M.empty
+match vars (ATrustMe t)   (ATrustMe t')    = return M.empty
 match _ t t' = error $ "internal error: match called on non-matching terms "
                        ++ show t ++ " and " ++ show t' ++ "."
 
@@ -551,17 +541,16 @@ genEqs t = do
     AUniVar x _ -> recordUniVar a x aTy
     _           -> return ()
 
-  (s,ss) <- runWriterT (decompose False Runtime S.empty t)
-  let ssRuntime = filter (\(ep,x,term) -> ep==Runtime) ss
-  bs <- mapM genEqs (map (\(ep,x,term) -> term) $ ssRuntime)
-  let label = (bind (map (\(ep,x,term)->(x,ep)) ss) s)
+  (s,ss) <- runWriterT (decompose False S.empty t)
+  bs <- mapM genEqs (map (\(x,term) -> term) $ ss)
+  let label = (bind (map (\(x,term) -> x) ss) s)
   propagate [(RawRefl,
              Right $ EqBranchConst label bs a)]
 
-  when (not (null ssRuntime)) $ do
+  when (not (null ss)) $ do
     --If the head of t is erased, we record an equation saying so.
     sErased <- erase s
-    let ((_,x,s1):_) = ssRuntime
+    let ((x,s1):_) = ss
     when (sErased `aeq` EVar (translate x)) $ 
       propagate [(RawAssumption (Nothing, t, s1),
                  Left $ EqConstConst a (head bs))]
