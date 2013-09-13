@@ -300,12 +300,6 @@ braces = Token.braces tokenizer
 natural :: LParser Int
 natural = fromInteger <$> Token.natural tokenizer
 
-uniVar :: LParser Term
-uniVar = do
-  reservedOp "?"
-  n <- fresh (string2Name "")
-  return (UniVar n)
-
 commaSep1 :: LParser a -> LParser [a]
 commaSep1 = Token.commaSep1 tokenizer
 
@@ -545,7 +539,6 @@ funapp = do
 factor = choice [ inferme   <?> "a placeholder (_)"
                 , varOrCon <?> "a variable or zero-argument data constructor"
                 , explicitize <?> "an atomic expression with !"
-                , uniVar <?> "a questionmark (?)"
                 , typen   <?> "Type n"
                 , natenc <?> "a literal"
                 , lambda <?> "a lambda"

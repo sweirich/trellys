@@ -76,7 +76,6 @@ deriving instance Show Term
 -- case expressions) and variables introduced by lambda abstractions
 -- and dependent products).
 data Term = Var TName    -- | variables
-          | UniVar TName  -- | unification variables
           | TCon TName [(Term,Epsilon)]   -- | type constructors (fully applied)
           | DCon TName [(Term,Epsilon)]   -- | term constructors (fully applied)
           | Type Int   -- | The 'Type' terminal
