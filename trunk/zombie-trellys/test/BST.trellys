@@ -20,7 +20,7 @@ ordLtIrrefl : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> ordLt x x = False
 ordLtIrrefl = \[a].\order.\x.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (pjoin : !ordLt [?] (OrdDict lt [irrefl] [antisymm] [trans]) x x = lt x x) in
+      let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) x x = lt x x) in
       let [_] = irrefl x in
       _
 
@@ -29,7 +29,7 @@ ordLtAntiSymm : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) ->
 ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (pjoin : !ordLt [?] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
+      let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = antisymm x y h1 h2 in
       _
 
@@ -38,7 +38,7 @@ ordLtTrans : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@l
 ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
   case order [_] of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
-      let _ = (pjoin : !ordLt [?] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
+      let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = trans x y z h1 h2 in
       _
 
@@ -296,7 +296,7 @@ log insertS : [a:Type 0] -> Ord a -> (x : a@log) -> (t:Tree a)
 insertS = \[a] order x . ind insertS t =
   case t [t_eq] of 
     EmptyTree -> 
-       MkRefine [?] [?]
+       MkRefine [_] [_]
                 (BranchTree EmptyTree x EmptyTree)
                 [TRUSTME]
     BranchTree t1 y t2 ->
