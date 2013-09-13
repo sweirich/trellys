@@ -187,8 +187,6 @@ instance Disp ModuleImport where
 instance Display Term where
   display (Var n) = display n
 
-  display (UniVar n) = return $ text ("?" ++ show n)
-
   display (isNumeral -> Just i) = display i
 
   display (TCon n args) = do

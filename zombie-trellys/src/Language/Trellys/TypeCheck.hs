@@ -128,12 +128,6 @@ ta (Pos p t) ty =
 
 ta (Paren a) ty = ta a ty
 
-ta (UniVar x) ty = do
-  addConstraint (ShouldHaveType (translate x) ty)
-  return (AUniVar (translate x) ty)
-  --currently all univars in the source program are distinct, 
-  -- so we don't have to check for a binding of x.
-
 -- rule T_join
 ta (Join s1 s2 strategy) (ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
@@ -495,6 +489,7 @@ ta (DCon c args) (ATCon tname eparams) = do
 
 ta TrustMe ty = return (ATrustMe ty)
 
+-- For InferMes with equality type, we try to create a proof.
 ta InferMe (ATyEq ty1 ty2) = do
   availableEqs <- getAvailableEqs
   pf <- prove availableEqs (ty1,ty2)
@@ -510,7 +505,11 @@ ta InferMe (ATyEq ty1 ty2) = do
          then zonkTerm p
          else zonkTerm =<< (uneraseTerm ty1 ty2 p)       
 
-ta InferMe ty  = err [DS "I only know how to prove equalities, this goal has type", DD ty]
+-- Other Infermes create unification variables.
+ta InferMe ty = do
+  x <- fresh (string2Name "")
+  addConstraint (ShouldHaveType x ty)
+  return (AUniVar x ty)
 
 -- rule T_chk
 ta a tyB = do

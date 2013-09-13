@@ -372,7 +372,6 @@ parNSteps n a = do
 -- This is  used in a single place in the entire program, wish I could get rid of it.
 isValue :: (Fresh m, Applicative m) => Term -> m Bool
 isValue (Var _)            = return True
-isValue (UniVar _)         = return False
 isValue (TCon _ args)      = return True
 isValue (DCon _ args)      = allM (isValue . fst) args
 isValue (Type _)           = return True
