@@ -133,6 +133,6 @@ encode_spec = \[a] eq xs .
     Nil -> (pjoin : decode (encode  eq (Nil)) = (Nil : List a))
     Cons x ys ->
       let _ = (pjoin : encode eq (Cons x ys) = encodeFrom eq ys 1 x) in
-      let _ = encodeFrom_spec [?] eq ys 1 x in
+      let _ = encodeFrom_spec [_] eq ys 1 x in
       let _ = (pjoin : append (replicate 1 x) ys = (Cons x ys : List a)) in
       _

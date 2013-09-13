@@ -38,8 +38,8 @@ ind convert_id [n] = \i . case i [i_eq] of
            conv join by i_eq' at i . convert [n] i = i
   ISucc [n'] [n'_eq] i' -> let [n'_eq'] [_] = sym Nat Nat (Succ n') n n'_eq in
                            let ih [_] = convert_id [n'] [ord n'_eq'] i' in
-                           let step [_] = (join : convert [n] ((ISucc [n'] [n'_eq] i') : Index ?)
-                                                = (ISucc [Succ n'] [(_ : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i') : Index ?)) in
+                           let step [_] = (join : convert [n] ((ISucc [n'] [n'_eq] i') : Index _)
+                                                = (ISucc [Succ n'] [(_ : (Succ (Succ n') = Succ (Succ n')))] (convert [n'] i') : Index _)) in
                            let [i_eq'] [_] = sym (Index n) (Index n) i (ISucc [n'] [n'_eq] i') i_eq in
                            let eq [_] =
                               ((conv step by ih, i_eq'
