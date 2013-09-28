@@ -1,0 +1,37 @@
+module Monadic where 
+
+import List
+
+-- Some examples of basic monad programming.
+
+usually log
+
+data Monad (M:Type->Type) : Type where 
+  mkMonad of (_ :  [A:Type] -> A -> M A)
+             (_ :  [A:Type] -> [B:Type] -> M A -> (A -> M B) -> M B)
+
+return : [M:Type->Type] => (Monad M) => [A:Type] => A -> M A
+return = \[M] monad [A] a. case monad of
+                             mkMonad ret bnd -> ret [A] a
+
+bind : [M:Type->Type] => (Monad M) => [A:Type] => [B:Type] =>
+         M A -> (A -> M B) -> M B
+bind = \[M] monad [A] [B] ma f. case monad of 
+                                  mkMonad ret bnd -> bnd [A] [B] ma f
+
+-- This one works for the wrong reason, the contraint-based unification
+-- doesn't get enough information to fix the type of y.
+mapM : [M:Type->Type] => Monad M => [B:Type] =>
+         M B -> (xs: List B) -> M (List B)
+mapM = \[M] monad [B] b . ind mapM xs =
+          case xs [xs_eq] of 
+            Nil -> return (Nil : List B)
+            Cons x xs' -> bind b (\y. 
+                          bind (mapM xs' [ord xs_eq]) (\ys'.
+                          return (Cons y Nil : List B)))
+
+liftM : [M:Type->Type] => (Monad M) => [A:Type] => [B:Type] =>
+          (f:A->B) -> M A -> M B
+liftM = \[M] monad [A] [B] f mx.
+           !bind [M] monad [A] [B] mx ((\x . return (f x)) : A -> M B)
+

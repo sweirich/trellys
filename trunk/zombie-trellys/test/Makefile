@@ -13,14 +13,14 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude TypeTest CongruenceTests UnfoldTests \
+PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
      Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
      NatElimination \
      CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE BST Sat Paper
+     RLE Sat Paper
 
 # These were broken by correctly doing CBV-reduction:
 ### Arithmetic-old Append2-old
@@ -43,7 +43,7 @@ all: pass fail
 clean:
 	rm *.trellys-elaborated
 
-pass: $(foreach p,$(PASS),$(p).pass)
+pass: $(foreach p,$(PASS),$(p).pass) BST.passtypeclassy Monadic.passtypeclassy
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"
@@ -84,6 +84,9 @@ todo: todo_pass todo_fail
 	@echo -n "$< (testing extraction)"
 	@if ! ($(TYPECHECK) --extraction $< && ocamlc -w -A $*.ml); then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
+%.passtypeclassy:	%.trellys
+	@echo -n "$<: "
+	@if ! $(TYPECHECK) --typeclassy $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
 
 %.fail: %.trellys
 	@echo -n "$<: "

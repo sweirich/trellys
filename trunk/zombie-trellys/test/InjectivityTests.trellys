@@ -1,0 +1,24 @@
+-- This module tests that the automatic congruence closure algorithm is
+-- handling injectivity of datatype constructors.
+
+module InjectivityTests where
+
+import Prelude
+
+data T (x : Nat) (y : Nat) : Type where
+  t of
+
+-- Injectivity of datatype constructors:
+
+test_tcon1 : (T 0 0 = T 0 1) -> (0 = 1)
+test_tcon1 h = _ 
+
+test_tcon2 : (x:Nat) -> (y:Nat) -> (T x 0 = T y 0) -> (x = y)
+test_tcon2 x y h = _ 
+
+-- Injectivity of the @.
+
+test_at1 : (T1 : Type) -> (T2 : Type) -> ((T1@log) = (T2@log)) -> (T1=T2)
+test_at1 T1 T2 h = _
+
+

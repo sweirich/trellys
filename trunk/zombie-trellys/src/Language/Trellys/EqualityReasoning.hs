@@ -2,7 +2,7 @@
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
     GeneralizedNewtypeDeriving, ViewPatterns,
     UndecidableInstances, OverlappingInstances, TypeSynonymInstances, 
-    TupleSections, TypeFamilies #-}
+    TupleSections, TypeFamilies, GADTs, DataKinds #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
@@ -13,11 +13,13 @@ import Generics.RepLib hiding (Arrow,Con,Refl)
 import qualified Generics.RepLib as RL
 import Language.Trellys.GenericBind hiding (avoid)
 
+import Language.Trellys.Options
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(UniVarBindings, setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
-                                   warn)
+                                   warn,
+                                   getFlag)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
 import Language.Trellys.TypeCheckCore (aGetTh, getType)
@@ -76,6 +78,7 @@ associateProof (RawSymm p) = case associateProof p of
                                p'      -> RawSymm p'
 associateProof (RawTrans p q) = rawTrans (associateProof p) (associateProof q)
 associateProof (RawCong l ps) = RawCong l (map associateProof ps)
+associateProof (RawInj i p) = RawInj i (associateProof p)
 
 -- This is a smart constructor for RawTrans
 rawTrans :: Proof -> Proof -> Proof
@@ -101,6 +104,7 @@ data Raw1Proof =
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
  | Raw1Cong Label [Raw1Proof]
+ | Raw1Inj Int Raw1Proof
   deriving Show
 
 symmetrizeProof :: Proof -> Raw1Proof
@@ -114,58 +118,71 @@ symmetrizeProof (RawSymm (RawTrans p q)) = Raw1Trans (symmetrizeProof (RawSymm q
                                                      (symmetrizeProof (RawSymm p))
 symmetrizeProof (RawCong l ps) = Raw1Cong l (map symmetrizeProof ps)
 symmetrizeProof (RawSymm (RawCong l ps)) = Raw1Cong l (map (symmetrizeProof . RawSymm) ps)
+symmetrizeProof (RawInj i p) = Raw1Inj i (symmetrizeProof p)
+symmetrizeProof (RawSymm (RawInj i p)) = Raw1Inj i (symmetrizeProof (RawSymm p))
 
 -- ********** NORMALIZATION PHASE
--- The raw1 proof terms are then normalized into this datatype, by
--- associating transitivity to the right and fusing adjacent Congs. 
--- A SynthProof lets you infer the lhs of the equality it is proving,
--- while a CheckProof doesn't.
+--  The raw1 proof terms are then normalized into this datatype, by
+-- associating transitivity to the right and fusing adjacent Congs.  A
+-- SynthProof lets you infer the equality it is proving, while a
+-- CheckProof doesn't.
 
 data SynthProof =
     Assum Orientation (Maybe ATerm,ATerm,ATerm) 
-  | AssumTrans Orientation (Maybe ATerm,ATerm,ATerm) CheckProof
-  deriving Show
+  | Inj Int SynthProof
+  | Chain ChainProof  --Extra invariant: both ends of the chain should be definite.
+
 data CheckProof =
-    Synth SynthProof
-  | Refl
-  | Cong ATerm [(AName, CheckProof)]
-  | CongTrans ATerm [(AName, CheckProof)] SynthProof
- deriving Show
+   Cong ATerm [(AName, ChainProof)]
 
-transProof :: CheckProof -> CheckProof -> CheckProof
-transProof (Synth (Assum o h)) p = Synth (AssumTrans o h p)
-transProof (Synth (AssumTrans o h p)) q = Synth (AssumTrans o h (transProof p q))
-transProof Refl q = q
-transProof (Cong l ps) (Synth q) = CongTrans l ps q
-transProof (Cong l ps) Refl = Cong l ps
-transProof (Cong l ps) (Cong _ qs) = Cong l (zipWith transSubproof ps qs)
-transProof (Cong l ps) (CongTrans _ qs r) = CongTrans l (zipWith transSubproof ps qs) r
-transProof (CongTrans l ps (AssumTrans o h q)) r =  CongTrans l ps (AssumTrans o h (transProof q r))
-transProof (CongTrans l ps (Assum o h)) r =  CongTrans l ps (AssumTrans o h r)
+-- This type additionally maintains the invariant that there are 
+-- never two CheckProofs next to each other, but I don't formalize 
+-- that in the type system (too fiddly).
+type ChainProof = [Either SynthProof CheckProof]
 
-transSubproof :: (AName, CheckProof) -> (AName,  CheckProof) -> (AName, CheckProof)
-transSubproof (x,p)  (_,q)  = (x, transProof p q)
+deriving instance Show SynthProof
+deriving instance Show CheckProof
 
-fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m CheckProof
-fuseProof (Raw1Assumption o h) = return $ Synth (Assum o h)
-fuseProof (Raw1Refl) = return $ Refl
-fuseProof (Raw1Trans Raw1Refl q) = fuseProof q
-fuseProof (Raw1Trans (Raw1Assumption o h) q) =  Synth . AssumTrans o h <$> (fuseProof q)
-fuseProof (Raw1Trans (Raw1Trans p q) r) = fuseProof (Raw1Trans p (Raw1Trans q r))
-fuseProof (Raw1Trans (Raw1Cong bnd ps) q) = do
-  (xs, template) <- unbind bnd
-  ps' <- fuseProofs xs ps
-  q0' <- fuseProof q
-  case q0' of
-    Synth q'            -> return $ CongTrans template ps' q'
-    Refl                -> return $ Cong      template ps'
-    (Cong _ qs')        -> return $ Cong      template (zipWith transSubproof ps' qs')
-    (CongTrans _ qs' r) -> return $ CongTrans template (zipWith transSubproof ps' qs') r
+transProof :: ChainProof -> ChainProof -> ChainProof
+transProof ps qs = foldr trans1Proof qs ps
+ where trans1Proof :: (Either SynthProof CheckProof) -> ChainProof -> ChainProof
+       trans1Proof (Right (Cong l ps)) (Right (Cong _ ps') : qs) =
+           Right (Cong l (zipWith transSubproof ps ps')) : qs
+       trans1Proof p qs = p : qs
+       transSubproof :: (AName, ChainProof) -> (AName,  ChainProof) -> (AName, ChainProof)
+       transSubproof (x,p)  (_,q)  = (x, transProof p q)
+
+flatMapProof :: (a -> ChainProof) -> [a] -> ChainProof
+flatMapProof f (a:as) = transProof (f a) (flatMapProof f as)
+flatMapProof f [] = []
+
+injProof :: Int -> ChainProof -> ChainProof
+injProof i ps =
+  let (prefix :: [CheckProof], ps') = takeWhileRight ps
+      (reverse -> end :: [CheckProof], reverse -> middle :: ChainProof) = takeWhileRight (reverse ps')
+  in transProof (flatMapProof (injCong i) prefix) 
+                (Left (Inj i (Chain middle)) : flatMapProof (injCong i) end)
+
+injCong :: Int -> CheckProof  -> ChainProof
+injCong i (Cong l ps) = snd (ps !! i)
+
+takeWhileRight :: [Either a b] -> ([b], [Either a b])
+takeWhileRight [] = ([],[])
+takeWhileRight (Right x : xs) = let (ys,zs) = takeWhileRight xs in (x:ys, zs)
+takeWhileRight xs@(Left _ : _) = ([],xs)
+
+fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m ChainProof
+fuseProof (Raw1Assumption o h) = return $ [Left (Assum o h)]
+fuseProof (Raw1Refl) = return $ []
+fuseProof (Raw1Trans p q) = transProof <$> fuseProof p <*> fuseProof q
 fuseProof (Raw1Cong bnd ps) = do
   (xs, template) <- unbind bnd  
-  Cong template <$> fuseProofs xs ps
+  ps' <- fuseProofs xs ps
+  return [Right (Cong template ps')]
+fuseProof (Raw1Inj i p) = do
+  injProof i <$> fuseProof p
 
-fuseProofs :: (Applicative m, Fresh m) => [AName] -> [Raw1Proof] -> m [(AName,CheckProof)]
+fuseProofs :: (Applicative m, Fresh m) => [AName] -> [Raw1Proof] -> m [(AName,ChainProof)]
 fuseProofs [] [] = return []
 fuseProofs (x:xs) (p:ps) =  do
   p' <- fuseProof p
@@ -179,51 +196,69 @@ fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 
 data AnnotProof = 
     AnnAssum Orientation (Maybe ATerm,ATerm,ATerm)
-  | AnnRefl ATerm ATerm
+  | AnnRefl ATerm
   | AnnCong ATerm [(AName,ATerm,ATerm,AnnotProof)] ATerm ATerm
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
+  | AnnInj ATerm Int AnnotProof
  deriving Show
 
--- [synthProof B p] takes a SynthProof of A=B and returns A and the corresponding AnnotProof
-synthProof :: (Applicative m, Fresh m) => ATerm -> SynthProof -> m (ATerm,AnnotProof)
-synthProof tyB (Assum NotSwapped h@(n,tyA,tyC)) = do
-  return $ (tyA, AnnAssum NotSwapped h)
-synthProof tyB (Assum Swapped h@(n,tyA,tyC)) = do
-  return $ (tyC, AnnAssum Swapped h)
-synthProof tyB (AssumTrans NotSwapped h@(n,tyA,tyC) p) = do
-  q <- checkProof tyC tyB p
-  return $ (tyA, AnnTrans tyA tyC tyB (AnnAssum NotSwapped h) q)
-synthProof tyB (AssumTrans Swapped    h@(n,tyA,tyC) p) = do
-  q <- checkProof tyA tyB p
-  return $ (tyC, AnnTrans tyC tyA tyB(AnnAssum Swapped h) q)
+-- [synthProof p] takes a SynthProof of A=B and returns A, B and the corresponding AnnotProof
+synthProof :: (Applicative m, Fresh m) => SynthProof -> m (ATerm,ATerm,AnnotProof)
+synthProof (Assum NotSwapped h@(n,tyA,tyB)) = do
+  return $ (tyA, tyB, AnnAssum NotSwapped h)
+synthProof (Assum Swapped h@(n,tyA,tyB)) = do
+  return $ (tyB, tyA, AnnAssum Swapped h)
+synthProof (Inj i p) = do
+  (tyA,tyB,p') <- synthProof p
+  (l, as) <- runWriterT (decompose False S.empty tyA)
+  (_, bs) <- runWriterT (decompose False S.empty tyB)
+  return (snd (as !! i), snd (bs !! i), AnnInj l i p')
+synthProof (Chain ps) = chainProof Nothing Nothing ps --By precondition to Chain, should work.
+
 
 -- [checkProof A B p] takes a CheckProof of A=B and returns a corresponding AnnotProof
 checkProof :: (Applicative m, Fresh m) => ATerm -> ATerm -> CheckProof -> m AnnotProof
-checkProof _ tyB (Synth p) = snd <$> synthProof tyB p
-checkProof tyA tyB Refl = return $ AnnRefl tyA tyB
 checkProof tyA tyB (Cong template ps)  =  do
   subAs <- match (map fst ps) template tyA
   subBs <- match (map fst ps) template tyB
   subpfs <- mapM (\(x,p) -> do 
                               let subA = fromJust $ M.lookup x subAs
                               let subB = fromJust $ M.lookup x subBs
-                              p' <- checkProof subA subB p
+                              (_,_,p') <- chainProof (Just subA) (Just subB) p
                               return (x, subA, subB, p'))
                  ps
   return $ AnnCong template subpfs tyA tyB
-checkProof tyA tyC (CongTrans template ps q)  = do
-  (tyB, tq) <- synthProof tyC q
-  subAs <- match (map fst ps) template tyA
-  subBs <- match (map fst ps) template tyB
-  subpfs <- mapM (\(x,p) -> do
-                              let subA = fromJust $ M.lookup x subAs
-                              let subB = fromJust $ M.lookup x subBs
-                              p' <- checkProof subA subB p
-                              return (x, subA, subB, p'))
-                 ps
-  return $ AnnTrans tyA tyB tyC
-            (AnnCong template subpfs tyA tyB)
-            tq
+
+-- [chainProof (Just A) (Just B) ps] takes a ChainProof of A=B and returns A, B, and the
+-- corresponding AnnotProofs. One can also give Nothing instead of (Just A) if the
+-- chain itself has enough information.
+chainProof :: (Applicative m, Fresh m) => 
+                    (Maybe ATerm) -> (Maybe ATerm) -> ChainProof -> m (ATerm,ATerm,AnnotProof)
+chainProof (Just tyA) _ [] = return $ (tyA, tyA, AnnRefl tyA)
+chainProof _ (Just tyB) [] = return $ (tyB, tyB, AnnRefl tyB)
+
+--These two cases (for single-element lists) could be omitted, but give shorter proof terms.
+chainProof _ _ [Left p] = synthProof p
+chainProof (Just tyA) (Just tyB) [Right p] = (tyA,tyB,) <$> checkProof tyA tyB p
+
+chainProof _ mtyB (Left p : qs) = do 
+  (tyA,tyC,p') <- synthProof p
+  (_, tyB, qs') <- chainProof (Just tyC) mtyB qs
+  return $ (tyA,tyB, AnnTrans tyA tyC tyB p' qs')
+chainProof (Just tyA) mtyB (Right p : qs) = do
+  (tyC, tyB, qs') <- chainProof Nothing mtyB qs
+  p' <- checkProof tyA tyC p
+  return $ (tyA, tyB, AnnTrans tyA tyC tyB p' qs')
+
+chainProof Nothing Nothing [] = error "internal error: insufficiently definite ChainProof"
+chainProof Nothing _ (Right _ : _) = error "internal error: insufficiently definite ChainProof"
+
+
+chainProof' :: (Applicative m, Fresh m) => 
+                    ATerm -> ATerm -> ChainProof -> m AnnotProof
+chainProof' tyA tyB p = do
+  (_,_,p') <- chainProof (Just tyA) (Just tyB) p
+  return p'
 
 
 -- ************* SIMPLIFICATION PHASE
@@ -232,8 +267,9 @@ checkProof tyA tyC (CongTrans template ps q)  = do
 
 simplProof ::  AnnotProof -> AnnotProof
 simplProof p@(AnnAssum _ _) = p
-simplProof p@(AnnRefl _ _) = p
+simplProof p@(AnnRefl _) = p
 simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (simplProof q)
+simplProof (AnnInj l i p) = AnnInj l i (simplProof p)
 simplProof (AnnCong template ps tyA tyB) =  
  let (template', ps') = simplCong (template,[]) ps 
  in (AnnCong template' ps' tyA tyB)
@@ -244,7 +280,7 @@ simplCong :: (ATerm, [(AName,ATerm,ATerm, AnnotProof)])
 simplCong (t, acc) [] = (t, reverse acc)
 simplCong (t, acc) ((x,tyA,tyB,_):ps) | tyA `aeq` tyB = 
    simplCong (subst x tyA t, acc) ps
-simplCong (t, acc) ((x,tyA,_,AnnRefl _ _):ps) = 
+simplCong (t, acc) ((x,tyA,_,AnnRefl _):ps) = 
    simplCong (subst x tyA t, acc) ps
 simplCong (t, acc) ((x,tyA,tyB,AnnCong subT subPs _ _):ps) =
    simplCong (subst x subT t, acc) (subPs++ps)
@@ -258,7 +294,7 @@ genProofTerm (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
 genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symmTerm tyA tyB a
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
-genProofTerm (AnnRefl tyA tyB) =   return (AJoin tyA 0 tyB 0 CBV)
+genProofTerm (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
 genProofTerm (AnnCong template ps tyA tyB) = do
   subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm p)
                  ps                                            
@@ -270,6 +306,12 @@ genProofTerm (AnnTrans tyA tyB tyC p q) = do
   p' <- genProofTerm p
   q' <- genProofTerm q
   transTerm tyA tyB tyC p' q'
+genProofTerm (AnnInj l i p) = do
+  p' <- genProofTerm p
+  case l of 
+    (ATCon _ _) -> return $ ANthEq i p'
+    (AAt _ _)   -> return $ AAtEq p'
+    _           -> error "internal error: unknown type of injectivity"
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
 transTerm :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
@@ -566,7 +608,10 @@ processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
   propagate [(RawAssumption (Just n,t1,t2), 
              Left $ EqConstConst a1 a2)]
 processHyp (th,n,t) = do
-  genEqs n >> return ()
+  -- If the typeclass hackery is not enabled, we can save some effort.
+  isTypeclassy <- getFlag Typeclassy
+  when isTypeclassy $
+    genEqs n >> return ()
 
 -- "Given the context, please prove this other equation."
 prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
@@ -586,25 +631,30 @@ prove hyps (lhs, rhs) = do
            pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
                                                 (naming st BM.! rhs)) in
         do
-{-
-         let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
-         let symmetrized = symmetrizeProof zonkedAssociated
-         fused <- fuseProof symmetrized
-         checked <- checkProof lhs rhs fused
-         let simplified = simplProof checked
-
+         {-
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
          liftIO $ putStrLn $ "Proof is: \n" ++ show pf
+
+         let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
          liftIO $ putStrLn $ "Associated: \n" ++ show zonkedAssociated
+
+         let symmetrized = symmetrizeProof zonkedAssociated
          liftIO $ putStrLn $ "Symmetrized: \n" ++ show symmetrized
+
+         fused <- fuseProof symmetrized
          liftIO $ putStrLn $ "Fused: \n" ++ show fused
+
+         checked <- chainProof' lhs rhs fused
          liftIO $ putStrLn $ "Checked: \n" ++ show checked
+
+         let simplified = simplProof checked
          liftIO $ putStrLn $ "Simplified: \n" ++ show simplified
--}
+         -}
+
          setUniVars bndgs
          tm <- (genProofTerm 
                   <=< return . simplProof
-                  <=< checkProof lhs rhs 
+                  <=< chainProof' lhs rhs
                   <=< fuseProof 
                   . symmetrizeProof 
                   . associateProof 
@@ -829,7 +879,7 @@ smartStep a = do
          (c,b',p):_ -> do
            pf <- (genProofTerm 
                  <=< return . simplProof
-                 <=< checkProof b b'
+                 <=< chainProof' b b'
                  <=< fuseProof 
                  . symmetrizeProof 
                  . associateProof) p
