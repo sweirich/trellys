@@ -608,6 +608,17 @@ uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere)
   where uniVarsHere (AUniVar x _)   = S.singleton x
         uniVarsHere  _ = S.empty
 
+-- Also, need to know which head forms have injectivity rules.
+-- Note: sadly we can't make this work for Pi-types.
+isInjectiveLabel :: Label -> Bool
+isInjectiveLabel l = isInjective a
+  where (_,a) = unsafeUnbind l
+        isInjective :: ATerm -> Bool
+        isInjective (AAt _ _) = True
+        isInjective (ATCon _ _) = True
+        --isInjective (ADCon _ _ _ _) = True --Dcon is more tricky, because of value restriction.
+        isInjective _ = False
+
 -- Labels for non-atomic terms.
 type Label = Bind [AName] ATerm
 
@@ -628,6 +639,7 @@ data Proof =
  | RawSymm Proof
  | RawTrans Proof Proof
  | RawCong Label [Proof]
+ | RawInj Int Proof 
  deriving (Show,Eq)
 
 

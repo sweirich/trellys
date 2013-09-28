@@ -190,8 +190,8 @@ getType (ANthEq i a) = do
     ATyEq (ATCon c as) (ATCon c' as')
       | c /= c'                 -> coreErr [DS "ANthEq between different data types"]
       | length as /= length as' -> coreErr [DS "ANthEq between mismatched ATCon lengths"]
-      | i <= 0                  -> coreErr [DS "ANthEq at non-positive index"]
-      | i > length as           -> coreErr [DS "ANthEq index out of range"]
+      | i < 0                  -> coreErr [DS "ANthEq at negative index"]
+      | i >= length as           -> coreErr [DS "ANthEq index out of range"]
       | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
     _ -> coreErr [DS "getType: ANthEq not applied to an equality between type constructor applications"]
  
@@ -560,8 +560,8 @@ aTs (ANthEq i a) = do
     ATyEq (ATCon c as) (ATCon c' as')
       | c /= c'                 -> coreErr [DS "ANthEq between different data types"]
       | length as /= length as' -> coreErr [DS "ANthEq between mismatched ATCon lengths"]
-      | i <= 0                  -> coreErr [DS "ANthEq at non-positive index"]
-      | i > length as           -> coreErr [DS "ANthEq index out of range"]
+      | i < 0                  -> coreErr [DS "ANthEq at negative index"]
+      | i >= length as           -> coreErr [DS "ANthEq index out of range"]
       | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
     _ -> coreErr [DS "ANthEq not applied to an equality between type constructor applications"]
 

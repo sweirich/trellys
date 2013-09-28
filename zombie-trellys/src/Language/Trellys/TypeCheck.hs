@@ -1178,8 +1178,10 @@ extendCtxSolve :: (Rep a) => ADecl -> TcMonad a -> TcMonad a
 extendCtxSolve d m =
   extendCtx d
             (do 
+               isTypeclassy <- getFlag Typeclassy
                res <- m
-               solveConstraints =<< getAvailableEqs
+               when isTypeclassy $
+                 solveConstraints =<< getAvailableEqs
                zonk res)
 
 -------------------------------------

@@ -49,7 +49,7 @@ import Control.Monad.Trans.State.Strict
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
 -- We need to know a little bit about the ATerm datatype in order to do the occurs check.
-import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars)
+import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, isInjectiveLabel)
 
 --Stuff used for debugging.
 {-
@@ -78,13 +78,14 @@ data ClassInfo  = ClassInfo {
   classVars        :: Set (AName,Constant),    -- All variables that are elements of the class; 
                                                  ---  also remember which c they correspond to.
   classApps        :: Set (Label, [Constant]), -- All applications that are elements of the class
+  classInjTerm     :: Maybe (Label, [Constant]), -- If there is a term headed by an injective
+                                                 -- label in the class.
   classInhabitants :: Set Constant             -- Constants whose type is this constant. 
 
 }
 
 instance Show ClassInfo where
   show _ = "<classInfo>"
-
 
 classSize :: ClassInfo -> Int
 classSize cls = S.size (classMembers cls)
@@ -94,7 +95,12 @@ combineInfo a b =
   ClassInfo (S.union (classMembers a) (classMembers b))
             (S.union (classVars a) (classVars b))
             (S.union (classApps a) (classApps b))
+            ((classInjTerm a) `orElse` (classInjTerm b))
             (S.union (classInhabitants a) (classInhabitants b))
+
+orElse :: Maybe a -> Maybe a -> Maybe a
+orElse (Just a) _ = Just a
+orElse Nothing mb = mb
 
 -- Union-Find representatives.
 type Reprs = IntMap (Either (Proof, Constant) ClassInfo)
@@ -108,7 +114,7 @@ data ProblemState = ProblemState {
   -- maps c to list of equations l(a1..an)=b such that some ai is related to c.
   uses :: Map Constant [(Proof, EqBranchConst)],
 
-  -- maps (l, (b1..bn)) to the input equation (l(a1..an)=a) with (bi..bn) representatives of (ai..an).
+  -- maps (l, (a1..an)) to an input equation (l(b1..bn)=b) with (ai..an) representatives of (bi..vn).
   --  If as |-> (ps, q,  bs=b) then:
   --   pi : bi = ai
   --   q  : bs = b.
@@ -122,7 +128,7 @@ data ProblemState = ProblemState {
   bindings    :: Map AName Constant,  --Assignment to unification variables
   proofs      :: Map WantedEquation Proof,
 
-  -- Recall the mapping between constants and the ATerms they denote.
+  -- The mapping between constants and the ATerms they denote.
   naming      :: Bimap ATerm Constant
 }
 
@@ -155,8 +161,6 @@ freshConstant = do
             (n,_)     -> return (n+1)
 
 -- | Allocate a new name (Constant) for a subterm.
--- Note that (AType l) is treated specially, to avoid infinite regress.
--- TODO: maybe we don't need to treat it specially after all?
 recordName :: (Applicative m, Monad m) => ATerm -> StateT ProblemState m Constant
 recordName a = do
   existing <- BM.lookup a <$> gets naming
@@ -168,6 +172,7 @@ recordName a = do
       let singletonClass = ClassInfo{ classMembers = S.singleton c,
                                       classVars = S.empty,
                                       classApps = S.empty,
+                                      classInjTerm = Nothing,
                                       classInhabitants = S.empty }
       st <- get
       put (st{ reprs = IM.insert c (Right singletonClass) (reprs st),
@@ -218,13 +223,15 @@ giveBinding x val = modify (\st -> st{ bindings = M.insert x val (bindings st),
 giveProof :: WantedEquation -> Proof -> UniM ()
 giveProof e p = modify (\st -> st{ proofs  = M.insert e p (proofs st) })
 
--- Returns the representative of x.
+-- Returns the representative of x. (this function not currently used, see findExplain instead)
+{-
 find :: Monad m => Constant -> StateT ProblemState m Constant
 find x  = do
   (p, x') <- findExplain x
   return x'
+-}
 
--- Returns (p,x), where p proves (x = x')
+-- Returns (p,x'), where p proves (x = x')
 findExplain :: Monad m =>Constant -> StateT ProblemState m (Proof,Constant)
 findExplain x = do
   (p, x', size) <- findExplainInfo x
@@ -274,26 +281,67 @@ union x y p = do
            return y'
 
 -- Add an application term to the equivalence class of a constant
-recordApplication :: Monad m => Constant -> (Label, [Constant]) 
+recordApplication :: (Monad m) => Constant -> (Label, [Constant]) 
                      -> StateT ProblemState m ()
 recordApplication a app = do
   (_,a',ia) <- findExplainInfo a
   setRepr a' (Right $ ia{ classApps = S.insert app (classApps ia)})
 
+-- Add an application term to the injTerm field of an equivalence class of a constant
+-- Add an application term to the equivalence class of a constant
+recordInjTerm :: (Monad m) => Constant -> (Label, [Constant]) 
+                     -> StateT ProblemState m ()
+recordInjTerm a app = do
+  (_,a',ia) <- findExplainInfo a
+  setRepr a' (Right $ ia{ classInjTerm = (classInjTerm ia) `orElse` (Just app) })
+
+-- Given a term f(a1..an), return the constant which represents its equivalence class.
+standardize :: Monad m => Label -> [Constant] -> StateT ProblemState m (Constant, Proof)
+standardize l as = do
+  (rs {- : ai = ai' -} ,as') <- findExplains as
+  Just (ps {- : bi = ai' -}, q {- : bs = b -}, EqBranchConst _ bs b) <- 
+      return (M.lookup (l,as')) `ap`  (gets lookupeq)
+  (s {- : b = b' -} , b') <- findExplain b
+  let l_as__eq__l_as' = RawCong l rs
+  let l_as'__eq__l_bs = RawCong l (map RawSymm ps)
+  return (b',  RawTrans l_as__eq__l_as' (RawTrans l_as'__eq__l_bs (RawTrans q s)))
+
+-- Called when we have just unified two equivalence classes. If both classes contained
+-- an injective term, we return the list of new equations.
+-- Preconditions: the labels should be injective, the two terms should be equal.
+possiblyInjectivity :: Monad m => Maybe (Label, [Constant]) -> Maybe (Label, [Constant]) ->
+                       StateT ProblemState m [ExplainedEquation]
+possiblyInjectivity (Just (l1, as)) (Just (l2, bs)) | l1/=l2 = do
+  -- todo: register that we found a contradiction
+  return []
+possiblyInjectivity (Just (l, as)) (Just (l2, bs)) | l==l2 = do
+  (_, p1) <- standardize l as --We expect these to be the same class now.
+  (_, p2) <- standardize l bs
+  let p = RawTrans p1 (RawSymm p2) {- : l(as) = l(bs)  -}
+  return $ zipWith3 (\ i a b -> (RawInj i p, Left (EqConstConst a b)))
+                    [0..]
+                    as
+                    bs
+possiblyInjectivity _ _ = return []
+
 -- propagate takes a list of given equations, and constructs the congruence
 -- closure of those equations.
 propagate :: Monad m => [ExplainedEquation] -> StateT ProblemState m ()
 propagate ((p, Left (EqConstConst a b)):eqs) = do
-  alreadyEqual <- liftM2 (==) (find a) (find b)
-  if not alreadyEqual
+  (_, ar, ia) <- findExplainInfo a
+  (_, br, ib) <- findExplainInfo b
+  if ar /= br  --if not already equal
     then do
       a' <- union a b p
       a_uses <- M.findWithDefault [] a' `liftM` (gets uses)
-      propagate (map (\(q,eq) -> (q, (Right eq))) a_uses ++ eqs)
+      injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
+      propagate (map (\(q,eq) -> (q, (Right eq))) a_uses ++ injections ++ eqs)
    else 
       propagate eqs
 propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
   recordApplication a (l,as)
+  when (isInjectiveLabel l) $ 
+    recordInjTerm a (l,as)
   (ps, as') <- findExplains as
   lookupeqs <- gets lookupeq
   case M.lookup (l, as') lookupeqs of
@@ -350,8 +398,6 @@ unifyDelete (WantedEquation a b) = do
   tracing "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
-
--- This is hacky, way to nondeterministic, fix later
 unifyBind :: WantedEquation -> UniM  ()
 unifyBind  (WantedEquation a b) = do
   (_, _, ia) <- findExplainInfo a
@@ -381,28 +427,6 @@ unifyBind  (WantedEquation a b) = do
   unifyDelete (WantedEquation a b)
   tracing "Bound" (WantedEquation a b) (return ())
 
-{-
-unifyBind :: WantedEquation -> UniM  ()
-unifyBind  (WantedEquation a b) = do
-  (_, _, ia) <- findExplainInfo a
-  (_, _, ib) <- findExplainInfo b
-  unbounds <- gets unboundVars
-  names <- gets naming
-  let candidates = [ (x,c) | (x,c) <- (S.toList $ classVars ia), 
-                             (x `M.member` unbounds),
-                             let xTy = unbounds M.! x, 
-                             (_,_,xTyInfo) <- lift (findExplainInfo xTy),
-                             --if possible we prefer picking b itself.
-                             d <- b:(S.toList $ classMembers ib),  
-                             not (x `S.member` uniVars (names BM.!> d)) ] --occurs check
-  guard $ not (null candidates) 
-  let (x,c):_ = candidates    --If there are several variables, we don't care which one gets picked.
-  giveBinding x b
-  propagate [(RawRefl, Left $ EqConstConst c b)]
-  --Now the equation ought to be trivial:
-  unifyDelete (WantedEquation a b)
-  tracing "Bound" (WantedEquation a b) (return ())
--}
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
 unifyDecompose :: Set WantedEquation -> WantedEquation -> UniM ()
 unifyDecompose visited (WantedEquation a b) = do
