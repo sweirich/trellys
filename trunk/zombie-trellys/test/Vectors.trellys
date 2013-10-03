@@ -2,26 +2,24 @@ module Vectors where
 import Prelude
 import Fin
 
+-- Definition of the vector type and proofs of properties about it.
+
 data Vector (A : Type 0) (n : Nat) : Type 0 where
    VNil  of [n = 0] 
    VCons of [size : Nat] [n = Succ size]  (x:A@log) (xs : Vector A size)
 
 -- terminating recursor for the vector type
 recvec : [a : Type 0] -> [c : ([n : Nat] -> (v:Vector a n) -> Type 0)@log] ->
-          (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [n_eq]))@log) ->
-         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] -> (x:a@log) -> (xs : Vector a n'@log) -> (ih : c [n'] xs @log) ->
-                 c [n] (VCons [n'] [n_eq] x xs)@log) ->
+         (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [n_eq]))@log) ->
+         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] ->
+            (x:a@log) -> (xs : Vector a n'@log) -> (ih : c [n'] xs @log) ->
+            c [n] (VCons [n'] [n_eq] x xs)@log) ->
          [n:Nat] -> (v:Vector a n @log) -> (c [n] v)
 recvec = \ [a] . \ [c] . \ base . \ step .
-           ind recvec[n] = \ v .
+           ind recvec [n] = \ v .
              case v [v_eq] of
-               VNil [n_eq] -> 
-                 conv base [n] [n_eq] by sym (Vector a n) (Vector a n) v (VNil [n_eq]) v_eq
-                 at x.(c [n] x)
-               VCons [n'] [n_eq] x xs ->
-	         conv step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
-                 by sym (Vector a n) (Vector a n) v (VCons [n'] [n_eq] x xs) v_eq
-                 at x.(c [n] x)
+               VNil [n_eq] -> base [n] [n_eq]
+               VCons [n'] [n_eq] x xs -> step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
 
 
 vmap : [a : Type 0] => [b : Type  0] => ((x:a@log) -> b @log) ->
@@ -42,6 +40,7 @@ tail = \ [A][n] v . case v [v_eq] of
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t ->
    let _ = uneraseEq [Nat][Nat][m][n][sm_eq_Sn__m_eq_n m n m_eq]  -- BLEAH!
+   -- rea
    in t
 
 
@@ -66,24 +65,25 @@ log set : [A:Type 0] => [n:Nat] -> (m:Fin n) ->  (a:A @ log) -> Vector A n -> Ve
 set = \ [A] . 
   ind set [n] = \ m a v.
        case m [n_eq] of 
-         FZ [p][p_eq] -> VCons [p][_] a (tail v)
+         FZ [p][p_eq]    -> VCons [p][_] a (tail v)
          FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail v))
 
 
-{-
-log lookup_set : (A:Type) => (n:Nat) => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
+
+log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
                  -> lookup [n] i (set [n] i a v) = a
-lookup_set = \A. ind ih n = \ i a v .
-  case i [i_eq], v of
-    FZ [p][p_eq]   , VNil [n_eq] -> contra (_ : 0 = (Succ p))
-    FS [p][p_eq] _ , VNil [n_eq] -> contra (_ : 0 = (Succ p))
-    FZ [p][p_eq]   , VCons [m][m_eq] x xs ->
-       --let _ = (join : lookup [n] (FZ [p][p_eq]) (set [n] (FZ [p][p_eq]) a (VCons [m][m_eq] x xs)) = a) in 
-       unfold (lookup [n] i (set [n] i a v)) in
-          _
+lookup_set = \[A]. ind ih [n] = \ i a v .
+  case i [_], v [_] of
+    FZ [p][_]   , VNil [_] -> contra (_ : 0 = (Succ p))
+    FS [p][_] _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FZ [p][_]   , VCons [m][_] x xs ->
+	    
+	    unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  -- this is a pattern match failure in EqualityReasoning.
+--	    let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+       unfold (lookup [n] (FZ [p][_]) (VCons [?][_] a xs)) in  -- this causes stack overflow when writing elaborated terms
+--       let _ = (join : lookup [n] (FZ [p][_]) (VCons [m][_] a xs) = a) in
+       _
     FS [p][p_eq] j , VCons [m][m_eq] x xs -> 
-      let _ = injectivity (_ : Succ p = Succ m) 0 in
---      let _ = (pjoin : lookup [n] (FS [p][p_eq] j) (set [n] (FS [p][p_eq] j) a (VCons [m][m_eq] x xs)) 
---                     = lookup [p] j (set [p] j a xs)) in 
+       let _ = injectivity (_ : Succ p = Succ m) 0 in
           TRUSTME
--}             
+             
