@@ -40,9 +40,19 @@ import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, rend
 -------------------
 -------------------
 
+{-
+  We maintain the following invariants wrt zonking:
+    - The argument to getType is already zonked.
+    - The values returned by getType are zonked before they are returned.
+    - The types in the environment are not yet zonked.
+-}
+
 getType :: ATerm -> TcMonad (Theta, ATerm)
 
-getType (AVar x) = maybeUseFO (AVar x) =<< (lookupTy x)
+getType (AVar x) = do
+  (th, ty) <- lookupTy x
+  zty <- zonkTerm ty
+  maybeUseFO (AVar x) (th,zty)
 
 getType (AUniVar x ty) =  do 
   secondPass <- getFlag SecondPass
@@ -107,9 +117,13 @@ getType (ATyEq a b) =
 getType (AJoin a _ b _ _) = 
   return (Logic, ATyEq a b)
 
-getType (AConv a _ _ ty) = do
+getType (AConv a pf) = do
   (th, _) <- getType a
+  (_, ATyEq _ ty) <- getType pf
   return (th, ty)
+
+getType (ACong  _ _ ty) = do
+  return (Logic, ty)
   
 getType (AContra a ty) = do  
   return (Logic, ty)
@@ -305,7 +319,9 @@ aTs (AApp ep a b ty) = do
       tyBEq <- aeq <$> erase tyB <*> erase tyB'
       unless tyBEq $
         coreErr [DS "AApp dom mismatch. Expected", DD tyB', DS "but found", DD tyB,
-                 DS "In the application", DD (AApp ep a b ty)]
+                 DS "In the application", DD (AApp ep a b ty),
+                 DS "the term", DD a, DS "has type", DD tyA, DS "and",
+                 DD b, DS "has type", DD tyB]
       tyEq <- aeq <$> erase ty <*> erase (subst x b tyC)
       unless tyEq $ 
         coreErr [DS "AApp annotation mismatch. Application has type", DD (subst x b tyC), 
@@ -346,37 +362,53 @@ aTs (AJoin a i b j strategy) = do
     coreErr [DS "AJoin: not joinable"]
   return (Logic, ATyEq a b)
 
-aTs (AConv a prfs bnd ty) = do
+aTs (AConv a pf) = do
+  (th, aTy) <- aTs a
+  pfTy <- aTsLogic pf
+  (aTy1, aTy2) <- case eraseToHead pfTy of
+                    ATyEq aTy1 aTy2 -> return (aTy1, aTy2)
+                    _           -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
+                                            DD pfTy,
+                                            DS "(when checking the conv expression", DD (AConv a pf), DS ")"]
+  fromEq <- aeq <$> erase aTy <*> erase aTy1
+  unless fromEq $
+    coreErr [DS "AConv: the term", DD a, DS "has type", DD aTy,
+             DS "but the proof term has type", DD pfTy,
+             DS "(when checking the conv expression", DD (AConv a pf), DS ")"]
+  maybeUseFO a (th, aTy2)
+
+aTs (ACong prfs bnd ty@(ATyEq lhs rhs)) = do
   (xs, template) <- unbind bnd
   etemplate <- erase template
-  (th, aTy) <- aTs a
   unless (length xs == length prfs) $
-    coreErr [DS "AConv length mismatch"]
+    coreErr [DS "ACong length mismatch"]
   eqs <-  let processPrf pf = do
                             pfTy <- aTsLogic pf
                             case eraseToHead pfTy of
                               ATyEq a1 a2 -> return (a1, a2)
                               _           -> coreErr [DD pf, DS "should be a proof of an equality, but has type",
                                                       DD pfTy,
-                                                      DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
+                                                      DS "(when checking the cong expression", DD (ACong prfs bnd ty), DS ")"]
            in mapM processPrf prfs
   let aTy1 = substs (zip xs (map fst eqs)) template
   let aTy2 = substs (zip xs (map snd eqs)) template
-  fromEq <- aeq <$> erase aTy <*> erase aTy1
-  toEq   <- aeq <$> erase ty  <*> erase aTy2
-  unless fromEq $
-    coreErr [DS "AConv: the term", DD a, DS "has type", DD aTy,
-             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1,
-             DS "(when checking the conv expression", DD (AConv a prfs bnd ty), DS ")"]
-  unless toEq $ 
-    coreErr [DS "AConv: the conv-expression was annotated as", DD ty, 
+  eqTy1   <- aeq <$> erase lhs  <*> erase aTy1
+  eqTy2   <- aeq <$> erase rhs  <*> erase aTy2
+  unless eqTy1 $ 
+    coreErr [DS "AConv: the cong-expression was annotated as", DD ty, 
+             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1]
+  unless eqTy2 $ 
+    coreErr [DS "AConv: the cong-expression was annotated as", DD ty, 
              DS "but substituting the RHSs of the equations into the template creates the type", DD aTy2]
   aKc ty
-  maybeUseFO a (th, ty)
+  return (Logic, ty)
+
+aTs (ACong prfs bnd ty) = err [DS "ACong should be annotated with an equality type, but the annotation here is", DD ty]
 
 -- Todo: This currently only considers head-forms of data
 -- constructors, but for the annotated operational semantics, this
--- will need to consider headforms of all flavours of types.
+-- will need to consider headforms of all flavours of types?
+-- Maybe it's ok to just consider those cases stuck, though.
 aTs (AContra a ty) = do 
   aKc ty
   aTy <- aTsLogic a

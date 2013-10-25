@@ -20,7 +20,8 @@ import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 import Language.Trellys.EqualityReasoning
 import Language.Trellys.TypeCheckCore
-import Language.Trellys.TestReduction
+--import qualified Language.Trellys.TypeCheckCore as TypeCheckCore
+--import Language.Trellys.TestReduction
 
 import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ
@@ -35,7 +36,29 @@ import Data.Maybe
 import Data.List
 import Data.Set (Set)
 import qualified Data.Set as S
-import qualified Data.Map as M
+
+
+{-
+-- For debugging:
+getType a = do
+   liftIO $ putStrLn . render. disp $
+      [ DS "getType of", DD a]
+   result <- TypeCheckCore.getType a
+   liftIO $ putStrLn "done"
+   return result
+aGetTh a = do
+   liftIO $ putStrLn . render. disp $
+      [ DS "aGetTh of", DD a]
+   result <- TypeCheckCore.aGetTh a
+   liftIO $ putStrLn "done"
+   return result
+aKc a = do
+   liftIO $ putStrLn . render. disp $
+      [ DS "aKc of", DD a]
+   result <- TypeCheckCore.aKc a
+   liftIO $ putStrLn "done"
+   return result
+-}
 
 {-
   We rely on two mutually recursive judgements:
@@ -123,7 +146,7 @@ ta :: Term -> ATerm -> TcMonad ATerm
 
 -- Position terms wrap up an error handler
 ta (Pos p t) ty =
-  extendSourceLocation p t $
+  extendSourceLocation (Just p) t $
     ta  t ty
 
 ta (Paren a) ty = ta a ty
@@ -383,52 +406,11 @@ ta (Unfold n a b) tyB = do
    (ea', p) <- smartSteps availableEqs ea n
    x   <- fresh $ string2Name "unfolds"
    y   <- fresh $ string2Name "_"
-   (eb)  <- extendCtxSolve (ASig x Logic (ATyEq ea ea'))
-                 $ ta b tyB      
-   th <- aGetTh eb
-   --return (ALet Runtime (bind (x, y, embed (AJoin ea n ea' 0)) eb) (th, tyB))
+   (th, eb)  <- extendCtxSolve (ASig x Logic (ATyEq ea ea')) $ do
+                  eb <- ta b tyB      
+                  th <- aGetTh eb
+                  return (th,eb)
    return (ALet Runtime (bind (x, y, embed p) eb) (th, tyB))
-
--- Checking version of the Conv rule
---Todo: zonking. This is slightly involved, since there are many subterms.
-ta (Conv b as bnd) ty =
-      do (xs,c) <- unbind bnd
-         let chkTy pf = do
-               (epf,pfTy) <- ts pf  
-               pfTh <- aGetTh epf
-               unless (pfTh==Logic) $
-                 err [DS "equality proof", DD pf, 
-                      DS "should check at L but checks at P"]
-               case eraseToHead pfTy of
-                ATyEq tyA1 tyA2 -> return $ (epf, tyA1, tyA2)
-                _ -> err $ [DS "The second arguments to conv must be equality proofs,",
-                            DS "but here has type", DD pfTy]
-         atys <- mapM chkTy as
-         atytys <- zipWithM (\x (_,tyA1,_) -> do (th,tytyA1) <- getType tyA1
-                                                 return $ ASig x th tytyA1)
-                              (map translate xs)
-                              atys
-
-         ec <- extendCtxs (reverse atytys) $
-                 kcElab c
-
-         let ecA1 = simplSubsts (zip (map translate xs) (map (\(_,lhs,_)->lhs) atys)) ec
-         let ecA2 = simplSubsts (zip (map translate xs) (map (\(_,_,rhs)->rhs) atys)) ec
-        
-         eb <- ta b ecA1 
-
-         let exs = map translate xs
-         let eas = map (\(ea,_,_)->ea) atys
-
-         ecA2_erased <- erase ecA2
-         ty_erased <- erase ty
-         unless (ecA2_erased `aeq` ty_erased) $
-           err [DS "The conv expression", DD (Conv b as bnd), DS "was ascribed the type", DD ty,
-                DS "but substituting the RHSs of the proof terms creates the type", DD ecA2,
-                DS "Their erasures,", DD ty_erased, DS "and", DD ecA2_erased, DS "are not equal"]
-
-         return (AConv eb eas (bind exs ec) ty)
-
 
 -- rule T_At
 ta (At ty th') (AType i) = do 
@@ -451,9 +433,9 @@ ta a (AAt tyA th') | unCheckable a = do
     Nothing -> do
       withBox <- coerce ea tyA' tyA
       case (withBox, eaTh) of
-        (Just eaCoerced, Logic)                   -> return $ ABox ea th'
-        (Just eaCoerced, Program) | isVal         -> return $ ABox ea th'
-        (Just eaCoerced, Program) | th'==Program  -> return $ ABox ea th'
+        (Just eaCoerced, Logic)                   -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Program) | isVal         -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Program) | th'==Program  -> return $ ABox eaCoerced th'
         (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
         (Nothing,_) -> err [DD a, DS "should have type", DD tyA,
                             DS "or", DD (AAt tyA th'), 
@@ -503,7 +485,7 @@ ta InferMe (ATyEq ty1 ty2) = do
        pE <- erase p
        if (S.null (fv pE :: Set EName))
          then zonkTerm p
-         else zonkTerm =<< (uneraseTerm ty1 ty2 p)       
+         else zonkTerm =<< (uneraseEq ty1 ty2 p)       
 
 -- Other Infermes create unification variables.
 ta InferMe ty = do
@@ -546,8 +528,7 @@ ta a tyB = do
                     if (zztyA `aeq` zztyB)
                       then zonkTerm ea
                       else do
-                         x <- fresh (string2Name "x")
-                         zonkTerm $ AConv ea [p] (bind [x] (AVar x)) ztyB
+                         zonkTerm $ AConv ea p
          else err [DS "When checking term", DD a, DS "against type",
                    DD ztyB,  DS ("(" ++ show ztyB ++ ")"),
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
@@ -566,7 +547,7 @@ maybeCumul a (eraseToHead -> AType l1) (eraseToHead -> AType l2) =
 maybeCumul _ _ _ = Nothing
 
 -- coerce a tyA tyB
--- Tries to use equational reasoning to change tyA to tyB.
+-- Tries to use equational reasoning to change the type of a from tyA to tyB.
 coerce :: ATerm -> ATerm -> ATerm -> TcMonad (Maybe ATerm)
 coerce a tyA tyB = do
   noCoercions <- getFlag NoCoercions
@@ -595,8 +576,7 @@ coerce a tyA tyB = do
                     if (ztyA `aeq` ztyB)
                       then Just <$> zonkTerm a
                       else do
-                         x <- fresh (string2Name "x")
-                         Just <$> (zonkTerm $ AConv a [p] (bind [x] (AVar x)) ztyB)
+                         Just <$> (zonkTerm $ AConv a p)
 
 -- | Checks a list of terms against a telescope of types
 -- with the proviso that each term needs to check at Logic.
@@ -660,7 +640,7 @@ unCheckable _ = False
 -- Returns (elaborated term, type of term)
 ts :: Term -> TcMonad (ATerm,ATerm)
 ts (Pos p t) =
-  extendSourceLocation p t $       
+  extendSourceLocation (Just p) t $       
     ts t
 
 ts (Paren a) = ts a
@@ -676,8 +656,8 @@ ts (Paren a) = ts a
    of values, even though that is also allowed in the core
    language.
  -}
-ts (Var y) =
-  do (th,ty) <- lookupTy (translate y)
+ts (Var y) = do
+     (th,ty) <- lookupTy (translate y)
      zty <- zonkTerm ty
      (_, adjust_y, adjust_ty) <- adjustTheta th (AVar (translate y)) zty
      return (adjust_y, adjust_ty)
@@ -804,42 +784,6 @@ ts (TyEq a b) = do
   (eb,_) <- ts b 
   zea <- zonkTerm ea
   return $ (ATyEq zea eb, AType 0)
-
--- Synthesising version of rule T_conv
---Todo: zonking. This is slightly involved, since there are many subterms.
-ts (Conv b as bnd) =
-  do (xs,c) <- unbind bnd
-     let chkTy pf = do
-           (epf,pfTy) <- ts pf  
-           pfTh <- aGetTh epf
-           unless (pfTh==Logic) $
-             err [DS "equality proof", DD pf, 
-                  DS "should check at L but checks at P"]
-           case eraseToHead pfTy of
-            ATyEq tyA1 tyA2 -> return $ (epf, tyA1, tyA2)
-            _ -> err $ [DS "The second arguments to conv must be equality proofs,",
-                        DS "but here has type", DD pfTy]
-     atys <- mapM chkTy as
-     atytys <- zipWithM (\x (_,tyA1,_) -> do (th,tytyA1) <- getType tyA1
-                                             return $ ASig x th tytyA1)
-                          (map translate xs)
-                          atys
-
-     ec <- extendCtxs (reverse atytys) $
-             kcElab c
-
-     let ecA1 = simplSubsts (zip (map translate xs) (map (\(_,lhs,_)->lhs) atys)) ec
-     let ecA2 = simplSubsts (zip (map translate xs) (map (\(_,_,rhs)->rhs) atys)) ec
-    
-     eb <- ta b ecA1 
-
-     -- Check that the resulting type is well-formed.
-     aKc ecA2
-
-     let exs = map translate xs
-     let eas = map (\(ea,_,_)->ea) atys
-
-     return (AConv eb eas (bind exs ec) ecA2, ecA2)
 
 -- Datatype injectivity. This is rough-and-ready, since it will be merged into the 
 -- congruence closure implementation rather than being exposed in the surface language.
@@ -1008,7 +952,7 @@ tcEntries (Def n term : decls) = do
                               ASig (translate n) theta ty] $
               tcEntries decls
     die term' =
-      extendSourceLocation (unPosFlaky term) term $
+      extendSourceLocation (unPosDeep term) term $
          err [DS "Multiple definitions of", DD n,
               DS "Previous definition was", DD term']
 
@@ -1042,7 +986,7 @@ tcEntries (Data t delta lev cs : decls) =
      ---  for each data constructor is wellfomed, and elaborate them
      ---  fixme: probably need to worry about universe levels also?
      let elabConstructorDef defn@(ConstructorDef pos d tele) =
-            extendSourceLocation pos defn $ 
+            extendSourceLocation (Just pos) defn $ 
               extendCtx (AAbsData (translate t) edelta lev) $
                 extendCtxTele edelta Program $ do
                   etele <- kcTele tele
@@ -1083,7 +1027,7 @@ duplicateTypeBindingCheck n ty = do
                  DS "for name ", DD n,
                  DS "Previous typing was", DD ty']
        in
-         extendSourceLocation p ty $ err msg
+         extendSourceLocation (Just p) ty $ err msg
     
 -- Positivity Check
 
@@ -1102,7 +1046,7 @@ positivityCheck tName (ConstructorDef _ cName tele)  = do
 occursPositive  :: (Fresh m, MonadError Err m, MonadReader Env m) => 
                    Name Term -> Term -> m ()
 occursPositive tName (Pos p ty) = do
-  extendSourceLocation p ty $
+  extendSourceLocation (Just p) ty $
     occursPositive tName ty 
 occursPositive tName (Paren ty) = occursPositive tName ty
 occursPositive tName (Arrow _ _ bnd) = do
@@ -1221,7 +1165,7 @@ buildCase :: [(ATerm,    TName)]       -> [ComplexMatch] -> ATerm        -> TcMo
 buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
 buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
-  ta body tyAlt 
+  ta body tyAlt
 buildCase ((s,y):scruts) alts tyAlt | not (null alts) && not (isAVar s) && any isEssentialVarMatch alts = (do
   -- If one of the patterns contains an isolated variable, 
   -- the ComplexCase basically acts as

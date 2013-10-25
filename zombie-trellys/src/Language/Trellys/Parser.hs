@@ -60,7 +60,6 @@ import qualified Data.Set as S
     | ordtrans a1 a2           Proof of transitivity of ordering
     | a = b                    Equality type
     | join k                   Equality proof
-    | conv a by b at EqC       Conversion
     | contra a                  Contra
     | abort                    Abort
     | rec f x = a              Runtime rec
@@ -215,7 +214,6 @@ trellysStyle = Token.LanguageDef
                   ,"with"
                   ,"abort"
                   ,"contra"
-                  ,"conv", "by", "at"
                   ,"let", "in"
                   ,"prog", "log"
                   , "L", "P"                
@@ -549,7 +547,6 @@ factor = choice [ inferme   <?> "a placeholder (_)"
                 , contra    <?> "a contra"
                 , abort     <?> "abort"
                 , caseExpr  <?> "a case"
-                , convExpr  <?> "a conv"
                 , ordax     <?> "ord"
                 , ordtrans  <?> "ordtrans"
                 , injectivity <?> "injectivity"
@@ -728,20 +725,6 @@ caseExpr = do
     reserved "of"
     alts <- layout complexMatch (return ())
     return $ ComplexCase (bind scruts alts)
-
--- conv e0 to [x.t] with e1
--- XXX needs to be redone for contexts
-convExpr :: LParser Term
-convExpr = do
-  reserved "conv"
-  a <- expr
-  reserved "by"
-  bs <- commaSep1 expr
-  reserved "at"
-  xs <- many1 variable
-  dot
-  c <- expr
-  return $ Conv a bs (bind xs c)
 
 contra :: LParser Term
 contra = do

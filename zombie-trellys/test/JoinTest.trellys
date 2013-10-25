@@ -30,4 +30,4 @@ duh' = \p n . join
 huh : (p : Type 0) -> (n:Nat) -> (\n.p : Nat -> Type 0) n = p
 huh = \p n .
   let h [eq] = (\n.p : Nat -> Type 0) in
-  conv (join : h n = p) by eq at x.x n = p
+    (join : h n = p) 

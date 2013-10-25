@@ -40,27 +40,27 @@ step_rec =
 -- Stepping a function with a conv applied to it.
 converted_lam : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
 converted_lam p b = 
-  unfold ((conv ((\n . n) : Nat->Nat) by p at x.x) b) in
-  let _ = (_ : ((conv ((\n . n) : Nat->Nat) by p at x.x) b)
-             = b) in
+  unfold ((((\n . n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((\n . n) : Nat->Nat) : Bool->Bool) b)
+             = b) in 
     U
+
 
 -- Same thing, but with a rec
 converted_rec : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
 converted_rec p b = 
-  unfold ((conv ((rec f n = n) : Nat->Nat) by p at x.x) b) in
-  let _ = (_ : ((conv ((rec f n = n) : Nat->Nat) by p at x.x) b)
+  unfold ((((rec f n = n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((rec f n = n) : Nat->Nat) : Bool->Bool) b)
              = b) in
     U
 
 -- Same thing, but with an ind
 converted_ind : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
 converted_ind p b = 
-  unfold ((conv ((ind f n = n) : Nat->Nat) by p at x.x) b) in
-  let _ = (_ : ((conv ((ind f n = n) : Nat->Nat) by p at x.x) b)
+  unfold ((((ind f n = n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((ind f n = n) : Nat->Nat) : Bool->Bool) b)
              = b) in
     U
-
 
 -- Stepping a function with a conv applied to it, when the function has a 
 -- dependent type.
@@ -75,20 +75,23 @@ converted_lam_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool)
 		     -> (q : Bool = Nat)   --This is just used to be able to state what it should reduce to
 		     -> Unit
 converted_lam_dep p b q = 
-  unfold ((conv ((\n . mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
-  let _ = (_ : ((conv ((\n . mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b)
-         = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
+  unfold ((((\n . mkT1 n _) : (n:Nat)->T1 n) : ((b:Bool)->T2 b)) b) in
+  let _ = (_ : ((((\n . mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
     U
+
 
 -- The same thing with a rec instead of a lam
 converted_rec_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
 		     -> (q : Bool = Nat)
 		     -> Unit
 converted_rec_dep p b q = 
-  unfold ((conv ((rec f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
-  let _ = (_ : ((conv ((rec f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b)
-         = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
+  unfold ((((rec f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b) in
+  let _ = (_ : ((((rec f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
     U
+
+
 
 {-
 -- The same thing, with a rec that actually makes a recursive call.
@@ -103,47 +106,15 @@ converted_reallyrec_dep p b q =
     blerg
 -}
 
+
 -- The same thing with an ind instead of a lam
 converted_ind_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
 		     -> (q : Bool = Nat)
 		     -> Unit
 converted_ind_dep p b q = 
-  unfold ((conv ((ind f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b) in
-  let _ = (_ : ((conv ((ind f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b)
-         = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
-    U
-
--- Stepping a lambda with a conv applied to it, but with the template of the
--- conv already having an arrow type.
-converted_lam_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
-converted_lam_2 p q b = 
-  unfold ((conv ((\n . Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
-  let _ = (_ : ((conv ((\n . Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
-             = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
-    U
-
--- The same thing, with an rec instead of a lam
-converted_rec_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
-converted_rec_2 p q b = 
-  unfold ((conv ((rec f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
-  let _ = (_ : ((conv ((rec f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
-             = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
-    U
-
--- The same thing, with a rec that actually makes a recursive call.
-converted_reallyrec_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
-converted_reallyrec_2 p q b = 
-  unfold 1 ((conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
-  let _ = (_ : (conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b
-             = Succ ((conv ((rec f n = Succ (f n)) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)) in
-    U
-
--- The same thing, with an ind instead of a lam
-converted_ind_2 : (p : Nat = Bool) -> (q : Nat = Unit) -> (b:Bool) -> Unit
-converted_ind_2 p q b = 
-  unfold ((conv ((ind f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b) in
-  let _ = (_ : ((conv ((ind f n = Succ n) : (Nat@log)->Nat) by p,q at x y. (x@log)->y) b)
-             = Succ (conv b by (sym1 Type Type Nat Bool p) at x.x)) in
+  unfold ((((ind f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b) in
+  let _ = (_ : ((((ind f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
     U
 
 -- Stepping an ind with a dependent type.
@@ -163,31 +134,11 @@ ind_step =
   unfold (ind_refl 1) in
     _
 
--- Stepping an ind with dependent type with a conversion
--- applied to it.
-{-
-
--- This test breaks because it tries to apply the (bogus) rule
---  case (conv a) of ... ~> case a of ...
--- which is obviously not type-preserving if the conv changes
--- the top-level datatype constructor of the scrutinee.
---
--- In fact, the term should be stuck, so this example should be rejected
--- (rather than the current behaviour of crashing at the check Core stage).
-
-ind_step_conv : 
-  (p : ((x:Nat)->(x=x)) = ((y:Bool)->(y=y))) ->
-  ((conv ind_refl by p at x.x) True) = (True = True)
-ind_step_conv p = 
-  unfold ((conv ind_refl by p at x.x) True) in
-    _
--}
+{- Todo: tests for the case_conv stepping rule. -}
 
 -----------------------------------------------------------------
 -- Stepping things which are stuck, by using equational reasoning
 -----------------------------------------------------------------
-
-{-
 
 log f : Nat -> Nat
 f = \x.x
@@ -199,4 +150,3 @@ foo = \n.
   unfold 2 (f (pred n)) in 
     _
 
--}

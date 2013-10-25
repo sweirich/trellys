@@ -24,9 +24,8 @@ primrec : [p: (n:Nat) -> Type 0 @log]
        -> (n:Nat) -> p n
 primrec = \[p]. \base. \step. ind pr n =
   case n [neq] of
-    -- sym is evidence of backwards equality.
-    Zero    -> conv base                      by (sym Nat Nat n Zero      neq) at x.p x
-    Succ n' -> conv step n' (pr n' [ord neq]) by (sym Nat Nat n (Succ n') neq) at x.p x
+    Zero    -> base
+    Succ n' -> step n' (pr n' [ord neq])
 
 -- Higher order primitive recursion with a constant predicate / nat
 -- elimination: easier to compute terms with, when it works, but not
@@ -64,14 +63,17 @@ add' =
   -- extensionality?) to prove equality of arrow types for the
   -- n-eta-reduced version, but it's easy to conv the body of the
   -- n-eta-expanded version:
-    conv
+    let _ = (join: (constNat n) = Nat) in
+    let _ = (join: (constNat Zero) = Nat) in
       (primrec
-        [constNat]
-        (conv m by (join: Nat = (constNat 0)) at x.(x@log))
-        (\n.\mn.conv (Succ (conv mn by (join: (constNat n) = Nat) at x.x))
-                  by (join: Nat = (constNat (Succ n))) at x.x)
-        n)
-      by (join: (constNat n) = Nat) at x.x
+          [constNat]
+          m
+          (\n.\mn. 
+            let _ = (join: (constNat n) = Nat) in 
+            let _ = (join: (constNat (Succ n)) = Nat) in
+              Succ mn)
+          n)
+    
 -- trellys can't infer type for [\w.Nat] and annotation causes parse
 -- error in my first attempt:
 --
@@ -84,7 +86,6 @@ add' =
 -- Then with foldNat, which is much easier.
 add'' : (m:Nat) -> (n:Nat) -> Nat
 add'' = \m. foldNat [Nat] m (\mn.Succ mn)
-
 
 -- Ackermann
 -- ---------
