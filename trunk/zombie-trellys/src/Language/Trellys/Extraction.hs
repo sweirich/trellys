@@ -67,9 +67,9 @@ extractTerm a = do
   extractTerm' (AUnbox a) = extractTerm' a
   extractTerm' (ABox a th) = extractTerm' a
   extractTerm' (AAbort ty) = return $ parens (text "raise Abort")
-  extractTerm' (AConv a pfs templ ty) = do
+  extractTerm' (AConv a pf) = do
     ea <- extractTerm a
-    --todo: be a little less generous with the magic.
+    --todo: figure out when to insert a cast like this.
     --return $ parens (text "Obj.magic" <+> ea)
     return ea
   extractTerm' (AContra pf ty) = return $ parens (text "raise Contra")
@@ -167,7 +167,7 @@ extractType a = do
     extractType' (AUnbox a) = extractType a
     extractType' (ABox a th) = extractType a
     extractType' (ATyEq a b) = return $ text "unit"
-    extractType' (AConv a pfs templ ty) = error "extracting conv type?" --fixme: not sure what to do here
+    extractType' (AConv a pf) = error "extracting conv type?" --fixme: not sure what to do here
     extractType' (ASmaller a b) = return $ text "unit"
     extractType' (AAbort ty) = err [DS "Can't extract abort in a type position"]
     extractType' (ATrustMe ty) = err [DS "Can't extract TRUSTME in a type position"]

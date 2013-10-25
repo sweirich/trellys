@@ -47,7 +47,8 @@ erase (ABox a th) = erase a
 erase (AAbort _) = return EAbort
 erase (ATyEq a b) = ETyEq <$> erase a <*> erase b
 erase (AJoin a i b j strategy) = return EJoin
-erase (AConv a _ _ _) = erase a
+erase (AConv a _) = erase a
+erase (ACong _ _ _) = return EJoin
 erase (AContra a ty) = return EContra
 erase (AInjDCon a i) = return EJoin
 erase (ASmaller a b) = ESmaller <$> erase a <*> erase b
@@ -99,7 +100,7 @@ eraseToHead :: ATerm -> ATerm
 eraseToHead (ACumul a i) = eraseToHead a
 eraseToHead (AUnbox a) = eraseToHead a
 eraseToHead (ABox a th) = eraseToHead a
-eraseToHead (AConv a _ _ _) = eraseToHead a
+eraseToHead (AConv a _) = eraseToHead a
 eraseToHead a = a
 
 {-
@@ -392,7 +393,6 @@ isValue (Let _ Erased a) = do
   (_,a') <- unbind a 
   isValue a'
 isValue (Let _ _ _)        = return False
-isValue (Conv a _ _)       = isValue a
 isValue (Contra _)         = return False
 isValue (InjDCon _ _)      = return True
 isValue (Ann a _)          = isValue a

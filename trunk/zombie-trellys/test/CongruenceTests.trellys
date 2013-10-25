@@ -99,16 +99,6 @@ decompose_join_stepcount = _
 log decompose_join_strategy : (join : (a = a)) = (pjoin : (a = a))
 decompose_join_strategy = _
 
-log decompose_conv_subject : (a=a1) -> (p : atype=btype) -> (conv a by p at x.x)  = (conv a1 by p at x.x)
-decompose_conv_subject = \q p. _
-
-log decompose_conv_proof : (p : atype=btype) -> (q : atype=btype) -> (conv a by p at x.x) = (conv a by q at x.x)
-decompose_conv_proof = \p q. _
-
-log decompose_conv_template :    (conv (join:a=a)   by (join:a=a)   at x.x=a)
-                               = (conv (join:a1=a1) by (join:a1=a1) at x.x=a1)
-decompose_conv_template =  _
-
 log decompose_contra_proof : (p: 1=0) -> (q: 1=0) -> (contra p : atype) = (contra q : atype)
 decompose_contra_proof = \p q. _
 

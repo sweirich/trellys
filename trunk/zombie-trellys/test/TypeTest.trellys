@@ -89,7 +89,8 @@ tail = \ n [a] dis .
   case dis [diseq] of
     VNil [neq] -> contra neq
     VCons [sz] [neq] x xs -> 
-        conv xs by inj_succ sz n neq at x.Vector a x
+        let [_] = inj_succ sz n neq in
+	  xs
 
 v1 : Vector Bool (Succ Zero)
 v1 = VCons [0] [join 1] True (VNil [join 1])
@@ -126,6 +127,17 @@ divBy =
 div : [i:Nat] -> (x: SNat i) -> [j: Nat] -> (y: SNat j) -> SNat i
 div = \[i] x [j] y. divBy [j] y [i] x
 
+plusZero : (a : Nat) -> add a 0 = a
+ind plusZero a =
+   case a [aeq] of
+     Zero -> (join : add 0 0 = 0)
+     Succ x ->
+       let _ = (join : Succ (add x 0) = add (Succ x) 0) in
+       let _ = plusZero x [ord aeq] in
+        _
+
+-- The old-style code with explicit conversions:
+{-
 plusZero : (a : Nat) -> add a 0 = a
 ind plusZero a =
    case a [aeq] of
@@ -182,14 +194,6 @@ ind plusZero2 a =
               at h.add (Succ x) 0 = Succ h]
            [sym Nat Nat a (Succ x) aeq]]
 
-
-axiom f : (x:Nat@prog) -> Nat
-
-prog foo : (x:Nat) -> Nat
-foo = \ x . let prog y[yeq] = x in f y
-
-----  For posterity, here is the old way of defining add and plusZero
-
 add' : (x : Nat) -> (y:Nat) -> Nat
 ind add' x = \y .
    case x [z] of
@@ -222,6 +226,13 @@ ind plusZero' a =
       by conv (join 0) by aeq at h.h = a
       at h.add' a 0 = h
 
+-}
+
+axiom f : (x:Nat@prog) -> Nat
+
+prog foo : (x:Nat) -> Nat
+foo = \ x . let prog y[yeq] = x in f y
+
 --------- Demonstrating the wonders of TRUSTME
 magic : Vector Nat 2 -> Vector Nat 4
-magic = \v. conv v  by (TRUSTME: 2 = 4) at x.Vector Nat x
+magic = \v. let _ = (TRUSTME: 2 = 4) in v

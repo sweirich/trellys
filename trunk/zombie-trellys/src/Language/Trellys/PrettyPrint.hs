@@ -279,16 +279,6 @@ instance Display Term where
      return $ text "case" <+> dscruts <+> text "of" $$
           (nest 2 $ vcat $  dalts)              
          
-  display (Conv a bs bnd) =
-    lunbind bnd $ \(xs,c) -> do
-      da <- display a
-      dbs <- mapM display bs
-      dxs <- mapM display xs
-      dc <- display c
-      return $ fsep [text "conv" <+> da,
-                    text "by" <+> sep (punctuate comma dbs),
-                    text "at" <+> hsep dxs  <+> text "." <+> dc]
-
   display (Smaller a b) = do
       da <- display a
       db <- display b
@@ -492,21 +482,24 @@ instance Display ATerm where
                 PAR_CBV -> text "pjoin")
              <+> parens da <+> disp i
              <+> parens db <+> disp j
-  display (AConv a pfs bnd ty) = 
+  display (AConv a pf) = do
+    isVerbose <- asks verbose
+    da <- display a
+    dpf <- if isVerbose
+             then display pf
+             else return $ text "<proof elided>"
+    return $ sep [text "conv" <+> da,
+                  nest 2 (text "by" <+> dpf)]
+  display (ACong pfs bnd rhs) = 
     lunbind bnd $ \(xs, template) -> do 
-      isVerbose <- asks verbose
-      da <- display a
-      dpfs <- mapM (if isVerbose then display else const (return (text "<proof elided>")))  pfs
+      dpfs <- mapM display  pfs
       dxs <- mapM display xs
       dtemplate <- display template
-      dty <- display ty
-      let templateLine = case (xs, template) of
-                     ([x], AVar x') | x==x' -> empty
-                     _ -> nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate)
-      return $ sep [text "conv" <+> da,
-                    nest 2 (text "by" <+> hsep dpfs),
-                    templateLine,
-                    if isVerbose then nest 2 (colon <+> dty) else empty]
+      drhs <- display rhs
+      return $ sep [text "cong",
+                    nest 2 (hsep dpfs),
+                    nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate),
+                    nest 2 (colon <+> drhs)]
   display (AContra a aTy) = do
     da <- display a
     daTy <- display aTy

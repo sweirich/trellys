@@ -33,17 +33,17 @@ t : (m:Nat) ->
      in r
    in Succ d)
 t = \m . case (p_terminates m) [_] of
-  Ex [v] v_eq -> let v_eq' [_] = conv v_eq by (ex_red m v) at t.t
-                 in let eql1 [_] = conv join by v_eq'
-                                   at h . (let prog d [_] =
+  Ex [v] v_eq -> let [_] = (ex_red m v)
+                 in let v_eq' [_] = (v_eq : p m = v)
+                 in let eql1 [_] = (_ : (let prog d [_] =
                                                let prog r [_] = p m
                                                in Succ r
                                            in d)
                                         =
                                            (let prog d [_] =
-                                               let prog r [_] = h
+                                               let prog r [_] = v
                                                in Succ r
-                                           in d)
+                                           in d))
                  in let eql2 [_] = (join: (let prog d [_] =
                                                let prog r [_] = v
                                                in Succ r
@@ -56,21 +56,12 @@ t = \m . case (p_terminates m) [_] of
                                            let prog r [_] = v
                                            in r
                                          in Succ d))
-                 in let eqr2 [_] = conv join by v_eq'
-                                   at h . (let prog d [_] =
-                                             let prog r [_] = h
+                 in let eqr2 [_] = (_ :(let prog d [_] =
+                                             let prog r [_] = v
                                              in r
                                            in Succ d)
                                         = (let prog d [_] =
                                              let prog r [_] = p m
                                              in r
-                                           in Succ d)
-                 in (conv eql1 by (conv eql2 by (conv eqr1 by eqr2 at h . Succ v = h)
-                                  at h . (let prog d [_] =
-                                               let prog r [_] = v
-                                               in Succ r
-                                           in d) = h)
-                     at h . (let prog d [_] =
-                                               let prog r [_] = p m
-                                               in Succ r
-                                           in d) = h)
+                                           in Succ d))
+                 in _

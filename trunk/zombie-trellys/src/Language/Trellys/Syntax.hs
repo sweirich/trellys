@@ -106,8 +106,6 @@ data Term = Var TName    -- | variables
           | Join Int Int EvaluationStrategy
           -- | The 'unfold' expression, only present in the surface language.
           | Unfold Int Term Term
-          -- | @conv a by b at C@
-          | Conv Term [Term] (Bind [TName] Term)
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- If a proves (c a1 .. an)=(c b1 .. bn),  then (injectivity a i) proves ai=bi
@@ -175,10 +173,6 @@ unPos _         = Nothing
 -- | Tries to find a Pos anywhere inside a term
 unPosDeep :: Term -> Maybe SourcePos
 unPosDeep = something (mkQ Nothing unPos)
-
--- | Tries to find a Pos inside a term, otherwise just gives up.
-unPosFlaky :: Term -> SourcePos
-unPosFlaky t = fromMaybe (newPos "unknown location" 0 0) (unPosDeep t)
 
 data ConstructorNames = ConstructorNames {
                           tconNames :: Set TName,
@@ -306,9 +300,12 @@ data ATerm =
   | AAbort ATerm
   | ATyEq ATerm ATerm
   | AJoin ATerm Int ATerm Int EvaluationStrategy
-  -- The last term is the type of the entire case-expression
-  | AConv ATerm [ATerm] (Bind [AName] ATerm) ATerm
-  | AInjDCon ATerm Int
+  -- first ATerm is the subject of the conversion, the second ATerm is the equality proof.
+  | AConv ATerm ATerm
+  -- The last term is the RHS of the equation we are proving
+  --  (The erased parts of it may differ from what you get if you substitute the RHSs of
+  --   the individual equations into the template).
+  | ACong [ATerm] (Bind [AName] ATerm) ATerm
   -- First ATerm is proof, second is the type annotation.
   | AContra ATerm ATerm
   | ASmaller ATerm ATerm
@@ -324,6 +321,7 @@ data ATerm =
    -- the final ATerm is the type of the entire match.
   | ACase ATerm (Bind AName [AMatch]) (Theta,ATerm)
    -- Decomposing equalities
+  | AInjDCon ATerm Int
   | ADomEq ATerm
   | ARanEq ATerm ATerm ATerm
   | AAtEq ATerm

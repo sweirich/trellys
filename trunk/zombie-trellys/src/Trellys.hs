@@ -49,9 +49,9 @@ main = do
                         putStrLn $ render $ disp typeError
                         exitFailure
                Right defs -> do
-                        putStrLn "Elaboration pass successful. Writing elaborated terms."
-                        writeAModules prefixes defs 
                         unless (NoTypeCheckCore `elem` flags) $ do
+                          putStrLn "Elaboration pass successful. Writing elaborated terms."
+                          writeAModules prefixes defs 
                           putStrLn "Typechecking the elaborated terms."
                           result <- runTcMonad (emptyEnv (SecondPass:flags)) (aTcModules defs)
                           case  result of

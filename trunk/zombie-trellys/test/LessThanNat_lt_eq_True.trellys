@@ -23,15 +23,15 @@ z_lt_Sn_LT : (n : Nat) -> lt Zero (Succ n) = True
 z_lt_Sn_LT = \n . join
 
 m_lt_n__Sm_lt_Sn_LT : (m : Nat) -> (n : Nat) -> lt m n = True -> lt (Succ m) (Succ n) = True
-m_lt_n__Sm_lt_Sn_LT = \m n m_lt_n . let lt_eq [_] = (join : lt m n = lt (Succ m) (Succ n)) in
-  conv m_lt_n by lt_eq at h.h=True
+m_lt_n__Sm_lt_Sn_LT = \m n m_lt_n . let lt_eq [_] = (join : lt m n = lt (Succ m) (Succ n)) in _
 
 -- not (m < 0)
 --
 -- No number is less than zero
 lt_0__contra_LT : (m:Nat) -> (n:Nat) -> [n = Zero] -> (lt m n = True) -> (0 = 1)
-lt_0__contra_LT = \m n [n_eq] m_lt_n . let lt_0_F [_] = (join : lt m Zero = False) in
-  contra (conv lt_0_F by (conv m_lt_n by n_eq at n.lt m n = True) at h.h=False)
+lt_0__contra_LT = \m n [n_eq] m_lt_n . 
+		     let lt_0_F [_] = (join : lt m Zero = False) in
+                       contra (_ : True = False)
 
 -- m + 1 < n + 1 -> m < n
 --
@@ -62,4 +62,4 @@ lt_0__contra_LT = \m n [n_eq] m_lt_n . let lt_0_F [_] = (join : lt m Zero = Fals
 sm_lt_Sn__m_lt_n_LT : (m:Nat) -> (n:Nat) -> lt (Succ m) (Succ n) = True -> lt m n = True
 sm_lt_Sn__m_lt_n_LT = \m n sm_lt_Sn .
   let pred_eq [_] = (join : lt (Succ m) (Succ n) = lt m n) in
-  conv sm_lt_Sn by pred_eq at h.h = True
+    _

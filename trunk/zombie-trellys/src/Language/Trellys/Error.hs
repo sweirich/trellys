@@ -12,14 +12,16 @@ import Text.PrettyPrint.HughesPJ
 import Text.ParserCombinators.Parsec.Pos(SourcePos)
 
 data SourceLocation where
-  SourceLocation :: forall a. Disp a => SourcePos -> a -> SourceLocation
+  SourceLocation :: forall a. Disp a => Maybe SourcePos -> a -> SourceLocation
 
 -- The error disp only shows the first context, not all of it.
 data Err = Err [SourceLocation] Doc
 instance Disp Err where
   disp (Err [] msg) = msg
-  disp (Err ((SourceLocation p term):_) msg)  =
-    disp p $$
+  disp (Err ((SourceLocation pos term):_) msg)  =
+    (case pos of 
+      Just p -> disp p
+      Nothing -> text "unknown location:0:0") $$
     nest 2 msg $$
     nest 2 (text "In the expression" $$ nest 2 (disp term))
 

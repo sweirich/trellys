@@ -69,7 +69,7 @@ set = \ [A] .
          FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail v))
 
 
-
+{-
 log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
                  -> lookup [n] i (set [n] i a v) = a
 lookup_set = \[A]. ind ih [n] = \ i a v .
@@ -87,3 +87,4 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
        let _ = injectivity (_ : Succ p = Succ m) 0 in
           TRUSTME
              
+-}

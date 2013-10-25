@@ -16,7 +16,7 @@ SHELL=/bin/bash
 PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
      Arithmetic Vectors Product List Fin LetRebind Trees Append2 \
      NatElimination \
-     CastShiftTrick ErasedConv ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
+     ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
@@ -58,7 +58,7 @@ fail:
 	@./expect_error Bug_T_Case_FV "should not appear in the erasure of the case expression"
 	@./expect_error Bug_T_Case_FV_2 "should not appear in the erasure of the case expression"
 	@./expect_error Test_T_RN2_FV "variable n appears free in body"
-	@./expect_error jointest "The erasures of terms .* are not joinable."
+	@./expect_error JoinTest "The erasures of terms .* are not joinable."
 	@./expect_error DeepMatchError1 "must be a member of a datatype, but is not."
 	@./expect_error DeepMatchError2 "is a member of an abstract datatype"
 	@./expect_error DeepMatchError3 "should take 1 constructors,"

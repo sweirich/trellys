@@ -40,32 +40,34 @@ cdivP_t_p_red' = \m . join
 
 cdivP_t_f_base : (m:Nat) -> [m = Zero] -> (n:Nat) -> Exists Nat (cdivP_ex m n)
 cdivP_t_f_base = \m [m_eq] n .
-  let eq1 [_] = conv join by (sym Nat Nat m Zero m_eq) at m . cdivP m (Succ n) = m
-  in Ex [m] (conv eq1 by (cdivP_ex_red' m n m) at t.t@log)
+  let    _ = (join: cdivP Zero (Succ n) = Zero)
+  in let _ = (join: cdivP_ex m n m = (cdivP m (Succ n) = m))
+  in Ex [m] (_ : cdivP m (Succ n) = m)
 
 cdivP_t_f_step : (m:Nat) -> (m':Nat) -> [m = Succ m']
               -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n) @log)
               -> (n:Nat) -> Exists Nat (cdivP_ex m n)
 cdivP_t_f_step = \m m' [m_eq] gm n .
-  let [m_eq'] [_] = (sym Nat Nat m (Succ m') m_eq)
-  in let eq1 [_] = conv join by m_eq'
-                   at m . (cdivP m (Succ n)
-                        = (let prog r [_] = cdivP (minus m (Succ n)) (Succ n)
+  let            _ = (join: cdivP (Succ m') (Succ n)
+                        = (let prog r [_] = cdivP (minus (Succ m') (Succ n)) (Succ n)
                            in Succ r))
-  in let lt_Sn [_] = conv s_minus_s__lt m' n by m_eq'
-                     at m . ltT (minus m (Succ n)) m
-  in let ih [_] = gm (minus m (Succ n)) [lt_Sn] n
+  in let lt_Sn [_] = s_minus_s__lt m' n
+  in let ih [_]    = gm (minus m (Succ n)) [lt_Sn] n
   in case ih [_] of
-       Ex [v] v_eq -> let v_eq' [_] = conv v_eq by cdivP_ex_red (minus m (Succ n)) n v at t.t
-                      in let eq2 [_] = conv eq1 by v_eq'
-                                       at h . (cdivP m (Succ n)
-                                            = (let prog r [_] = h
-                                               in Succ r))
-                      in let w_eq [_] = conv eq2 by (join : (let prog r [_] = v
-                                               in Succ r) = Succ v)
-                                        at h . cdivP m (Succ n) = h
-                      in Ex [Succ v]
-                            (conv w_eq by (cdivP_ex_red' m n (Succ v)) at t.t@log)
+       Ex [v] v_eq -> let    [_] = (cdivP_ex_red (minus m (Succ n)) n v
+                                   : cdivP_ex (minus m (Succ n)) n v 
+                                   = (cdivP (minus m (Succ n)) (Succ n) = v))
+                      -- Look: here is a case where "assumption up to congruence" is actually useful!
+                      -- Revisit this spot after implementing that, and when writing the paper.
+                      in let v_eq' = (v_eq : cdivP (minus m (Succ n)) (Succ n) = v)
+                      in let [_] = (cdivP_ex_red' m n (Succ v)
+                                   : (cdivP m (Succ n) = Succ v)
+                                   = cdivP_ex m n (Succ v))
+                      in let _   = (join: (let prog r [_] = v
+                                            in Succ r)  
+                                        = Succ v)
+                      in let h   = (_ : cdivP m (Succ n) = Succ v)
+                      in Ex [Succ v] h
 
 cdivP_t_f' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n) @log)
          -> (n:Nat) -> Exists Nat (cdivP_ex m n)
@@ -75,10 +77,12 @@ cdivP_t_f' = \m gm n . case m [m_eq] of
 
 cdivP_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> cdivP_t_p k @log) -> cdivP_t_p m
 cdivP_t_f = \m gm .
-  let gm' [_] = (\k [k_lt_m] .
-                 (conv (gm k [k_lt_m]) by (cdivP_t_p_red k) at t.t)
-              : (k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
-  in conv (cdivP_t_f' m gm') by (cdivP_t_p_red' m) at t.t
+  let gm' [_] = ((\k [k_lt_m] .
+                 unfold (cdivP_t_p k) in
+                   (gm k [k_lt_m]))
+                  : (k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (cdivP_ex k n))
+  in unfold (cdivP_t_p m)
+  in (cdivP_t_f' m gm')
 
 cdivP_t' : (m:Nat) -> cdivP_t_p m
 cdivP_t' = cov [cdivP_t_p] cdivP_t_f
@@ -95,5 +99,9 @@ cdivP_ex_red2 = \m n .
   in _
 
 cdivP_t : (m:Nat) -> (n:Nat) -> Exists Nat (\v . cdivP m (Succ n) = v)
-cdivP_t = \m n . conv (conv cdivP_t' m by (cdivP_t_p_red m) at t.t) n
-                 by (cdivP_ex_red2 m n) at t.t
+cdivP_t m n = 
+   let _ = (cdivP_t_p_red m) in
+   let _ = (cdivP_ex_red2 m n) in
+    -- Another example where the more liberal application rule is useful,
+    -- revisit when writing paper.
+    (cdivP_t' m : (n:Nat) -> Exists Nat (cdivP_ex m n)) n

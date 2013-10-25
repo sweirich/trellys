@@ -6,29 +6,32 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
-  (prove, solveConstraints, uneraseTerm, smartSteps, zonk, zonkTerm, zonkTele) 
+  (prove, solveConstraints, uneraseEq, smartSteps)
 where
 
-import Generics.RepLib hiding (Arrow,Con,Refl)
-import qualified Generics.RepLib as RL
-import Language.Trellys.GenericBind hiding (avoid)
 
 import Language.Trellys.Options
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
-import Language.Trellys.Environment(UniVarBindings, setUniVars, lookupUniVar,
+import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
+                                   extendCtx,
                                    warn,
-                                   getFlag)
+                                   getFlag,
+                                   zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
 import Language.Trellys.TypeCheckCore (aGetTh, getType)
 import Language.Trellys.CongruenceClosure
 
+import Language.Trellys.GenericBind hiding (avoid)
+
 import Control.Applicative 
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
 import Control.Monad.State.Strict
 import Control.Monad.Error.Class
+--import Data.Foldable (foldrM)
+--mport Data.List (partition, sortBy)
 import Data.Maybe (fromJust,isNothing)
 import qualified Data.Set as S
 import Data.Set (Set)
@@ -289,23 +292,96 @@ simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
 -- ************* TERM GENERATION PHASE
 -- Final pass: now we can generate the Trellys Core proof terms.
 
+{-
+Here is some experimental code to avoid exploding the proof size due to lack of sharing.
+But it doesn't seem to work very well, so not using it for now.
+
+
+--- Here is an utility to help introduce let-bindings for core expressions which are 
+-- used more than ones.
+
+data CachedTerm = CachedTerm {
+                    cachedName :: AName,      --The name we made for it.
+                    cachedVal :: ATerm,
+                    cachedUsageCount :: Int,  --The number of times it's been used
+                    cachedLevel :: Int        --What order the bindings should be introduced in
+                  }
+
+type CacheT key m a = StateT (Map key CachedTerm) m a
+
+cached :: (Fresh m, Ord key) => key -> ATerm -> CacheT key m ATerm
+cached k a = do
+  cache <- get
+  case M.lookup k cache of 
+    Nothing ->    do
+                    x <- fresh $ string2Name "pf"
+                    put (M.insert k (CachedTerm x a 1 (M.size cache)) cache)
+                    return $ AVar x
+    Just entry -> do
+                    put (M.insert k entry{ cachedUsageCount = cachedUsageCount entry + 1 } cache)
+                    return $ AVar (cachedName entry)
+
+runCacheT :: CacheT key TcMonad ATerm -> TcMonad ATerm
+runCacheT ca = do
+  (a, M.elems -> entries) <- runStateT ca M.empty
+  let (workhorses, oneoffs) = partition (\e -> cachedUsageCount e > 1) 
+                                $ sortBy (compare `on` cachedLevel) entries
+  let inlineOneoffs c = foldr (\e b -> subst (cachedName e) (cachedVal e) b) c oneoffs
+  inExtendedContext (map (\e -> e{ cachedVal = inlineOneoffs (cachedVal e)}) workhorses)
+    $  inlineOneoffs a
+ where inExtendedContext [] b = return b
+       inExtendedContext (e:es) b = do
+          (th,ty) <- getType (cachedVal e)
+          y <- fresh $ string2Name "_"
+          b' <- extendCtx (ASig (cachedName e) th ty) $ inExtendedContext es b
+          return $ ALet Runtime (bind (cachedName e, y, embed (cachedVal e)) b') (th,ty)
+
+
+genProofTerm' :: AnnotProof -> CacheT (ATerm,ATerm) TcMonad ATerm
+genProofTerm' (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
+genProofTerm' (AnnAssum Swapped (Just a,tyA,tyB)) = symEq tyA tyB a
+genProofTerm' (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
+genProofTerm' (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
+genProofTerm' (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
+genProofTerm' (AnnCong template ps tyA tyB) = do
+  subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm' p)
+                 ps                                            
+  cached (tyA,tyB) $
+         (AConv (AJoin tyA 0 tyA 0 CBV)
+                subpfs
+                (bind (map (\(x,_,_,_) -> x) ps) (ATyEq tyA template))
+                (ATyEq tyA tyB))
+genProofTerm' (AnnTrans tyA tyB tyC p q) = do
+  p' <- genProofTerm' p
+  q' <- genProofTerm' q
+  cached (tyA,tyC) =<< transEq tyA tyB tyC p' q'
+genProofTerm' (AnnInj l i p) = do
+  p' <- genProofTerm' p
+  case l of 
+    (ATCon _ _) -> return $ ANthEq i p'
+    (AAt _ _)   -> return $ AAtEq p'
+    _           -> error "internal error: unknown type of injectivity"
+
+genProofTerm :: AnnotProof -> TcMonad ATerm
+genProofTerm p = runCacheT (genProofTerm' p)
+-}
+
 genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
 genProofTerm (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
-genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symmTerm tyA tyB a
+genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symEq tyA tyB a
 genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
 genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
 genProofTerm (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
 genProofTerm (AnnCong template ps tyA tyB) = do
   subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm p)
-                 ps                                            
-  return (AConv (AJoin tyA 0 tyA 0 CBV)
-                subpfs
-                (bind (map (\(x,_,_,_) -> x) ps) (ATyEq tyA template))
-                (ATyEq tyA tyB))
+                 ps
+  return $ ACong subpfs
+                 (bind (map (\(x,_,_,_) -> x) ps) template)
+                 (ATyEq tyA tyB)
 genProofTerm (AnnTrans tyA tyB tyC p q) = do
   p' <- genProofTerm p
   q' <- genProofTerm q
-  transTerm tyA tyB tyC p' q'
+  transEq tyA tyB tyC p' q'
 genProofTerm (AnnInj l i p) = do
   p' <- genProofTerm p
   case l of 
@@ -314,67 +390,38 @@ genProofTerm (AnnInj l i p) = do
     _           -> error "internal error: unknown type of injectivity"
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
-transTerm :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
-transTerm tyA tyB tyC p q = do
-  x <- fresh (string2Name "x")
-  return $ AConv p [q] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyC)
+transEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
+transEq a b c pab pbc = do
+  x <- fresh $ string2Name "x"
+  return $ AConv pab (ACong [pbc] (bind [x] $ ATyEq a (AVar x)) (ATyEq (ATyEq a b) (ATyEq a c)))  
+
 
 -- From (tyA=tyB) conclude (tyA=tyB), but in a way that only uses the
 -- hypothesis in an erased position.
-uneraseTerm :: (Fresh m,Applicative m) => ATerm -> ATerm -> ATerm -> m ATerm
-uneraseTerm tyA tyB p = do
+uneraseEq :: (Fresh m,Applicative m) => ATerm -> ATerm -> ATerm -> m ATerm
+uneraseEq tyA tyB p = do
   x <- fresh (string2Name "x")
   -- As an optimization, if the proof term already has no free unerased variables we can just use it as-is.
   pErased <- erase p
   if S.null (fv pErased :: Set EName)
     then return p
-    else return $ AConv (AJoin tyA 0 tyA 0 CBV) [p] (bind [x] (ATyEq tyA (AVar x))) (ATyEq tyA tyB)
+    else return $ AConv (AJoin tyA 0 tyA 0 CBV) (ACong [p] (bind [x] (ATyEq tyA (AVar x))) (ATyEq (ATyEq tyA tyA) (ATyEq tyA tyB)))
 
 -- From (tyA=tyB) conlude (tyB=tyA).
-symmTerm :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
-symmTerm tyA tyB p = do
-  x <- fresh (string2Name "x")
-  return $ AConv (AJoin tyA 0 tyA 0 CBV) [p] (bind [x] (ATyEq (AVar x) tyA)) (ATyEq tyB tyA)
+symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
+symEq a b pab = do
+  x <- fresh $ string2Name "x"
+  return $ AConv (AJoin a 0 a 0 CBV) (ACong [pab] (bind [x] $ ATyEq (AVar x) a) (ATyEq (ATyEq a a) (ATyEq b a)))  
 
 -- From (tyA=tyB), conclude [tyA/x]template = [tyB/x]template
 -- For simplicity this function doesn't handle n-ary conv or erased subterms.
 congTerm :: (ATerm,ATerm,ATerm) -> AName -> ATerm -> TcMonad ATerm
 congTerm (tyA,tyB,pf) x template = do
   y <- fresh $ string2Name "y"  --need a fresh var in case tyB == (AVar hole)
-  return (AConv (AJoin (subst x tyA template) 0 
-                       (subst x tyA template) 0
-                       CBV)
-                [pf]
-                (bind [y] (ATyEq (subst x tyA template) (subst x (AVar y) template)))
+  return (ACong [pf]
+                (bind [y] (subst x (AVar y) template))
                 (ATyEq (subst x tyA template)
                        (subst x tyB template)))
-
-----------------------------------------
--- Dealing with unification variables.
-----------------------------------------
-
--- | To zonk a term (this word comes from GHC) means to replace all occurances of 
--- unification variables with their definitions.
-
-zonk :: (Rep a, Applicative m, MonadState (b,UniVarBindings) m) => a -> m a
-zonk a = do
-  bndgs <- gets snd
-  return $ zonkWithBindings bndgs a
-
-zonkTerm :: (Applicative m, MonadState (b,UniVarBindings) m) => ATerm -> m ATerm
-zonkTerm = zonk
-
-zonkTele :: (Applicative m, MonadState (b,UniVarBindings) m) => ATelescope -> m ATelescope
-zonkTele  = zonk
-
-zonkWithBindings :: Rep a => UniVarBindings -> a -> a
-zonkWithBindings bndgs = RL.everywhere (RL.mkT zonkTermOnce)
-  where zonkTermOnce :: ATerm -> ATerm
-        zonkTermOnce (AUniVar x ty) = case M.lookup x bndgs of
-                                        Nothing -> (AUniVar x ty)
-                                        Just a -> zonkWithBindings bndgs a
-        zonkTermOnce a = a
-
 
 -- 'decompose False avoid t' returns a new term 's' where each
 -- immediate subterm of 't' that does not mention any of the variables
@@ -429,10 +476,11 @@ decompose _ avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True avoid t1) <*> (decompose True avoid t2)
 decompose _ avoid t@(AJoin a i b j strategy) =
   return $ AJoin canonical canonical canonical canonical canonical
-decompose _ avoid (AConv t1 ts bnd ty) =  do
-  (xs, t2) <- unbind bnd
+decompose _ avoid (AConv t1 pf) =  do
   r1 <- decompose True avoid t1
-  return (AConv r1 (map (const canonical) ts) (bind xs canonical) canonical)
+  return (AConv r1 canonical)
+decompose _ avoid (ACong ts bnd ty) =  do
+  return $ AJoin canonical canonical canonical canonical canonical  --erases to just "join"
 decompose _ avoid (AContra t ty) = 
   return $ AContra canonical canonical
 decompose _ avoid (AInjDCon a i) =
@@ -488,8 +536,9 @@ decomposeMatch avoid (AMatch c bnd) = do
 --   such that (erase (substs (toList (match vars template t)) template)) == (erase t)
 -- Precondition: t should actually be a substitution instance of template, with those vars.
 
--- Todo: currently this matches the erased parts of the terms also, but
--- that should never be needed.
+-- Todo: There is some ambiguity about what exactly the precondition means, since we canonicalize 
+-- things. So the caller may except (AJoin ...) and (ANthEq ...) to match (and we ensure that they do).
+-- On the other hand, I don't think we ever expect e.g. (AConv a ...) and (a) to match.
 match :: (Applicative m, Monad m, Fresh m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
@@ -518,15 +567,13 @@ match vars (ABox t th) (ABox t' th') = match vars t t'
 match vars (AAbort t) (AAbort t') = return M.empty
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AJoin _ _ _ _ _) (AJoin _ _ _ _ _) = return M.empty
-match vars (AConv t1 t2s bnd ty) (AConv t1' t2s' bnd' ty') = do
+match vars a1 a2 | isJoinVariant a1 && isJoinVariant a2 = return M.empty
+match vars (AConv t1 pf) (AConv t1' pf') = do
   match vars t1 t1'
 match vars (AContra t1 t2) (AContra t1' t2') = return M.empty
-match vars (AInjDCon a i) (AInjDCon a' i') = return M.empty
 match vars (ASmaller t1 t2) (ASmaller t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (AOrdAx t1 t2) (AOrdAx t1' t2') = return M.empty
-match vars (AOrdTrans t1 t2) (AOrdTrans t1' t2') = return M.empty
+match vars a1 a2 | isOrdVariant a1 && isOrdVariant a2 = return M.empty
 match vars (AInd ty ep bnd) (AInd ty' ep' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
   match vars t t'
@@ -543,10 +590,6 @@ match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
   Just (_, alts, _, alts') <- unbind2 bnd bnd'
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
     `mUnion`  match vars t1 t1'
-match vars (ADomEq t)     (ADomEq t')      = return M.empty
-match vars (ARanEq p t1 t2) (ARanEq p' t1' t2') = return M.empty
-match vars (AAtEq  t)     (AAtEq  t')      = return M.empty
-match vars (ANthEq _ t)   (ANthEq _ t')    = return M.empty
 match vars (ATrustMe t)   (ATrustMe t')    = return M.empty
 match _ t t' = error $ "internal error: match called on non-matching terms "
                        ++ show t ++ " and " ++ show t' ++ "."
@@ -556,6 +599,23 @@ matchMatch :: (Applicative m, Monad m, Fresh m) =>
 matchMatch vars (AMatch _ bnd) (AMatch _ bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'
   match vars t t'
+
+-- Is a some term which erases to just "join"?
+isJoinVariant :: ATerm -> Bool
+isJoinVariant (AJoin _ _ _ _ _) = True
+isJoinVariant (ACong _ _ _) = True
+isJoinVariant (AInjDCon _ _) = True
+isJoinVariant (ADomEq _) = True
+isJoinVariant (ARanEq _ _ _) = True
+isJoinVariant (AAtEq _) = True
+isJoinVariant (ANthEq _ _) = True
+isJoinVariant _ = False
+
+-- Is a some term which erases to just "ord"?
+isOrdVariant :: ATerm -> Bool
+isOrdVariant (AOrdAx _ _) = True
+isOrdVariant (AOrdTrans _ _) = True
+isOrdVariant _ = False
 
 -- a short name for (union <$> _ <*> _)
 mUnion :: (Applicative m, Ord k) => m (Map k a) -> m (Map k a) -> m (Map k a)
@@ -569,21 +629,20 @@ mUnion x y = M.union <$> x <*> y
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: ATerm -> StateT ProblemState TcMonad Constant
 genEqs t = do
-  a <- recordName t
+  zt <- lift $ zonkTerm t
+  a <- recordName zt
 
-  (_,tTy) <- lift $ getType t
-  --TODO: maybe getType should call zonkTerm, to match the behaviour of ts?
-  ztTy <- lift $ zonkTerm tTy
+  (_,tTy) <- lift $ getType zt
   aTy <- if isAType tTy
-           then recordName ztTy
-           else genEqs ztTy
+           then recordName tTy
+           else genEqs tTy
   recordInhabitant a aTy
 
   case (eraseToHead t) of 
     AUniVar x _ -> recordUniVar a x aTy
     _           -> return ()
 
-  (s,ss) <- runWriterT (decompose False S.empty t)
+  (s,ss) <- runWriterT (decompose False S.empty zt)
   bs <- mapM genEqs (map (\(x,term) -> term) $ ss)
   let label = (bind (map (\(x,term) -> x) ss) s)
   propagate [(RawRefl,
@@ -594,7 +653,7 @@ genEqs t = do
     sErased <- erase s
     let ((x,s1):_) = ss
     when (sErased `aeq` EVar (translate x)) $ 
-      propagate [(RawAssumption (Nothing, t, s1),
+      propagate [(RawAssumption (Nothing, zt, s1),
                  Left $ EqConstConst a (head bs))]
   return a
 
@@ -602,6 +661,7 @@ genEqs t = do
 -- If the type is an equation, we also add the equation itself.
 processHyp :: (Theta,ATerm, ATerm) -> StateT ProblemState TcMonad ()
 processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
+  --liftIO $ putStrLn . render . disp $ [DS "processHyp for", DD n, DS ":" , DD (ATyEq t1 t2)]
   _  <- genEqs n
   a1 <- genEqs t1
   a2 <- genEqs t2
@@ -618,7 +678,9 @@ prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
 prove hyps (lhs, rhs) = do
   ((c1,c2),st1) <- flip runStateT newState $ do
                      mapM_ processHyp hyps
+                     --liftIO $ putStrLn . render . disp $  [DS "prove lhs", DD lhs]
                      c1 <- genEqs lhs
+                     --liftIO $ putStrLn . render . disp $  [DS "prove rhs", DD rhs]
                      c2 <- genEqs rhs
                      return (c1,c2)
   let sts = flip execStateT st1 $
@@ -718,7 +780,8 @@ isAnyValue (ALet Runtime bnd _) = False
 isAnyValue (ALet Erased (unsafeUnbind -> ((x,xeq,unembed->a),b)) _) = isAnyValue b
 isAnyValue (ACase a bnd _) = False
 isAnyValue (ABox a th) = isAnyValue a
-isAnyValue (AConv a pfs bnd resTy) = isAnyValue a
+isAnyValue (AConv a pf) = isAnyValue a
+isAnyValue (ACong _ _ _) = True
 isAnyValue (AUniVar x ty) = True
 isAnyValue (AVar _) = True
 isAnyValue (ATCon _ _) = True
@@ -786,8 +849,9 @@ aCbvContext (ACase a bnd ty) | not (isConstructorValue a) = do
   return $ Just (CbvContext hole (ACase (AVar hole) bnd ty), ConstructorValue, a)
 aCbvContext (ACase a bnd ty) | otherwise = return Nothing
 aCbvContext (ABox a th) = inCtx (\hole -> ABox hole th) <$> aCbvContext a
-aCbvContext (AConv a pfs bnd resTy) = inCtx (\hole -> AConv hole pfs bnd resTy) <$> aCbvContext a
+aCbvContext (AConv a pf) = inCtx (\hole -> AConv hole pf) <$> aCbvContext a
 -- The rest of the cases are already values:
+aCbvContext (ACong _ _ _) = return Nothing
 aCbvContext (AUniVar x ty) = return Nothing
 aCbvContext (AVar _) = return Nothing
 aCbvContext (AType _) = return Nothing
@@ -845,30 +909,33 @@ smartSteps hyps b m = do
     mapM_ processHyp hyps
     steps b m
  where steps :: ATerm -> Int -> StateT ProblemState TcMonad (ATerm,ATerm)
-       steps a 0 = return $ (a, AJoin a 0 a 0 CBV)
+       steps a 0 = do
+          --liftIO $ putStrLn.render.disp $ [DS "Out of gas, returning", DD a]
+          return $ (a, AJoin a 0 a 0 CBV)
        steps a n = do
           ma' <- smartStep a
           case ma' of
             Nothing -> return $ (a, AJoin a 0 a 0 CBV)
             Just (a', p) -> do
+                             --liftIO $ putStrLn.render.disp $ [DS "stepped from", DD a, DS "to", DD a' ]
                              (a'',q) <- steps a' (n-1)
-                             pq <- lift $ transTerm a a' a'' p q
+                             pq <- lift $ transEq a a' a'' p q
                              return (a'', pq)
  
 -- Try to step a once, returning Nothing if it is really stuck,
 -- or Just (a', pf : a = a').
--- Uses the union-find structor of the problem state.
+-- Uses the union-find structure of the problem state.
 smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
 smartStep a = do
   --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) ++ "\ni.e.\n" ++ show a
-  _ <- lift $ getType a 
+  -- _ <- lift $ getType a 
   --liftIO . putStrLn $ "It typechecks, so far"
 
   _ <- genEqs a
   maybeCtx <- lift $ aCbvContext a
   case maybeCtx of
     Just (CbvContext hole ctx, flavour, b) -> do
-       --liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b)
+       -- liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b)
        names <- gets naming
        candidates <- classMembersExplain (names BM.! b)
        let cs = [(c,b',p)
@@ -877,17 +944,17 @@ smartStep a = do
                    valueFlavour flavour b']
        case cs of
          (c,b',p):_ -> do
-           pf <- (genProofTerm 
-                 <=< return . simplProof
-                 <=< chainProof' b b'
-                 <=< fuseProof 
-                 . symmetrizeProof 
-                 . associateProof) p
+           pf <- lift $ (genProofTerm 
+                         <=< return . simplProof
+                         <=< chainProof' b b'
+                         <=< fuseProof 
+                         . symmetrizeProof 
+                         . associateProof) p
            let a' = subst hole b' ctx
            (do 
                _ <- lift $ getType a'
                cong_pf <- lift $ congTerm (b, b', pf) hole ctx
-               --(liftIO . putStrLn $ "Stepped by existing equality to " ++ (render . disp $ a'))
+               -- (liftIO . putStrLn $ "Stepped by existing equality to " ++ (render . disp $ a'))
                return $ Just (a', cong_pf))
              `catchError`
                (\ _ -> do 
@@ -914,11 +981,11 @@ smartStepLet (CbvContext hole a) b = do
   hole_eq <- fresh $ string2Name "hole_eq"
   (Just (a', pf_a_a')) <- dumbStep a  --This should always succeed, or aCbvContext lied to us.
   
-  hole_eq_symm <- symmTerm (AVar hole) b (AVar hole_eq)
+  hole_eq_symm <- symEq (AVar hole) b (AVar hole_eq)
   pf_ba_a <- congTerm (b, AVar hole, hole_eq_symm) hole a
   pf_a'_ba' <- congTerm (AVar hole, b, AVar hole_eq) hole a'
-  pf_a_ba'  <- transTerm a a' (subst hole b a') pf_a_a' pf_a'_ba'
-  pf_ba_ba' <- transTerm (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
+  pf_a_ba'  <- transEq a a' (subst hole b a') pf_a_a' pf_a'_ba'
+  pf_ba_ba' <- transEq (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
 
   --(liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
 

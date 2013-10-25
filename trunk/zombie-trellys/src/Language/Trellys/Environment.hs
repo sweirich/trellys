@@ -17,7 +17,8 @@ module Language.Trellys.Environment
    extendHints,
    extendSourceLocation, getSourceLocation,
    getDefs, substDefs,
-   err, warn
+   err, warn,
+   zonk, zonkTerm, zonkTele, zonkWithBindings
   ) where
 
 import Language.Trellys.Options
@@ -25,10 +26,13 @@ import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint
 import Language.Trellys.Error
 
-import Language.Trellys.GenericBind
+import Generics.RepLib hiding (Arrow,Con,Refl)
+import qualified Generics.RepLib as RL
+import Language.Trellys.GenericBind hiding (avoid)
 
 import Text.PrettyPrint.HughesPJ hiding (first)
 import Text.ParserCombinators.Parsec.Pos(SourcePos)
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.Error
 import Control.Monad.State
@@ -233,7 +237,7 @@ getLocalCtx = do
   return $ take (length g - glen) g
 
 -- | Push a new source position on the location stack.
-extendSourceLocation :: (MonadReader Env m, Disp t) => SourcePos -> t -> m a -> m a
+extendSourceLocation :: (MonadReader Env m, Disp t) => (Maybe SourcePos) -> t -> m a -> m a
 extendSourceLocation p t = 
   local (\ e@(Env {sourceLocation = locs}) -> e {sourceLocation = (SourceLocation p t):locs})
 
@@ -282,3 +286,30 @@ warn :: (Disp a, MonadReader Env m, MonadIO m) => a -> m ()
 warn e = do
   loc <- getSourceLocation
   liftIO $ putStrLn $ "warning: " ++ render (disp (Err loc (disp e)))
+
+----------------------------------------
+-- Dealing with unification variables.
+----------------------------------------
+
+-- | To zonk a term (this word comes from GHC) means to replace all occurances of 
+-- unification variables with their definitions.
+
+zonk :: (Rep a, Applicative m, MonadState (b,UniVarBindings) m) => a -> m a
+zonk a = do
+  bndgs <- gets snd
+  return $ zonkWithBindings bndgs a
+
+zonkTerm :: (Applicative m, MonadState (b,UniVarBindings) m) => ATerm -> m ATerm
+zonkTerm = zonk
+
+zonkTele :: (Applicative m, MonadState (b,UniVarBindings) m) => ATelescope -> m ATelescope
+zonkTele  = zonk
+
+zonkWithBindings :: Rep a => UniVarBindings -> a -> a
+zonkWithBindings bndgs = RL.everywhere (RL.mkT zonkTermOnce)
+  where zonkTermOnce :: ATerm -> ATerm
+        zonkTermOnce (AUniVar x ty) = case M.lookup x bndgs of
+                                        Nothing -> (AUniVar x ty)
+                                        Just a -> zonkWithBindings bndgs a
+        zonkTermOnce a = a
+
