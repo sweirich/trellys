@@ -220,7 +220,7 @@ astep (ACase a bnd ty) = do
           -- indicesTele = Δ
           -- argsTele    = Δ'm
           (_,indicesTele, AConstructorDef _ argsTele) <- lookupDCon c
-          b's <-pure $ map (\i -> ANthEq i b) [1..aTeleLength indicesTele]
+          b's <-pure $ map (\i -> ANthEq i b) [0 .. aTeleLength indicesTele - 1]
           v's <- casepush indicesTele srcIndices resIndices b's
                           vs argsTele
           return $ ACase (ADCon c th resIndices v's) bnd ty

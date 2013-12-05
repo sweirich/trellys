@@ -69,7 +69,7 @@ set = \ [A] .
          FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail v))
 
 
-{-
+
 log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
                  -> lookup [n] i (set [n] i a v) = a
 lookup_set = \[A]. ind ih [n] = \ i a v .
@@ -77,14 +77,14 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
     FZ [p][_]   , VNil [_] -> contra (_ : 0 = (Succ p))
     FS [p][_] _ , VNil [_] -> contra (_ : 0 = (Succ p))
     FZ [p][_]   , VCons [m][_] x xs ->
-	    
-	    unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  -- this is a pattern match failure in EqualityReasoning.
---	    let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
-       unfold (lookup [n] (FZ [p][_]) (VCons [?][_] a xs)) in  -- this causes stack overflow when writing elaborated terms
---       let _ = (join : lookup [n] (FZ [p][_]) (VCons [m][_] a xs) = a) in
-       _
+       unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
+       --let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+       -- This "works", but the generated proof term is gigantic and takes minutes
+       -- to write/typecheck :(
+       --unfold  (lookup [n] (FZ [p][_]) (VCons [_][_] a xs)) in
+       let _ = (join : lookup [n] (FZ [p][_]) (VCons [m][_] a xs) = a) in
+       _ 
     FS [p][p_eq] j , VCons [m][m_eq] x xs -> 
        let _ = injectivity (_ : Succ p = Succ m) 0 in
           TRUSTME
              
--}
