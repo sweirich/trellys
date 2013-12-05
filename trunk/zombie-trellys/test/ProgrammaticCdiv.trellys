@@ -59,7 +59,7 @@ cdivP_t_f_step = \m m' [m_eq] gm n .
                                    = (cdivP (minus m (Succ n)) (Succ n) = v))
                       -- Look: here is a case where "assumption up to congruence" is actually useful!
                       -- Revisit this spot after implementing that, and when writing the paper.
-                      in let v_eq' = (v_eq : cdivP (minus m (Succ n)) (Succ n) = v)
+--                      in let v_eq' = (v_eq : cdivP (minus m (Succ n)) (Succ n) = v)
                       in let [_] = (cdivP_ex_red' m n (Succ v)
                                    : (cdivP m (Succ n) = Succ v)
                                    = cdivP_ex m n (Succ v))

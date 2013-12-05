@@ -19,8 +19,9 @@ bind : [M:Type->Type] => (Monad M) => [A:Type] => [B:Type] =>
 bind = \[M] monad [A] [B] ma f. case monad of 
                                   mkMonad ret bnd -> bnd [A] [B] ma f
 
--- This one works for the wrong reason, the contraint-based unification
--- doesn't get enough information to fix the type of y.
+-- The contraint-based unification doesn't get enough information to
+-- fix the type of y, becasue we try to solve all constraints before 
+-- leaving the extended context containing ys'.
 mapM : [M:Type->Type] => Monad M => [B:Type] =>
          M B -> (xs: List B) -> M (List B)
 mapM = \[M] monad [B] b . ind mapM xs =
