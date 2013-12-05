@@ -49,7 +49,7 @@ import Control.Monad.Trans.State.Strict
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
 -- We need to know a little bit about the ATerm datatype in order to do the occurs check.
-import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, isInjectiveLabel)
+import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, isInjectiveLabel, isEqualityLabel)
 
 --Stuff used for debugging.
 {-
@@ -74,14 +74,15 @@ type Equation = Either EqConstConst EqBranchConst
 
 -- Information we keep about a given equivalence class of constants
 data ClassInfo  = ClassInfo {
-  classMembers     :: Set Constant,            -- All elements in the class
-  classVars        :: Set (AName,Constant),    -- All variables that are elements of the class; 
-                                                 ---  also remember which c they correspond to.
-  classApps        :: Set (Label, [Constant]), -- All applications that are elements of the class
-  classInjTerm     :: Maybe (Label, [Constant]), -- If there is a term headed by an injective
-                                                 -- label in the class.
-  classInhabitants :: Set Constant             -- Constants whose type is this constant. 
-
+  classMembers     :: Set Constant,                     -- All elements in the class
+  classUniVars     :: Set (AName,Constant),             -- All unification variables that are elements of the class; 
+                                                        --    also remember which c they correspond to.
+  classApps        :: Set (Label, [Constant]),          -- All applications that are elements of the class
+  classInjTerm     :: Maybe (Label, [Constant]),        -- If there is a term headed by an injective
+                                                        --    label in the class.
+  classEquations   :: Set (Constant,Constant,Constant), -- (c,a,b) such that c is in the class and c == (a=b).
+  classInhabitants :: Set Constant                      -- Constants whose type is this constant.
+                                                        --   Note we only track variables from the context here.
 }
 
 instance Show ClassInfo where
@@ -93,9 +94,10 @@ classSize cls = S.size (classMembers cls)
 combineInfo :: ClassInfo -> ClassInfo  -> ClassInfo 
 combineInfo a b =
   ClassInfo (S.union (classMembers a) (classMembers b))
-            (S.union (classVars a) (classVars b))
+            (S.union (classUniVars a) (classUniVars b))
             (S.union (classApps a) (classApps b))
             ((classInjTerm a) `orElse` (classInjTerm b))
+            (S.union (classEquations a) (classEquations b))
             (S.union (classInhabitants a) (classInhabitants b))
 
 orElse :: Maybe a -> Maybe a -> Maybe a
@@ -120,11 +122,8 @@ data ProblemState = ProblemState {
   --   q  : bs = b.
   lookupeq :: Map (Label,[Constant]) ([Proof], Proof, EqBranchConst),
 
---  types       :: Map Constant Constant,       --Maps constants representing expressions to constants
---                                              -- representing the type of the expression.
-
   unboundVars :: Map AName Constant,  --The variables that can still be assigned, 
-                                         -- with their types.
+                                      -- with their (constantified) types.
   bindings    :: Map AName Constant,  --Assignment to unification variables
   proofs      :: Map WantedEquation Proof,
 
@@ -149,6 +148,9 @@ dumpState st =
                      ++ "}\n"
                      ++ "has inhabitants:\n {"
                      ++ intercalate ", " (map showConst (S.toList $ classInhabitants info)) 
+                     ++ "}\n"
+                     ++ "and contains the equations:\n {"
+                     ++ intercalate ", " (map (\(c,a,b) -> showConst c)  (S.toList $ classEquations info))
                      ++ "}"
 
 -- | Allocate a constant which is not mentioned in 'reprs'.
@@ -170,27 +172,40 @@ recordName a = do
     Nothing -> do
       c <- freshConstant
       let singletonClass = ClassInfo{ classMembers = S.singleton c,
-                                      classVars = S.empty,
+                                      classUniVars = S.empty,
                                       classApps = S.empty,
                                       classInjTerm = Nothing,
+                                      classEquations = S.empty,
                                       classInhabitants = S.empty }
       st <- get
       put (st{ reprs = IM.insert c (Right singletonClass) (reprs st),
-               naming = BM.insert a c (naming st) })
+               naming = BM.insert a c (naming st)})
       return c
 
 -- | Record that c is a unification variable, with name x and type cTy.
 recordUniVar :: (Monad m) => Constant -> AName -> Constant -> StateT ProblemState m ()
 recordUniVar c x cTy = do
   (_, c', inf) <- findExplainInfo c
-  setRepr c' (Right inf{ classVars = S.insert (x,c) (classVars inf) })
+  setRepr c' (Right inf{ classUniVars = S.insert (x,c) (classUniVars inf) })
   modify (\st -> st{ unboundVars = M.insert x cTy (unboundVars st)})
 
 -- | Record that c is one of the inhabitants of cTy.
+-- (If cTy was not already known to be inhabited, then this can yield new
+--  given equations too)
 recordInhabitant :: (Monad m) => Constant -> Constant -> StateT ProblemState m ()
 recordInhabitant c cTy = do
   (_, cTy', inf) <- findExplainInfo cTy
   setRepr cTy' (Right inf{ classInhabitants = c `S.insert` classInhabitants inf})
+  when (S.null (classInhabitants inf)) $
+    propagate =<< (possiblyNewAssumptions cTy' (Just c) (classEquations inf))
+
+-- | Record that c is an equation between a and b
+-- (If the equivalence class of c is inhabited, this yields a new given equation too).
+recordEquation :: (Monad m) => Constant -> (Constant,Constant) -> StateT ProblemState m ()
+recordEquation  c (a,b) = do
+  (_, c', inf) <- findExplainInfo c
+  setRepr c' (Right inf{ classEquations = (c,a,b) `S.insert` classEquations inf})
+  propagate =<< (possiblyNewAssumptions c' (someElem $ classInhabitants inf) (S.singleton (c,a,b)))
 
 -- The list contains all the constants in the state, together with
 --   * if the contant itself represents a variable, the name of the variable.
@@ -324,6 +339,28 @@ possiblyInjectivity (Just (l, as)) (Just (l2, bs)) | l==l2 = do
                     bs
 possiblyInjectivity _ _ = return []
 
+-- Called when we have just unified two equivalence classes. 
+-- If one of the classes contained an assumption variable and 
+-- the other contains equations, we return the list of new equations
+--
+-- Note we do not check that the equations were not already known. 
+-- If the generated equations are redundant we will notice later, in propagate.
+possiblyNewAssumptions :: Monad m => Constant -> Maybe Constant -> Set (Constant,Constant,Constant) -> 
+                          StateT ProblemState m [ExplainedEquation]
+possiblyNewAssumptions _ Nothing _ = return []
+possiblyNewAssumptions c1 (Just c1Inhabitant) qs =  mapM possiblyNewAssumption $ S.elems qs
+ where possiblyNewAssumption (c2,a,b) = do
+         names <- gets naming
+         (pc1,_) <- findExplain c1
+         (pc2,_) <- findExplain c2
+         let p = (RawTrans pc1 (RawSymm pc2))  -- ; c1 = c2
+         return (RawAssumption (names BM.!> c1Inhabitant, names BM.!> c1, p, names BM.!> a, names BM.!> b), 
+                 Left (EqConstConst a b))
+
+someElem :: Set a -> Maybe a
+someElem s | S.null s = Nothing
+           | otherwise = Just (S.findMin s)
+
 -- propagate takes a list of given equations, and constructs the congruence
 -- closure of those equations.
 propagate :: Monad m => [ExplainedEquation] -> StateT ProblemState m ()
@@ -335,13 +372,17 @@ propagate ((p, Left (EqConstConst a b)):eqs) = do
       a' <- union a b p
       a_uses <- M.findWithDefault [] a' `liftM` (gets uses)
       injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
-      propagate (map (\(q,eq) -> (q, (Right eq))) a_uses ++ injections ++ eqs)
+      newAssumptions1 <- possiblyNewAssumptions ar (someElem $ classInhabitants ia) (classEquations ib)
+      newAssumptions2 <- possiblyNewAssumptions br (someElem $ classInhabitants ib) (classEquations ia)
+      propagate (map (\(q,eq) -> (q, (Right eq))) a_uses ++ injections ++ newAssumptions1 ++ newAssumptions2 ++ eqs)
    else 
       propagate eqs
 propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
   recordApplication a (l,as)
   when (isInjectiveLabel l) $ 
     recordInjTerm a (l,as)
+  when (isEqualityLabel l) $
+    recordEquation a ((as!!0), (as!!1))
   (ps, as') <- findExplains as
   lookupeqs <- gets lookupeq
   case M.lookup (l, as') lookupeqs of
@@ -404,23 +445,25 @@ unifyBind  (WantedEquation a b) = do
   (_, _, ib) <- findExplainInfo b
   unbounds <- gets unboundVars
   names <- gets naming
-  (x,c) <- lift (S.toList $ classVars ia)
+  (x,c) <- lift (S.toList $ classUniVars ia)
   guard (x `M.member` unbounds)
-  let xTy = unbounds M.! x
-  (_,_,xTyInfo) <- (findExplainInfo xTy)
   -- Don't backtrack over which member of the equivalence class gets picked.
   d <- cut $ do
     --if possible we prefer picking b itself, for simpler equality proofs.
     d <- lift (b : (S.toList $ classMembers ib))
     guard $ not (x `S.member` uniVars (names BM.!> d))-- occurs check
-    guard $ d `S.member` (classInhabitants xTyInfo) -- typing check
-    return d
-  {-  trace (render . disp $ [ DS "The equivalence class of b contains"]
+-- This typing check (following two lines) fails for an interesting reason (see comment about Product.trellys in notes.tex)
+  --  namesTy <- gets namingTy
+  --    let xTy = names BM.!> (unbounds M.! x)
+  --    guard $ (namesTy IM.! d) `aeq` xTy -- typing check
+{-
+    trace (render . disp $ [ DS "The equivalence class of b contains"]
              ++ map (DD . (names BM.!>)) (S.toList $ classMembers ib)
-             ++ [DS "In addition, we need something of type", DD (names BM.!> xTy),
-                 DS "so the candidates are"]
-             ++ map (DD . (names BM.!>)) (S.toList $ classInhabitants xTyInfo)
-             ++ [DS "We pick", DD (names BM.!> d)]) $ -}
+             ++ [DS "the unification variable had type", DD xTy, 
+                 DS "although that is not currently being taken into account."]
+             ++ [DS "We pick", DD (names BM.!> d)]) $ return ()
+-}
+    return d
   giveBinding x d
   propagate [(RawRefl, Left $ EqConstConst c b)]
   --Now the equation ought to be trivial:
@@ -478,6 +521,9 @@ guessVars = do
            let candidates = [ c | c <- (S.toList $ classInhabitants inf), 
                                   S.null (uniVars (names BM.!> c)) ] --huge hack.
 --                             not (x `S.member` uniVars (names BM.!> c)) ] --occurs check
+           when (null candidates) $
+             liftIO $ putStrLn . render . disp $ [ DS "Oops, no candidates for guessing a variable  of type",
+                                                   DD (names BM.!> xTy)]
            guard (not $ null candidates)
            let a = head $ candidates
            liftIO $ putStrLn $ "Setting a var of type ("

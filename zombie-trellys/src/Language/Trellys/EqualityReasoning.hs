@@ -9,15 +9,11 @@ module Language.Trellys.EqualityReasoning
   (prove, solveConstraints, uneraseEq, smartSteps)
 where
 
-
-import Language.Trellys.Options
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
-                                   extendCtx,
                                    warn,
-                                   getFlag,
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
@@ -42,7 +38,12 @@ import Data.Function (on)
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, render, vcat, colon)
+import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon)
+{-
+import Language.Trellys.TypeCheckCore (aTs)
+import Text.PrettyPrint.HughesPJ (render)
+import Debug.Trace
+-}
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -103,7 +104,7 @@ maybeCancel p q = RawTrans p q
 data Orientation = Swapped | NotSwapped
   deriving (Show,Eq)
 data Raw1Proof =
-   Raw1Assumption Orientation (Maybe ATerm, ATerm, ATerm)
+   Raw1Assumption Orientation (ATerm, ATerm, Raw1Proof, ATerm, ATerm)
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
  | Raw1Cong Label [Raw1Proof]
@@ -111,8 +112,8 @@ data Raw1Proof =
   deriving Show
 
 symmetrizeProof :: Proof -> Raw1Proof
-symmetrizeProof (RawAssumption h) = Raw1Assumption NotSwapped h
-symmetrizeProof (RawSymm (RawAssumption h)) = Raw1Assumption Swapped h
+symmetrizeProof (RawAssumption (h,c,p,a,b)) = Raw1Assumption NotSwapped (h, c, symmetrizeProof p, a,b)
+symmetrizeProof (RawSymm (RawAssumption (h,c,p,a,b))) = Raw1Assumption Swapped  (h, c, symmetrizeProof p, a,b)
 symmetrizeProof RawRefl = Raw1Refl
 symmetrizeProof (RawSymm RawRefl) = Raw1Refl
 symmetrizeProof (RawSymm (RawSymm p)) = symmetrizeProof p
@@ -131,7 +132,7 @@ symmetrizeProof (RawSymm (RawInj i p)) = Raw1Inj i (symmetrizeProof (RawSymm p))
 -- CheckProof doesn't.
 
 data SynthProof =
-    Assum Orientation (Maybe ATerm,ATerm,ATerm) 
+    Assum Orientation (ATerm,ATerm,ChainProof,ATerm,ATerm) 
   | Inj Int SynthProof
   | Chain ChainProof  --Extra invariant: both ends of the chain should be definite.
 
@@ -175,7 +176,9 @@ takeWhileRight (Right x : xs) = let (ys,zs) = takeWhileRight xs in (x:ys, zs)
 takeWhileRight xs@(Left _ : _) = ([],xs)
 
 fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m ChainProof
-fuseProof (Raw1Assumption o h) = return $ [Left (Assum o h)]
+fuseProof (Raw1Assumption o (h,c,p,a,b)) = do
+    p' <- fuseProof p
+    return $ [Left (Assum o (h,c,p',a,b))]
 fuseProof (Raw1Refl) = return $ []
 fuseProof (Raw1Trans p q) = transProof <$> fuseProof p <*> fuseProof q
 fuseProof (Raw1Cong bnd ps) = do
@@ -198,7 +201,7 @@ fuseProofs (_:_) [] = error "fuseProofs: too many variables (internal error)"
 -- Having normalized the proof, in the next phase we annotate it by all the subterms involved.
 
 data AnnotProof = 
-    AnnAssum Orientation (Maybe ATerm,ATerm,ATerm)
+    AnnAssum Orientation (ATerm,ATerm,AnnotProof,ATerm,ATerm)
   | AnnRefl ATerm
   | AnnCong ATerm [(AName,ATerm,ATerm,AnnotProof)] ATerm ATerm
   | AnnTrans ATerm ATerm ATerm AnnotProof AnnotProof
@@ -207,10 +210,12 @@ data AnnotProof =
 
 -- [synthProof p] takes a SynthProof of A=B and returns A, B and the corresponding AnnotProof
 synthProof :: (Applicative m, Fresh m) => SynthProof -> m (ATerm,ATerm,AnnotProof)
-synthProof (Assum NotSwapped h@(n,tyA,tyB)) = do
-  return $ (tyA, tyB, AnnAssum NotSwapped h)
-synthProof (Assum Swapped h@(n,tyA,tyB)) = do
-  return $ (tyB, tyA, AnnAssum Swapped h)
+synthProof (Assum NotSwapped (n,tyC,p,tyA,tyB)) = do
+  (_,_,p') <- chainProof (Just tyC) (Just (ATyEq tyA tyB)) p
+  return $ (tyA, tyB, AnnAssum NotSwapped (n,tyC,p',tyA,tyB))
+synthProof (Assum Swapped (n,tyC,p,tyA,tyB)) = do
+  (_,_,p') <- chainProof (Just tyC) (Just (ATyEq tyA tyB)) p
+  return $ (tyB, tyA, AnnAssum Swapped (n,tyC,p',tyA,tyB))
 synthProof (Inj i p) = do
   (tyA,tyB,p') <- synthProof p
   (l, as) <- runWriterT (decompose False S.empty tyA)
@@ -366,11 +371,14 @@ genProofTerm :: AnnotProof -> TcMonad ATerm
 genProofTerm p = runCacheT (genProofTerm' p)
 -}
 
-genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
-genProofTerm (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
-genProofTerm (AnnAssum Swapped (Just a,tyA,tyB)) = symEq tyA tyB a
-genProofTerm (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
-genProofTerm (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
+--genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
+genProofTerm :: AnnotProof -> TcMonad ATerm
+genProofTerm (AnnAssum NotSwapped (a,_,AnnRefl _,tyA,tyB)) = return $ a 
+genProofTerm (AnnAssum NotSwapped (a,tyC,p,tyA,tyB)) = do
+  p' <- genProofTerm p
+  return $ AConv a p'
+genProofTerm (AnnAssum Swapped h@(_,_,_,tyA,tyB)) =
+ symEq tyA tyB =<< genProofTerm (AnnAssum NotSwapped h)
 genProofTerm (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
 genProofTerm (AnnCong template ps tyA tyB) = do
   subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm p)
@@ -630,21 +638,20 @@ mUnion x y = M.union <$> x <*> y
 genEqs :: ATerm -> StateT ProblemState TcMonad Constant
 genEqs t = do
   zt <- lift $ zonkTerm t
-  a <- recordName zt
-
   (_,tTy) <- lift $ getType zt
-  aTy <- if isAType tTy
-           then recordName tTy
-           else genEqs tTy
-  recordInhabitant a aTy
-
+  a <- recordName zt
   case (eraseToHead t) of 
-    AUniVar x _ -> recordUniVar a x aTy
+    AUniVar x _ -> do
+                    aTy <- case (eraseToHead tTy) of
+                             (AType i) -> recordName tTy
+                             _         -> genEqs tTy
+                    recordUniVar a x aTy
     _           -> return ()
 
   (s,ss) <- runWriterT (decompose False S.empty zt)
   bs <- mapM genEqs (map (\(x,term) -> term) $ ss)
   let label = (bind (map (\(x,term) -> x) ss) s)
+
   propagate [(RawRefl,
              Right $ EqBranchConst label bs a)]
 
@@ -653,25 +660,17 @@ genEqs t = do
     sErased <- erase s
     let ((x,s1):_) = ss
     when (sErased `aeq` EVar (translate x)) $ 
-      propagate [(RawAssumption (Nothing, zt, s1),
+      propagate [(RawAssumption (AJoin zt 0 s1 0 CBV, (ATyEq zt s1), RawRefl, zt, s1),
                  Left $ EqConstConst a (head bs))]
   return a
 
 -- Given a binding in the context, name all the intermediate terms in its type.
 -- If the type is an equation, we also add the equation itself.
 processHyp :: (Theta,ATerm, ATerm) -> StateT ProblemState TcMonad ()
-processHyp (_,n,eraseToHead -> ATyEq t1 t2) = do
-  --liftIO $ putStrLn . render . disp $ [DS "processHyp for", DD n, DS ":" , DD (ATyEq t1 t2)]
-  _  <- genEqs n
-  a1 <- genEqs t1
-  a2 <- genEqs t2
-  propagate [(RawAssumption (Just n,t1,t2), 
-             Left $ EqConstConst a1 a2)]
 processHyp (th,n,t) = do
-  -- If the typeclass hackery is not enabled, we can save some effort.
-  isTypeclassy <- getFlag Typeclassy
-  when isTypeclassy $
-    genEqs n >> return ()
+  a <- genEqs n 
+  aTy <- genEqs t
+  recordInhabitant a aTy --If aTy is an equation, this call will propagate it.
 
 -- "Given the context, please prove this other equation."
 prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
@@ -683,6 +682,7 @@ prove hyps (lhs, rhs) = do
                      --liftIO $ putStrLn . render . disp $  [DS "prove rhs", DD rhs]
                      c2 <- genEqs rhs
                      return (c1,c2)
+  --dumpState st1
   let sts = flip execStateT st1 $
               unify S.empty 
                     [WantedEquation c1 c2]
@@ -690,8 +690,9 @@ prove hyps (lhs, rhs) = do
     [] -> return Nothing
     st:_ -> 
        let bndgs = M.map ((naming st) BM.!>)  (bindings st)
-           pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
-                                                (naming st BM.! rhs)) in
+           pf = (proofs st) M.! (WantedEquation c1 c2) in
+--           pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
+--                                                (naming st BM.! rhs)) in
         do
          {-
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
@@ -741,7 +742,6 @@ solveConstraints hyps = do
      oldBndgs <- gets snd
      setUniVars bndgs
      clearConstraints
-
 
 -------------------------------------------------------
 

@@ -151,3 +151,16 @@ decompose_case_branch = \p. _
 log decompose_case_branch_binding : (f=f1) ->  (case n [_] of { Zero -> a ; Succ n' -> f n'} : atype)
                                              = (case n [_] of { Zero -> a ; Succ n' -> f1 n'} : atype)
 decompose_case_branch_binding = \p. _
+
+
+----------------------------------------
+-- Test the assumption-up-to-CC code.
+
+-- this requires the check for new given equations in recordInhabitant.
+--  (note that p will be processed before q, because of the way contexts are stored).
+log assumCC1 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (q : Q@log) -> (p : Q = (m=n)) -> m=n
+assumCC1 n m Q q p = _
+
+-- This one requires the check for new given equations when merging two equivalence classes.
+log assumCC2 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : Q = (m=n)) -> (q : Q@log) -> m=n
+assumCC2 n m Q p q = _

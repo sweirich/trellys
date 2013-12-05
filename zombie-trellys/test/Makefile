@@ -28,7 +28,11 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
-TODO_PASS=ProgList
+TODO_PASS=ProgList  Monadic.passtypeclassy
+  # The monadic example needs the unification code to pick type correct
+  # unifiers. We used to do that using the inhabitant-tracking, but that is
+  # too costly, so it's currently turned off.
+
 # stale?
 UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
@@ -43,7 +47,11 @@ all: pass fail
 clean:
 	rm *.trellys-elaborated
 
-pass: $(foreach p,$(PASS),$(p).pass) BST.passtypeclassy Monadic.passtypeclassy
+pass: plain_pass typeclassy_pass
+
+plain_pass: $(foreach p,$(PASS),$(p).pass) 
+    
+typeclassy_pass: BST.passtypeclassy
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"

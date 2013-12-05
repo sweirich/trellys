@@ -617,6 +617,12 @@ isInjectiveLabel l = isInjective a
         --isInjective (ADCon _ _ _ _) = True --Dcon is more tricky, because of value restriction.
         isInjective _ = False
 
+isEqualityLabel :: Label -> Bool 
+isEqualityLabel l = isATyEq a
+  where (_,a) = unsafeUnbind l
+        isATyEq (ATyEq _ _) = True
+        isATyEq _ = False
+
 -- Labels for non-atomic terms.
 type Label = Bind [AName] ATerm
 
@@ -627,12 +633,12 @@ instance Ord Label where
 
 -- The datatype of proofs. 
 data Proof =
-   --The first component is either Just a proof term which the type elaborator constructed
+   -- RawAssumption (x, C, p, A, B) 
+   --- means that x:C and p:C=(A=B).
+   --The first component is either a proof term which the type elaborator constructed
    -- (usually just a variable, sometimes unbox applied to a variable),
-   -- or Nothing if an equality holds just by (join) after erasure.
-   -- (The Congruence Closure algorithm will not itself use the RawAssumption constructor,
-   --- but its caller will).
-   RawAssumption (Maybe ATerm, ATerm, ATerm) 
+   -- or a (join 0 0) which genEqs (in EqualityReasoning.hs) put in.
+   RawAssumption (ATerm, ATerm, Proof, ATerm, ATerm) 
  | RawRefl
  | RawSymm Proof
  | RawTrans Proof Proof
