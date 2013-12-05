@@ -927,9 +927,9 @@ smartSteps hyps b m = do
 -- Uses the union-find structure of the problem state.
 smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
 smartStep a = do
-  --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) ++ "\ni.e.\n" ++ show a
-  -- _ <- lift $ getType a 
-  --liftIO . putStrLn $ "It typechecks, so far"
+  --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) -- ++ "\ni.e.\n" ++ show a
+  -- _ <- lift $ aTs a 
+  -- liftIO . putStrLn $ "It typechecks, so far"
 
   _ <- genEqs a
   maybeCtx <- lift $ aCbvContext a
@@ -975,7 +975,7 @@ smartStep a = do
 -- steps the term ctx[b] , which is stuck on the non-value b.
 smartStepLet :: CbvContext -> ATerm -> TcMonad (ATerm, ATerm)
 smartStepLet (CbvContext hole a) b = do
-  --liftIO . putStrLn $ "About to smartStepLet the term\n" ++ render (nest 2 (disp a))
+  -- liftIO . putStrLn $ "About to smartStepLet the term\n" ++ render (nest 2 (disp a))
   --                     ++ "\nby replacing the subterm\n" ++ render (nest 2 (disp b))
 
   hole_eq <- fresh $ string2Name "hole_eq"
@@ -987,7 +987,7 @@ smartStepLet (CbvContext hole a) b = do
   pf_a_ba'  <- transEq a a' (subst hole b a') pf_a_a' pf_a'_ba'
   pf_ba_ba' <- transEq (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
 
-  --(liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
+  -- (liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
 
   return (subst hole b a',
           ALet Erased 
