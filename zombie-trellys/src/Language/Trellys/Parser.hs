@@ -201,7 +201,7 @@ trellysStyle = Token.LanguageDef
                 , Token.reservedNames =
                   ["ord"
                   ,"ordtrans"
-                  , "join"
+                  ,"join"
                   ,"pjoin"
                   ,"unfold"
                   ,"rec"
@@ -216,7 +216,6 @@ trellysStyle = Token.LanguageDef
                   ,"contra"
                   ,"let", "in"
                   ,"prog", "log"
-                  , "L", "P"                
                   ,"axiom"
                   ,"erased"
                   ,"termcase"
@@ -345,10 +344,7 @@ telescope = many teleBinding
 
 theta :: LParser Theta
 theta =      (reserved "prog" >> return Program)
-        <|>  (reserved "log" >> return Logic)
-        <|>  (reserved "P" >> return Program)
-        <|>  (reserved "L" >> return Logic)
-            
+        <|>  (reserved "log" >> return Logic)            
 
 ---
 --- Top level declarations
