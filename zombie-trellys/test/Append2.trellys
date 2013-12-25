@@ -1,4 +1,4 @@
-module Append where
+module Append2 where
 
 import Prelude
 import Vectors
@@ -35,17 +35,13 @@ appendAssociates = \[a] . ind aa [i] = \[j] [k] xs ys zs .
       let v3 [v3_eq] = (append ys zs) in   
       
       let _  = (join : (append (VCons [i'] [ieq] x xs') ys) = 
-                       (VCons [_] [_] x (append xs' ys) 
-      		   : Vector a (Succ (plus i' j)))) in
+                       (VCons [_] [_] x (append xs' ys))) in
 
       let _ = (join : (append (VCons [i'] [ieq] x xs') v3) = 
-      	             ((VCons [_] [_] x  (append xs' v3)
-      			: Vector a (Succ (plus i' (plus j k)))))) in
+      	              (VCons [_] [_] x  (append xs' v3))) in
       
       let _ = (join : (append (VCons [_] [_] x v2) zs) =
-                           ((VCons [_] [_] x (append v2 zs)
-           		   : Vector a (Succ (plus (plus i' j) k))))) in
-      
+                           (VCons [_] [_] x (append v2 zs))) in      
        _
 
 

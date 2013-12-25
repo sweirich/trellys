@@ -63,9 +63,6 @@ div_t_f_step = \m m' [m_eq] gm n .
                       in let [_] = (divHalts_red' m n (Succ v)
                                    : (div m (Succ n) = Succ v)
                                    = divHalts m n (Succ v))
-                      in let _   = (join: (let prog r [_] = v
-                                            in Succ r)  
-                                        = Succ v)
                       in let h   = (_ : div m (Succ n) = Succ v)
                       in Ex [Succ v] h
 

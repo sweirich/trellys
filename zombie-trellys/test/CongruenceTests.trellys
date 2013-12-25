@@ -131,7 +131,7 @@ decompose_rec_body_binding = \p. _
 log decompose_rec_typ : (atype=btype) -> (a=b) -> ((rec f x = a) : Nat->atype) = ((rec f x = b) : Nat->btype)
 decompose_rec_typ = \p q. _
 
-log decompose_let_val : (a=a1) -> (let x=a in U) = (let x=a1 in U)
+log decompose_let_val : (a=a1) -> ((let x=a in U) : Unit) = ((let x=a1 in U) : Unit)
 decompose_let_val = \p. _
 
 log decompose_let_body : (a=a1) -> (let x=U in a) = (let x=U in a1)

@@ -139,3 +139,7 @@ data Unit : Type 0 where
 -- DON'T USE THIS: you probably want (0=1) or (True=False) instead,
 -- since contra handles those directly ...
 data Void : Type 0 where {}
+
+log cast : [A : Type] -> [ B : Type ] -> [A = B] -> (A@log) -> (B@log)
+cast [A] [B] [p] x = x
+

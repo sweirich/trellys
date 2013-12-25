@@ -316,7 +316,7 @@ rec silly x = case x of
   Succ Zero -> x
   Succ (Succ n) -> Succ (silly (Succ n))
 
-log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ L) -> (silly n = n)
+log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ log) -> (silly n = n)
 ind lemma_silly n pf = 
   case n [n_eq] of 
     Zero -> unfold void in 
@@ -339,13 +339,13 @@ diverge f x = (y : Nat) -> (f x = y) -> void
 -- log lemma_silly' : (k : Nat) -> (n : Nat) -> (silly n = k) -> (k = n)
 
 data Maybe (a : Type) : Type where
-  Just    of ( _ : a @ P)
+  Just    of ( _ : a @ prog)
   Nothing 
 
 log md3 : Maybe (Nat -> Nat)
 md3 = Just (\x. div 3 x)
 
-log foo : Maybe (Nat -> Nat) -> (Nat -> Nat @ P)
+log foo : Maybe (Nat -> Nat) -> (Nat -> Nat @ prog)
 foo x = case x of 
   Just y -> y
   Nothing -> \ x . x
