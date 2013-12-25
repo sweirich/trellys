@@ -17,7 +17,7 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
      Arithmetic ArithmeticDiv Vectors Product List Fin LetRebind Trees Append2 \
      NatElimination \
      ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
-     LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv Divtest \
+     LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
      RLE Sat Paper

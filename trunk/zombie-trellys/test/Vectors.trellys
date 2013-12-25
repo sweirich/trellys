@@ -77,8 +77,8 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
     FZ [p][_]   , VNil [_] -> contra (_ : 0 = (Succ p))
     FS [p][_] _ , VNil [_] -> contra (_ : 0 = (Succ p))
     FZ [p][_]   , VCons [m][_] x xs ->
-       unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
-       --let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+       --unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
+       let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs)) in
        -- This "works", but the generated proof term is gigantic and takes minutes
        -- to write/typecheck :(
        --unfold  (lookup [n] (FZ [p][_]) (VCons [_][_] a xs)) in

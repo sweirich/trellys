@@ -706,18 +706,16 @@ ts (TCon c args) =
      return (ATCon (translate c) (map fst eargs), (AType lev))
 
 -- Rule D | _dcon
-
+-- In the synthesizing version, we try to use unification to figure out the type parameters.
 ts (DCon c args) = do
      (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
-     let numParams = aTeleLength delta
-     unless (numParams == 0) $
-       err [DS "Can only synthesize the type when there are no params"]
-     teleRes <- taTele args deltai 
+     (us,deltai') <- instantiateInferredsTele delta deltai
+     teleRes <- taTele args deltai'
      let (eargs,eths) = unzip teleRes
-     aKc (ATCon tname [])
+     zus <- zonk us
+     aKc (ATCon tname zus)
      return $ (ADCon (translate c) (maximum (minBound:eths)) 
-               [] eargs, ATCon tname [])
-
+               zus eargs, ATCon tname zus )
 
 -- rule T_app
 ts tm@(App ep a b) =
@@ -800,6 +798,7 @@ ts (Ann a tyA) =
      return (ea, zetyA)
 
 -- the synthesis version of rules T_let1 and T_let2
+-- TODO, maybe these are dubious from the point-of-view of programming-up-to-CC, so we should get rid of them?
 ts (Let th' ep bnd) =
  do -- begin by checking syntactic -/L requirement and unpacking binding
     when (ep == Erased && th' == Program) $
@@ -871,6 +870,18 @@ instantiateInferreds a (eraseToHead -> AArrow _ Inferred ep bnd) = do
   let bTy' = subst x (AUniVar n aTy) bTy
   instantiateInferreds (AApp ep a (AUniVar n aTy) bTy') bTy'
 instantiateInferreds a aTy = return (a, aTy)
+
+-- | Create new unification variables for each variable in the telescope,
+--  and replace all occurances of those variables in a.
+instantiateInferredsTele :: Subst ATerm a => ATelescope -> a -> TcMonad ([ATerm],a)
+instantiateInferredsTele AEmpty a = return ([],a)
+instantiateInferredsTele (ACons (unrebind->((x,unembed->ty,ep),tele))) a = do
+  n <- fresh (string2Name (name2String x ++ "_inf"))
+  addConstraint (ShouldHaveType n ty)
+  let u = (AUniVar n ty)
+  (us, a') <-  instantiateInferredsTele tele (subst x u a)
+  return (u:us, a')
+   
 
 -- | Is 'a' an arrow type that has inferred arguments?
 hasInferreds :: ATerm -> TcMonad Bool

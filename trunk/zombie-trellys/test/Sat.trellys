@@ -174,7 +174,7 @@ ind next_var [n] = \ v .
 -- looks for unit literals to propagate
 
 prog dpll : [n:Nat] => (formula : Formula n) 
-           -> Vector (Maybe Bool) n -> (Answer n formula @ L)
+           -> Vector (Maybe Bool) n -> (Answer n formula @ log)
 rec dpll [n] formula assign =
  case (satisfies assign formula) of 
    Just True  -> SAT assign _
@@ -196,7 +196,7 @@ rec dpll [n] formula assign =
                       (set [n] m (Just True : Maybe Bool) assign)
 
 prog solver : (n:Nat) => (formula : Formula n) 
-                      -> (Answer n formula @ L)
+                      -> (Answer n formula @ log)
 solver n formula = dpll formula (repeat (Nothing : Maybe Bool) n)
 
 -- The termination of this algorithm decreases with the number of unassigned 
