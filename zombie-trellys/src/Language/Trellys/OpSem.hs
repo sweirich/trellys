@@ -6,7 +6,7 @@
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
-  (makeModuleEnv, join, cbvStep, isEValue, isValue, erase, eraseToHead)
+  (join, cbvStep, cbvNSteps, isEValue, isValue, erase, eraseToHead)
 where
 
 import Language.Trellys.Syntax
@@ -431,11 +431,3 @@ isEValue EContra          = False
 isEValue (EAt _ _)        = False
 --isEValue (ETerminationCase _ _) = False
 isEValue ETrustMe          = True
-
--- | Evaluation environments - a mapping between named values and
--- | their definitions.
-type EEnv = [(TName,Term)]
-
--- | Convert a module into an evaluation environment (list of top level declarations)
-makeModuleEnv :: Module -> EEnv
-makeModuleEnv md = [(n,tm) | Def n tm <- moduleEntries md]

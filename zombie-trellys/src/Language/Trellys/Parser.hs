@@ -20,7 +20,7 @@ import qualified Language.Trellys.LayoutToken as Token
 
 import Control.Monad.State.Lazy hiding (join)
 import Control.Monad.Reader hiding (join)
-import Control.Applicative ( (<$>), (<*>), (<*), (*>))
+import Control.Applicative ( (<$>), (<*>) )
 import Control.Monad.Error hiding (join)
 
 import Data.List

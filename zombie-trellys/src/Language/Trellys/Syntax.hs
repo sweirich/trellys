@@ -361,6 +361,16 @@ declname (ADef x _) = x
 declname (AData x _ _ _) = x
 declname (AAbsData x _ _) = x
 
+getLastDef :: [ADecl] -> Maybe (AName,ATerm)
+getLastDef decs = gld decs Nothing
+  where
+    gld :: [ADecl] -> Maybe (AName,ATerm) -> Maybe (AName,ATerm)
+    gld [] acc         = acc
+    gld (dec:decs) acc = 
+      case dec of
+        ADef an at -> gld decs (Just (an,at))
+        _          -> gld decs acc
+
 -------------
 -- Annotated Telescopes
 -------------
