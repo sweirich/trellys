@@ -2,7 +2,7 @@
 module Trellys where
 
 import Language.Trellys.Options
-import Language.Trellys.Syntax (moduleEntries)
+import Language.Trellys.Syntax (aModuleEntries,getLastDef)
 import Language.Trellys.Modules
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeMonad (runTcMonad)
@@ -72,6 +72,24 @@ main = do
                             Right extracted -> do                                        
                                   writeFile (replaceExtension pathToMainFile "ml") 
                                             (render extracted)
+                        when (Reduce `elem` flags) $ do
+                          let decls = concatMap aModuleEntries defs
+                          case getLastDef decls of
+                            Nothing -> do
+                               putStrLn $ "Error: Flag -r was given, but module "
+                                       ++ "includes no definitions."
+                               exitFailure
+                            Just (an,at) -> do 
+                               r <- runTcMonad (emptyEnv flags)
+                                       (extendCtxs (concatMap aModuleEntries defs)
+                                          (cbvNSteps 100 =<< erase
+                                                         =<< substDefs at))
+                               case r of
+                                 Left err -> do putStrLn "Reduce Error:"
+                                                putStrLn $ render $ disp err
+                                 Right x -> putStrLn $    (render $ disp an) 
+                                                       ++ " reduced to " 
+                                                       ++ (render $ disp x)
                         exitSuccess
 
 
