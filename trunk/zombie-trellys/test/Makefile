@@ -42,10 +42,10 @@ TYPECHECK=$(TRELLYS) 1>/dev/null # 2>&1
 
 .PHONY: pass fail todo_pass todo_fail todo
 
-all: pass fail
+all: clean pass fail
 
 clean:
-	rm *.trellys-elaborated
+	-rm *.trellys-elaborated *.trellys-bin
 
 pass: plain_pass typeclassy_pass
 

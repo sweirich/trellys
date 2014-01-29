@@ -38,6 +38,26 @@ all = \ [a] f . ind all xs =
     Nil -> True
     Cons x xs -> and (f x) (all xs [ord xs_eq])
 
+
+log all_Cons : [a:Type] => (P : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (P x = True) -> (all P xs = True) -> (all P (Cons x xs) = True)
+all_Cons [a] P x xs h1 h2 =
+  -- This reasoning is extra annoying because (P x) is in prog. 
+  -- Revisit when we have a more powerful reduction-modulo tactic.
+  let _ = (pjoin : all P (Cons x xs)
+                 = ((\b1 b2 . case b1 of 
+                               True -> b2
+                               False -> False) : Bool -> Bool -> Bool)
+                     (P x)
+                     (all P xs)) in --Note, even with nondeterminism, would probably need to explictly unfold this subexpression.
+  let _ = (join : ((\b1 b2 . case b1 of 
+                               True -> b2
+                               False -> False) : Bool -> Bool -> Bool)
+                     True
+                     True
+                   = True) in
+    _
+
 any : [a : Type] => (a -> Bool) -> (List a @ log) -> Bool
 any = \ [a] f . ind any xs = 
   case xs [xs_eq] of 

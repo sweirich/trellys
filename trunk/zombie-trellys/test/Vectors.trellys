@@ -39,17 +39,15 @@ log tail : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> Vector A n
 tail = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t ->
-   let _ = uneraseEq [Nat][Nat][m][n][sm_eq_Sn__m_eq_n m n m_eq]  -- BLEAH!
-   -- rea
-   in t
+    let _ = injectivity (_ : Succ n = Succ m) 0
+      in t
 
-
-log lookup : [A: Type 0] => [n:Nat] -> Fin n -> Vector A n -> A
+log lookup : [A: Type 0] => [n:Nat] => Fin n -> Vector A n -> A
 lookup = \ [A] . 
   ind recFin [n] = \ f v . 
     case f [f_eq] of
       FZ [m][m_eq] -> head v
-      FS [m][m_eq] fm -> recFin [m] [ord m_eq] fm (tail v)
+      FS [m][m_eq] fm -> !recFin [m] [ord m_eq] fm (tail v)
 
 
 -- create a vector with n copies of its argument
@@ -61,30 +59,57 @@ repeat = \ [A] a .
       Succ m -> VCons [m][_] a (rep m [ord n_eq])
 
 -- update the mth component of the vector to be 'a'
-log set : [A:Type 0] => [n:Nat] -> (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
+log set : [A:Type 0] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
 set = \ [A] . 
   ind set [n] = \ m a v.
        case m [n_eq] of 
          FZ [p][p_eq]    -> VCons [p][_] a (tail v)
-         FS [p][p_eq] fm -> VCons [p][_] a (set [p][ord p_eq] fm a (tail v))
-
-
+         FS [p][p_eq] fm -> VCons [p][_] (head v) (!set [p][ord p_eq] fm a (tail v))
 
 log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
-                 -> lookup [n] i (set [n] i a v) = a
+                 -> lookup i (set i a v) = a
 lookup_set = \[A]. ind ih [n] = \ i a v .
   case i [_], v [_] of
     FZ [p][_]   , VNil [_] -> contra (_ : 0 = (Succ p))
     FS [p][_] _ , VNil [_] -> contra (_ : 0 = (Succ p))
     FZ [p][_]   , VCons [m][_] x xs ->
-       --unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
-       let _ = (join : set [n] (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs)) in
        -- This "works", but the generated proof term is gigantic and takes minutes
        -- to write/typecheck :(
+       --unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
        --unfold  (lookup [n] (FZ [p][_]) (VCons [_][_] a xs)) in
-       let _ = (join : lookup [n] (FZ [p][_]) (VCons [m][_] a xs) = a) in
-       _ 
+       let _ = (join : set (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+       let _ = (join : lookup (FZ [p][_]) (VCons [m][_] a xs) = a) in
+         _ 
     FS [p][p_eq] j , VCons [m][m_eq] x xs -> 
        let _ = injectivity (_ : Succ p = Succ m) 0 in
-          TRUSTME
-             
+       let _ = (pjoin : (!set [A] [n] (FS [p][_] j) a (VCons [m][m_eq] x xs) : Vector A n)
+                     = (VCons [m][m_eq] x (set j a xs) : Vector A n)) in
+       let xs' = set j a xs in
+       let _ = (join : !lookup [A] [n] (FS [p][_] j) (VCons [m][m_eq] x xs') = lookup j xs') in
+       let _ = (!ih [p] [ord p_eq] j a xs) in
+          _
+       
+
+log lookup_set2 : [A:Type 0] => [n:Nat] => (i:Fin n) -> (j:Fin n) -> (a:A @log) -> (v : Vector A n)
+                  -> fin_eq [n] i j = False
+                  -> lookup i (set j a v) = lookup i v
+lookup_set2 = \[A]. ind ih [n] = \ i j a v h .
+  case i [_], j [_], v [_] of
+    FZ [p][_]   , _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FS [p][_] _ , _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FZ [p][_]   , FZ [q][_] , _ -> 
+      unfold (fin_eq [n] (FZ [p][_]) (FZ [q][_])) in
+        contra (_ : True = False)       
+    FS [p][p_eq] i' , FS [q][q_eq] j' , VCons [m][m_eq] x xs -> 
+      let _ = injectivity (_ : Succ p = Succ q) 0 in
+      let _ = injectivity (_ : Succ q = Succ m) 0 in
+      let _ = (pjoin : (!set [A] [n] (FS [p][_] j') a (VCons [m][m_eq] x xs) : Vector A n)
+                    = (VCons [m][m_eq] x (set j' a xs) : Vector A n)) in
+      let xs' = set j' a xs in
+      let _ = (join : !lookup [A] [n] (FS [p][_] i') (VCons [m][m_eq] x xs') = lookup i' xs') in
+      let _ = (join : !lookup [A] [n] (FS [q][_] i') (VCons [m][m_eq] x xs)  = lookup i' xs) in
+      let _ = (join : fin_eq [n] (FS [p][_] i') (FS [q][_] j') = fin_eq [p] i' j') in
+      let _ = (!ih [p] [ord p_eq] i' j' a xs _) in
+        _     
+    FS [p][p_eq] i' , FZ [q][_] , VCons [m][m_eq] x xs ->  TRUSTME
+    FZ [p][p_eq] , FS [q][_] j', VCons [m][m_eq] x xs ->  TRUSTME

@@ -907,14 +907,16 @@ explicitizeInferreds a = return a
 -- appears after its dependencies. Returns the same list of modules
 -- with each definition typechecked and elaborated into the core
 -- language.
-tcModules :: [Module] -> TcMonad [AModule]
+tcModules :: [Either Module AModule] -> TcMonad [AModule]
 tcModules mods = foldM tcM [] mods
   -- Check module m against modules in defs, then add m to the list.
-  where defs `tcM` m = do -- "M" is for "Module" not "monad"
-          let name = moduleName m
-          liftIO $ putStrLn $ "Checking module " ++ show name
+  where defs `tcM` (Left m) = do -- "M" is for "Module" not "monad"
+          liftIO $ putStrLn $ "Checking module " ++ show (moduleName m)
           m' <- defs `tcModule` m
           return $ defs++[m']
+        defs `tcM` (Right am) = do
+          liftIO $ putStrLn $ "Using the pre-compiled module " ++ show (aModuleName am)
+          return $ defs ++ [am]
 
 -- | Typecheck an entire module.
 tcModule :: [AModule]        -- ^ List of already checked modules (including their Decls).
@@ -929,7 +931,7 @@ tcModule defs m' = do
                       do
                         cutoff <- length <$> getCtx
                         (drop cutoff . reverse) <$> tcEntries (moduleEntries m')
-  return $ AModule (moduleName m') checkedEntries
+  return $ AModule (moduleName m') checkedEntries (moduleConstructors m')
 
 tcEntries :: [Decl] -> TcMonad [ADecl]
 tcEntries (Def n term : decls) = do
@@ -1120,11 +1122,13 @@ lookupDType b bty = err [DS "Scrutinee ", DD b,
 getAvailableEqs :: TcMonad [(Theta, ATerm, ATerm)]
                                    --proof --type of proof
 getAvailableEqs = do
-  context <- getTys
-  catMaybes <$> mapM (\(x,th,ty) -> do
-                         zty <- zonkTerm ty
-                         -- could return Nothing here, for "uninteresting" things
-                         Just <$> adjustTheta th (AVar x) zty)
+  context <- getLocalCtx
+  catMaybes <$> mapM (\d -> case d of
+                              ASig x th ty -> do
+                                                 zty <- zonkTerm ty
+                                                 -- could return Nothing here, for "uninteresting" things
+                                                 Just <$> adjustTheta th (AVar x) zty
+                              _    -> return Nothing)
                      context
 
 ----------------------------------------------------------

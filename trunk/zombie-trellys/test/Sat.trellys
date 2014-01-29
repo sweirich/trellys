@@ -45,7 +45,7 @@ log interp_lit : [n:Nat] => Vector Bool n -> (Lit n @ log) -> Bool
 interp_lit [n] env lit =
 	unfold (Lit n) in
    case (lit : Times (Fin n) Bool) of 
-     Prod fn b -> bool_eq b (lookup [n] fn env)
+     Prod fn b -> bool_eq b (lookup fn env)
      
 log interp : [n:Nat] => Vector Bool n -> Formula n -> Bool
 interp [n] env formula =
@@ -65,7 +65,7 @@ log partial_interp_lit : [n:Nat] => (partial : Vector (Maybe Bool) n)
 partial_interp_lit = \[n] p lit .
    unfold (Lit n) in
    case (lit : Times (Fin n) Bool) of 
-     Prod fn b -> case (lookup [n] fn p) of 
+     Prod fn b -> case (lookup fn p) of 
          Just v  -> Just (bool_eq b v)
          Nothing -> Nothing
 
@@ -188,12 +188,12 @@ rec dpll [n] formula assign =
              Nothing -> UNSAT -- no more variables to try
              Just m -> 
 				   let prog fc = (dpll formula
-					            (set [n] m (Just False : Maybe Bool) assign)) in
+					            (set m (Just False : Maybe Bool) assign)) in
                case fc of 
                  SAT assign pf -> SAT assign pf
                  UNSAT     ->
                     dpll formula 
-                      (set [n] m (Just True : Maybe Bool) assign)
+                      (set m (Just True : Maybe Bool) assign)
 
 prog solver : (n:Nat) => (formula : Formula n) 
                       -> (Answer n formula @ log)

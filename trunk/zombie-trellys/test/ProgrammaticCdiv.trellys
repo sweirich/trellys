@@ -10,7 +10,7 @@
 --
 -- ... does indeed allow my simplified thm to be proven.  See
 -- TerminationAsValueRestrictionWorkaround.
-module ProgrammaticCDiv where
+module ProgrammaticCdiv where
 import Prelude
 import Arithmetic
 import StrongNat
