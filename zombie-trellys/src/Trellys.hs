@@ -3,7 +3,7 @@ module Trellys where
 
 import Language.Trellys.Options
 import Language.Trellys.Syntax (aModuleEntries,getLastDef)
-import Language.Trellys.Modules
+import Language.Trellys.Modules (getModules, writeAModules)
 import Language.Trellys.PrettyPrint
 import Language.Trellys.TypeMonad (runTcMonad)
 import Language.Trellys.TypeCheck (tcModules)

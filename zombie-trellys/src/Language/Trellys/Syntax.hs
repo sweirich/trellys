@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell, ScopedTypeVariables,
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
-    UndecidableInstances, ViewPatterns #-}
+    UndecidableInstances, ViewPatterns, DeriveGeneric #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | This module captures the base abstract syntax of Trellys core. It
@@ -21,6 +21,11 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
+
+-- serialization
+import Data.Binary
+import qualified GHC.Generics as GHCGen
+import Unbound.LocallyNameless.Types ()
 
 type TName = Name Term
 type EName = Name ETerm
@@ -182,6 +187,9 @@ data ConstructorNames = ConstructorNames {
 
 emptyConstructorNames :: ConstructorNames 
 emptyConstructorNames = ConstructorNames S.empty S.empty
+
+cnamesUnion :: ConstructorNames -> ConstructorNames -> ConstructorNames
+cnamesUnion (ConstructorNames t d) (ConstructorNames t' d') = ConstructorNames (S.union t t') (S.union d d')
 
 
 -- | A Module has a name, a list of imports, a list of declarations,
@@ -352,8 +360,10 @@ data AConstructorDef = AConstructorDef AName ATelescope
 data AHint = AHint AName Theta ATerm --The type
 
 data AModule = AModule { aModuleName :: MName,
-                         aModuleEntries :: [ADecl]
+                         aModuleEntries :: [ADecl],
+                         aModuleConstructors :: ConstructorNames
                        }
+
 
 declname :: ADecl -> AName
 declname (ASig x _ _) = x
@@ -593,6 +603,32 @@ instance Eq ATerm where
   (==) = aeq
 instance Ord ATerm where
   compare = acompare
+
+-- Serialization stuff (Data.Binary).
+deriving instance GHCGen.Generic Theta
+deriving instance GHCGen.Generic Epsilon
+deriving instance GHCGen.Generic Explicitness
+deriving instance GHCGen.Generic EvaluationStrategy
+deriving instance GHCGen.Generic (Name a)
+deriving instance GHCGen.Generic ATerm
+deriving instance GHCGen.Generic AMatch
+deriving instance GHCGen.Generic ATelescope
+deriving instance GHCGen.Generic AConstructorDef
+deriving instance GHCGen.Generic ADecl
+deriving instance GHCGen.Generic ConstructorNames
+deriving instance GHCGen.Generic AModule
+
+instance Binary Theta
+instance Binary Epsilon
+instance Binary Explicitness
+instance Binary EvaluationStrategy
+instance Binary AMatch
+instance Binary ATerm
+instance Binary ATelescope
+instance Binary AConstructorDef
+instance Binary ADecl
+instance Binary ConstructorNames
+instance Binary AModule
 
 -----------------------------------------------------------
 -- Equational reasoning proofs, constructed by the 

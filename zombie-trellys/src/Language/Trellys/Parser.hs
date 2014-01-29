@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts, TupleSections #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, FlexibleContexts, TupleSections, RankNTypes #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 -- | A parsec-based parser for the Trellys concrete syntax.
@@ -143,7 +143,6 @@ liftError (Right a) = return a
 -- | Parse a module declaration from the given filepath.
 parseModuleFile :: (MonadError ParseError m, MonadIO m) => [Flag] -> ConstructorNames -> String -> m Module
 parseModuleFile flags cnames name = do
-  liftIO $ putStrLn $ "Parsing File " ++ show name
   contents <- liftIO $ readFile name
   liftError $ runFreshM $ flip runReaderT flags $ 
     flip evalStateT cnames $
@@ -174,12 +173,13 @@ parseExpr :: String -> Either ParseError Term
 parseExpr = testParser expr
 
 -- * Lexer definitions
+type ParserState =    (StateT ConstructorNames
+                       (ReaderT [Flag] FreshM)) -- The internal state for generating fresh names, for flags,
+                                                -- and for remembering which names are constructors.
 type LParser a = ParsecT
                     String                      -- The input is a sequence of Char
                     [Column]                    -- The internal state for Layout tabs
-                    (StateT ConstructorNames
-                       (ReaderT [Flag] FreshM)) -- The internal state for generating fresh names, for flags,
-                                                -- and for remembering which names are constructors.
+                    ParserState                 -- The other internal state
                     a                           -- the type of the object being parsed
 
 instance Fresh (ParsecT s u (StateT ConstructorNames (ReaderT a FreshM)))  where
@@ -289,16 +289,13 @@ reserved,reservedOp :: String -> LParser ()
 reserved = Token.reserved tokenizer
 reservedOp = Token.reservedOp tokenizer
 
-parens,brackets :: LParser a -> LParser a
+parens,brackets,braces :: LParser a -> LParser a
 parens = Token.parens tokenizer
 brackets = Token.brackets tokenizer
 braces = Token.braces tokenizer
 
 natural :: LParser Int
 natural = fromInteger <$> Token.natural tokenizer
-
-commaSep1 :: LParser a -> LParser [a]
-commaSep1 = Token.commaSep1 tokenizer
 
 natenc :: LParser Term
 natenc =
@@ -350,7 +347,7 @@ theta =      (reserved "prog" >> return Program)
 --- Top level declarations
 ---
 
-decl,dataDef,sigDef,valDef,indDef,recDef :: LParser Decl
+decl,dataDef,sigDef,valDef,indDef,recDef,usuallyTheta :: LParser Decl
 decl = (try dataDef) <|> sigDef <|> valDef <|> indDef <|> recDef <|> usuallyTheta
 
 -- datatype declarations.
@@ -368,13 +365,12 @@ dataDef = do
     (\(ConstructorDef _ cname _) ->
        modify (\cnames -> cnames{ dconNames = S.insert cname (dconNames cnames)}))
   return $ Data name params level cs
-
-constructorDef = do
-  pos <- getPosition
-  cname <- identifier
-  args <- option [] (reserved "of" >> telescope)
-  return $ ConstructorDef pos cname args
-  <?> "Constructor"
+ where constructorDef = do
+                         pos <- getPosition
+                         cname <- identifier
+                         args <- option [] (reserved "of" >> telescope)
+                         return $ ConstructorDef pos cname args
+                        <?> "Constructor"
 
 sigDef = do
   axOrSig <- option Sig $ (reserved "axiom" >> return Axiom)
@@ -592,7 +588,7 @@ ind = do
   binds <- many impOrExpBind
   reservedOp "="
   body <- expr
-  let rhs = foldr (\(x,ep) m -> Lam ep (bind x m))
+  let rhs = foldr (\(x',ep') m -> Lam ep' (bind x' m))
                            body binds
   return $ (Ind ep (bind (f,x) rhs))
 
@@ -605,7 +601,7 @@ rec = do
   binds <- many impOrExpBind
   reservedOp "="
   body <- expr
-  let rhs = foldr (\(x,ep) m -> Lam ep (bind x m))
+  let rhs = foldr (\(x',ep') m -> Lam ep' (bind x' m))
                            body binds
 
   return $ (Rec ep (bind (f,x) rhs))

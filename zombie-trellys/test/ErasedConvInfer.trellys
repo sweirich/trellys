@@ -15,21 +15,19 @@ axiom b : btype
 
 axiom f : Nat -> [t:Type 0 @log] -> (t@log) -> Nat
 
-axiom p : a = b
-
 axiom x : Nat
 
 q : f x [atype] = f x [btype]
 q = join
 
 
-easy_goal : (f x [atype] a) = (f x [btype] b)
-easy_goal = _
+easy_goal : (a=b) -> (f x [atype] a) = (f x [btype] b)
+easy_goal p = _
 --easy_goal = conv (join : f x [atype] a = f x [atype] a)
 --					      by q, p at g v . f x [atype] a = g v
 
-goal : ((\x . f x [atype] a) : Nat -> Nat) = ((\x . f x [btype] b) : Nat -> Nat)
-goal = _
---goal =  conv (join : ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] a) : Nat -> Nat))
+goal : (a=b) -> ((\x . f x [atype] a) : Nat -> Nat) = ((\x . f x [btype] b) : Nat -> Nat)
+goal p = _
+--goal p =  conv (join : ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [atype] a) : Nat -> Nat))
 --		    by [atype = btype], p
 --        at t1 t2  . ((\x. f x [atype] a) : Nat -> Nat) = ((\x. f x [t1] t2) : Nat -> Nat)
