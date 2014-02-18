@@ -679,12 +679,12 @@ instance Ord Label where
 
 -- The datatype of proofs. 
 data Proof =
-   -- RawAssumption (x, C, p, A, B) 
+   -- RawAssumption (x, p) 
    --- means that x:C and p:C=(A=B).
    --The first component is either a proof term which the type elaborator constructed
    -- (usually just a variable, sometimes unbox applied to a variable),
    -- or a (join 0 0) which genEqs (in EqualityReasoning.hs) put in.
-   RawAssumption (ATerm, ATerm, Proof, ATerm, ATerm) 
+   RawAssumption (ATerm, Proof) 
  | RawRefl
  | RawSymm Proof
  | RawTrans Proof Proof
