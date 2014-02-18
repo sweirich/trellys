@@ -31,6 +31,8 @@ executable trellys
                  transformers,
                  array >= 0.3.0.2 && < 0.5,
                  binary >= 0.7.1 && < 0.8,
+                 unix >= 2.6.0,
+                 bytestring >= 0.10,
                  containers,
                  directory,
                  filepath,

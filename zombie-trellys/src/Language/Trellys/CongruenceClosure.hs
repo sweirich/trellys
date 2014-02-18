@@ -354,7 +354,7 @@ possiblyNewAssumptions c1 (Just c1Inhabitant) qs =  mapM possiblyNewAssumption $
          (pc1,_) <- findExplain c1
          (pc2,_) <- findExplain c2
          let p = (RawTrans pc1 (RawSymm pc2))  -- ; c1 = c2
-         return (RawAssumption (names BM.!> c1Inhabitant, names BM.!> c1, p, names BM.!> a, names BM.!> b), 
+         return (RawAssumption (names BM.!> c1Inhabitant, p), 
                  Left (EqConstConst a b))
 
 someElem :: Set a -> Maybe a

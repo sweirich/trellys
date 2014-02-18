@@ -35,6 +35,7 @@ import qualified Data.Map as M
 import Data.Map (Map)
 import qualified Data.Bimap as BM
 import Data.Function (on)
+import Debug.Trace
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
@@ -42,7 +43,6 @@ import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon)
 {-
 import Language.Trellys.TypeCheckCore (aTs)
 import Text.PrettyPrint.HughesPJ (render)
-import Debug.Trace
 -}
 
 -- In the decompose function, we will need to "canonicalize" certain fields
@@ -104,16 +104,20 @@ maybeCancel p q = RawTrans p q
 data Orientation = Swapped | NotSwapped
   deriving (Show,Eq)
 data Raw1Proof =
-   Raw1Assumption Orientation (ATerm, ATerm, Raw1Proof, ATerm, ATerm)
+   Raw1Assumption Orientation (ATerm, Raw1Proof)
  | Raw1Refl
  | Raw1Trans Raw1Proof Raw1Proof
  | Raw1Cong Label [Raw1Proof]
  | Raw1Inj Int Raw1Proof
   deriving Show
 
+flipOrientation :: Orientation -> Orientation
+flipOrientation Swapped = NotSwapped
+flipOrientation NotSwapped = Swapped
+
 symmetrizeProof :: Proof -> Raw1Proof
-symmetrizeProof (RawAssumption (h,c,p,a,b)) = Raw1Assumption NotSwapped (h, c, symmetrizeProof p, a,b)
-symmetrizeProof (RawSymm (RawAssumption (h,c,p,a,b))) = Raw1Assumption Swapped  (h, c, symmetrizeProof p, a,b)
+symmetrizeProof (RawAssumption (h,p)) = Raw1Assumption NotSwapped (h,symmetrizeProof p)
+symmetrizeProof (RawSymm (RawAssumption (h,p))) = Raw1Assumption Swapped  (h, symmetrizeProof p)
 symmetrizeProof RawRefl = Raw1Refl
 symmetrizeProof (RawSymm RawRefl) = Raw1Refl
 symmetrizeProof (RawSymm (RawSymm p)) = symmetrizeProof p
@@ -132,7 +136,7 @@ symmetrizeProof (RawSymm (RawInj i p)) = Raw1Inj i (symmetrizeProof (RawSymm p))
 -- CheckProof doesn't.
 
 data SynthProof =
-    Assum Orientation (ATerm,ATerm,ChainProof,ATerm,ATerm) 
+    Assum Orientation (ATerm,ChainProof) 
   | Inj Int SynthProof
   | Chain ChainProof  --Extra invariant: both ends of the chain should be definite.
 
@@ -146,6 +150,19 @@ type ChainProof = [Either SynthProof CheckProof]
 
 deriving instance Show SynthProof
 deriving instance Show CheckProof
+
+--Applying symmetry to a synth/check/chainproof.
+symmSynthProof :: SynthProof -> SynthProof
+symmSynthProof (Assum o h) = Assum (flipOrientation o) h
+symmSynthProof (Inj i p) = Inj i (symmSynthProof p)
+symmSynthProof (Chain ps) = Chain (symmChainProof ps)
+
+symmCheckProof :: CheckProof -> CheckProof
+symmCheckProof (Cong templ ps) = Cong templ $ map (\(x,p)->(x, symmChainProof p)) ps
+
+symmChainProof :: ChainProof -> ChainProof
+symmChainProof = reverse . map (either (Left . symmSynthProof) (Right . symmCheckProof))
+
 
 transProof :: ChainProof -> ChainProof -> ChainProof
 transProof ps qs = foldr trans1Proof qs ps
@@ -176,9 +193,24 @@ takeWhileRight (Right x : xs) = let (ys,zs) = takeWhileRight xs in (x:ys, zs)
 takeWhileRight xs@(Left _ : _) = ([],xs)
 
 fuseProof :: (Applicative m, Fresh m)=> Raw1Proof -> m ChainProof
-fuseProof (Raw1Assumption o (h,c,p,a,b)) = do
+fuseProof (Raw1Assumption o (h,p)) = do
     p' <- fuseProof p
-    return $ [Left (Assum o (h,c,p',a,b))]
+    -- p' is fused, so it ends with either one or zero Cong:s. 
+    -- If it ends with a cong, we need to distribute it. 
+    -- However, it seems hard to come up with a case where the CC algorithm would actually 
+    --  introduce a cong in this position. My hunch is that this can never actually happen.
+    let (reverse -> end, reverse -> prefix) = takeWhileRight (reverse p')
+    case (prefix, end) of
+       (_,[]) -> return $ [Left (Assum o (h,p'))]
+       (rs, [Cong _ {- the template must be (x y. ATyEq x y) -} [(_,p0),(_,p1)]]) ->
+           --wow, this case actually happened!
+           trace "Beware, the following code has not been tested." $
+              case o of 
+                NotSwapped -> 
+                 return $ symmChainProof p0 ++ [Left (Assum o (h, rs))] ++ p1
+                Swapped -> 
+                 return $ symmChainProof p1 ++ [Left (Assum o (h, rs))] ++ p0
+       _ -> error "impossible case in fuseProof"
 fuseProof (Raw1Refl) = return $ []
 fuseProof (Raw1Trans p q) = transProof <$> fuseProof p <*> fuseProof q
 fuseProof (Raw1Cong bnd ps) = do
@@ -209,13 +241,24 @@ data AnnotProof =
  deriving Show
 
 -- [synthProof p] takes a SynthProof of A=B and returns A, B and the corresponding AnnotProof
-synthProof :: (Applicative m, Fresh m) => SynthProof -> m (ATerm,ATerm,AnnotProof)
-synthProof (Assum NotSwapped (n,tyC,p,tyA,tyB)) = do
-  (_,_,p') <- chainProof (Just tyC) (Just (ATyEq tyA tyB)) p
-  return $ (tyA, tyB, AnnAssum NotSwapped (n,tyC,p',tyA,tyB))
-synthProof (Assum Swapped (n,tyC,p,tyA,tyB)) = do
-  (_,_,p') <- chainProof (Just tyC) (Just (ATyEq tyA tyB)) p
-  return $ (tyB, tyA, AnnAssum Swapped (n,tyC,p',tyA,tyB))
+synthProof :: SynthProof -> TcMonad (ATerm,ATerm,AnnotProof)
+synthProof (Assum o (n,p)) = do
+  (_th ,tyC) <- getType n
+  case (tyC, p) of 
+    (ATyEq tyA tyB, []) -> case o of
+                             NotSwapped -> 
+                                 return (tyA, tyB, 
+                                         AnnAssum o (n,tyC,AnnRefl tyC,tyA,tyB))
+                             Swapped ->
+                                 return (tyB, tyA, 
+                                         AnnAssum o (n,tyC,AnnRefl tyC,tyA,tyB))
+    _  -> do
+              (_,ATyEq tyA tyB ,p') <- chainProof (Just tyC) Nothing p
+              case o of
+                NotSwapped ->
+                  return $ (tyA, tyB, AnnAssum o (n,tyC,p',tyA,tyB))
+                Swapped ->
+                  return $ (tyB, tyA, AnnAssum o (n,tyC,p',tyA,tyB))
 synthProof (Inj i p) = do
   (tyA,tyB,p') <- synthProof p
   (l, as) <- runWriterT (decompose False S.empty tyA)
@@ -225,7 +268,7 @@ synthProof (Chain ps) = chainProof Nothing Nothing ps --By precondition to Chain
 
 
 -- [checkProof A B p] takes a CheckProof of A=B and returns a corresponding AnnotProof
-checkProof :: (Applicative m, Fresh m) => ATerm -> ATerm -> CheckProof -> m AnnotProof
+checkProof :: ATerm -> ATerm -> CheckProof -> TcMonad AnnotProof
 checkProof tyA tyB (Cong template ps)  =  do
   subAs <- match (map fst ps) template tyA
   subBs <- match (map fst ps) template tyB
@@ -240,8 +283,8 @@ checkProof tyA tyB (Cong template ps)  =  do
 -- [chainProof (Just A) (Just B) ps] takes a ChainProof of A=B and returns A, B, and the
 -- corresponding AnnotProofs. One can also give Nothing instead of (Just A) if the
 -- chain itself has enough information.
-chainProof :: (Applicative m, Fresh m) => 
-                    (Maybe ATerm) -> (Maybe ATerm) -> ChainProof -> m (ATerm,ATerm,AnnotProof)
+chainProof :: (Maybe ATerm) -> (Maybe ATerm) -> ChainProof 
+               -> TcMonad (ATerm,ATerm,AnnotProof)
 chainProof (Just tyA) _ [] = return $ (tyA, tyA, AnnRefl tyA)
 chainProof _ (Just tyB) [] = return $ (tyB, tyB, AnnRefl tyB)
 
@@ -262,8 +305,7 @@ chainProof Nothing Nothing [] = error "internal error: insufficiently definite C
 chainProof Nothing _ (Right _ : _) = error "internal error: insufficiently definite ChainProof"
 
 
-chainProof' :: (Applicative m, Fresh m) => 
-                    ATerm -> ATerm -> ChainProof -> m AnnotProof
+chainProof' :: ATerm -> ATerm -> ChainProof -> TcMonad AnnotProof
 chainProof' tyA tyB p = do
   (_,_,p') <- chainProof (Just tyA) (Just tyB) p
   return p'
@@ -543,10 +585,12 @@ decomposeMatch avoid (AMatch c bnd) = do
 --   [match vars template t] returns the substitution s of terms for the variables in var,
 --   such that (erase (substs (toList (match vars template t)) template)) == (erase t)
 -- Precondition: t should actually be a substitution instance of template, with those vars.
-
--- Todo: There is some ambiguity about what exactly the precondition means, since we canonicalize 
--- things. So the caller may except (AJoin ...) and (ANthEq ...) to match (and we ensure that they do).
--- On the other hand, I don't think we ever expect e.g. (AConv a ...) and (a) to match.
+-- Todo: There is some ambiguity about what exactly the precondition
+-- means, since we canonicalize things. So the caller may except
+-- (AJoin ...) and (ANthEq ...) to match (and we ensure that they do).
+-- Similarly, for completeness we make sure that (AConv a ...) and (a)
+-- match, but this is actually never used by the implementation (the
+-- testsuite passes even without it, as of February 2014).
 match :: (Applicative m, Monad m, Fresh m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
@@ -576,8 +620,8 @@ match vars (AAbort t) (AAbort t') = return M.empty
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
 match vars a1 a2 | isJoinVariant a1 && isJoinVariant a2 = return M.empty
-match vars (AConv t1 pf) (AConv t1' pf') = do
-  match vars t1 t1'
+match vars t1 (AConv t1' pf') = match vars t1 t1'
+match vars (AConv t1 pf) t1' = match vars t1 t1'
 match vars (AContra t1 t2) (AContra t1' t2') = return M.empty
 match vars (ASmaller t1 t2) (ASmaller t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
@@ -660,7 +704,7 @@ genEqs t = do
     sErased <- erase s
     let ((x,s1):_) = ss
     when (sErased `aeq` EVar (translate x)) $ 
-      propagate [(RawAssumption (AJoin zt 0 s1 0 CBV, (ATyEq zt s1), RawRefl, zt, s1),
+      propagate [(RawAssumption (AJoin zt 0 s1 0 CBV, RawRefl),
                  Left $ EqConstConst a (head bs))]
   return a
 
@@ -691,8 +735,6 @@ prove hyps (lhs, rhs) = do
     st:_ -> 
        let bndgs = M.map ((naming st) BM.!>)  (bindings st)
            pf = (proofs st) M.! (WantedEquation c1 c2) in
---           pf = (proofs st) M.! (WantedEquation (naming st BM.! lhs) 
---                                                (naming st BM.! rhs)) in
         do
          {-
          liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
