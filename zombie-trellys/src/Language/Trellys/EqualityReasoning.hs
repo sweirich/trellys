@@ -519,16 +519,17 @@ decompose _ avoid (AApp Erased t1 t2 ty) =
                <*> (pure canonical)
 decompose sub avoid (AAt t th) =
   AAt <$> (decompose True avoid t) <*> pure th
-decompose _ avoid (AUnbox t) = AUnbox <$> (decompose True avoid t)
-decompose _ avoid (ABox t th) = ABox <$> (decompose True avoid t) <*> pure th
+decompose isSubterm avoid (AUnbox t) = {- AUnbox <$> -} (decompose isSubterm avoid t)
+decompose isSubterm avoid (ABox t th) = {- ABox <$> -} (decompose isSubterm avoid t) {- <*> pure th -}
 decompose _ avoid (AAbort t) = return $ AAbort canonical
 decompose _ avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True avoid t1) <*> (decompose True avoid t2)
 decompose _ avoid t@(AJoin a i b j strategy) =
   return $ AJoin canonical canonical canonical canonical canonical
-decompose _ avoid (AConv t1 pf) =  do
-  r1 <- decompose True avoid t1
-  return (AConv r1 canonical)
+decompose isSubterm avoid (AConv t1 pf) =  do
+  decompose isSubterm avoid t1
+  -- r1 <- decompose True avoid t1
+  -- return r1 (AConv r1 canonical)
 decompose _ avoid (ACong ts bnd ty) =  do
   return $ AJoin canonical canonical canonical canonical canonical  --erases to just "join"
 decompose _ avoid (AContra t ty) = 
@@ -586,11 +587,10 @@ decomposeMatch avoid (AMatch c bnd) = do
 --   such that (erase (substs (toList (match vars template t)) template)) == (erase t)
 -- Precondition: t should actually be a substitution instance of template, with those vars.
 -- Todo: There is some ambiguity about what exactly the precondition
--- means, since we canonicalize things. So the caller may except
+-- means, since we canonicalize things. So the caller expects
 -- (AJoin ...) and (ANthEq ...) to match (and we ensure that they do).
--- Similarly, for completeness we make sure that (AConv a ...) and (a)
--- match, but this is actually never used by the implementation (the
--- testsuite passes even without it, as of February 2014).
+-- Similarly, we make sure that (AConv a ...) and (a)
+-- match, and that (ABox a) and (a) match.
 match :: (Applicative m, Monad m, Fresh m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
@@ -614,8 +614,10 @@ match vars (AApp Runtime t1 t2 ty) (AApp _ t1' t2' ty') =
 match vars (AApp Erased t1 t2 ty) (AApp _ t1' t2' ty') =
   match vars t1 t1' 
 match vars (AAt t _) (AAt t' _) = match vars t t'
-match vars (AUnbox t) (AUnbox t') = match vars t t'
-match vars (ABox t th) (ABox t' th') = match vars t t'
+match vars (AUnbox t) t' = match vars t t'
+match vars t (AUnbox t') = match vars t t'
+match vars (ABox t th) t' = match vars t t'
+match vars t (ABox t' th') = match vars t t'
 match vars (AAbort t) (AAbort t') = return M.empty
 match vars (ATyEq t1 t2) (ATyEq t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
@@ -699,6 +701,7 @@ genEqs t = do
   propagate [(RawRefl,
              Right $ EqBranchConst label bs a)]
 
+{-
   when (not (null ss)) $ do
     --If the head of t is erased, we record an equation saying so.
     sErased <- erase s
@@ -706,6 +709,7 @@ genEqs t = do
     when (sErased `aeq` EVar (translate x)) $ 
       propagate [(RawAssumption (AJoin zt 0 s1 0 CBV, RawRefl),
                  Left $ EqConstConst a (head bs))]
+-}
   return a
 
 -- Given a binding in the context, name all the intermediate terms in its type.
