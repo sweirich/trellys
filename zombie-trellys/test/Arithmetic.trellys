@@ -69,6 +69,15 @@ lemma_minus_zero_id =
     Zero -> (join : minus 0 0 = 0)
     Succ n' -> (join 10 : minus (Succ n') 0 = Succ n')
 
+-- n + 0 = n
+lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
+lemma_plus_zero_id = ind lpz n =
+ case n [eq_n] of 
+    Zero -> unfold (plus 0 0) in _
+    Succ n' -> let _ = (join : plus (Succ n') 0 = Succ (plus n' 0)) in
+	            let _ = lpz n' [ord eq_n] in
+					_
+
 -- (m + n) - m = n
 lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
 ind lemma_minus_plus_id m = \n .

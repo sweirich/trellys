@@ -58,6 +58,16 @@ repeat = \ [A] a .
       Zero -> VNil [_]
       Succ m -> VCons [m][_] a (rep m [ord n_eq])
 
+{-
+log zap : [A:Type 0] => [B:Type 0] => [n:Nat] => Vector (A @ log -> B) n -> Vector A n -> Vector B n
+zap = \[A][B].
+  ind zap [n] = \ v1 v2 . 
+     case v1 [v1_eq] , v2 [v2_eq] of
+        VNil [_]      , VNil [_] -> VNil
+ 		  VCons [p][_] _, VNil [_] -> contra (_ : 0 = (Succ p))
+		  
+-}
+
 -- update the mth component of the vector to be 'a'
 log set : [A:Type 0] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
 set = \ [A] . 
@@ -65,6 +75,7 @@ set = \ [A] .
        case m [n_eq] of 
          FZ [p][p_eq]    -> VCons [p][_] a (tail v)
          FS [p][p_eq] fm -> VCons [p][_] (head v) (!set [p][ord p_eq] fm a (tail v))
+
 
 log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
                  -> lookup i (set i a v) = a
@@ -113,3 +124,4 @@ lookup_set2 = \[A]. ind ih [n] = \ i j a v h .
         _     
     FS [p][p_eq] i' , FZ [q][_] , VCons [m][m_eq] x xs ->  TRUSTME
     FZ [p][p_eq] , FS [q][_] j', VCons [m][m_eq] x xs ->  TRUSTME
+

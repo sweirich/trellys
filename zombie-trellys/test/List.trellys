@@ -20,10 +20,30 @@ map = \ [a] [b] f . ind map xs =
     Cons x xs -> Cons (f x) (map xs [ord xs_eq])
 
 fold : [a: Type] => [b:Type] => (x : b) -> (f : a -> b -> b) -> List a -> b
-fold = \[a] [b] n f . ind fold xs = 
+fold = \[a] [b] n f . ind foldrec xs =  
   case xs [xs_eq] of 
     Nil -> n
-    Cons x xs -> f x (fold xs [ord xs_eq]) 
+    Cons x xs -> f x (foldrec xs [ord xs_eq]) 
+
+-- From Algebra of Programming in Agda, Shin-Cheng Mu, Hsiang-Shang Ko, and Patrik Jansson
+foldrfusion : [a: Type] => [b:Type] => [c:Type] => 
+  (h : b -> c) -> (f : a -> b -> b) => (g : a -> c -> c) => (e : b) =>
+  ((x:a) -> (y:b) -> h (f x y) = g x (h y)) ->
+  (xs: List a) -> h (fold e f xs) = fold (h e) g xs
+foldrfusion = \[a][b][c] h f g e cond . ind ff xs = 
+  let m = h e in  -- CBV definition
+  case xs [xs_eq] of 
+    Nil -> let _ = (join : fold e f Nil = e) in 
+	        let _ = (join : fold m g Nil = m) in
+			  _
+    Cons x xs' -> 
+	        let _ = (TRUSTME : fold e f (Cons x xs') = f x (fold e f xs')) in -- I think this is a bug!
+			  let _ = (TRUSTME : fold m g (Cons x xs') = g x (fold m g xs')) in
+			  let _ = cond x (fold e f xs') in  -- extra-special app rule here!
+			  let _ = ff xs' [ord xs_eq] in
+			   _
+       
+
 
 null : [a : Type] => (List a @ log) -> Bool
 null = \ [a] xs . case xs [_] of 
