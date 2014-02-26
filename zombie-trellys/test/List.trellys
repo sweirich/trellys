@@ -33,8 +33,8 @@ foldrfusion : [a: Type] => [b:Type] => [c:Type] =>
 foldrfusion = \[a][b][c] h f g e cond . ind ff xs = 
   let m = h e in  -- CBV definition
   case xs [xs_eq] of 
-    Nil -> let _ = (join : fold e f Nil = e) in 
-	        let _ = (join : fold m g Nil = m) in
+    Nil -> unfold (fold e f Nil) in 
+	        unfold (fold m g Nil) in
 			  _
     Cons x xs' -> 
 	        let _ = (TRUSTME : fold e f (Cons x xs') = f x (fold e f xs')) in -- I think this is a bug!
@@ -58,7 +58,7 @@ all = \ [a] f . ind all xs =
     Nil -> True
     Cons x xs -> and (f x) (all xs [ord xs_eq])
 
-
+{-
 log all_Cons : [a:Type] => (P : a -> Bool) -> (x : a@log) -> (xs : List a @log)
                         -> (P x = True) -> (all P xs = True) -> (all P (Cons x xs) = True)
 all_Cons [a] P x xs h1 h2 =
@@ -144,3 +144,4 @@ nth_safe = \[a]. ind nth_safe n = \xs [safe].
                   Zero -> x
                   Succ n' ->  let _ = (join : length (Cons x xs')  = Succ (length  xs')) 
                               in nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]
+-}

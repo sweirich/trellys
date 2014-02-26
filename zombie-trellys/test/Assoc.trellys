@@ -1,30 +1,35 @@
-module List where
-import Prelude
+module Assoc where
 
 usually log
+
+data A : Type where
+   AA
+
 
 data List (a : Type) : Type where
   Nil
   Cons of (x : a) (xs : List a)
 
-append : [a:Type] => (List a) -> (List a) -> List a
-append [a] = ind append xs = \ ys.
+
+append : (List A) -> (List A) -> List A
+append = ind append xs = \ ys.
     case xs [eq] of
       Nil -> ys
-      Cons x xs -> Cons x (append xs [ord eq] ys)
+      Cons x xs' -> Cons x (append xs' [ord eq] ys)
 
-{- -- DOESN't work for some reason
-log append_assoc :  [a:Type] => (xs : List a) -> (ys: List a) -> (zs : List a) 
+log append_assoc :  (xs : List A) -> (ys: List A) -> (zs : List A) 
     -> append (append xs ys) zs = append xs (append ys zs)
-append_assoc = \ [a]. ind append_assoc xs = 
+append_assoc = ind append_assoc xs = 
   \ ys zs. let rc = append ys zs in 
      case xs [xs_eq] of 
        Nil -> 
 	         let _ = (join : append Nil ys = ys) in
 	         let _ = (join : append Nil rc = rc) in _
        Cons x xs' -> 
-		      let _ = (join : append (Cons x xs') ys = (Cons x (append xs' ys) : List a)) in
-		      let _ = (join : append (Cons x xs') rc = (Cons x (append xs' rc) : List a)) in
-            let _ = (append_assoc xs' [ord xs_eq] ys zs) in -- append (append xs' ys) zs = append xs' (append ys zs)
+				let rc' = append xs' ys in
+		      let _ = (join : append (Cons x xs') ys = (Cons x (append xs' ys) : List A)) in
+		      let _ = (join : append (Cons x xs') rc = (Cons x (append xs' rc) : List A)) in
+				let _ = (join : append (Cons x rc') zs = (Cons x (append rc' zs) : List A)) in
+            let _ = (append_assoc xs' [ord xs_eq] ys zs) in
             _
--}
+
