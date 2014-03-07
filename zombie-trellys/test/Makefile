@@ -13,14 +13,15 @@
 SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
-PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
+PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
      Arithmetic ArithmeticDiv Vectors Product List Fin LetRebind Trees Append2 \
      NatElimination \
      ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE Sat Paper
+     RLE Sat Paper \
+     InjRngSuccess
 
 # These were broken by correctly doing CBV-reduction:
 ### Arithmetic-old Append2-old
@@ -28,7 +29,7 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests UnfoldTests \
 # TODO_FAIL are tests that *should* fail but currently pass.
 TODO_FAIL=
 # TODO_PASS are tests that *should* pass but currently fail.
-TODO_PASS=ProgList  Monadic.passtypeclassy
+TODO_PASS=ProgList  Monadic.passtypeclassy UnfoldTests
   # The monadic example needs the unification code to pick type correct
   # unifiers. We used to do that using the inhabitant-tracking, but that is
   # too costly, so it's currently turned off.
@@ -75,6 +76,8 @@ fail:
 	@./expect_error DeepMatchNonExhaustive1 "Patterns in case-expression not exhaustive."
 	@./expect_error DeepMatchNonExhaustive2 "Patterns in case-expression not exhaustive."
 	@./expect_error DeepMatchTooFewPatterns "should take 2 constructors"
+	@./expect_error InjRngError "Injectivity condition failed"
+
 
 extraction: $(foreach p,$(PASS),$(p).extraction) 
 

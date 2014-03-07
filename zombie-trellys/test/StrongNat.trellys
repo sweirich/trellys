@@ -604,11 +604,13 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
                                              (minus m (Succ n)) = True))
 
 -}
--- VS: Note that in the current system we need this extra type annotation; 
--- revisit this example after we have implemented the more expressive application rule from the ESOP paper.
+-- Here is an example where the more expressive app rule from the ICFP paper is useful:
+{-
   in let ih [_] = (ih1 : ((k:Nat) -> le (mult (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
                                              (minus m (Succ n)) = True))
                      n
+-}
+  in let ih [_] = ih1 n
   in _
 
 

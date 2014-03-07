@@ -6,14 +6,15 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
-  (prove, solveConstraints, uneraseEq, smartSteps)
+  (underHypotheses, prove, solveConstraints, uneraseEq, smartSteps, 
+   intoArrow, intoTCon, injRngFor)
 where
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
-                                   warn,
+                                   warn, err, 
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
@@ -33,8 +34,10 @@ import qualified Data.Set as S
 import Data.Set (Set)
 import qualified Data.Map as M
 import Data.Map (Map)
+import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.Function (on)
+import Text.PrettyPrint.HughesPJ (render)
 import Debug.Trace
 
 --Stuff used for debugging.
@@ -42,7 +45,6 @@ import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon)
 {-
 import Language.Trellys.TypeCheckCore (aTs)
-import Text.PrettyPrint.HughesPJ (render)
 -}
 
 -- In the decompose function, we will need to "canonicalize" certain fields
@@ -163,9 +165,8 @@ symmCheckProof (Cong templ ps) = Cong templ $ map (\(x,p)->(x, symmChainProof p)
 symmChainProof :: ChainProof -> ChainProof
 symmChainProof = reverse . map (either (Left . symmSynthProof) (Right . symmCheckProof))
 
-
 transProof :: ChainProof -> ChainProof -> ChainProof
-transProof ps qs = foldr trans1Proof qs ps
+transProof ps0 qs0 = foldr trans1Proof qs0 ps0
  where trans1Proof :: (Either SynthProof CheckProof) -> ChainProof -> ChainProof
        trans1Proof (Right (Cong l ps)) (Right (Cong _ ps') : qs) =
            Right (Cong l (zipWith transSubproof ps ps')) : qs
@@ -434,9 +435,17 @@ genProofTerm (AnnTrans tyA tyB tyC p q) = do
   transEq tyA tyB tyC p' q'
 genProofTerm (AnnInj l i p) = do
   p' <- genProofTerm p
-  case l of 
-    (ATCon _ _) -> return $ ANthEq i p'
-    (AAt _ _)   -> return $ AAtEq p'
+  case (l,i) of 
+    (ATCon _ _,_) -> return $ ANthEq i p'
+    (AAt _ _,0)   -> return $ AAtEq p'
+    (AArrow _ _ _ _, 0) -> return $ ADomEq p'
+    (AArrow _ _ _ _, 1) -> 
+      -- It doesn't matter what terms we subtitute in (because of the
+      -- way we selected the labels, they will not be in the final equation),
+      -- but we need to pick something.
+      -- FIXME: the fact that we can just use (Type 0), which does not have the
+      -- right type, is a bug in the core type checker...
+      return $ ARanEq p' (AType 0) (AType 0)
     _           -> error "internal error: unknown type of injectivity"
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
@@ -683,9 +692,8 @@ mUnion x y = M.union <$> x <*> y
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: ATerm -> StateT ProblemState TcMonad Constant
 genEqs t = do
-  zt <- lift $ zonkTerm t
-  (_,tTy) <- lift $ getType zt
-  a <- recordName zt
+  (_,tTy) <- lift $ getType t
+  a <- recordName t
   case (eraseToHead t) of 
     AUniVar x _ -> do
                     aTy <- case (eraseToHead tTy) of
@@ -694,30 +702,20 @@ genEqs t = do
                     recordUniVar a x aTy
     _           -> return ()
 
-  (s,ss) <- runWriterT (decompose False S.empty zt)
+  (s,ss) <- runWriterT (decompose False S.empty t)
   bs <- mapM genEqs (map (\(x,term) -> term) $ ss)
   let label = (bind (map (\(x,term) -> x) ss) s)
 
   propagate [(RawRefl,
              Right $ EqBranchConst label bs a)]
-
-{-
-  when (not (null ss)) $ do
-    --If the head of t is erased, we record an equation saying so.
-    sErased <- erase s
-    let ((x,s1):_) = ss
-    when (sErased `aeq` EVar (translate x)) $ 
-      propagate [(RawAssumption (AJoin zt 0 s1 0 CBV, RawRefl),
-                 Left $ EqConstConst a (head bs))]
--}
   return a
 
 -- Given a binding in the context, name all the intermediate terms in its type.
 -- If the type is an equation, we also add the equation itself.
 processHyp :: (Theta,ATerm, ATerm) -> StateT ProblemState TcMonad ()
 processHyp (th,n,t) = do
-  a <- genEqs n 
-  aTy <- genEqs t
+  a <- genEqs =<< (lift (zonkTerm n))
+  aTy <- genEqs =<< (lift (zonkTerm t))
   recordInhabitant a aTy --If aTy is an equation, this call will propagate it.
 
 -- "Given the context, please prove this other equation."
@@ -726,9 +724,9 @@ prove hyps (lhs, rhs) = do
   ((c1,c2),st1) <- flip runStateT newState $ do
                      mapM_ processHyp hyps
                      --liftIO $ putStrLn . render . disp $  [DS "prove lhs", DD lhs]
-                     c1 <- genEqs lhs
+                     c1 <- genEqs =<< (lift (zonkTerm lhs))
                      --liftIO $ putStrLn . render . disp $  [DS "prove rhs", DD rhs]
-                     c2 <- genEqs rhs
+                     c2 <- genEqs =<< (lift (zonkTerm rhs))
                      return (c1,c2)
   --dumpState st1
   let sts = flip execStateT st1 $
@@ -967,7 +965,39 @@ smartSteps hyps b m = do
                              (a'',q) <- steps a' (n-1)
                              pq <- lift $ transEq a a' a'' p q
                              return (a'', pq)
- 
+
+
+bmlook ::  Bimap ATerm Constant -> ATerm -> Constant
+bmlook m x = 
+  if BM.member x m
+   then m BM.! x
+   else error (render (disp x) ++ "is not a member of the map")
+
+-- Given an expression a, find every expression which is CC-equivalent to a and satisfies predi. 
+-- Also returns proofs that they are equal. 
+-- Uses the union-find structure of the problem state. 
+classMembers :: ATerm -> (ATerm -> Bool) -> StateT ProblemState TcMonad [(ATerm, ATerm)]
+classMembers a predi = do
+  names <- gets naming
+  candidates <- classMembersExplain (bmlook names a)
+--  candidates <- classMembersExplain (names BM.! a)
+  let cs = [(a',p)
+            | (c,p) <- candidates,
+              let a' = (names BM.!> c),
+              predi a']
+  mapM (\(a',p) -> do
+           -- smartStep and intoArrow will only use one of the list values, 
+           -- so ideally we want this to be a lazy thunk (not sure if it is right now).
+           pf <- lift $ (genProofTerm 
+                         <=< return . simplProof
+                         <=< chainProof' a a'
+                         <=< fuseProof 
+                         . symmetrizeProof 
+                         . associateProof) p
+           return (a',pf))
+       cs
+
+
 -- Try to step a once, returning Nothing if it is really stuck,
 -- or Just (a', pf : a = a').
 -- Uses the union-find structure of the problem state.
@@ -976,26 +1006,14 @@ smartStep a = do
   --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) -- ++ "\ni.e.\n" ++ show a
   -- _ <- lift $ aTs a 
   -- liftIO . putStrLn $ "It typechecks, so far"
-
   _ <- genEqs a
   maybeCtx <- lift $ aCbvContext a
   case maybeCtx of
     Just (CbvContext hole ctx, flavour, b) -> do
        -- liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b)
-       names <- gets naming
-       candidates <- classMembersExplain (names BM.! b)
-       let cs = [(c,b',p)
-                 | (c,p) <- candidates,
-                   let b' = (names BM.!> c),
-                   valueFlavour flavour b']
-       case cs of
-         (c,b',p):_ -> do
-           pf <- lift $ (genProofTerm 
-                         <=< return . simplProof
-                         <=< chainProof' b b'
-                         <=< fuseProof 
-                         . symmetrizeProof 
-                         . associateProof) p
+       cs <- classMembers b (valueFlavour flavour)
+       case cs of 
+         (b',pf):_ -> do 
            let a' = subst hole b' ctx
            (do 
                _ <- lift $ getType a'
@@ -1057,3 +1075,71 @@ dumbStep a = do
       if (ea `aeq` ea')
         then return $ Just (a', AJoin a 0 a 0 CBV)
         else return $ Just (a', AJoin a 1 a' 0 CBV)
+
+
+--See intoArrow for the prototypical use case. 
+intoFoo :: (ATerm->Bool) -> ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
+-- we can save some work (and get smaller core terms and better error messages)
+--  by not changing somthing which already is an arrow/tcon/... type. (Although this does 
+--  violate the "respects congruence" property in the paper).
+intoFoo isFoo a typ | isFoo typ = return $ Just (a,typ)
+intoFoo isFoo a typ = do
+  _ <- genEqs typ
+  cs <- classMembers typ isFoo
+  case cs of
+    [] -> return Nothing
+    ((typ',pf) : _) -> if typ' `aeq` typ
+                         then return $ Just (a, typ)
+                         else return $ Just (AConv a pf, typ')
+
+-- Take an arbitrary term 'a' of type 'typ'. Try to find an arrow type 
+--  which is equal to 'typ' and apply a coercion to 'a' to make it have that type.
+-- Returns the coerced term and its new typ.
+-- Uses the union-find structure in the state. 
+intoArrow :: ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
+intoArrow = intoFoo isArrow
+
+isArrow :: ATerm -> Bool
+isArrow (AArrow _ _ _ _) = True
+isArrow _ = False
+
+-- like intoArrow, but tries to find a datatype.
+intoTCon :: ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
+intoTCon = intoFoo isTCon
+  where isTCon :: ATerm -> Bool
+        isTCon (ATCon _ _) = True
+        isTCon _ = False
+
+--- Checking the "range injectivity condition"
+-- injRngFor hyps ((x:a)->b) c
+--  is true if, for every arrow type ((x:a')->b') equal to the arrow,
+--  {c/x}b = {c/x}b'.
+-- As a precondition, {c/x}b should be well typed.
+-- Uses the union-find structure from the state.
+injRngFor ::ATerm -> ATerm -> StateT ProblemState TcMonad () 
+injRngFor arr@(AArrow _ _ _ bnd) c = do 
+  --liftIO . putStrLn . render . disp $ [ DS "Checking the injectivity condition for", DD arr, DS "and", DD c]
+  _ <- genEqs arr
+  _ <- genEqs c
+  ((x, unembed->a), b) <- lift $ unbind bnd
+  cs <- classMembers arr isArrow
+  forM_ cs $
+    (\(arr'@(AArrow _ _ _ bnd'), pf) -> do
+        --liftIO . putStrLn . render . disp $ [ DS "One of the candidates are", DD arr']
+        ((x', unembed->a'), b') <- lift $ unbind bnd'
+        pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
+        let ca  = subst x c b
+        let ca' = subst x' (AConv c pf_a) b'
+        nca   <- genEqs ca
+        nca'  <- genEqs ca'
+        -- So here is another question: ought we call unify at this point?
+        same <- inSameClass nca nca'
+        if same
+          then return ()
+          else err [DS "Injectivity condition failed. Could not prove that", DD ca , DS "and", DD ca', DS "are equal"])
+injRngFor _ _ = error "internal error: injRngFor applied to non-arrow expression"
+        
+
+-- Build a congruence-closure context, and run a computation in it.
+underHypotheses :: [(Theta,ATerm,ATerm)] -> StateT ProblemState TcMonad a -> TcMonad a
+underHypotheses hyps a = flip evalStateT newState (do mapM_ processHyp hyps ; a)

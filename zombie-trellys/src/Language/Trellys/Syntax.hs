@@ -653,15 +653,22 @@ uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere)
         uniVarsHere  _ = S.empty
 
 -- Also, need to know which head forms have injectivity rules.
--- Note: sadly we can't make this work for Pi-types.
-isInjectiveLabel :: Label -> Bool
-isInjectiveLabel l = isInjective a
-  where (_,a) = unsafeUnbind l
-        isInjective :: ATerm -> Bool
-        isInjective (AAt _ _) = True
-        isInjective (ATCon _ _) = True
-        --isInjective (ADCon _ _ _ _) = True --Dcon is more tricky, because of value restriction.
-        isInjective _ = False
+{- This uses unsafeUnbound in an unsafe manner.
+   However, getting CongruenceClosure.hs to live inside a monad supporting fresh names
+   is a pain.
+   The condition we need for this to be correct is that the names of the holes (xs) are 
+   always disjoint from any variables occuring in the term itself. 
+   I think this is probably true, because we call 'fresh' in the 'decompose' function? -}
+injectiveLabelPositions :: Label -> [Int]
+injectiveLabelPositions l = do
+ let (xs, a) = unsafeUnbind l  in
+   case a of 
+     (AAt _ _) -> [0]
+     (ATCon _ _) -> [0..(length xs - 1)]
+     (AArrow _ _ _ (unsafeUnbind -> (_, AVar y))) | y `elem` xs ->  [0,1]  --Simple function type.
+     (AArrow _ _ _ _) -> [0]   --Actual dependent function type.
+     --(ADCon _ _ _ _) = ?? --Dcon is more tricky, because of value restriction.
+     _ -> []
 
 isEqualityLabel :: Label -> Bool 
 isEqualityLabel l = isATyEq a
