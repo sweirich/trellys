@@ -178,7 +178,8 @@ getType t@(ADomEq a) = do
               (\((_, unembed -> tyDom), _, (_, unembed -> tyDom'), _) ->
                 return (th, ATyEq tyDom' tyDom))
     _ -> coreErr [DS "getType: ADomEq not applied to an equality between arrow types"]   
-          
+
+-- FIXME: this never gets around to checking that the types aTy and aTy' actually match the expected types.          
 getType (ARanEq p a a') = do
   (th,  pTy) <- getType p
   (_, aTy) <- getType a

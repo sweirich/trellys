@@ -58,7 +58,6 @@ div_t_f_step = \m m' [m_eq] gm n .
                                    : divHalts (minus m (Succ n)) n v 
                                    = (div (minus m (Succ n)) (Succ n) = v))
                       -- Look: here is a case where "assumption up to congruence" is actually useful!
-                      -- Revisit this spot after implementing that, and when writing the paper.
 --                      in let v_eq' = (v_eq : div (minus m (Succ n)) (Succ n) = v)
                       in let [_] = (divHalts_red' m n (Succ v)
                                    : (div m (Succ n) = Succ v)
@@ -95,4 +94,5 @@ divHalts_red2 = \m n .
 div_t : (m:Nat) -> (n:Nat) -> Exists Nat (divHalts m n)
 div_t m n = 
    unfold (P m) in 
-    (cov [P] div_t_f m : (n:Nat) -> Exists Nat (divHalts m n)) n
+    -- Here is an example where the expressive application rule from the ICFP paper is useful:
+    cov [P] div_t_f m n

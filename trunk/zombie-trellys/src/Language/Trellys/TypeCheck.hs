@@ -719,33 +719,46 @@ ts (DCon c args) = do
 
 -- rule T_app
 ts tm@(App ep a b) =
-  do (eaPreinst, tyPreinst) <- ts a
-     (ea,tyArr) <- instantiateInferreds eaPreinst tyPreinst        
-     case eraseToHead tyArr of
-       AArrow _ ex epArr bnd -> do
-         ((x,tyA),tyB) <- unbind bnd
-         unless (ep == epArr) $
-           err [DS "Application annotation", DD ep, DS "in", DD tm,
-                DS "doesn't match arrow annotation", DD epArr]
+  do hyps <- getAvailableEqs
+     -- We want to use the same congruence closure to coerce the applied term to a function type
+     --   (intoArrow) and to check the injectivity condition (injRng). Computing it twice would be
+     --   wasteful, so instead we lift most of this function to run inside the State monad.
+     underHypotheses hyps $ do 
+       (eaPrecoerce, tyPrecoerce) <- lift $ ts a
+       coerced <- intoArrow eaPrecoerce tyPrecoerce
+       case coerced of
+         Nothing ->  err [DS "ts: expected arrow type, for term ", DD a,
+                          DS ". Instead, got", DD tyPrecoerce]
+         Just (eaPreinst, tyPreinst) -> do
+           (ea,tyArr) <- lift $ instantiateInferreds eaPreinst tyPreinst        
+           case eraseToHead tyArr of
+             AArrow _ ex epArr bnd -> do
+               ((x,tyA),tyB) <- unbind bnd
+               unless (ep == epArr) $
+                 err [DS "Application annotation", DD ep, DS "in", DD tm,
+                      DS "doesn't match arrow annotation", DD epArr]
 
-         -- check the argument, at the "A" type
-         eb <- ta b (unembed tyA)
+               -- check the argument, at the "A" type
+               eb <- lift $ ta b (unembed tyA)
 
-         -- Erased arguments must terminate
-         when (ep==Erased) $ do
-           ebTh <- aGetTh eb
-           unless (ebTh==Logic) $
-             err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
+               -- Erased arguments must terminate
+               when (ep==Erased) $ do
+                 ebTh <- lift $ aGetTh eb
+                 unless (ebTh==Logic) $
+                   err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
 
-         zea <- zonkTerm ea
-         ztyB <- zonkTerm tyB
+               zea <- lift $ zonkTerm ea
+               ztyB <- lift $ zonkTerm tyB
 
-         -- check that the result kind is well-formed
-         let b_for_x_in_B = simplSubst x eb ztyB
-         aKc b_for_x_in_B
-         return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
-       _ -> err [DS "ts: expected arrow type, for term ", DD a,
-                 DS ". Instead, got", DD tyArr]
+               -- check that the injRng condition holds
+               injRngFor tyArr eb
+
+               -- check that the result kind is well-formed
+               let b_for_x_in_B = simplSubst x eb ztyB
+               lift $ aKc b_for_x_in_B
+
+               return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
+             _ -> error "internal error. intoArrow somehow produced a non-arrow type"
 
 -- rule T_smaller
 ts (Smaller a b) = do

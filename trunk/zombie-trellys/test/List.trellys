@@ -58,7 +58,6 @@ all = \ [a] f . ind all xs =
     Nil -> True
     Cons x xs -> and (f x) (all xs [ord xs_eq])
 
-{-
 log all_Cons : [a:Type] => (P : a -> Bool) -> (x : a@log) -> (xs : List a @log)
                         -> (P x = True) -> (all P xs = True) -> (all P (Cons x xs) = True)
 all_Cons [a] P x xs h1 h2 =
@@ -144,4 +143,3 @@ nth_safe = \[a]. ind nth_safe n = \xs [safe].
                   Zero -> x
                   Succ n' ->  let _ = (join : length (Cons x xs')  = Succ (length  xs')) 
                               in nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]
--}

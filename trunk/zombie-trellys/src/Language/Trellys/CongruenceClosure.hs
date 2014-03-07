@@ -11,6 +11,7 @@ module Language.Trellys.CongruenceClosure(
   recordName, recordInhabitant, recordUniVar,
   guessVars, classMembersExplain,
   dumpState,
+  inSameClass, 
   unify, -- main function, runState is run for UniM monad  
 ) where
 
@@ -49,7 +50,7 @@ import Control.Monad.Trans.State.Strict
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
 -- We need to know a little bit about the ATerm datatype in order to do the occurs check.
-import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, isInjectiveLabel, isEqualityLabel)
+import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, injectiveLabelPositions, isEqualityLabel)
 
 --Stuff used for debugging.
 {-
@@ -324,7 +325,7 @@ standardize l as = do
 -- Called when we have just unified two equivalence classes. If both classes contained
 -- an injective term, we return the list of new equations.
 -- Preconditions: the labels should be injective, the two terms should be equal.
-possiblyInjectivity :: Monad m => Maybe (Label, [Constant]) -> Maybe (Label, [Constant]) ->
+possiblyInjectivity :: (Monad m) => Maybe (Label, [Constant]) -> Maybe (Label, [Constant]) ->
                        StateT ProblemState m [ExplainedEquation]
 possiblyInjectivity (Just (l1, as)) (Just (l2, bs)) | l1/=l2 = do
   -- todo: register that we found a contradiction
@@ -334,7 +335,7 @@ possiblyInjectivity (Just (l, as)) (Just (l2, bs)) | l==l2 = do
   (_, p2) <- standardize l bs
   let p = RawTrans p1 (RawSymm p2) {- : l(as) = l(bs)  -}
   return $ zipWith3 (\ i a b -> (RawInj i p, Left (EqConstConst a b)))
-                    [0..]
+                    (injectiveLabelPositions l)
                     as
                     bs
 possiblyInjectivity _ _ = return []
@@ -379,7 +380,7 @@ propagate ((p, Left (EqConstConst a b)):eqs) = do
       propagate eqs
 propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
   recordApplication a (l,as)
-  when (isInjectiveLabel l) $ 
+  when (injectiveLabelPositions l /= []) $ 
     recordInjTerm a (l,as)
   when (isEqualityLabel l) $
     recordEquation a ((as!!0), (as!!1))
@@ -501,6 +502,12 @@ unify  visited (WantedEquation a b : wanted) = do
    `mplusCut`
    unifyDecompose visited (WantedEquation a b)
   unify visited wanted
+
+inSameClass :: (Monad m) => Constant -> Constant -> StateT ProblemState m Bool
+inSameClass c1 c2 = do
+  (_,c1') <- findExplain c1
+  (_,c2') <- findExplain c2
+  return (c1' == c2')
 
 -- | Take all remaining unbound variables, and just fill them in with any random
 --   term from the context.
