@@ -1,0 +1,36 @@
+{- a few tests of the elaboration system from the ICFP paper, where we
+   do a search for arrow types when checking app, lam, dcon or case. -}
+
+module UpToCongruence where
+
+import Prelude
+
+usually log
+
+-- The Iapp rule
+Iapp : (A:Type) -> (f : A) -> (p : A = (Nat -> Bool)) -> Bool
+Iapp A f p = f 0
+
+-- The Crefl rule
+Crefl : (A : Type) -> (p : A = (1 = 1)) -> A
+Crefl A p = _
+
+-- The Clam rule
+Clam : (A : Type) -> (p : A = (Nat -> Nat)) -> A
+Clam A p n =  Succ n
+
+-- The CInd rule
+Cind :  (A : Type) -> (p : A = (Nat -> Nat)) -> A
+Cind A p = ind f n =
+             case n [n_eq] of 
+              Zero -> Zero
+              Succ m -> f m [ord n_eq]
+
+-- The CRec rule
+prog Crec :  (A : Type) -> (p : A = (Nat -> Nat)) -> A
+Crec A p = rec f n =
+             case n [n_eq] of 
+              Zero -> Zero
+              Succ m -> f m
+
+

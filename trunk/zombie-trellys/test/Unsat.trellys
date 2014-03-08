@@ -198,7 +198,7 @@ extends_same [n] i psi phi extends =
   let psi' = (set i (Just (lookup i phi)) psi) in
   unfold (Extends psi phi) in 
   unfold (Extends psi' phi) in
-    ((\ j b h . 
+    (\ j b h . 
        case (fin_eq [n] j i) [_] of
          True  -> let _ = (fin_eq_True [n] j i _) in
                   let b' = lookup j phi in
@@ -207,10 +207,12 @@ extends_same [n] i psi phi extends =
                   let _ = injectivity (_ : Just b' = Just b) 0 in
                     _
          False -> let _ = (lookup_set2 j i (Just (lookup i phi)) psi _) in
-                  let _ = (extends : (j:Fin n) -> (b:Bool) -> (lookup j psi = (Just b))  -> (lookup j phi = b))
-                            j b _ in
+                  let _ = extends j b _ in
                     _ )
-      : (j:Fin n) -> (b:Bool) -> (lookup j psi' = (Just b))  -> (lookup j phi = b))
+--                    ^^^^
+-- Here is a case where the expressive lam-rule is useful. Without it we would
+-- have to explicitly annotate that the \ has type
+--  : (j:Fin n) -> (b:Bool) -> (lookup j psi' = (Just b))  -> (lookup j phi = b))
 
 
 -- The key lemma for verified unsat:

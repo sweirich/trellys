@@ -151,6 +151,115 @@ ta (Pos p t) ty =
 
 ta (Paren a) ty = ta a ty
 
+ta (ComplexCase bnd) tyB = do
+   (scruts, alts) <- unbind bnd
+   let checkNumPats (ComplexMatch bnd1) = do
+         (pats, body) <- unbind bnd1
+         unless (length pats == length scruts) $
+           err [ DS $"Each branch should have " ++ show (length scruts) ++ " patterns, but",
+                 DD (ComplexMatch bnd1), DS $ "has " ++ show (length pats) ++  "."]
+   mapM_ checkNumPats alts
+   escruts <- mapM (\(s, eq) -> do                       
+                       (es, sTy) <- ts (unembed s) 
+                       return (es, eq))
+                   scruts
+   ztyB <- zonkTerm tyB
+   buildCase escruts alts ztyB
+
+-- implements the checking version of T_let1 and T_let2
+ta (Let th' ep bnd) tyB =
+ do -- begin by checking syntactic -/L requirement and unpacking binding
+    when (ep == Erased && th' == Program) $
+       err [DS "Implicit lets must bind logical terms."]
+    ((x,y,unembed -> a),b) <- unbind bnd
+    -- premise 1
+    (ea,tyA) <- ts a
+    eaTh <- aGetTh ea
+    unless (eaTh <= th') $
+      err [DS (show y ++ " was marked as " ++ show th' ++ " but"), 
+           DD a, DS "checks at P"]
+      
+    -- premise 2
+    (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
+                 extendCtxSolve (ASig (translate y) Logic 
+                                (ATyEq (AVar (translate x)) ea)) $ do
+                   eb <- ta b tyB
+                   th <- aGetTh eb
+                   return (eb,th)
+    -- premise 3 (tyB is well-kinded) is assumed to be checked already.
+    -- premises 4 and 5
+    bE <- erase eb
+    when (translate y `S.member` fv bE) $
+      err [DS "The equality variable bound in a let is not allowed to",
+           DS "appear in the erasure of the body, but here", DD y,
+           DS "appears in the erasure of", DD b]
+    when (ep == Erased && translate x `S.member` fv bE) $
+      err [DS "The variables bound in an implicit let are not allowed to",
+           DS "appear in the erasure of the body, but here", DD x,
+           DS "appears in the erasure of", DD b]
+    zea <- zonkTerm ea
+    --The max enforces that P vars can not be bound in an L context.
+    return (ALet ep (bind (translate x, translate y, embed zea) eb) 
+            (max th th', tyB))
+
+-- rule T_At
+ta (At ty th') (AType i) = do 
+   ea <- ta ty (AType i)
+   eaTh <- aGetTh ea
+   unless (eaTh == Logic) $
+     err [DD ty, DS "should check at L but checks at P"]
+   return (AAt ea th')
+
+{- Type inference for @-types (the T_Box* rules) does not work super well.
+   @-types are so ubiquitous that if we used some syntactic mark in the program
+   (e.g. (box a), like we do in the pretty-printed core terms), all terms would
+   be really cluttered. So instead we try to put them in guided by the 
+   bidirectional types, which works kindof poorly (in particular it is not
+   clear how to do an "up-to-congruence" search without some term constructor
+   to trigger it.
+
+   It is important that the following two clauses come before the
+   checking rules for functions or equations, because a term was
+   ascribed an @-type we want to immediately do the TBox, rather than
+   e.g. search for a function type equivalent to that @-type...  
+
+   On the other hand, it should come after the Tcase and Tlet rules so
+   that we don't overcomit to a box too early... This is very brittle.
+   -}
+
+-- Horrible hack to avoid applying Box* too eagerly.
+-- The bidirectional inference of box seems dubious, will need
+-- to revisit this.
+ta a (AAt tyA th') | unCheckable a = do
+  (ea, tyA') <- ts a
+  eaTh <- aGetTh ea
+  isVal <- isValue a
+  withoutBox <- coerce ea tyA' (AAt tyA th')
+  case withoutBox of
+    Just eaCoerced -> return $ eaCoerced
+    Nothing -> do
+      withBox <- coerce ea tyA' tyA
+      case (withBox, eaTh) of
+        (Just eaCoerced, Logic)                   -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Program) | isVal         -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Program) | th'==Program  -> return $ ABox eaCoerced th'
+        (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
+        (Nothing,_) -> err [DD a, DS "should have type", DD tyA,
+                            DS "or", DD (AAt tyA th'), 
+                            DS "but has type", DD tyA',
+                            DS "Unable to prove", DD (ATyEq tyA' tyA)]
+
+-- the T_Box* rules
+ta a (AAt tyA th') = do
+  ea <- ta a tyA
+  eaTh <- aGetTh ea
+  isVal <- isValue a
+  case eaTh of
+    Logic                   -> return $ ABox ea th'
+    Program | isVal          -> return $ ABox ea th'
+    Program | th'==Program   -> return $ ABox  ea th'
+    _  -> err [DD a, DS "should check at L but checks at P"]
+
 -- rule T_join
 ta (Join s1 s2 strategy) (ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
@@ -241,162 +350,130 @@ ta Abort tyA =
   return (AAbort tyA)
 
 -- Rules T_lam1 and T_lam2
-ta (Lam lep lbody) arr@(AArrow _ ex aep abody) = do
-  -- Note that the arrow type is assumed to be kind-checked already.
+ta (Lam lep lbody) ty = do
+  hyps <- getAvailableEqs
+  underHypotheses hyps $ outofArrow ty
+    (\arr@(AArrow _ ex aep abody) -> do
+      -- Note that the arrow type is assumed to be kind-checked already.
 
-  -- Can't use unbind2 because lbody and abody bind names from 
-  -- different languages.
-  ((dumb_x,unembed -> tyA),dumb_tyB) <- unbind abody
-  (x, body) <- unbind lbody
-  let tyB = subst dumb_x (AVar (translate x)) dumb_tyB
+      -- Can't use unbind2 because lbody and abody bind names from 
+      -- different languages.
+      ((dumb_x,unembed -> tyA),dumb_tyB) <- unbind abody
+      (x, body) <- unbind lbody
+      let tyB = subst dumb_x (AVar (translate x)) dumb_tyB
 
-  when (lep /= aep) $
-       err ([DS "Lambda annotation", DD lep,
-             DS "does not match arrow annotation", DD aep])
+      when (lep /= aep) $
+           err ([DS "Lambda annotation", DD lep,
+                 DS "does not match arrow annotation", DD aep])
 
-  -- typecheck the function body and get its theta
-  (ebody, th) <- extendCtxSolve (ASig (translate x) Program tyA) $ do
-             ebody <- ta body tyB
-             (th,_) <- getType ebody
-             return (ebody, th)
-             
-  -- perform the FV and value checks if in T_Lam2
-  -- The free variables function fv is ad-hoc polymorphic in its
-  -- return type, so we fix the type of xE.
-  -- If we did (x `S.member` fv bodyE), fv would always return an empty set...
-  let xE = translate x :: EName
-  bodyE <- erase ebody
-  when (lep == Erased && xE `S.member` fv bodyE) $
-       err [DS "ta: In implicit lambda, variable", DD x,
-            DS "appears free in body", DD body]
-  zarr <- zonkTerm arr
-  return (ALam th zarr lep (bind (translate x) ebody))
+      -- typecheck the function body and get its theta
+      (ebody, th) <- extendCtxSolve (ASig (translate x) Program tyA) $ do
+                 ebody <- ta body tyB
+                 (th,_) <- getType ebody
+                 return (ebody, th)
+
+      -- perform the FV and value checks if in T_Lam2
+      -- The free variables function fv is ad-hoc polymorphic in its
+      -- return type, so we fix the type of xE.
+      -- If we did (x `S.member` fv bodyE), fv would always return an empty set...
+      let xE = translate x :: EName
+      bodyE <- erase ebody
+      when (lep == Erased && xE `S.member` fv bodyE) $
+           err [DS "ta: In implicit lambda, variable", DD x,
+                DS "appears free in body", DD body]
+      zarr <- zonkTerm arr
+      return (ALam th zarr lep (bind (translate x) ebody)))
+
+    (err [DS "Functions should be ascribed arrow types, but",
+          DD (Lam lep lbody), DS "was ascribed type", DD ty])
 
 -- rules T_ind1 and T_ind2
-ta (Ind ep lbnd) arr@(AArrow k ex aep abnd) = do
-  -- Note that the the arrow type is assumed to by kind-checked already.
+-- TODO: to match the ICFP paper we should have an injRng check here too.
+ta (Ind ep lbnd) ty = do
+  hyps <- getAvailableEqs
+  underHypotheses hyps $ outofArrow ty
+    (\arr@(AArrow k ex aep abnd) -> do
+       -- Note that the the arrow type is assumed to by kind-checked already.
 
-  unless (ep == aep) $
-     err [DS "ta : expecting argument of ind to be", DD aep,
-          DS "got", DD ep]
+       unless (ep == aep) $
+          err [DS "ta : expecting argument of ind to be", DD aep,
+               DS "got", DD ep]
 
-  ((old_f, old_y), a) <- unbind lbnd
-  let f = translate old_f
-  let y = translate old_y
-  ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
-  let tyB = subst dumb_y (AVar y) dumb_tyB
+       ((old_f, old_y), a) <- unbind lbnd
+       let f = translate old_f
+       let y = translate old_y
+       ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
+       let tyB = subst dumb_y (AVar y) dumb_tyB
 
-  -- next we must construct the type C.  we need new variables for x and z
-  x <- fresh (string2Name "x")
-  z <- fresh (string2Name "z")
-  let xTyB = subst y (AVar x) tyB
-      smallerType = ASmaller (AVar x)
-                             (AVar y)
+       -- next we must construct the type C.  we need new variables for x and z
+       x <- fresh (string2Name "x")
+       z <- fresh (string2Name "z")
+       let xTyB = subst y (AVar x) tyB
+           smallerType = ASmaller (AVar x)
+                                  (AVar y)
 
-      tyC = AArrow k ex ep (bind (x, embed tyA) 
-                         (AArrow k Explicit Erased (bind (z, embed smallerType) xTyB)))
-  -- Finally we can typecheck the fuction body in an extended environment
-  (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
-                 extendCtxSolve (ASig y Logic tyA) $ do
-                   ea <- ta a tyB
-                   eaTh <- aGetTh ea
-                   return (ea, eaTh)
-  unless (eaTh == Logic) $
-     err [DS "body of ind must check at L, but here checks at P"]
+           tyC = AArrow k ex ep (bind (x, embed tyA) 
+                              (AArrow k Explicit Erased (bind (z, embed smallerType) xTyB)))
+       -- Finally we can typecheck the fuction body in an extended environment
+       (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
+                      extendCtxSolve (ASig y Logic tyA) $ do
+                        ea <- ta a tyB
+                        eaTh <- aGetTh ea
+                        return (ea, eaTh)
+       unless (eaTh == Logic) $
+          err [DS "body of ind must check at L, but here checks at P"]
 
-  -- in the case where ep is Erased, we have the two extra checks:
-  aE <- erase ea
-  when (ep == Erased && translate y `S.member` fv aE) $
-       err [DS "ta: In implicit ind, variable", DD y,
-            DS "appears free in body", DD a]
+       -- in the case where ep is Erased, we have the two extra checks:
+       aE <- erase ea
+       when (ep == Erased && translate y `S.member` fv aE) $
+            err [DS "ta: In implicit ind, variable", DD y,
+                 DS "appears free in body", DD a]
 
-  when (ep == Erased) $ do
-       unless (isEValue aE) $
-              err [DS "The body of an implicit ind must be a value",
-                   DS "but here is:", DD a]
-  zarr <- zonkTerm arr
-  return (AInd zarr ep (bind (f,y) ea))
+       when (ep == Erased) $ do
+            unless (isEValue aE) $
+                   err [DS "The body of an implicit ind must be a value",
+                        DS "but here is:", DD a]
+       zarr <- zonkTerm arr
+       return (AInd zarr ep (bind (f,y) ea)))
+    (err [DS "Functions should be ascribed arrow types, but",
+          DD (Ind ep lbnd), DS "was ascribed type", DD ty])
 
 -- rules T_rec1 and T_rec2
-ta (Rec ep lbnd) arr@(AArrow k ex aep abnd) = do
-  -- Note that the arrow type is assumed to be already type checked.
+-- TODO: to match the ICFP paper we should have an injRng check here too.
+ta (Rec ep lbnd) ty = do
+  hyps <- getAvailableEqs
+  underHypotheses hyps $ outofArrow ty
+    (\arr@(AArrow k ex aep abnd) -> do
+       -- Note that the arrow type is assumed to be already type checked.
 
-  unless (ep == aep) $
-         err [DS "ta : expecting argument of rec to be",
-              DD aep, DS ", got", DD ep]
+       unless (ep == aep) $
+              err [DS "ta : expecting argument of rec to be",
+                   DD aep, DS ", got", DD ep]
 
-  ((old_f, old_y), a) <- unbind lbnd
-  let f = translate old_f
-  let y = translate old_y
-  ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
-  let tyB = subst dumb_y (AVar y) dumb_tyB
+       ((old_f, old_y), a) <- unbind lbnd
+       let f = translate old_f
+       let y = translate old_y
+       ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
+       let tyB = subst dumb_y (AVar y) dumb_tyB
 
-  ea <- extendCtx (ASig f Program arr) $
-          extendCtxSolve (ASig y Program tyA) $
-            ta a tyB
+       ea <- extendCtx (ASig f Program arr) $
+               extendCtxSolve (ASig y Program tyA) $
+                 ta a tyB
 
-  -- perform the FV and value checks if in T_RecImp
-  aE <- erase ea
-  when (ep == Erased && translate y `S.member` fv aE) $
-       err [DS "ta: In implicit rec, variable", DD y,
-            DS "appears free in body", DD a]
-  when (ep == Erased) $ do
-    unless (isEValue aE) $
-       err [DS "ta : The body of an implicit rec must be a value",
-            DS "but here is:", DD a]
-  zarr <- zonkTerm arr
-  return (ARec zarr ep (bind (f,y) ea))
+       -- perform the FV and value checks if in T_RecImp
+       aE <- erase ea
+       when (ep == Erased && translate y `S.member` fv aE) $
+            err [DS "ta: In implicit rec, variable", DD y,
+                 DS "appears free in body", DD a]
+       when (ep == Erased) $ do
+         unless (isEValue aE) $
+            err [DS "ta : The body of an implicit rec must be a value",
+                 DS "but here is:", DD a]
+       zarr <- zonkTerm arr
+       return (ARec zarr ep (bind (f,y) ea)))
+    (err [DS "Functions should be ascribed arrow types, but",
+          DD (Rec ep lbnd), DS "was ascribed type", DD ty])
 
-ta (ComplexCase bnd) tyB = do
-   (scruts, alts) <- unbind bnd
-   let checkNumPats (ComplexMatch bnd1) = do
-         (pats, body) <- unbind bnd1
-         unless (length pats == length scruts) $
-           err [ DS $"Each branch should have " ++ show (length scruts) ++ " patterns, but",
-                 DD (ComplexMatch bnd1), DS $ "has " ++ show (length pats) ++  "."]
-   mapM_ checkNumPats alts
-   escruts <- mapM (\(s, eq) -> do                       
-                       (es, sTy) <- ts (unembed s) 
-                       return (es, eq))
-                   scruts
-   ztyB <- zonkTerm tyB
-   buildCase escruts alts ztyB
-
--- implements the checking version of T_let1 and T_let2
-ta (Let th' ep bnd) tyB =
- do -- begin by checking syntactic -/L requirement and unpacking binding
-    when (ep == Erased && th' == Program) $
-       err [DS "Implicit lets must bind logical terms."]
-    ((x,y,unembed -> a),b) <- unbind bnd
-    -- premise 1
-    (ea,tyA) <- ts a
-    eaTh <- aGetTh ea
-    unless (eaTh <= th') $
-      err [DS (show y ++ " was marked as " ++ show th' ++ " but"), 
-           DD a, DS "checks at P"]
-      
-    -- premise 2
-    (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
-                 extendCtxSolve (ASig (translate y) Logic 
-                                (ATyEq (AVar (translate x)) ea)) $ do
-                   eb <- ta b tyB
-                   th <- aGetTh eb
-                   return (eb,th)
-    -- premise 3 (tyB is well-kinded) is assumed to be checked already.
-    -- premises 4 and 5
-    bE <- erase eb
-    when (translate y `S.member` fv bE) $
-      err [DS "The equality variable bound in a let is not allowed to",
-           DS "appear in the erasure of the body, but here", DD y,
-           DS "appears in the erasure of", DD b]
-    when (ep == Erased && translate x `S.member` fv bE) $
-      err [DS "The variables bound in an implicit let are not allowed to",
-           DS "appear in the erasure of the body, but here", DD x,
-           DS "appears in the erasure of", DD b]
-    zea <- zonkTerm ea
-    --The max enforces that P vars can not be bound in an L context.
-    return (ALet ep (bind (translate x, translate y, embed zea) eb) 
-            (max th th', tyB))
 
     -- Elaborating 'unfold' directives; checking version
 ta (Unfold n a b) tyB = do
@@ -412,46 +489,6 @@ ta (Unfold n a b) tyB = do
                   return (th,eb)
    return (ALet Runtime (bind (x, y, embed p) eb) (th, tyB))
 
--- rule T_At
-ta (At ty th') (AType i) = do 
-   ea <- ta ty (AType i)
-   eaTh <- aGetTh ea
-   unless (eaTh == Logic) $
-     err [DD ty, DS "should check at L but checks at P"]
-   return (AAt ea th')
-
--- Horrible hack to avoid applying Box* too eagerly.
--- The bidirectional inference of box seems dubious, will need
--- to revisit this.
-ta a (AAt tyA th') | unCheckable a = do
-  (ea, tyA') <- ts a
-  eaTh <- aGetTh ea
-  isVal <- isValue a
-  withoutBox <- coerce ea tyA' (AAt tyA th')
-  case withoutBox of
-    Just eaCoerced -> return $ eaCoerced
-    Nothing -> do
-      withBox <- coerce ea tyA' tyA
-      case (withBox, eaTh) of
-        (Just eaCoerced, Logic)                   -> return $ ABox eaCoerced th'
-        (Just eaCoerced, Program) | isVal         -> return $ ABox eaCoerced th'
-        (Just eaCoerced, Program) | th'==Program  -> return $ ABox eaCoerced th'
-        (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
-        (Nothing,_) -> err [DD a, DS "should have type", DD tyA,
-                            DS "or", DD (AAt tyA th'), 
-                            DS "but has type", DD tyA',
-                            DS "Unable to prove", DD (ATyEq tyA' tyA)]
-
--- the T_Box* rules
-ta a (AAt tyA th') = do
-  ea <- ta a tyA
-  eaTh <- aGetTh ea
-  isVal <- isValue a
-  case eaTh of
-    Logic                   -> return $ ABox ea th'
-    Program | isVal          -> return $ ABox ea th'
-    Program | th'==Program   -> return $ ABox  ea th'
-    _  -> err [DD a, DS "should check at L but checks at P"]
    
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
@@ -472,26 +509,31 @@ ta (DCon c args) (ATCon tname eparams) = do
 ta TrustMe ty = return (ATrustMe ty)
 
 -- For InferMes with equality type, we try to create a proof.
-ta InferMe (ATyEq ty1 ty2) = do
-  availableEqs <- getAvailableEqs
-  pf <- prove availableEqs (ty1,ty2)
-  case pf of
-    Nothing -> do
-      gamma <- getLocalCtx
-      err [DS "I was unable to prove:", DD (Goal availableEqs (ATyEq ty1 ty2))
---           ,DS "The full local context is", DD gamma
-           ]
-    Just p -> do
-       pE <- erase p
-       if (S.null (fv pE :: Set EName))
-         then zonkTerm p
-         else zonkTerm =<< (uneraseEq ty1 ty2 p)       
-
--- Other Infermes create unification variables.
+-- Other InferMes create unification variables. 
+-- We use congruence closure to only require its type to be equivalent 
+-- to an equality, rather than being on the nose. 
 ta InferMe ty = do
-  x <- fresh (string2Name "")
-  addConstraint (ShouldHaveType x ty)
-  return (AUniVar x ty)
+  hyps <- getAvailableEqs
+  underHypotheses hyps $ outofTyEq ty
+    (\(ATyEq ty1 ty2) -> do
+      --It's an equation, prove it.
+      pf <- prove hyps (ty1,ty2)   --TODO: don't calculate this CC twice.
+      case pf of
+        Nothing -> do
+          gamma <- getLocalCtx
+          err [DS "I was unable to prove:", DD (Goal hyps (ATyEq ty1 ty2))
+    --           ,DS "The full local context is", DD gamma
+               ]
+        Just p -> do
+           pE <- erase p
+           if (S.null (fv pE :: Set EName))
+             then zonkTerm p
+             else zonkTerm =<< (uneraseEq ty1 ty2 p))
+    (do
+       -- It's not an equation, just leave it as a unificatoin variable.
+       x <- fresh (string2Name "")
+       addConstraint (ShouldHaveType x ty)
+       return (AUniVar x ty))
 
 -- rule T_chk
 ta a tyB = do
@@ -809,7 +851,6 @@ ts (Ann a tyA) =
      ea <- ta a etyA
      zetyA <- zonkTerm etyA
      return (ea, zetyA)
-
 -- the synthesis version of rules T_let1 and T_let2
 -- TODO, maybe these are dubious from the point-of-view of programming-up-to-CC, so we should get rid of them?
 ts (Let th' ep bnd) =

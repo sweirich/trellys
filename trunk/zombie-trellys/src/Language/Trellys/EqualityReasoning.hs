@@ -7,7 +7,7 @@
 
 module Language.Trellys.EqualityReasoning 
   (underHypotheses, prove, solveConstraints, uneraseEq, smartSteps, 
-   intoArrow, intoTCon, injRngFor)
+   intoArrow, intoTCon, outofArrow, outofTyEq, injRngFor)
 where
 
 import Language.Trellys.TypeMonad
@@ -1076,7 +1076,6 @@ dumbStep a = do
         then return $ Just (a', AJoin a 0 a 0 CBV)
         else return $ Just (a', AJoin a 1 a' 0 CBV)
 
-
 --See intoArrow for the prototypical use case. 
 intoFoo :: (ATerm->Bool) -> ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
 -- we can save some work (and get smaller core terms and better error messages)
@@ -1109,6 +1108,39 @@ intoTCon = intoFoo isTCon
   where isTCon :: ATerm -> Bool
         isTCon (ATCon _ _) = True
         isTCon _ = False
+
+-- outofFoo isFoo typ ifFoo elseDo
+-- uses the union-find structure in the state to find some type typ' which satisfies is foo,
+-- then calls (ifFoo typ'), and applies a coersion from typ' to typ to waht it rerturned. 
+-- If there is no suitable typ', it just returns elseDo, without any coercion.
+outofFoo :: (ATerm -> Bool) -> ATerm
+            -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
+            -> StateT ProblemState TcMonad ATerm
+outofFoo isFoo typ ifFoo elseDo = do
+  _ <- genEqs typ
+  cs <- classMembers typ isFoo
+  case cs of
+    [] -> lift elseDo
+    ((typ',pf) : _) -> 
+      if typ' `aeq` typ
+        then lift $ ifFoo typ
+        else do 
+              a <- lift $ ifFoo typ'
+              symPf <- lift $ symEq typ typ' pf 
+              return $ AConv a symPf
+
+outofTyEq :: ATerm
+            -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
+            -> StateT ProblemState TcMonad ATerm
+outofTyEq = outofFoo isTyEq 
+  where isTyEq (ATyEq _ _) = True
+        isTyEq _ = False
+
+outofArrow :: ATerm
+            -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
+            -> StateT ProblemState TcMonad ATerm
+outofArrow = outofFoo isArrow
+
 
 --- Checking the "range injectivity condition"
 -- injRngFor hyps ((x:a)->b) c

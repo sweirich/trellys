@@ -74,7 +74,7 @@ prog lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
 rec lemma_plus_zero_id n =
  case n [eq_n] of 
     Zero -> unfold (plus 0 0) in _
-    Succ n' -> let _ = (join : plus (Succ n') 0 = Succ (plus n' 0)) in
+    Succ n' -> let _ = (pjoin : plus (Succ n') 0 = Succ (plus n' 0)) in
 	            let prog _ = lemma_plus_zero_id n'
 					in _ 
 

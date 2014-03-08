@@ -15,10 +15,10 @@ import Language.Trellys.TypeCheckCore
 import Language.Trellys.OpSem
 
 --Stuff used for debugging.
--- {-
+ {-
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
--- -}
+ -}
 
 import Unbound.LocallyNameless.Types (GenBind)
 

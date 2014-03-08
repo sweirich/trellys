@@ -25,6 +25,13 @@ fold = \[a] [b] n f . ind foldrec xs =
     Nil -> n
     Cons x xs -> f x (foldrec xs [ord xs_eq]) 
 
+{-
+test : [a: Type] => [b:Type] => [c:Type] => 
+        (f : a -> b -> b) -> (e : b) -> (x:a) -> (xs': List a) ->
+          f x (fold e f xs') = x
+test [a] [b] [c] f e x xs' = join
+-}
+
 -- From Algebra of Programming in Agda, Shin-Cheng Mu, Hsiang-Shang Ko, and Patrik Jansson
 foldrfusion : [a: Type] => [b:Type] => [c:Type] => 
   (h : b -> c) -> (f : a -> b -> b) => (g : a -> c -> c) => (e : b) =>
@@ -37,8 +44,8 @@ foldrfusion = \[a][b][c] h f g e cond . ind ff xs =
 	        unfold (fold m g Nil) in
 			  _
     Cons x xs' -> 
-	        let _ = (TRUSTME : fold e f (Cons x xs') = f x (fold e f xs')) in -- I think this is a bug!
-			  let _ = (TRUSTME : fold m g (Cons x xs') = g x (fold m g xs')) in
+	        let _ = (pjoin : fold e f (Cons x xs') = f x (fold e f xs')) in -- I think this is a bug!
+			  let _ = (pjoin : fold m g (Cons x xs') = g x (fold m g xs')) in
 			  let _ = cond x (fold e f xs') in  -- extra-special app rule here!
 			  let _ = ff xs' [ord xs_eq] in
 			   _
