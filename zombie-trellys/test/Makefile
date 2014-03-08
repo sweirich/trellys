@@ -20,8 +20,8 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE Sat Paper \
-     InjRngSuccess
+     RLE Sat Paper 
+#     InjRngSuccess
 
 # These were broken by correctly doing CBV-reduction:
 ### Arithmetic-old Append2-old

@@ -243,16 +243,6 @@ isAVar :: ATerm -> Bool
 isAVar (AVar _) = True
 isAVar _        = False
 
-isAType :: ATerm -> Bool
-isAType (AType _) = True
-isAType _ = False
-
-isTyEq :: Term -> Maybe (Term, Term)
-isTyEq (Pos _ t) = isTyEq t
-isTyEq (Paren t) = isTyEq  t
-isTyEq (TyEq ty0 ty1) = Just (delPosParenDeep ty0, delPosParenDeep ty1)
-isTyEq _ = Nothing
-
 isNumeral :: Term -> Maybe Int
 isNumeral (Pos _ t) = isNumeral t
 isNumeral (Paren t) = isNumeral t

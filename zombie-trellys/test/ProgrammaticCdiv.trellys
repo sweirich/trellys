@@ -43,7 +43,11 @@ div_t_f_base : (m:Nat) -> [m = Zero] -> (n:Nat) -> Exists Nat (divHalts m n)
 div_t_f_base = \m [m_eq] n .
   let    _ = (join: div Zero (Succ n) = Zero)
   in let _ = (join: divHalts m n m = (div m (Succ n) = m))
-  in Ex [m] (_ : div m (Succ n) = m)
+  in Ex [m] _
+-- Here is a place where the more expressive Crec rule is useful, 
+-- the underscore searches the congruence closure for an equation.
+-- Without the search we would have to write
+--   Ex [m] (_ : div m (Succ n) = m)
 
 div_t_f_step : (m:Nat) -> (m':Nat) -> [m = Succ m']
               -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (divHalts k n) @log)
