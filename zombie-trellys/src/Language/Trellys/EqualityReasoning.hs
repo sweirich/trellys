@@ -498,7 +498,7 @@ decompose True avoid t | S.null (S.intersection avoid (fv t)) = do
   return $ AVar x
 decompose _ avoid t@(AVar _) = return t
 decompose _ avoid t@(AUniVar _ _) = return t
-decompose _ avoid (ACumul t l) = ACumul <$> (decompose True avoid t) <*> pure l
+decompose isSubterm avoid (ACumul t l) = decompose isSubterm avoid t
 decompose _ avoid t@(AType _) = return t
 decompose _ avoid (ATCon c args) = do
   args' <- mapM (decompose True avoid) args
