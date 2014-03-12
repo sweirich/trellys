@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, NoMonomorphismRestriction #-}
 module Language.Trellys.TypeMonad where
 
-import Language.Trellys.FreshT
+import Unbound.LocallyNameless.Fresh
 import Language.Trellys.Error
 import Language.Trellys.Environment
 import Language.Trellys.GenericBind(Fresh(..), Name)
@@ -17,11 +17,11 @@ import Control.Monad.Error(ErrorT(..))
 -- representations), error (for error reporting), state (for the
 -- bindings of unification variables) and IO (for e.g.  warning
 -- messages).
-type TcMonad = FreshMT' (RWST Env () (Constraints,UniVarBindings) (ErrorT Err IO))
+type TcMonad = FreshMT (RWST Env () (Constraints,UniVarBindings) (ErrorT Err IO))
 
 runTcMonad :: Env -> TcMonad a -> IO (Either Err a)
 runTcMonad env m = runErrorT $
-                     fst <$> evalRWST (runFreshMT' m) env ([], M.empty) 
+                     fst <$> evalRWST (runFreshMT m) env ([], M.empty) 
 
 
 -- Here are some monadic utililty functions that should really be in
