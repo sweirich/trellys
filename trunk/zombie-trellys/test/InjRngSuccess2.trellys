@@ -1,0 +1,15 @@
+module InjRngSuccess2 where
+
+{- Unlike InjRngError2 this one typechecks, because we are dealing with a simple type -}
+
+
+import Prelude 
+
+usually log
+
+axiom A : Type
+axiom B  : Type
+axiom B1 : Type
+
+prog test : (p : ((x:A)->B) = ((x:A)->B1)) -> (x : A) -> B
+test p x  =  abort

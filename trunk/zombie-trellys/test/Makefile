@@ -20,8 +20,8 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE Sat Paper 
-#     InjRngSuccess
+     RLE Sat Paper \
+     InjRngSuccess InjRngSuccess2
 
 # These were broken by correctly doing CBV-reduction:
 ### Arithmetic-old Append2-old
@@ -51,7 +51,7 @@ clean:
 pass: plain_pass typeclassy_pass
 
 plain_pass: $(foreach p,$(PASS),$(p).pass) 
-    
+
 typeclassy_pass: BST.passtypeclassy
 
 fail:
@@ -77,6 +77,8 @@ fail:
 	@./expect_error DeepMatchNonExhaustive2 "Patterns in case-expression not exhaustive."
 	@./expect_error DeepMatchTooFewPatterns "should take 2 constructors"
 	@./expect_error InjRngError "Injectivity condition failed"
+	@./expect_error InjRngError2 "Injectivity condition failed"
+	@./expect_error InjRngError3 "Injectivity condition failed"
 
 
 extraction: $(foreach p,$(PASS),$(p).extraction) 

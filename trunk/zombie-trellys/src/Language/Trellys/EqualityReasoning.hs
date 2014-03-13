@@ -14,6 +14,7 @@ import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
+                                   extendCtx,
                                    warn, err, 
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
@@ -1111,21 +1112,21 @@ intoTCon = intoFoo isTCon
 
 -- outofFoo isFoo typ ifFoo elseDo
 -- uses the union-find structure in the state to find some type typ' which satisfies is foo,
--- then calls (ifFoo typ'), and applies a coersion from typ' to typ to waht it rerturned. 
+-- then calls (ifDo typ'), and applies a coersion from typ' to typ to waht it rerturned. 
 -- If there is no suitable typ', it just returns elseDo, without any coercion.
 outofFoo :: (ATerm -> Bool) -> ATerm
             -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
             -> StateT ProblemState TcMonad ATerm
-outofFoo isFoo typ ifFoo elseDo = do
+outofFoo isFoo typ ifDo elseDo = do
   _ <- genEqs typ
   cs <- classMembers typ isFoo
   case cs of
     [] -> lift elseDo
     ((typ',pf) : _) -> 
       if typ' `aeq` typ
-        then lift $ ifFoo typ
+        then lift $ ifDo typ
         else do 
-              a <- lift $ ifFoo typ'
+              a <- lift $ ifDo typ'
               symPf <- lift $ symEq typ typ' pf 
               return $ AConv a symPf
 
@@ -1136,10 +1137,27 @@ outofTyEq = outofFoo isTyEq
   where isTyEq (ATyEq _ _) = True
         isTyEq _ = False
 
+-- For arrows we need to do a bit more work, because we also need to
+-- check the injectivity condition.
 outofArrow :: ATerm
             -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
             -> StateT ProblemState TcMonad ATerm
-outofArrow = outofFoo isArrow
+outofArrow typ ifDo elseDo = do
+  _ <- genEqs typ
+  cs <- classMembers typ isArrow
+  case cs of
+    [] -> lift elseDo
+    ((typ'@(AArrow _  _ _ bnd'),pf) : others) -> do
+      --First, check that the injectivity condition holds.
+      ((x,unembed->domTy), _) <- unbind bnd'
+      extendCtx (ASig x Logic domTy) $ injRngFor typ' (AVar x)
+
+      if typ' `aeq` typ
+        then lift $ ifDo typ
+        else do 
+              a <- lift $ ifDo typ'
+              symPf <- lift $ symEq typ typ' pf 
+              return $ AConv a symPf
 
 
 --- Checking the "range injectivity condition"
@@ -1150,14 +1168,12 @@ outofArrow = outofFoo isArrow
 -- Uses the union-find structure from the state.
 injRngFor ::ATerm -> ATerm -> StateT ProblemState TcMonad () 
 injRngFor arr@(AArrow _ _ _ bnd) c = do 
-  --liftIO . putStrLn . render . disp $ [ DS "Checking the injectivity condition for", DD arr, DS "and", DD c]
   _ <- genEqs arr
   _ <- genEqs c
   ((x, unembed->a), b) <- lift $ unbind bnd
   cs <- classMembers arr isArrow
   forM_ cs $
     (\(arr'@(AArrow _ _ _ bnd'), pf) -> do
-        --liftIO . putStrLn . render . disp $ [ DS "One of the candidates are", DD arr']
         ((x', unembed->a'), b') <- lift $ unbind bnd'
         pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
         let ca  = subst x c b
