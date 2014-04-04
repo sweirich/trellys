@@ -1,14 +1,36 @@
-{- These tests no longer work, since they assume a different term language,
-    at some point in my copious spare time I should fix this up.... -}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, 
+             FlexibleInstances, FlexibleContexts, ViewPatterns,
+             TemplateHaskell, RankNTypes #-}
+
+{- This does not compile, some time I should think about how to do unit tests
+   for the congruence closure algorithm again -}
 
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
+import Data.List
+import Data.Maybe
+import Data.Tuple
+import Data.Either
+import Data.Map (Map)
+import qualified Data.Map as M
+import Data.Functor.Identity
+import Control.Applicative
+import Control.Arrow (second)
+import Control.Monad
+import Control.Monad.Trans
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Writer
+
+import Language.Trellys.GenericBind
+import Language.Trellys.Syntax hiding (Term)
+import Language.Trellys.CongruenceClosure hiding (recordName)
 
 import System.IO.Unsafe
-import Test.QuickCheck
+import Test.QuickCheck hiding (label)
 import Test.QuickCheck.Monadic (PropertyM, assert, monadic, forAllM, pick, pre, run)
 import Test.QuickCheck.Gen as Gen
 import qualified Test.HUnit as HU
+
 
 -- A convenient monad for recording an association between terms and constants.
 newtype NamingT t m a = NamingT (StateT (Bimap t Constant, [Constant]) m a)
@@ -30,105 +52,80 @@ runNaming :: Naming  t  a -> [Constant] -> (a, Bimap t Constant)
 runNaming m nameSupply  = runIdentity $ runNamingT m nameSupply
 
 
-{- ################## Testing ################################# -}
+data Term = 
+   Leaf Constant
+ | Branch Label [Term]
 
--- Simple example of a term language and proofs.
-data TermLabel = TermLabel String
-  deriving (Eq, Ord)
-instance Show TermLabel where
-  show (TermLabel s) = s
-
-data Term = Leaf Constant
-          | Branch TermLabel [Term]
-  deriving (Show, Eq, Ord)
-
-data Explanation =
-    Assumption (Equation TermLabel)
-  | Refl Term
-  | Symm Explanation
-  | Trans Explanation Term Explanation
-  | Cong TermLabel [Explanation]
- deriving (Eq,Show)
-
-instance Proof Explanation where
-  type Label Explanation = TermLabel
-  refl = Refl . Leaf
-  symm = Symm
-  trans pf1 pf2 = Trans pf1 c pf2
-                    where (_,c) = explanationToTerms pf1
-         
-  cong = Cong
-
--- Simplifying proofs: push in Symm, note that Refl is a unit for Trans.
-simplExplanation :: Explanation -> Explanation
-simplExplanation e@(Assumption _) = e
-simplExplanation e@(Refl _) = e
-simplExplanation (Symm p) = (symmExplanation p)
- where symmExplanation (Assumption h) = Symm (Assumption h)
-       symmExplanation (Refl t) = (Refl t)
-       symmExplanation (Symm p) = simplExplanation p
-       symmExplanation (Trans p1 t p2) = simplExplanation (Trans (symmExplanation p2) 
+-- Simplifying proofs: push in RawSymm, note that RawRefl is a unit for RawTrans.
+simplProof :: Proof -> Proof
+simplProof e@(RawAssumption _) = e
+simplProof e@RawRefl = e
+simplProof (RawSymm p) = (symmProof p)
+ where symmProof (RawAssumption h) = RawSymm (RawAssumption h)
+       symmProof (RawRefl t) = (RawRefl t)
+       symmProof (RawSymm p) = simplProof p
+       symmProof (RawTrans p1 t p2) = simplProof (RawTrans (symmProof p2) 
                                                                  t 
-                                                                 (symmExplanation p1))
-       symmExplanation (Cong l ps) = Cong l (map symmExplanation ps)
-simplExplanation (Trans p1 t p2) =
-  case simplExplanation p1 of
-    (Refl _) -> simplExplanation p2
-    p1' -> case simplExplanation p2 of
-             (Refl _) -> p1'
-             p2' -> (Trans p1' t p2')
-simplExplanation (Cong l ps) = Cong l (map simplExplanation ps)
+                                                                 (symmProof p1))
+       symmProof (RawCong l ps) = RawCong l (map symmProof ps)
+simplProof (RawTrans p1 t p2) =
+  case simplProof p1 of
+    (RawRefl _) -> simplProof p2
+    p1' -> case simplProof p2 of
+             (RawRefl _) -> p1'
+             p2' -> (RawTrans p1' t p2')
+simplProof (RawCong l ps) = RawCong l (map simplProof ps)
 
-explanationToTerms :: Explanation -> (Term,Term)
-explanationToTerms (Assumption (Left (EqConstConst a b))) = (Leaf a, Leaf b)
-explanationToTerms (Assumption (Right (EqBranchConst l as b))) = (Branch l (map Leaf as), Leaf b)
-explanationToTerms (Refl a) = (a,a)
-explanationToTerms (Symm p) = swap (explanationToTerms p)
-explanationToTerms (Trans p c q) = (a,b)
+explanationToTerms :: Proof -> (Term,Term)
+explanationToTerms (RawAssumption (Left (EqConstConst a b))) = (Leaf a, Leaf b)
+explanationToTerms (RawAssumption (Right (EqBranchConst l as b))) = (Branch l (map Leaf as), Leaf b)
+explanationToTerms (RawRefl a) = (a,a)
+explanationToTerms (RawSymm p) = swap (explanationToTerms p)
+explanationToTerms (RawTrans p c q) = (a,b)
                                    where (a,_) = explanationToTerms p
                                          (_,b) = explanationToTerms q
-explanationToTerms (Cong l ps) = (Branch l (map fst abs), Branch l (map snd abs))
+explanationToTerms (RawCong l ps) = (Branch l (map fst abs), Branch l (map snd abs))
                                    where abs = map explanationToTerms ps
 
-checkExplanation :: Term -> Term -> Explanation -> Bool
-checkExplanation (Leaf a) (Leaf b) (Assumption (Left (EqConstConst a' b'))) 
+checkProof :: Term -> Term -> Proof -> Bool
+checkProof (Leaf a) (Leaf b) (RawAssumption (Left (EqConstConst a' b'))) 
   | a==a' && b==b'
   = True
-checkExplanation (Branch l as) (Leaf b) (Assumption (Right (EqBranchConst l' as' b'))) 
+checkProof (Branch l as) (Leaf b) (RawAssumption (Right (EqBranchConst l' as' b'))) 
   | l==l' && as==(map Leaf as') && b==b'
   = True
-checkExplanation a a' (Refl a'') 
+checkProof a a' (RawRefl a'') 
   | a==a' && a' == a''
   = True
-checkExplanation a b (Symm p)
-  | checkExplanation b a p
+checkProof a b (RawSymm p)
+  | checkProof b a p
   = True
-checkExplanation a c (Trans p b q)
-  | checkExplanation a b p && checkExplanation b c q
+checkProof a c (RawTrans p b q)
+  | checkProof a b p && checkProof b c q
   = True
-checkExplanation (Branch l as) (Branch l' bs) (Cong l'' ps)
+checkProof (Branch l as) (Branch l' bs) (RawCong l'' ps)
   | l==l' && l'==l'' 
     && length as==length bs && length bs==length ps 
-    && and (zipWith3 checkExplanation as bs ps)
+    && and (zipWith3 checkProof as bs ps)
   = True
-checkExplanation a b p 
+checkProof a b p 
   = unsafePerformIO (putStr ("Bogus proof:\n" ++ show a ++ "\n" ++ show b ++ "\n" ++ show p ++ "\n"))
     `seq` False
 
+label :: String -> Label
+label = bind [] . AVar. string2Name
 -- QuickCheck infrastructure
-instance Arbitrary Constant where
-  arbitrary = oneof $ map (return.Constant) [0..4]
-instance Arbitrary TermLabel where
-  arbitrary = oneof $ map (return . TermLabel) ["a", "b"]
+instance Arbitrary Label where
+  arbitrary = oneof $ map label  ["a", "b"]
 instance Arbitrary Term where
   arbitrary = sized term 
-    where term 0 = liftM Leaf arbitrary
+    where term 0 = liftM Leaf (oneof [0..4])
           term n = do k <- choose (1,4)
-                      oneof [ liftM Leaf arbitrary,
+                      oneof [ liftM Leaf [oneof 0..4] ,
                               liftM2 Branch arbitrary (vectorOf k (term (n `div` k))) ]
 instance Arbitrary EqConstConst where
   arbitrary = liftM2 EqConstConst arbitrary arbitrary
-instance Arbitrary (EqBranchConst TermLabel) where
+instance Arbitrary EqBranchConst  where
   arbitrary = do 
     k <- choose (1,4)
     liftM3 EqBranchConst arbitrary (vectorOf k arbitrary) arbitrary
@@ -139,21 +136,29 @@ forAll2M gen p = do
   a2 <- pick gen
   p a1 a2
 
-congTest :: [Equation TermLabel] -> Term -> Term -> Bool
+congTest :: [Equation] -> Term -> Term -> Bool
 congTest eqs a b = isJust (congTestExplain eqs a b)
 
-congTestExplain :: [Equation TermLabel] -> Term -> Term -> Maybe Explanation
+congTestExplain :: [Equation] -> Term -> Term -> Maybe Proof
 congTestExplain eqs a b =
-  let (((acnst, bcnst), eqsAB), naming) = runNaming (runWriterT $ liftM2 (,) (genEqs a) (genEqs b)) [Constant 6..]
-      cmax = maximum ((Constant 5) : BM.keysR naming)
-  in flip evalState (newState (Constant 0, cmax)) $ do
-       propagate (   map (\eq -> (Assumption eq, eq)) eqs 
-                  ++ map (\eq -> (Refl (fst (equationToTerms (Right eq))), Right eq)) eqsAB)
-       fmap (substDefnsExplanation naming) <$> isEqual acnst bcnst
+  let (((acnst, bcnst), eqsAB), naming) = runNaming (runWriterT $ liftM2 (,) (genEqs a) (genEqs b)) [6..]
+      cmax = maximum ((5) : BM.keysR naming)
+  in flip evalState (newState ( 0, cmax)) $ do
+       propagate (   map (\eq -> (RawAssumption eq, eq)) eqs 
+                  ++ map (\eq -> (RawRefl (fst (equationToTerms (Right eq))), Right eq)) eqsAB)
+       fmap (substDefnsProof naming) <$> equalTestExplain acnst bcnst
+
+equalTestExplain :: Constant -> Constant -> State ProblemState (Maybe Proof)
+equalTestExplain a b = do
+  (p, a') <- findExplain a
+  (q, b') <- findExplain b
+  if (a' == b')
+    then return (Just (RawTrans p (RawSymm q)))
+    else return Nothing
 
 -- Take a term to think about and name each subterm in it with a separate constant,
 -- while at the same time recording equations relating terms to their subterms.
-genEqs :: Term -> WriterT [EqBranchConst TermLabel] (Naming Term) Constant
+genEqs :: Term -> WriterT [EqBranchConst] (Naming Term) Constant
 genEqs (Leaf x) = return x
 genEqs (Branch l ts) = do
   a  <- lift $ recordName (Branch l ts)
@@ -168,72 +173,76 @@ substDefns naming (Leaf c) = case BM.lookupR c naming of
                                Nothing -> Leaf c
                                Just t -> substDefns naming t
 
-substDefnsExplanation :: Bimap Term Constant -> Explanation -> Explanation
-substDefnsExplanation naming pf@(Assumption _) = pf
-substDefnsExplanation naming (Refl a) = Refl (substDefns naming a)
-substDefnsExplanation naming (Symm pf) = Symm (substDefnsExplanation naming pf)
-substDefnsExplanation naming (Trans pf1 t pf2) = Trans (substDefnsExplanation naming pf1)
+substDefnsProof :: Bimap Term Constant -> Proof -> Proof
+substDefnsProof naming pf@(RawAssumption _) = pf
+substDefnsProof naming (RawRefl a) = RawRefl (substDefns naming a)
+substDefnsProof naming (RawSymm pf) = RawSymm (substDefnsProof naming pf)
+substDefnsProof naming (RawTrans pf1 t pf2) = RawTrans (substDefnsProof naming pf1)
                                                        (substDefns naming t)
-                                                       (substDefnsExplanation naming pf2)
-substDefnsExplanation naming (Cong l pfs) = Cong l (map (substDefnsExplanation naming) pfs)
+                                                       (substDefnsProof naming pf2)
+substDefnsProof naming (RawCong l pfs) = RawCong l (map (substDefnsProof naming) pfs)
 
-equationToTerms :: Equation TermLabel -> (Term,Term)
+equationToTerms :: Equation -> (Term,Term)
 equationToTerms (Left (EqConstConst a b)) = (Leaf a, Leaf b)
 equationToTerms (Right (EqBranchConst l as b)) = (Branch l (map Leaf as), Leaf b)
 
-merges :: ProblemState Explanation -> [Equation TermLabel] -> (ProblemState Explanation)
-merges st eqs = execState (propagate [(Assumption eq, eq) | eq <- eqs]) st
+merges :: ProblemState -> [Equation] -> (ProblemState)
+merges st eqs = execState (propagate [(RawAssumption eq, eq) | eq <- eqs]) st
 
--- Printing algorithm-state for debugging purposes:
-printReprs :: (Show proof) => Reprs proof -> String
+
+-- Printing algorithm-state for debugging purposes: 
+{-
+printReprs :: (Show proof) => IntMap (Either (Proof, Constant) ClassInfo) -> String
 printReprs reprs = do
   concatMap (\(i, cnt) -> "\n" ++ show i ++ " => " ++ show cnt ++ " ")
             (M.assocs reprs)
 
-
 printLookupeq :: (Show proof, Show (Label proof)) =>
                  Map (Label proof,[Constant]) ([proof], proof, EqBranchConst (Label proof)) -> String
-printLookupeq l = "fromList [" ++ concat (List.intersperse "," $ map (\((l,as), (_,_,eq)) -> show (l,as) ++ ", (_,_," ++ show eq ++ ")") (M.toList l)) ++ "]"
+printLookupeq l = "fromList [" ++ concat (intersperse "," $ map (\((l,as), (_,_,eq)) -> show (l,as) ++ ", (_,_," ++ show eq ++ ")") (M.toList l)) ++ "]"
 
 printState :: (Show proof, Show (Label proof)) => ProblemState proof -> String
-printState (ProblemState reprs uses lookupeq) =
-   "\nreprs = " ++ printReprs reprs
-     ++ ", \nuses = " ++ show uses
-     ++ ", \nlookupeq = " ++ printLookupeq lookupeq
+printState st =
+   "\nreprs = " ++ printReprs (reprs st)
+     ++ ", \nuses = " ++ show (uses st)
+     ++ ", \nlookupeq = " ++ printLookupeq (lookupeq st)
+-}
                                            
 {- Tests -}
 
+{-
 test2 = printState $
-          merges (newState (Constant 0, Constant 6))
-                 [Right (EqBranchConst (TermLabel "a")  [Constant 1,Constant 2] (Constant 5)),Right (EqBranchConst (TermLabel "a") [Constant 3,Constant 4] (Constant 6)), Left (EqConstConst (Constant 1) (Constant 3))]
+          merges (newState ( 0, 6))
+                 [Right (EqBranchConst (label "a")  [1,2] (5)),Right (EqBranchConst (label "a") [3,4] (6)), Left (EqConstConst (1) (3))]
 
 test3 = printState $
-         merges (newState (Constant 0, Constant 6)) $ 
-                [Left (EqConstConst 4 1),Left (EqConstConst 2 3),Right (EqBranchConst (TermLabel "a") [2,3,1,2] 4),Right (EqBranchConst (TermLabel "a") [2,2,3,1] 1),Right (EqBranchConst (TermLabel "b") [2,2,2,3] 0),Left (EqConstConst 4 2),Right (EqBranchConst (TermLabel "a") [4,4] 0)]
+         merges (newState (0, 6)) $ 
+                [Left (EqConstConst 4 1),Left (EqConstConst 2 3),Right (EqBranchConst (label "a") [2,3,1,2] 4),Right (EqBranchConst (label "a") [2,2,3,1] 1),Right (EqBranchConst (label "b") [2,2,2,3] 0),Left (EqConstConst 4 2),Right (EqBranchConst (label "a") [4,4] 0)]
+-}
 
 {-- The High-level specification of the algorithm -}
 
 -- the relation congTest contains the input equations:
-prop_containsEqs :: (NonEmptyList (Equation TermLabel)) -> Property
+prop_containsEqs :: (NonEmptyList Equation) -> Property
 prop_containsEqs  (NonEmpty eqs) = 
   forAll (Gen.elements eqs) (uncurry (congTest eqs) . equationToTerms)
 
 -- the relation congTest is a congruence (FIXME: should test for n-ary branches):
-prop_congruence :: [Equation TermLabel] -> TermLabel -> Term -> Term -> Term -> Term -> Property
+prop_congruence :: [Equation] -> Label -> Term -> Term -> Term -> Term -> Property
 prop_congruence eqs l a a' b b' =
   congTest eqs a a' ==> congTest eqs b b' ==> congTest eqs (Branch l [a, b]) (Branch l [a', b'])
 
 -- it's the least congruence, or equivantly, it contains only provable equations.
 -- (Fixme: the statement of this property needs work.)
-prop_soundness :: [Equation TermLabel] -> Term -> Term -> Property
+prop_soundness :: [Equation] -> Term -> Term -> Property
 prop_soundness eqs a b = 
-  isJust p ==> checkExplanation a b (simplExplanation (fromJust p))
+  isJust p ==> checkProof a b (simplProof (fromJust p))
   where p = congTestExplain eqs a b
   
 {- Some lower-level invariants maintained by the algorithm -}
 
 -- All critical pairs in the rewrite system lookupeq are trivial.
-prop_criticalPairs :: [Equation TermLabel] -> Property
+prop_criticalPairs :: [Equation] -> Property
 prop_criticalPairs eqs =  monadic (flip evalState st) $ do
       pre (not (M.null (lookupeq st)))
       forAll2M (Gen.elements (M.toList $ lookupeq st))
@@ -244,10 +253,10 @@ prop_criticalPairs eqs =  monadic (flip evalState st) $ do
            b'  <- run $ find b
            pre (l1==l2 && as'==bs')
            assert (a'==b'))
-   where st = merges (newState (Constant 0, Constant 6)) eqs
+   where st = merges (newState (0, 6)) eqs
 
 -- lookupeq does not forget any of the BranchConst input equations.
-prop_lookupeqNonlossy :: [Equation TermLabel] -> Property
+prop_lookupeqNonlossy :: [Equation] -> Property
 prop_lookupeqNonlossy eqs  = monadic (flip evalState st) $ do
     let (_,bcEqs) = partitionEithers eqs
     pre (not (null bcEqs))
@@ -260,29 +269,29 @@ prop_lookupeqNonlossy eqs  = monadic (flip evalState st) $ do
           Just (_, _, EqBranchConst l' bs b) -> do
             b' <- run $ find b
             assert (l==l' && a'== b'))  
- where st = merges (newState (Constant 0, Constant 6)) eqs
+ where st = merges (newState (0, 6)) eqs
 
 
 -- All proofs recorded on the Union-find arcs are valid.
-prop_validProofsArcs :: [Equation TermLabel] -> Property
+prop_validProofsArcs :: [Equation] -> Property
 prop_validProofsArcs eqs = monadic (flip evalState st) $ do
     forAllM (Gen.elements assocs)
       (\(a, e) -> 
          case e of
-           Left (p,b) -> assert $ checkExplanation (Leaf a) (Leaf b) p
+           Left (p,b) -> assert $ checkProof (Leaf a) (Leaf b) p
            Right info -> assert True)
-  where st = merges (newState (Constant 0, Constant 6)) eqs
+  where st = merges (newState (0, 6)) eqs
         assocs = M.toAscList (reprs st)
 
 -- All proofs recorded with the lookupeqs are valid.
-prop_validProofsLookups :: [Equation TermLabel] -> Property
+prop_validProofsLookups :: [Equation] -> Property
 prop_validProofsLookups eqs = monadic (flip evalState st) $ do
     pre (not (M.null (lookupeq st)))
     forAllM (Gen.elements (M.toList $ lookupeq st))
       (\((l,as),(ps, q, EqBranchConst _ bs b)) -> 
-         assert $ and (zipWith3 checkExplanation (map Leaf bs) (map Leaf as) ps)
-                  && checkExplanation (Branch l (map Leaf bs)) (Leaf b) q)
-  where st = merges (newState (Constant 0, Constant 6)) eqs
+         assert $ and (zipWith3 checkProof (map Leaf bs) (map Leaf as) ps)
+                  && checkProof (Branch l (map Leaf bs)) (Leaf b) q)
+  where st = merges (newState (0, 6)) eqs
 
 assertQC :: Testable prop => String -> prop -> HU.Assertion
 assertQC msg p = do

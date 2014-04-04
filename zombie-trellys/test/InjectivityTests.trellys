@@ -22,3 +22,15 @@ test_at1 : (T1 : Type) -> (T2 : Type) -> ((T1@log) = (T2@log)) -> (T1=T2)
 test_at1 T1 T2 h = _
 
 
+-- What if there are more than two expressions headed by injective constructors
+-- in a congruence class?
+
+test_many_at1 : (T1 : Type) -> (T2 : Type) -> (T3 : Type) ->
+	        ((T1@log) = (T2@log)) -> ((T1@log) = (T3@log)) 
+		-> (T1=T2)
+test_many_at1 T1 T2 T3 h1 h2 = _
+
+test_many_at2 : (T1 : Type) -> (T2 : Type) -> (T3 : Type) ->
+	        ((T1@log) = (T2@log)) -> ((T2@log) = (T3@log)) 
+		-> (T1=T3)
+test_many_at2 T1 T2 T3 h1 h2 = _

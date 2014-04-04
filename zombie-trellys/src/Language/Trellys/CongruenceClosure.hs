@@ -13,13 +13,21 @@ module Language.Trellys.CongruenceClosure(
   dumpState,
   inSameClass, 
   unify, -- main function, runState is run for UniM monad  
+
+-- The following ones should not be used by the main program, but as exposed for
+-- the benefit of CongruenceClosureTests.hs
+  lookupeq, reprs, uses,
+  findExplain, findExplains,
+  
+
+
 ) where
 
 {- This module mostly follows two papers. The congruence closure part is based on
      Robert Nieuwenhuis and Albert Oliveras, "Fast Congruence Closure and Extensions",
      Information and Computation, 205(4):557-580, April 2007.  
    Compared to that paper the main differences are:
-    - The terms have n-ary branches instead of being just binary trees. This probably ruins the
+    - The terms have n-ary branches instead of being just binary trees. This ruins the
       asymptotical running time of the algorithm, but it makes it more convenient to use.
     - the associated equality proofs are stored directly on the Union-Find edges, instead of
       in an associated "proof forest". (The algoritm will run faster, but the proof terms will
@@ -304,7 +312,6 @@ recordApplication a app = do
   setRepr a' (Right $ ia{ classApps = S.insert app (classApps ia)})
 
 -- Add an application term to the injTerm field of an equivalence class of a constant
--- Add an application term to the equivalence class of a constant
 recordInjTerm :: (Monad m) => Constant -> (Label, [Constant]) 
                      -> StateT ProblemState m ()
 recordInjTerm a app = do
@@ -387,8 +394,11 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
   (ps, as') <- findExplains as
   lookupeqs <- gets lookupeq
   case M.lookup (l, as') lookupeqs of
-    Just (qs, q, eq_b@(EqBranchConst _ bs b)) -> 
-      propagate ((r, Left (EqConstConst a b)):eqs)
+    Just (qs, q, eq_b@(EqBranchConst _ bs b)) ->  do
+      (_,_,ia) <- findExplainInfo a
+      (_,_,ib) <- findExplainInfo b
+      injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
+      propagate ((r, Left (EqConstConst a b)):injections++eqs)
        where r = RawTrans (RawSymm p) 
                        --(Branch l (map Leaf as))
                        (RawTrans (RawCong l (zipWith3 (\pi ai' qi -> RawTrans pi (RawSymm qi)) ps as' qs))
