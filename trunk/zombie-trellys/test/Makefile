@@ -34,6 +34,10 @@ TODO_PASS=ProgList  Monadic.passtypeclassy UnfoldTests
   # unifiers. We used to do that using the inhabitant-tracking, but that is
   # too costly, so it's currently turned off.
 
+  # The unfold tests fail the injRng check, it should be possible to fix that
+  # by adding explicit uses of injectivity. (Going to think about that when I resume work on unfolding.)
+
+
 # stale?
 UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
