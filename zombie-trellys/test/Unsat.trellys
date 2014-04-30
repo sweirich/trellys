@@ -58,7 +58,7 @@ data Sat (n:Nat) (formula : Formula n) : Type where
             [_ : interp (extend partial) formula = True ]
 
 data Unsat (n:Nat) (formula : Formula n) (phi : Vector (Maybe Bool) n) : Type where
-  UNSAT  of [_ : (phi' : Vector Bool n) -> Extends phi phi' -> (interp phi' formula = True)]
+  UNSAT  of [_ : (phi' : Vector Bool n) -> Extends phi phi' -> (interp phi' formula = False )]
 
 ---------------------------------------------------
 -- Implementation stuff
@@ -90,17 +90,34 @@ log false_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
 false_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) (Just False)
 
--- a clause is known to be true if any literal has been assigned true
--- or known to be false if all literals are assigned false
--- otherwise its truth value is unknown.
-log partial_interp_clause : [n:Nat] => (partial : Vector (Maybe Bool) n) 
-              -> (clause : List (Times (Fin n) Bool) @ log) 
-              -> Or (any (interp_lit (extend partial)) clause = True)
-                  (Or ((phi : Vector Bool n)
-                         -> Extends partial phi -> any (interp_lit phi) clause = False)
-                      (Fin n))
-                                                  
-partial_interp_clause = \[n] p c. TRUSTME
+-- a clause is known to be false if all literals are assigned false.
+log clause_is_unsat : [n:Nat] => (partial : Vector (Maybe Bool) n) 
+                      -> (clause : List (Times (Fin n) Bool) @ log) 
+                      -> Maybe ((phi : Vector Bool n)
+                                   -> Extends partial phi
+                                   -> any (interp_lit phi) clause = False)
+clause_is_unsat = \[n] partial = ind loop c = 
+  case c of
+    Nil -> Nothing
+    Cons c
+
+
+-- Precondition: f is known to not be satified already.
+-- Returns either an unassigned variable or a proof that f is unsatisfiable.
+prog partial_interp_unsat : [n:Nat] 
+              => (partial : Vector (Maybe Bool) n) 
+              -> (f : Formula n)
+              -> (Or (Unsat n f partial)
+                     (Fin n))
+partial_interp_unsat [n] partial f =
+  unfold (Formula n) in
+    case (f : List (List (Times (Fin n) Bool))) [eq_f] of --revisit this after adding congruence search to case-rule.
+      Nil -> abort
+      Cons c cs ->
+        case (find (unassigned_lit partial) c) of
+          Just i -> InR (pi1 i)
+          Nothing -> TRUSTME
+
 
 -- a formula is known to be true if all clauses are known to be true
 -- and known to be false if any clauses are known to be false.
@@ -109,44 +126,22 @@ partial_interp_clause = \[n] p c. TRUSTME
 -- that variable.  In order for the algorithm to terminate, the
 -- variable we return has better really be unassigned. But that's not
 -- required for the soundness proof, so we don't state it in the type.
-log partial_interp : [n:Nat] 
+prog partial_interp : [n:Nat] 
               => (partial : Vector (Maybe Bool) n) 
               -> (f : Formula n)
               -> Or (Sat n f) 
                     (Or (Unsat n f partial)
                         (Fin n))
-partial_interp [n] partial = ind loop f = 
+partial_interp [n] partial f =
   unfold (Formula n) in
-    case (f : List (List (Times (Fin n) Bool))) [eq_f] of
-      Nil -> let epartial = extend partial in
-             --This case show a limitation of the "deterministic reduction modulo",
-             -- if we didn't name "extend partial" unfold would try to step into it, which is bad.
-             unfold (interp epartial Nil) in
-               InL (SAT  partial [_])
-      Cons c cs -> 
-        case (partial_interp_clause partial c) of
-          InL sat_c -> case (loop cs [ord eq_f]) of
-                         InL sat_cs -> TRUSTME --sigh, we need to keep "partial" fixed, which creates additional problems.
-                                      --InL (SAT partial [all_Cons (any (interp_lit (extend partial))) c cs sat_c sat_cs])
-                         InR _      -> TRUSTME
-          InR (InL unsat) -> TRUSTME
-          InR (InR i) -> InR (InR i)
-
-{-
-partial_interp = \ [n] p f . 
-   unfold (Formula n) in
-   let f' = map (partial_interp_clause p) (f :  List (List (Times (Fin n) Bool))) in
-   if (all (maybe_eq bool_eq (Just True)) f')
-     then Just True
-     else if (any (maybe_eq bool_eq (Just False)) f') 
-          then Just False
-          else Nothing
--}
+    case (interp (extend partial) f) of
+      True -> InL (SAT partial [_])
+      False -> InR TRUSTME
+  
 
 -- unit propagation
 -- Find a clause with only one unassigned literal and no other true
 -- literals. That one must be true.
-
 log unit_lit_clause : [n : Nat] => (p : Vector (Maybe Bool) n) ->
        (c : List (Times (Fin n) Bool) @ log) -> List (Times (Fin n) Bool)
 unit_lit_clause = \ [n] p c . 

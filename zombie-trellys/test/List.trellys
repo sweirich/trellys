@@ -2,6 +2,7 @@
 
 module List where
 import Prelude
+import Maybe
 import Arithmetic
 import LessThanNat_lt_eq_True
 
@@ -97,6 +98,12 @@ filter = \ [a] f . ind filter xs =
      Cons x xs -> case (f x) [_] of 
         True -> Cons x (filter xs [ord xs_eq])
         False -> filter xs [ord xs_eq]
+
+find : [a : Type] => (a -> Bool) -> (List a) -> Maybe a
+find [a] pred = ind loop xs = 
+  case xs [xs_eq] of 
+    Nil -> Nothing
+    Cons x xs' -> if pred x then Just x else loop xs' [ord xs_eq]
 
 elem : [a : Type] => (eq : a -> a -> Bool) -> a -> List a -> Bool
 elem = \ [a] eqa x . ind elem xs = 
