@@ -1,0 +1,102 @@
+module Unify2 where
+
+import Prelude
+import Product
+import Fin
+import List
+import Maybe
+
+usually log
+
+-- We use natural numbers for variables everywhere
+
+data Term : Type where
+  Leaf 
+  Branch of (t1 : Term) (t2 : Term)
+  Var of (x : Nat)
+
+
+-- notFreeIn x t = True if x is not free in t. 
+notFreeIn : Nat -> Term -> Bool
+notFreeIn = TRUSTME
+
+Substitution : Type
+Substitution = Nat -> Maybe Term
+
+empty : Substitution
+empty = unfold Substitution in
+         \ x . Nothing
+
+singleton : Nat -> Term -> Substitution
+singleton x t = unfold Substitution in
+                 \y. case (eq x y) [_] of
+                       True -> Just t
+                       False -> Nothing
+
+-- apply a substitution to a term
+log subst : Substitution -> Term -> Term
+subst s = ind go t = case t [eqt] of
+                      Leaf -> Leaf
+                      Branch t1 t2 -> Branch (go t1 [ord eqt]) 
+                                             (go t2 [ord eqt])
+                      Var x -> unfold Substitution in
+                                 case (s x) of 
+                                   Just t -> t
+                                   Nothing -> Var x
+
+log compose : Substitution -> Substitution -> Substitution
+compose = unfold Substitution in
+  \ s' s x . case (s x) of
+               Just t ->  Just (subst s' t)
+               Nothing -> s' x
+
+log substCompose : (s1 : Substitution) -> (s2 : Substitution) ->
+                    (t : Term) -> 
+                    subst (compose s1 s2) t = subst s1 (subst s2 t)
+substCompose s1 s2 t =
+   unfold Substitution in
+   TRUSTME
+    
+
+log varSingleton : (x : Nat) -> (t : Term) -> t = subst (singleton x t) (Var x)
+varSingleton x t = TRUSTME
+
+singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
+                   (notFreeIn x t = True) -> (subst (singleton x s) t = t)
+singletonNotFree = TRUSTME
+
+data Unify (t1 : Term) (t2 : Term) : Type where
+  No 
+  Yes of (s : Substitution) (pf : subst s t1 = subst s t2)
+
+prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
+rec unify t1 = \ t2 . 
+  case t1 , t2 of
+    Leaf, Leaf -> Yes empty _
+    Leaf, Branch _ _ -> No
+    Branch _ _ , Leaf -> No
+    Branch t11 t12, Branch t21 t22 ->
+      case (unify t11 t21) of
+        No -> No 
+        Yes s p -> case (unify (subst s t12) (subst s t22)) of
+                     No -> No
+                     Yes s' p' ->
+                       let s'' = compose s' s in
+                       let [_] = (join : subst s'' (Branch t11 t12)
+                                         = Branch (subst s'' t11) (subst s'' t12)) in
+                       let [_] = (join : subst s'' (Branch t21 t22)
+                                         = Branch (subst s'' t21) (subst s'' t22)) in
+                       let [_] = (substCompose s' s t11) in
+                       let [_] = (substCompose s' s t12) in
+                       let [_] = (substCompose s' s t21) in
+                       let [_] = (substCompose s' s t22) in
+                         Yes s'' _
+    t , (Var x) -> case (notFreeIn x t) of
+                     False -> No
+                     True  -> 
+                        let [_] = varSingleton x t in
+                        let [_] = singletonNotFree t x t _ in
+                          Yes (singleton x t) _
+    (Var x) , t -> case (unify t (Var x)) of
+                     No -> No
+                     Yes s p -> Yes s _ 
