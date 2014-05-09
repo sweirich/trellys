@@ -660,7 +660,8 @@ taTele ((t,ep1):terms) (ACons (unrebind->((x,unembed->ty,ep2),tele')))  = do
   eterms <- taTele terms (simplSubst x et tele')
   zet <- zonkTerm et
   return $ ((zet,ep1),etTh) : eterms
-taTele _ _ = error "Internal error: taTele called with unequal-length arguments"    
+taTele ((t,_):_) AEmpty = error $ "Internal error: taTele called with unequal-length arguments. Left-over term " ++ show t
+taTele [] (ACons (unrebind->((x,unembed->ty,_), _))) = error $ "Internal error: taTele called with unequal-length arguments. Left-over type " ++ show ty
 
 -- Expressions which are always synthesized, so we don't gain anything
 -- from checking them against a given type. (partial list, this is a bit of a hack).
@@ -752,6 +753,9 @@ ts (TCon c args) =
 ts (DCon c args) = do
      (tname, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
      (us,deltai') <- instantiateInferredsTele delta deltai
+     unless (length args == aTeleLength deltai') $
+       err [DS "Constructor", DD c, DS "was given", DD (length args), 
+            DS "arguments, but should have", DD (aTeleLength deltai')]
      teleRes <- taTele args deltai'
      let (eargs,eths) = unzip teleRes
      zus <- zonk us
