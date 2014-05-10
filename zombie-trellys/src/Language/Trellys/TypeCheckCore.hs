@@ -20,6 +20,7 @@ import Control.Applicative
 
 import qualified Generics.RepLib as RL
 
+import Language.Trellys.Diff
 import Language.Trellys.Error
 import Language.Trellys.Options
 import Language.Trellys.Environment -- (Env, err, lookupTy, lookupTCon, lookupDCon, extendCtx)
@@ -213,6 +214,7 @@ getType (ANthEq i a) = do
 getType (ATrustMe ty) = do
   return (Logic, ty)
 
+getType (AHighlight a) = getType a
 
 -------------------
 -------------------
@@ -225,9 +227,7 @@ coreErr msg = do
   gamma <- getLocalCtx
   err $ [DS "Internal error: ill-typed core term."] 
         ++ msg
-        ++ [DS "In context", DD gamma]
-        
-        
+        ++ [DS "In context", DD gamma]                
         
 -- Given an environment and a theta, we synthesize a type and a theta or fail.
 --  Since the synthesized type is "very annotated", this is a bit like regularity.
@@ -484,7 +484,7 @@ aTs t@(AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = do
                       bTy' <- aTsLogic body
                       return (AArrow k ex epTy (bind (y, embed aTy') bTy')))
   tyEq <- aeq <$> erase (AArrow k ex epTy bndTy) <*> erase ty'
-  unless tyEq $
+  unless tyEq $    
     coreErr [DS "AInd should have type", DD (AArrow k ex epTy bndTy), 
              DS "but has type", DD ty']
   return $ (Logic, AArrow k ex epTy bndTy)
@@ -601,6 +601,8 @@ aTs (ANthEq i a) = do
 aTs (ATrustMe ty) = do
   aKc ty
   return (Logic, ty)
+
+aTs (AHighlight a) = aTs a
 
 -- Synthesize a type and enforce that it can be checked at L, using FO if necessary.
 aTsLogic :: ATerm -> TcMonad ATerm
@@ -766,9 +768,11 @@ aTcTele ((t,ep1):ts) (ACons (unrebind->((x,unembed->ty,ep2),tele'))) = do
   (th', ty') <- aTs t
   ety  <- erase ty
   ety' <- erase ty'
-  unless (ety' `aeq` ety) $
-    coreErr [DS "aTcTele: the expression",DD t,DS "should have type", DD ty,
-             DS "but has type", DD ty']
+  unless (ety' `aeq` ety) $ do
+    ty_diffed <- diff ty ty'
+    ty'_diffed <- diff ty' ty
+    coreErr [DS "aTcTele: the expression",DD t,DS "should have type", DD ty_diffed,
+             DS "but has type", DD ty'_diffed]
   th <-  aTcTele ts (subst x t tele')
   return (max th th')
 aTcTele _ _ = coreErr [DS "aTcTele telescope length mismatch"]
@@ -782,9 +786,12 @@ aTcTeleLogic ((t,ep1):ts) (ACons (unrebind->((x,unembed->ty,ep2),tele'))) = do
   ty' <- aTsLogic t
   ety  <- erase ty
   ety' <- erase ty'
-  unless (ety' `aeq` ety) $
-    coreErr [DS "aTcTeleLogic: the expression",DD t,DS "should have type", DD ty,
-             DS "but has type", DD ty']
+  unless (ety' `aeq` ety) $ do
+    ty_diffed <- diff ty ty'
+    ty'_diffed <- diff ty' ty
+    coreErr [DS "aTcTeleLogic: the expression",DD t,
+             DS "should have type", DD ty_diffed,
+             DS "but has type", DD ty'_diffed]
   aTcTeleLogic ts (subst x t tele')
 aTcTeleLogic _ _ = coreErr [DS "aTcTeleLogic telescope length mismatch"]
 

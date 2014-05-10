@@ -1,7 +1,7 @@
 {-# LANGUAGE StandaloneDeriving, TemplateHaskell, ScopedTypeVariables,
     FlexibleInstances, MultiParamTypeClasses, FlexibleContexts,
     UndecidableInstances, ViewPatterns, DeriveGeneric #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wall -fno-warn-orphans #-}
 
 -- | This module captures the base abstract syntax of Trellys core. It
 -- uses the generic locally nameless representation of binders from the
@@ -13,12 +13,7 @@ import qualified Generics.RepLib as RL
 
 import Language.Trellys.GenericBind
 
-import Control.Monad.Writer
-import Control.Monad.State
 import Text.ParserCombinators.Parsec.Pos
-import Data.Maybe (fromMaybe)
-import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -265,11 +260,11 @@ deriving instance Show ATerm
 -- Defining a special-case Alpha instance means that aeq/acompare will not
 -- look at these annotations, but one can still distinguish them by pattern-matching.
 data Explicitness = Explicit | Inferred
-  deriving Show
+  deriving (Eq, Show)
 
 instance Alpha Explicitness where
-   aeq' c _ _  = True
-   acompare' c _ _  = EQ
+   aeq' _c _ _  = True
+   acompare' _c _ _  = EQ
 
 -- | ATerm are annotated terms.
 --   Given an environment, we can synthesize an unannotated (erased) term, a type, and a theta.
@@ -326,6 +321,8 @@ data ATerm =
   | ANthEq Int ATerm
    -- the ATerm is the ascribed type
   | ATrustMe ATerm
+
+  | AHighlight ATerm  --Ignored by the typechecker but used by the pretty-printer.
   
 {-
           -- | ATermination case
@@ -337,6 +334,9 @@ data ATerm =
 -- constructor name, the telescope are the pattern variables (together with their types).
 deriving instance Show AMatch
 data AMatch = AMatch AName (Bind ATelescope ATerm)
+
+aMatchConstructor :: AMatch -> AName
+aMatchConstructor (AMatch d _) = d
 
 data ADecl = ASig     AName Theta ATerm       --Type
            | ADef     AName ATerm             --Term
@@ -362,7 +362,7 @@ declname (AData x _ _ _) = x
 declname (AAbsData x _ _) = x
 
 getLastDef :: [ADecl] -> Maybe (AName,ATerm)
-getLastDef decs = gld decs Nothing
+getLastDef decs1 = gld decs1 Nothing
   where
     gld :: [ADecl] -> Maybe (AName,ATerm) -> Maybe (AName,ATerm)
     gld [] acc         = acc
@@ -399,13 +399,13 @@ aTeleEpsilons (ACons (unrebind->((_,_,ep),tele))) =
   ep : aTeleEpsilons tele
 
 aSetTeleEps :: Epsilon -> ATelescope -> ATelescope
-aSetTeleEps ep AEmpty = AEmpty
+aSetTeleEps _ep AEmpty = AEmpty
 aSetTeleEps ep (ACons (unrebind -> ((x,ty,_),tele))) =
   ACons (rebind (x,ty,ep) (aSetTeleEps ep tele))
 
 aTeleAsArgs :: ATelescope -> [(ATerm,Epsilon)]
 aTeleAsArgs AEmpty = []
-aTeleAsArgs (ACons (unrebind->((x,ty,ep),tele))) =
+aTeleAsArgs (ACons (unrebind->((x,_ty,ep),tele))) =
   (AVar x,ep) : (aTeleAsArgs tele)
 
 --------------------------------------
@@ -463,7 +463,7 @@ freshATele _  AEmpty = error "wrong number of strings given to freshATele--too m
 -- Precondition: bs and delta have the same lenght.
 substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
 substATele AEmpty [] a = a
-substATele (ACons (unrebind->((x,ty,ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
+substATele (ACons (unrebind->((x,_ty,_ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
 substATele _ _ _ = error "internal error: substATele called with unequal-length arguments"
 
 ------------------------
