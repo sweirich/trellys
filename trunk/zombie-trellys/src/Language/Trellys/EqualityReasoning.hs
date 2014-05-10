@@ -529,8 +529,8 @@ decompose _ avoid (AApp Erased t1 t2 ty) =
                <*> (pure canonical)
 decompose sub avoid (AAt t th) =
   AAt <$> (decompose True avoid t) <*> pure th
-decompose isSubterm avoid (AUnbox t) = {- AUnbox <$> -} (decompose isSubterm avoid t)
-decompose isSubterm avoid (ABox t th) = {- ABox <$> -} (decompose isSubterm avoid t) {- <*> pure th -}
+decompose isSubterm avoid (AUnbox t) = decompose isSubterm avoid t
+decompose isSubterm avoid (ABox t th) = decompose isSubterm avoid t
 decompose _ avoid (AAbort t) = return $ AAbort canonical
 decompose _ avoid (ATyEq t1 t2) =
   ATyEq <$> (decompose True avoid t1) <*> (decompose True avoid t2)
@@ -538,8 +538,6 @@ decompose _ avoid t@(AJoin a i b j strategy) =
   return $ AJoin canonical canonical canonical canonical canonical
 decompose isSubterm avoid (AConv t1 pf) =  do
   decompose isSubterm avoid t1
-  -- r1 <- decompose True avoid t1
-  -- return r1 (AConv r1 canonical)
 decompose _ avoid (ACong ts bnd ty) =  do
   return $ AJoin canonical canonical canonical canonical canonical  --erases to just "join"
 decompose _ avoid (AContra t ty) = 
@@ -584,6 +582,7 @@ decompose _ avoid (ANthEq i a) =
   return $ AJoin canonical canonical canonical canonical canonical
 decompose _ avoid (ATrustMe t) = 
   return $ ATrustMe canonical
+decompose isSubterm avoid (AHighlight a) = decompose isSubterm avoid a 
 
 decomposeMatch :: (Monad m, Applicative m, Fresh m) => 
                   Set AName -> AMatch -> WriterT [(AName,ATerm)] m AMatch
@@ -655,6 +654,8 @@ match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
     `mUnion`  match vars t1 t1'
 match vars (ATrustMe t)   (ATrustMe t')    = return M.empty
+match vars (AHighlight a) a' = match vars a a'
+match vars a (AHighlight a') = match vars a a'
 match _ t t' = error $ "internal error: match called on non-matching terms "
                        ++ show t ++ " and " ++ show t' ++ "."
 
@@ -849,6 +850,7 @@ isAnyValue (ARanEq _ _ _) = True
 isAnyValue (AAtEq _) = True
 isAnyValue (ANthEq _ _) = True
 isAnyValue (ATrustMe _) = True
+isAnyValue (AHighlight a) = isAnyValue a
 
 {- Split it a term into a CBV evaluation context and a subterm
    which it is "stuck" on.  Also a predicate describing what things can
@@ -920,6 +922,7 @@ aCbvContext (ARanEq _ _ _) = return Nothing
 aCbvContext (AAtEq _) = return Nothing
 aCbvContext (ANthEq _ _) = return Nothing
 aCbvContext (ATrustMe _) = return Nothing
+aCbvContext (AHighlight a) = aCbvContext a
 
 -- Helper function for aCbvContext
 inCtx :: (ATerm -> ATerm) -> (Maybe (CbvContext, a, b))

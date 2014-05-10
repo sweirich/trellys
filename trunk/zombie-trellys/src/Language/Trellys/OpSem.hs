@@ -77,6 +77,7 @@ erase (ARanEq _ _ _) = return EJoin
 erase (AAtEq _) = return EJoin
 erase (ANthEq _ _) = return EJoin
 erase (ATrustMe _) = return ETrustMe
+erase (AHighlight a) = erase a
 
 eraseMatch  :: (Fresh m, Applicative m) => AMatch -> m EMatch
 eraseMatch (AMatch c bnd) = do

@@ -257,6 +257,8 @@ astep (ANthEq _ _) = return Nothing
 
 astep (ATrustMe _) = return Nothing
 
+astep (AHighlight a) = astep a
+
 -- Beta-reduce an application of a lam, rec, or ind.
 stepFun :: ATerm -> ATerm -> MaybeT TcMonad ATerm
 stepFun (ALam _ _ _ bnd) b = do

@@ -14,6 +14,7 @@ import Language.Trellys.Syntax
 import Language.Trellys.PrettyPrint(Disp(..))
 import Language.Trellys.OpSem
 
+import Language.Trellys.Diff
 import Language.Trellys.Options
 import Language.Trellys.Environment
 import Language.Trellys.Error
@@ -244,9 +245,12 @@ ta a (AAt tyA th') | unCheckable a = do
         (Just eaCoerced, Program) | isVal         -> return $ ABox eaCoerced th'
         (Just eaCoerced, Program) | th'==Program  -> return $ ABox eaCoerced th'
         (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
-        (Nothing,_) -> err [DD a, DS "should have type", DD tyA,
+        (Nothing,_) -> do
+                         tyA_diffed <- diff tyA tyA'
+                         tyA'_diffed <- diff tyA' tyA
+                         err [DD a, DS "should have type", DD tyA_diffed,
                             DS "or", DD (AAt tyA th'), 
-                            DS "but has type", DD tyA',
+                            DS "but has type", DD tyA'_diffed,
                             DS "Unable to prove", DD (ATyEq tyA' tyA)]
 
 -- the T_Box* rules
@@ -553,15 +557,17 @@ ta a tyB = do
          then do
            context <- getTys
            availableEqs <- getAvailableEqs
-           let theGoal = (Goal availableEqs (ATyEq tyA ztyB))
            pf <- prove availableEqs (tyA,ztyB)
            case pf of 
-             Nothing ->
+             Nothing -> do
+               tyA_diffed <- diff tyA ztyB
+               ztyB_diffed <- diff ztyB tyA
                err [DS "When checking term", DD a, DS "against type",
-                    DD tyB,  -- DS ("(" ++ show tyB ++ ")"),
-                    DS "the distinct type", DD tyA, -- DS ("(" ++ show tyA ++"("),
+                    DD ztyB_diffed,  -- DS ("(" ++ show tyB ++ ")"),
+                    DS "the distinct type", DD tyA_diffed, -- DS ("(" ++ show tyA ++"("),
                     DS "was inferred instead.",
-                    DS "I was unable to prove:", DD theGoal]
+                    DS "I was unable to prove:", 
+                    DD (Goal availableEqs (ATyEq tyA_diffed ztyB_diffed))]
              Just p -> do
                     -- If the two types contained unification variables they may be identical now,
                     -- in which case we do not need to insert a conversion after all.
@@ -709,7 +715,7 @@ ts (Explicitize a) = do
   do (th,ty) <- ts a
      hasInf <- hasInferreds ty
      unless hasInf $
-       err [ DS "Requested to make explicitize", DD a,
+       err [ DS "Requested to explicitize", DD a,
              DS "but there are no inferred arguments in its type", DD ty]
      (th,) <$> explicitizeInferreds ty
 

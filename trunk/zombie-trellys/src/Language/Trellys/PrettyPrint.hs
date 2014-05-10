@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeSynonymInstances,ExistentialQuantification,FlexibleInstances, UndecidableInstances,
+{-# Language TypeSynonymInstances,ExistentialQuantification,
+             FlexibleInstances, UndecidableInstances,
              ViewPatterns
  #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-name-shadowing #-}
@@ -15,6 +16,10 @@ import Control.Monad.Reader
 import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos (SourcePos, sourceName, sourceLine, sourceColumn)
 import Text.ParserCombinators.Parsec.Error (ParseError)
+import System.Posix.Terminal (queryTerminal)
+import System.Posix.IO (stdOutput)
+import System.IO.Unsafe (unsafePerformIO)
+import System.Console.ANSI
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.List (intersperse)
@@ -66,6 +71,7 @@ instance Disp AConstructorDef where
 -- level, so we could print parenthesis exactly when needed.
 data DispInfo = DI
   {
+  useTerminalHighlighting :: Bool,  -- Should we use color?
   verbose :: Bool, -- ^ should we supress some annotations to reduce clutter?
   dispAvoid :: Set AnyName -- ^ names that have already been used
   }
@@ -74,9 +80,10 @@ data DispInfo = DI
 initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
+              useTerminalHighlighting = unsafePerformIO (queryTerminal stdOutput),
               verbose = False,
 --              verbose = True,
-              dispAvoid = S.empty
+              dispAvoid = S.empty                    
          }
 
 instance LFresh (Reader DispInfo) where
@@ -580,6 +587,14 @@ instance Display ATerm where
   display (ATrustMe a) = do
     da <- display a
     return $ parens (text "TRUSTME" <+> colon <+> da)
+  display (AHighlight a) = do
+    isaTTY <- asks useTerminalHighlighting
+    da <- display a
+    if isaTTY
+      then return (text (setSGRCode [ SetColor Foreground Dull Red ])
+                     <> da 
+                     <> text (setSGRCode [ Reset ]))
+      else return da
 
 instance Display AMatch where
   display (AMatch c bnd) = 

@@ -3,7 +3,7 @@ Version: 0.0
 Description: An implementation of Trellys tracking the development and
              definition of the language.
 -- Author: Trellys Team <trellys@...>
--- Maintainer: Garrin Kimmell <kimmell@ku.edu>
+-- Maintainer: Vilhelm Sjoberg <vilhelm@cis.upenn.edu>
 Cabal-Version: >= 1.2
 Build-type: Simple
 tested-with: GHC == 7.2.1
@@ -38,7 +38,9 @@ executable trellys
                  filepath,
                  HUnit,
                  QuickCheck,
-                 bimap == 0.2.4
+                 bimap == 0.2.4,
+                 ansi-terminal >= 0.6 && <0.7,
+
   Ghc-Options:  -main-is Trellys -Wall -rtsopts
 
 
