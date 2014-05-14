@@ -81,8 +81,8 @@ initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
               useTerminalHighlighting = unsafePerformIO (queryTerminal stdOutput),
-              verbose = False,
---              verbose = True,
+--              verbose = False,
+              verbose = True,
               dispAvoid = S.empty                    
          }
 
@@ -425,7 +425,13 @@ instance Display ATerm where
   display (AUniVar v a) = do
     da <- display a
     return $ text ("?" ++ show v) <+> colon <+> da
-  display (ACumul a level) = display a
+  display (ACumul a level) = do
+    da <- display a
+    isVerbose <- asks verbose
+    if isVerbose
+      then return $ text "(cumul" <+> da 
+                      <+> text ("<: Type " ++ show level ++  ")")
+      else return da
   display (AType level) = return $ text "Type" <+> int level
   display (AUnbox a) = do
     isVerbose <- asks verbose                     

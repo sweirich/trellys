@@ -605,7 +605,8 @@ match :: (Applicative m, Monad m, Fresh m) =>
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
                       | otherwise     = return M.empty
 match vars (AUniVar _ _) (AUniVar _ _) = return M.empty
-match vars (ACumul t _) (ACumul t' _) = match vars t t'
+match vars (ACumul t _) t' = match vars t t'
+match vars t (ACumul t' _) = match vars t t'
 match vars (AType _) _ = return M.empty
 match vars (ATCon c params) (ATCon _ params') = 
   foldr M.union M.empty <$> zipWithM (match vars) params params'
@@ -1100,13 +1101,14 @@ intoFoo isFoo a typ = do
 -- Returns the coerced term and its new typ.
 -- Uses the union-find structure in the state. 
 intoArrow :: ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
-intoArrow = intoFoo isArrow
+intoArrow = intoFoo (isArrow.eraseToHead)
 
 isArrow :: ATerm -> Bool
 isArrow (AArrow _ _ _ _) = True
 isArrow _ = False
 
 -- like intoArrow, but tries to find a datatype.
+-- TODO, should also handle erased toplevel constructors.
 intoTCon :: ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
 intoTCon = intoFoo isTCon
   where isTCon :: ATerm -> Bool
@@ -1147,7 +1149,7 @@ outofArrow :: ATerm
             -> StateT ProblemState TcMonad ATerm
 outofArrow typ ifDo elseDo = do
   _ <- genEqs typ
-  cs <- classMembers typ isArrow
+  cs <- classMembers typ (isArrow.eraseToHead)
   case cs of
     [] -> lift elseDo
     ((typ'@(AArrow _  _ _ bnd'),pf) : others) -> do
@@ -1170,13 +1172,13 @@ outofArrow typ ifDo elseDo = do
 -- As a precondition, {c/x}b should be well typed.
 -- Uses the union-find structure from the state.
 injRngFor ::ATerm -> ATerm -> StateT ProblemState TcMonad () 
-injRngFor arr@(AArrow _ _ _ bnd) c = do 
+injRngFor (eraseToHead -> arr@(AArrow _ _ _ bnd)) c = do 
   _ <- genEqs arr
   _ <- genEqs c
   ((x, unembed->a), b) <- lift $ unbind bnd
-  cs <- classMembers arr isArrow
+  cs <- classMembers arr (isArrow.eraseToHead)
   forM_ cs $
-    (\(arr'@(AArrow _ _ _ bnd'), pf) -> do
+    (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pf) -> do
         ((x', unembed->a'), b') <- lift $ unbind bnd'
         pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
         let ca  = subst x c b
