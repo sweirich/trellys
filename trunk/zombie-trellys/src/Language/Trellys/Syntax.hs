@@ -321,9 +321,18 @@ data ATerm =
   | ANthEq Int ATerm
    -- the ATerm is the ascribed type
   | ATrustMe ATerm
-
   | AHighlight ATerm  --Ignored by the typechecker but used by the pretty-printer.
+
+-- Explicit terms for reflexivity, symmetry, transivitity and computational irrelevance of equations.
+-- These can all be disposed with in favour of AJoin and AConv, but having special-case terms for them make the 
+-- elaborated core expressions smaller.
+  | AReflEq ATerm
+  | ASymEq ATerm
+  | ATransEq ATerm ATerm
+  | AEraseEq ATerm
+
   
+
 {-
           -- | ATermination case
           | ATerminationCase ATerm (Bind AName (ATerm, (Bind AName ATerm)))    -- Proof

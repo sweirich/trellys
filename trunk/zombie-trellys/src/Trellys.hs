@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# OPTIONS_GHC -Wall #-}
 module Trellys where
 
 import Language.Trellys.Options
@@ -9,7 +9,6 @@ import Language.Trellys.TypeMonad (runTcMonad)
 import Language.Trellys.TypeCheck (tcModules)
 import Language.Trellys.TypeCheckCore (aTcModules)
 import Language.Trellys.OpSem
-import Language.Trellys.AOpSem
 import Language.Trellys.Environment
 import Language.Trellys.Extraction
  
@@ -23,7 +22,7 @@ import System.FilePath (splitFileName, replaceExtension)
 
 import Control.Monad
 import Control.Monad.Error (runErrorT)
-import Data.List (delete)
+
 
 main :: IO ()
 main = do
@@ -49,9 +48,10 @@ main = do
                         putStrLn $ render $ disp typeError
                         exitFailure
                Right defs -> do
+                        putStrLn "Elaboration pass successful."
+                        putStrLn "Writing elaborated terms."
+                        writeAModules prefixes defs 
                         unless (NoTypeCheckCore `elem` flags) $ do
-                          putStrLn "Elaboration pass successful. Writing elaborated terms."
-                          writeAModules prefixes defs 
                           putStrLn "Typechecking the elaborated terms."
                           result <- runTcMonad (emptyEnv (SecondPass:flags)) (aTcModules defs)
                           case  result of
@@ -85,31 +85,13 @@ main = do
                                           (cbvNSteps 100 =<< erase
                                                          =<< substDefs at))
                                case r of
-                                 Left err -> do putStrLn "Reduce Error:"
-                                                putStrLn $ render $ disp err
+                                 Left errMsg -> do putStrLn "Reduce Error:"
+                                                   putStrLn $ render $ disp errMsg
                                  Right x -> putStrLn $    (render $ disp an) 
                                                        ++ " reduced to " 
                                                        ++ (render $ disp x)
                         exitSuccess
 
-
---fixme: bring back the "Reduce" flag?
-{-
-                        if (Reduce `elem` flags)
-                           then do
-                              let eenv = concatMap makeModuleEnv defs
-                              -- print defs -- comment out for debuggging
-                              r <- runTcMonad
-                                     (emptyEnv flags)
-                                     (extendCtxs (concatMap moduleEntries defs)
-                                        (cbvNSteps 100 =<< erase
-                                                       =<< substDefs (snd $ last eenv)))
-                              case r of
-                                Left err -> do putStrLn "Reduce Error:"
-                                               putStrLn $ render $ disp err
-                                Right x -> putStrLn $ render $ disp x
-                           else return ()
--}
 
 getOptions :: [String] -> IO ([Flag], [String])
 getOptions argv =

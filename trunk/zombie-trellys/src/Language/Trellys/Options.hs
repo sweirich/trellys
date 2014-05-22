@@ -5,8 +5,7 @@ import System.Console.GetOpt
 
 -- Options handling stuff. To be determined.
 options :: [OptDescr Flag]
-options = [Option "p" ["picky equality"] (NoArg PickyEq) "use strongly typed equality",
-           Option "r" ["reduce"] (NoArg Reduce) "reduce the last term in the module",
+options = [Option "r" ["reduce"] (NoArg Reduce) "reduce the last term in the module",
            Option "L" ["lib"] (ReqArg LibDir "DIR") "look for imports in DIR (this option can be supplied multiple times)",
            Option "n" ["nocoercions"] (NoArg NoCoercions) "do not automatically infer equality proofs",
            Option ""  ["no-tc-core"] (NoArg NoTypeCheckCore) "suppress type checking the core language", 
@@ -14,8 +13,7 @@ options = [Option "p" ["picky equality"] (NoArg PickyEq) "use strongly typed equ
            Option "e" ["extraction"] (NoArg DoExtraction) "extract to OCaml code"
           ]
 
-data Flag = PickyEq
-          | NoTypeCheckCore
+data Flag = NoTypeCheckCore
           | NoCoercions
           | Reduce
           | LibDir FilePath
