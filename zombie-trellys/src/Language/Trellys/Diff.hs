@@ -34,7 +34,7 @@ diff (ATyEq a1 a2) (ATyEq b1 b2)
  = ATyEq <$> diff a1 b1 <*> diff a2 b2
 diff (ATCon d as) (ATCon d' bs) | d==d' && length as == length bs 
  = ATCon d <$> zipWithM diff as bs
-diff (ADCon d th as1 as2) (ADCon d' th' bs1 bs2) | d==d' && th==th' && map snd as2 == map snd bs2
+diff (ADCon d th as1 as2) (ADCon d' _th' bs1 bs2) | d==d'  && map snd as2 == map snd bs2
  = ADCon d th <$> zipWithM diff as1 bs1 <*> zipWithM diffFirst as2 bs2
 diff (AArrow k ex ep bnd) (AArrow k' ex' ep' bnd') | k==k' && ex==ex' && ep==ep'
  = do
@@ -42,7 +42,7 @@ diff (AArrow k ex ep bnd) (AArrow k' ex' ep' bnd') | k==k' && ex==ex' && ep==ep'
   da1 <- diff a1 b1
   da2 <- diff a2 b2
   return $ AArrow k ex ep (bind (x,embed da1) da2)
-diff (ALam th ty ep bnd) (ALam th' _ty' ep' bnd') | th==th' && ep==ep' = do
+diff (ALam th ty ep bnd) (ALam _th' _ty' ep' bnd') | ep==ep' = do
   Just (x, a, _, b) <- unbind2 bnd bnd'
   da <- diff a b
   return $ ALam th ty ep (bind x da)

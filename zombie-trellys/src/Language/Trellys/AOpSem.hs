@@ -38,15 +38,19 @@ isConvAValue a           = isPlainAValue a
 
 -- symEq A B (pAB : A = B) : B = A
 symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
-symEq a b pab = do
+symEq a b pab = return $ ASymEq pab
+{-do
   x <- fresh $ string2Name "x"
   return $ AConv (AJoin a 0 a 0 CBV) (ACong [pab] (bind [x] $ ATyEq (AVar x) a) (ATyEq (ATyEq a a) (ATyEq b a)))  
+-}
 
 -- transEq A C (pAB : A = B) (pBC : B = C) : A = C
 transEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
-transEq a b c pab pbc = do
+transEq a b c pab pbc = return $ ATransEq pab pbc
+{- do
   x <- fresh $ string2Name "x"
   return $ AConv pab (ACong [pbc] (bind [x] $ ATyEq a (AVar x)) (ATyEq (ATyEq a b) (ATyEq a c)))  
+-}
 
 unbind2M :: (MonadPlus m, Fresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
          => GenBind order card p1 t1
@@ -109,7 +113,7 @@ astep (AApp eps a b ty) = do
                         --liftIO $ putStrLn . render . disp $ [DS "About to try to step", DD (AConv funv p),
                         --                                     DS "applied to", DD b]
                         (_, ATyEq (AArrow si srcEx srcEps srcTyBnd)
-                                  (AArrow ri resEx resEps resTyBnd)) <- aTs p
+                                  (AArrow ri resEx resEps resTyBnd)) <- getType p
                         guard $ si == ri                                           
                         guard $ srcEps == resEps
                         do -- Scoping
@@ -258,6 +262,11 @@ astep (ANthEq _ _) = return Nothing
 astep (ATrustMe _) = return Nothing
 
 astep (AHighlight a) = astep a
+
+astep (AReflEq _) = return Nothing
+astep (ASymEq _) = return Nothing
+astep (ATransEq _ _) = return Nothing
+astep (AEraseEq _) = return Nothing
 
 -- Beta-reduce an application of a lam, rec, or ind.
 stepFun :: ATerm -> ATerm -> MaybeT TcMonad ATerm

@@ -601,6 +601,19 @@ instance Display ATerm where
                      <> da 
                      <> text (setSGRCode [ Reset ]))
       else return da
+  display (AReflEq a) = do
+     da <- display a
+     return $ text "REFLEQ" <+> aWraparg Runtime a da
+  display (ASymEq a) = do 
+     da <- display a 
+     return $ text "SYMEQ" <+> aWraparg Runtime a da
+  display (ATransEq a b) = do 
+     da <- display a 
+     db <- display b
+     return $ text "TRANSEQ" <+> aWraparg Runtime a da <+> aWraparg Runtime b db
+  display (AEraseEq a) = do
+     da <- display a
+     return $ text "ERASEEQ" <+> aWraparg Runtime a da
 
 instance Display AMatch where
   display (AMatch c bnd) = 

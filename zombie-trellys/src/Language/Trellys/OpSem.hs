@@ -78,6 +78,11 @@ erase (AAtEq _) = return EJoin
 erase (ANthEq _ _) = return EJoin
 erase (ATrustMe _) = return ETrustMe
 erase (AHighlight a) = erase a
+erase (AReflEq a) = return EJoin
+erase (ASymEq a) = return EJoin
+erase (ATransEq a b) = return EJoin
+erase (AEraseEq a) = return EJoin
+
 
 eraseMatch  :: (Fresh m, Applicative m) => AMatch -> m EMatch
 eraseMatch (AMatch c bnd) = do

@@ -6,28 +6,29 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
-  (underHypotheses, prove, solveConstraints, uneraseEq, smartSteps, 
-   intoArrow, intoTCon, outofArrow, outofTyEq, injRngFor)
+  (underHypotheses, prove, solveConstraints, uneraseEq, -- smartSteps, 
+   intoArrow, intoTCon, outofArrow, outofTyEq, injRngFor,
+   saturate)
 where
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
-                                   extendCtx,
-                                   warn, err, 
+                                   extendCtx, extendCtxs,
+                                   err, 
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
-import Language.Trellys.TypeCheckCore (aGetTh, getType)
+import Language.Trellys.TypeCheckCore (getType, aTs)
 import Language.Trellys.CongruenceClosure
 
 import Language.Trellys.GenericBind hiding (avoid)
 
 import Control.Applicative 
-import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell )
+import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
 import Control.Monad.State.Strict
-import Control.Monad.Error.Class
+import Control.Monad.Error (catchError)
 --import Data.Foldable (foldrM)
 --mport Data.List (partition, sortBy)
 import Data.Maybe (fromJust,isNothing)
@@ -320,11 +321,19 @@ chainProof' tyA tyB p = do
 simplProof ::  AnnotProof -> AnnotProof
 simplProof p@(AnnAssum _ _) = p
 simplProof p@(AnnRefl _) = p
-simplProof (AnnTrans tyA tyB tyC p q) = AnnTrans tyA tyB tyC (simplProof p) (simplProof q)
+simplProof (AnnTrans tyA tyB tyC p q) =
+ let p' = simplProof p
+     q' = simplProof q
+ in case (p',q') of 
+      (AnnRefl _, AnnRefl _) -> AnnRefl tyA
+      (AnnRefl _, _) -> q'
+      (_, AnnRefl _) -> p'
+      _ -> AnnTrans tyA tyB tyC p' q'
 simplProof (AnnInj l i p) = AnnInj l i (simplProof p)
+simplProof (AnnCong template ps tyA tyB) | tyA `aeq` tyB = AnnRefl tyA
 simplProof (AnnCong template ps tyA tyB) =  
- let (template', ps') = simplCong (template,[]) ps 
- in (AnnCong template' ps' tyA tyB)
+ let (template', ps') = simplCong (template,[]) (map (\(x,ty1,ty2,p) -> (x,ty1,ty2,simplProof p)) ps)
+ in  (AnnCong template' ps' tyA tyB)
 --where 
 simplCong :: (ATerm, [(AName,ATerm,ATerm, AnnotProof)])
           -> [(AName,ATerm,ATerm,AnnotProof)] 
@@ -338,82 +347,6 @@ simplCong (t, acc) ((x,tyA,tyB,AnnCong subT subPs _ _):ps) =
    simplCong (subst x subT t, acc) (subPs++ps)
 simplCong (t, acc) (p:ps) = simplCong (t, p:acc) ps
 
--- ************* TERM GENERATION PHASE
--- Final pass: now we can generate the Trellys Core proof terms.
-
-{-
-Here is some experimental code to avoid exploding the proof size due to lack of sharing.
-But it doesn't seem to work very well, so not using it for now.
-
-
---- Here is an utility to help introduce let-bindings for core expressions which are 
--- used more than ones.
-
-data CachedTerm = CachedTerm {
-                    cachedName :: AName,      --The name we made for it.
-                    cachedVal :: ATerm,
-                    cachedUsageCount :: Int,  --The number of times it's been used
-                    cachedLevel :: Int        --What order the bindings should be introduced in
-                  }
-
-type CacheT key m a = StateT (Map key CachedTerm) m a
-
-cached :: (Fresh m, Ord key) => key -> ATerm -> CacheT key m ATerm
-cached k a = do
-  cache <- get
-  case M.lookup k cache of 
-    Nothing ->    do
-                    x <- fresh $ string2Name "pf"
-                    put (M.insert k (CachedTerm x a 1 (M.size cache)) cache)
-                    return $ AVar x
-    Just entry -> do
-                    put (M.insert k entry{ cachedUsageCount = cachedUsageCount entry + 1 } cache)
-                    return $ AVar (cachedName entry)
-
-runCacheT :: CacheT key TcMonad ATerm -> TcMonad ATerm
-runCacheT ca = do
-  (a, M.elems -> entries) <- runStateT ca M.empty
-  let (workhorses, oneoffs) = partition (\e -> cachedUsageCount e > 1) 
-                                $ sortBy (compare `on` cachedLevel) entries
-  let inlineOneoffs c = foldr (\e b -> subst (cachedName e) (cachedVal e) b) c oneoffs
-  inExtendedContext (map (\e -> e{ cachedVal = inlineOneoffs (cachedVal e)}) workhorses)
-    $  inlineOneoffs a
- where inExtendedContext [] b = return b
-       inExtendedContext (e:es) b = do
-          (th,ty) <- getType (cachedVal e)
-          y <- fresh $ string2Name "_"
-          b' <- extendCtx (ASig (cachedName e) th ty) $ inExtendedContext es b
-          return $ ALet Runtime (bind (cachedName e, y, embed (cachedVal e)) b') (th,ty)
-
-
-genProofTerm' :: AnnotProof -> CacheT (ATerm,ATerm) TcMonad ATerm
-genProofTerm' (AnnAssum NotSwapped (Just a,tyA,tyB)) = return $ a
-genProofTerm' (AnnAssum Swapped (Just a,tyA,tyB)) = symEq tyA tyB a
-genProofTerm' (AnnAssum NotSwapped (Nothing,tyA,tyB)) = return $ AJoin tyA 0 tyB 0 CBV
-genProofTerm' (AnnAssum Swapped    (Nothing,tyA,tyB)) = return $ AJoin tyB 0 tyA 0 CBV
-genProofTerm' (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
-genProofTerm' (AnnCong template ps tyA tyB) = do
-  subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm' p)
-                 ps                                            
-  cached (tyA,tyB) $
-         (AConv (AJoin tyA 0 tyA 0 CBV)
-                subpfs
-                (bind (map (\(x,_,_,_) -> x) ps) (ATyEq tyA template))
-                (ATyEq tyA tyB))
-genProofTerm' (AnnTrans tyA tyB tyC p q) = do
-  p' <- genProofTerm' p
-  q' <- genProofTerm' q
-  cached (tyA,tyC) =<< transEq tyA tyB tyC p' q'
-genProofTerm' (AnnInj l i p) = do
-  p' <- genProofTerm' p
-  case l of 
-    (ATCon _ _) -> return $ ANthEq i p'
-    (AAt _ _)   -> return $ AAtEq p'
-    _           -> error "internal error: unknown type of injectivity"
-
-genProofTerm :: AnnotProof -> TcMonad ATerm
-genProofTerm p = runCacheT (genProofTerm' p)
--}
 
 --genProofTerm :: (Applicative m, Fresh m) => AnnotProof -> m ATerm
 genProofTerm :: AnnotProof -> TcMonad ATerm
@@ -423,7 +356,7 @@ genProofTerm (AnnAssum NotSwapped (a,tyC,p,tyA,tyB)) = do
   return $ AConv a p'
 genProofTerm (AnnAssum Swapped h@(_,_,_,tyA,tyB)) =
  symEq tyA tyB =<< genProofTerm (AnnAssum NotSwapped h)
-genProofTerm (AnnRefl tyA) =   return (AJoin tyA 0 tyA 0 CBV)
+genProofTerm (AnnRefl tyA) =   return (AReflEq tyA)
 genProofTerm (AnnCong template ps tyA tyB) = do
   subpfs <- mapM (\(x,subA,subB,p) -> genProofTerm p)
                  ps
@@ -451,37 +384,37 @@ genProofTerm (AnnInj l i p) = do
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
 transEq :: Fresh m => ATerm -> ATerm -> ATerm -> ATerm -> ATerm -> m ATerm
-transEq a b c pab pbc = do
+transEq a b c pab pbc = return $ ATransEq pab pbc
+{- do
   x <- fresh $ string2Name "x"
   return $ AConv pab (ACong [pbc] (bind [x] $ ATyEq a (AVar x)) (ATyEq (ATyEq a b) (ATyEq a c)))  
-
+-}
 
 -- From (tyA=tyB) conclude (tyA=tyB), but in a way that only uses the
 -- hypothesis in an erased position.
 uneraseEq :: (Fresh m,Applicative m) => ATerm -> ATerm -> ATerm -> m ATerm
 uneraseEq tyA tyB p = do
+  -- As an optimization, if the proof term already has no free unerased variables we can just use it as-is.
+  pErased <- erase p
+  if S.null (fv pErased :: Set EName)
+    then return p
+    else return $ AEraseEq p
+{- do
   x <- fresh (string2Name "x")
   -- As an optimization, if the proof term already has no free unerased variables we can just use it as-is.
   pErased <- erase p
   if S.null (fv pErased :: Set EName)
     then return p
     else return $ AConv (AJoin tyA 0 tyA 0 CBV) (ACong [p] (bind [x] (ATyEq tyA (AVar x))) (ATyEq (ATyEq tyA tyA) (ATyEq tyA tyB)))
+-}
 
 -- From (tyA=tyB) conlude (tyB=tyA).
 symEq :: Fresh m => ATerm -> ATerm -> ATerm -> m ATerm
-symEq a b pab = do
+symEq a b pab = return $ ASymEq pab
+{- do
   x <- fresh $ string2Name "x"
   return $ AConv (AJoin a 0 a 0 CBV) (ACong [pab] (bind [x] $ ATyEq (AVar x) a) (ATyEq (ATyEq a a) (ATyEq b a)))  
-
--- From (tyA=tyB), conclude [tyA/x]template = [tyB/x]template
--- For simplicity this function doesn't handle n-ary conv or erased subterms.
-congTerm :: (ATerm,ATerm,ATerm) -> AName -> ATerm -> TcMonad ATerm
-congTerm (tyA,tyB,pf) x template = do
-  y <- fresh $ string2Name "y"  --need a fresh var in case tyB == (AVar hole)
-  return (ACong [pf]
-                (bind [y] (subst x (AVar y) template))
-                (ATyEq (subst x tyA template)
-                       (subst x tyB template)))
+-}
 
 -- 'decompose False avoid t' returns a new term 's' where each
 -- immediate subterm of 't' that does not mention any of the variables
@@ -583,6 +516,16 @@ decompose _ avoid (ANthEq i a) =
 decompose _ avoid (ATrustMe t) = 
   return $ ATrustMe canonical
 decompose isSubterm avoid (AHighlight a) = decompose isSubterm avoid a 
+decompose _ avoid (AReflEq _) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ASymEq _) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (ATransEq _ _) =
+  return $ AJoin canonical canonical canonical canonical canonical
+decompose _ avoid (AEraseEq _) =
+  return $ AJoin canonical canonical canonical canonical canonical
+
+
 
 decomposeMatch :: (Monad m, Applicative m, Fresh m) => 
                   Set AName -> AMatch -> WriterT [(AName,ATerm)] m AMatch
@@ -675,6 +618,10 @@ isJoinVariant (ADomEq _) = True
 isJoinVariant (ARanEq _ _ _) = True
 isJoinVariant (AAtEq _) = True
 isJoinVariant (ANthEq _ _) = True
+isJoinVariant (AReflEq _) = True
+isJoinVariant (ASymEq _) = True
+isJoinVariant (ATransEq _ _) = True
+isJoinVariant (AEraseEq  _) = True
 isJoinVariant _ = False
 
 -- Is a some term which erases to just "ord"?
@@ -695,10 +642,10 @@ mUnion x y = M.union <$> x <*> y
 -- Note that erased subterms are not sent on to the congruence closure algorithm.
 genEqs :: ATerm -> StateT ProblemState TcMonad Constant
 genEqs t = do
-  (_,tTy) <- lift $ getType t
   a <- recordName t
   case (eraseToHead t) of 
     AUniVar x _ -> do
+                    (_,tTy) <- lift $ getType t
                     aTy <- case (eraseToHead tTy) of
                              (AType i) -> recordName tTy
                              _         -> genEqs tTy
@@ -778,8 +725,6 @@ solveConstraints hyps = do
    cs'  <- filterM (\(ShouldHaveType x _) -> isNothing <$> lookupUniVar x) cs
    cs'' <- mapM (\(ShouldHaveType x ty) -> ShouldHaveType x <$> zonkTerm ty) cs'
    when (not (null cs'')) $ do
-     --liftIO $ putStrLn ("In the context\n" ++
-     --                    render (nest 4 (disp hyps)))
      st <- flip execStateT newState $ do
             mapM_ processHyp hyps
             mapM_ (\(ShouldHaveType x ty) -> genEqs (AUniVar x ty))
@@ -791,11 +736,6 @@ solveConstraints hyps = do
      clearConstraints
 
 -------------------------------------------------------
-
--- A CBV-evaluation context. The name marks the hole, e.g.
---   CbvContext x (AApp (AVar x) (AVar y))
--- represents the context ([] y).
-data CbvContext = CbvContext AName ATerm
 
 data ValueFlavour = AnyValue | FunctionValue | ConstructorValue
   deriving (Show,Eq) 
@@ -816,8 +756,8 @@ isConstructorValue (eraseToHead -> (ADCon c th params args)) =
   all (isAnyValue . fst) args
 isConstructorValue _ = False
 
--- The use of unsafeUnbind is a bit hacky, but I think it's safe if we only
--- case about the constructor of the term, like here.
+-- The use of unsafeUnbind is safe here, because we only case about the
+-- top-level constructor of the term.
 isAnyValue :: ATerm -> Bool
 isAnyValue (ACumul a lvl) = isAnyValue a
 isAnyValue (AType lvl) = True
@@ -852,86 +792,61 @@ isAnyValue (AAtEq _) = True
 isAnyValue (ANthEq _ _) = True
 isAnyValue (ATrustMe _) = True
 isAnyValue (AHighlight a) = isAnyValue a
+isAnyValue (AReflEq _) = True
+isAnyValue (ASymEq _) = True
+isAnyValue (ATransEq _ _) = True
+isAnyValue (AEraseEq _) = True
 
-{- Split it a term into a CBV evaluation context and a subterm
-   which it is "stuck" on.  Also a predicate describing what things can
-   be plugged into the hole to let the expression make progress.
-   Return None if the term is a value, or if it can already step. -}
-aCbvContext :: ATerm -> TcMonad (Maybe (CbvContext, ValueFlavour, ATerm))
-aCbvContext (ACumul a lvl) = inCtx (\hole -> ACumul hole lvl) <$> aCbvContext a
--- fixme: think about the dcon case some more. 
---  The problem is that if a dcon is stuck on a single non-value argument, and we use 
---  equational reasoning to replace that arg with a value, then the entire expression
---  is a value, so it still doesn't step, which violates the specification of aCbvContext.
-aCbvContext (ADCon c th params args) = return Nothing 
--- aCbvContext (ADCon c th params args) = go [] args
---   where go _ [] = return Nothing
---         go prefix ((a,ep) :args) | isAnyValue a || ep==Erased = go ((a,ep):prefix) args
---                                  | otherwise = do
---            hole <- fresh (string2Name "hole")
---            return $ Just (CbvContext hole (ADCon c th params (reverse prefix ++ [(AVar hole,Runtime)] ++ args)),
---                           AnyValue,
---                           a)
-aCbvContext (AApp Erased a b ty) = inCtx (\hole -> AApp Erased hole b ty) <$> aCbvContext a
-aCbvContext (AApp Runtime a b ty) | not (isFunctionValue a) = do
-  hole <- fresh (string2Name "hole")
-  return $ Just (CbvContext hole (AApp Runtime (AVar hole) b ty), FunctionValue, a) 
-aCbvContext (AApp Runtime a b ty) | isFunctionValue a && not (isAnyValue b) = do
-  hole <- fresh (string2Name "hole")
-  return $ Just (CbvContext hole (AApp Runtime a (AVar hole) ty), AnyValue, b)
-aCbvContext (AApp Runtime a b ty) | otherwise = return Nothing
-aCbvContext (ALet Erased bnd ty) = do
-  ((x,xeq,unembed->a), b) <- unbind bnd
-  inCtx (\hole -> ALet Erased (bind (x,xeq,embed a) hole) ty) <$> aCbvContext b
-aCbvContext (ALet Runtime bnd ty) = do
-  ((x,xeq,unembed->a),b) <- unbind bnd
-  if (isAnyValue a)
-   then return Nothing
-   else do
-     hole <- fresh (string2Name "hole")
-     return $ Just (CbvContext hole (ALet Runtime (bind (x,xeq,embed (AVar hole)) b) ty),
-                    AnyValue,
-                    a)
-aCbvContext (ACase a bnd ty) | not (isConstructorValue a) = do
-  hole <- fresh (string2Name "hole")
-  return $ Just (CbvContext hole (ACase (AVar hole) bnd ty), ConstructorValue, a)
-aCbvContext (ACase a bnd ty) | otherwise = return Nothing
-aCbvContext (ABox a th) = inCtx (\hole -> ABox hole th) <$> aCbvContext a
-aCbvContext (AConv a pf) = inCtx (\hole -> AConv hole pf) <$> aCbvContext a
--- The rest of the cases are already values:
-aCbvContext (ACong _ _ _) = return Nothing
-aCbvContext (AUniVar x ty) = return Nothing
-aCbvContext (AVar _) = return Nothing
-aCbvContext (AType _) = return Nothing
-aCbvContext (ATCon _ _) = return Nothing
-aCbvContext (AArrow _ _ _ _) = return Nothing
-aCbvContext (ALam _ _ _ _) = return Nothing
-aCbvContext (AAt _ _) = return Nothing
-aCbvContext (AUnbox _) = return Nothing --already a value.
-aCbvContext (AAbort _) = return Nothing
-aCbvContext (ATyEq _ _) = return Nothing
-aCbvContext (AJoin _ _ _ _ _) = return Nothing
-aCbvContext (AInjDCon _ _) = return Nothing
-aCbvContext (AContra _ _) = return Nothing
-aCbvContext (ASmaller _ _) = return Nothing
-aCbvContext (AOrdAx _ _) = return Nothing
-aCbvContext (AOrdTrans _ _) = return Nothing
-aCbvContext (AInd _ _ _) = return Nothing
-aCbvContext (ARec _ _ _) = return Nothing
-aCbvContext (ADomEq _) = return Nothing
-aCbvContext (ARanEq _ _ _) = return Nothing
-aCbvContext (AAtEq _) = return Nothing
-aCbvContext (ANthEq _ _) = return Nothing
-aCbvContext (ATrustMe _) = return Nothing
-aCbvContext (AHighlight a) = aCbvContext a
+-- Invent a name for a subexpression, and record it.
+-- There is no need to name subexpressions which already are values of the right flavour.
+nameActivePos :: (Fresh m) => ValueFlavour -> ATerm -> WriterT [(AName, (ATerm, ValueFlavour))] m ATerm
+nameActivePos flavour a | valueFlavour flavour a = return a
+nameActivePos flavour a = do 
+  x <- fresh $ string2Name "hole"
+  tell [(x, (a, flavour))]
+  return (AVar x)
 
--- Helper function for aCbvContext
-inCtx :: (ATerm -> ATerm) -> (Maybe (CbvContext, a, b))
-                          -> (Maybe (CbvContext, a, b))
-inCtx ctx Nothing = Nothing
-inCtx ctx (Just (CbvContext hole ctx', flavour, subterm)) =
-           Just (CbvContext hole (ctx ctx'), flavour, subterm)
-
+-- Invent names for subexpressions in active positions which are not already suitable values.
+--   If activePos a = (a', s)
+--   then
+--      subst (map fst . M.toList s) a'  == a
+--   and if each variable in dom(s) is replaced with a value of the
+--   correct flavour results in a non-stuck expression. (I.e. it is
+--   either a value or it can step).
+--
+--   The naming is done "shallowly", e.g. given an application (a b c
+--   d) we will just mark the subexpressions (a b c) and d. The main
+--   algorithm will go on to recursively investigate how (a b c) can
+--   step.
+activePositions :: ATerm -> TcMonad (ATerm, [(AName, (ATerm, ValueFlavour))])
+activePositions t = runWriterT (go t)
+   where go :: ATerm -> WriterT  [(AName, (ATerm, ValueFlavour))] TcMonad ATerm
+         go (ACumul a lvl) = ACumul <$> go a <*> pure lvl
+         go (ADCon c th params args) = ADCon c th params <$> mapM (\(a,ep) -> (,) <$> (nameActivePos AnyValue a) <*> pure ep) args
+         go (AApp Erased a b ty)  = AApp Erased <$> go a <*> pure b <*> pure ty
+         go (AApp Runtime a b ty) = AApp Runtime <$> nameActivePos FunctionValue a <*> nameActivePos AnyValue b <*> pure ty
+         go (ALet ep bnd ty) = do
+          ((x,xeq,unembed->a), b) <- unbind bnd
+          a' <- nameActivePos AnyValue a
+          return $ ALet ep (bind (x,xeq, embed a') b) ty
+-- Going under lets to find active positions is problematic because it changes the context, which would require extra
+-- work in saturate.
+{-
+         go (ALet Erased bnd ty) = do
+           ((x,xeq,unembed->a), b) <- unbind bnd
+           ALet Erased <$> (bind (x,xeq, embed a) <$> go b) <*> pure ty
+         go (ALet Runtime bnd ty) = do
+           ((x,xeq,unembed->a),b) <- unbind bnd
+           a' <- nameActivePos AnyValue a
+           b' <- go b
+           return $ ALet Erased (bind (x,xeq, embed a') b') ty
+-}
+         go (ACase a bnd ty) =
+             ACase <$> nameActivePos ConstructorValue a <*> pure bnd <*> pure ty
+         go (ABox a th) = ABox <$> go a <*> pure th
+         go (AConv a pf) = AConv <$> go a <*> pure pf
+         -- The rest of the cases are already values:
+         go a = return a
 
 -- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
@@ -939,6 +854,9 @@ instance Disp [(Theta, ATerm, ATerm)] where
     vcat $ map (\(th,a,b) ->
                     disp a <+> colon <+> disp b {- <+> text ("(" ++ show b ++")") -})
                hyps
+
+instance Disp [ATerm] where 
+  disp = hsep . map disp
 
 instance Disp EqConstConst where
   disp (EqConstConst a b) = text (show a) <+> text "=" <+> text (show b)
@@ -949,39 +867,17 @@ instance Disp (EqBranchConst) where
 instance Disp (Proof, Equation) where 
   disp (p, eq) = disp p <+> text ":" <+> disp eq
 
--- In a given context, try to make a step n times, using equational reasoning
--- if it gets stuck.
--- Returns (a', p : a = a') where a' the term that it stepped to.
-smartSteps ::  [(Theta,ATerm,ATerm)] -> ATerm -> Int -> TcMonad (ATerm, ATerm)
-smartSteps hyps b m = do
-  flip evalStateT newState $ do 
-    mapM_ processHyp hyps
-    steps b m
- where steps :: ATerm -> Int -> StateT ProblemState TcMonad (ATerm,ATerm)
-       steps a 0 = do
-          --liftIO $ putStrLn.render.disp $ [DS "Out of gas, returning", DD a]
-          return $ (a, AJoin a 0 a 0 CBV)
-       steps a n = do
-          ma' <- smartStep a
-          case ma' of
-            Nothing -> return $ (a, AJoin a 0 a 0 CBV)
-            Just (a', p) -> do
-                             --liftIO $ putStrLn.render.disp $ [DS "stepped from", DD a, DS "to", DD a' ]
-                             (a'',q) <- steps a' (n-1)
-                             pq <- lift $ transEq a a' a'' p q
-                             return (a'', pq)
-
-
+-- A version of BM.! which gives a helpful error message (to make debugging easier).
 bmlook ::  Bimap ATerm Constant -> ATerm -> Constant
 bmlook m x = 
   if BM.member x m
    then m BM.! x
-   else error (render (disp x) ++ "is not a member of the map")
+   else error (render (disp x) ++ " is not a member of the map")
 
 -- Given an expression a, find every expression which is CC-equivalent to a and satisfies predi. 
 -- Also returns proofs that they are equal. 
 -- Uses the union-find structure of the problem state. 
-classMembers :: ATerm -> (ATerm -> Bool) -> StateT ProblemState TcMonad [(ATerm, ATerm)]
+classMembers :: ATerm -> (ATerm -> Bool) -> StateT ProblemState TcMonad [(ATerm, TcMonad ATerm)]
 classMembers a predi = do
   names <- gets naming
   candidates <- classMembersExplain (bmlook names a)
@@ -991,9 +887,9 @@ classMembers a predi = do
               let a' = (names BM.!> c),
               predi a']
   mapM (\(a',p) -> do
-           -- smartStep and intoArrow will only use one of the list values, 
-           -- so ideally we want this to be a lazy thunk (not sure if it is right now).
-           pf <- lift $ (genProofTerm 
+           -- smartStep and intoArrow will only use one of the list values, and saturate
+           -- does not use the proof terms at all, so we want this to be a lazy thunk.
+           let pf = (genProofTerm 
                          <=< return . simplProof
                          <=< chainProof' a a'
                          <=< fuseProof 
@@ -1003,83 +899,94 @@ classMembers a predi = do
        cs
 
 
--- Try to step a once, returning Nothing if it is really stuck,
--- or Just (a', pf : a = a').
--- Uses the union-find structure of the problem state.
-smartStep :: ATerm -> StateT ProblemState TcMonad (Maybe (ATerm,ATerm))
-smartStep a = do
-  --liftIO . putStrLn $ "About to step \n" ++ (render . disp $ a) -- ++ "\ni.e.\n" ++ show a
-  -- _ <- lift $ aTs a 
-  -- liftIO . putStrLn $ "It typechecks, so far"
-  _ <- genEqs a
-  maybeCtx <- lift $ aCbvContext a
-  case maybeCtx of
-    Just (CbvContext hole ctx, flavour, b) -> do
-       -- liftIO . putStrLn $ "The active subterm is " ++ (render . disp $ b)
-       cs <- classMembers b (valueFlavour flavour)
-       case cs of 
-         (b',pf):_ -> do 
-           let a' = subst hole b' ctx
-           (do 
-               _ <- lift $ getType a'
-               cong_pf <- lift $ congTerm (b, b', pf) hole ctx
-               -- (liftIO . putStrLn $ "Stepped by existing equality to " ++ (render . disp $ a'))
-               return $ Just (a', cong_pf))
-             `catchError`
-               (\ _ -> do 
-                  warn [DS "unfold: the term", DD a, DS "is stuck on the subexpression", DD b,
-                        DS "and using an equality proof to change the subterm to", DD b',
-                        DS "would create an ill-typed term"]
-                  return Nothing)                          
-         [] -> lift $ do
-                       th <- aGetTh b
-                       if (flavour == AnyValue && th == Logic)
-                         then Just <$> smartStepLet (CbvContext hole ctx) b
-                         else dumbStep a
-    Nothing -> lift $ dumbStep a
+{-
+  TODO: maybe we should also keep track of terms which have already been explored, to avoid redundant work?
+  I don't know how big an issue that would be in practice. 
+-}
+saturate1 :: Int -> ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) ()
+saturate1 0 a = return ()
+saturate1 fuel a = do
+  _ <-  lift $ genEqs a
+  (context, subexps) <- lift . lift $ activePositions a
+  -- First process all the subexpressions.
+  forM_ subexps (\(x, (b,_)) -> saturate1 (fuel-1) b)
+  -- For each active position, see if we can find suitable values.
+  subexps' <- mapM 
+                -- We throw away the proof that they are equal (the second component) of the pair.
+                -- The main elaboration pass will construct a new one later.
+                (\(x, (b, flavour)) -> do
+                                         (bTh,bTy) <- getTypeUnderUnfolds b
+                                         --Todo: an alternative would be to look for terms with CC-equivalent types,
+                                         -- not just strictly equal. But let's first see if this is expressive enough.
+                                         members <- map fst <$> (filterM (\(c,_) -> do (cTh,cTy) <- getTypeUnderUnfolds c
+                                                                                       isEq <- aeq <$> erase cTy <*> erase bTy
+                                                                                       return $ cTh <= bTh && isEq)
+                                                                         =<< lift (classMembers b  (valueFlavour flavour)))
+                                         if null members && flavour == AnyValue && bTh == Logic
+                                           then do
+                                             -- If the term is logical and any value will do, but there is no such value,
+                                             -- then we can create one by introducing an erased let which names the subexpression.
+                                             y <- fresh $ string2Name "namedSubexp"
+                                             modify ((y, bTy, b):)
+                                             lift $ addEquation b (AVar y)
+                                             return [(x, AVar y)]
+                                           else 
+                                             return (map (x,) members))                                           
+                subexps
+  -- Then for every combination of values in the active positions, see if the term steps.
+  forM_ (choose subexps') $ \vals -> do
+                               let term = substs vals context
+                               -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
+                               welltyped <- (do _ <- aTsUnderUnfolds term; return True) `catchError` (\ _ -> return False)
+                               when welltyped $ do
+--                               do
+                                 mterm' <- lift . lift $ astep term
+                                 case mterm' of
+                                   Nothing -> return ()
+                                   Just term' -> do 
+                                                    y <- fresh $ string2Name "unfolds"
+                                                    isEq <- aeq <$> erase term <*> erase term'
+                                                    let proof = if isEq 
+                                                                  then  AJoin term 0 term 0 CBV
+                                                                  else  AJoin term 1 term' 0 CBV
+                                                    modify ((y, ATyEq term term', proof):)
+                                                    lift $ addEquation term term'
+                                                    saturate1 (fuel-1) term'
 
--- Cleverly introduce an erased binding to allow a term to step when it is stuck 
--- because of the value-restriction for beta-reduction.
---   smartstep ctx b
--- steps the term ctx[b] , which is stuck on the non-value b.
-smartStepLet :: CbvContext -> ATerm -> TcMonad (ATerm, ATerm)
-smartStepLet (CbvContext hole a) b = do
-  -- liftIO . putStrLn $ "About to smartStepLet the term\n" ++ render (nest 2 (disp a))
-  --                     ++ "\nby replacing the subterm\n" ++ render (nest 2 (disp b))
+saturate :: [(Theta,ATerm,ATerm)] -> Int -> ATerm -> TcMonad (Set (AName,ATerm,ATerm))
+saturate hyps fuel a = 
+  flip evalStateT newState $ do
+    mapM_ processHyp hyps
+    S.fromList <$> execStateT (saturate1 fuel a) []
 
-  hole_eq <- fresh $ string2Name "hole_eq"
-  (Just (a', pf_a_a')) <- dumbStep a  --This should always succeed, or aCbvContext lied to us.
-  
-  hole_eq_symm <- symEq (AVar hole) b (AVar hole_eq)
-  pf_ba_a <- congTerm (b, AVar hole, hole_eq_symm) hole a
-  pf_a'_ba' <- congTerm (AVar hole, b, AVar hole_eq) hole a'
-  pf_a_ba'  <- transEq a a' (subst hole b a') pf_a_a' pf_a'_ba'
-  pf_ba_ba' <- transEq (subst hole b a) a (subst hole b a') pf_ba_a pf_a_ba'
 
-  -- (liftIO . putStrLn $ "Stepped by new equality to " ++ (render . disp $ subst hole b a'))
+-- Enumerate all ways to choose exactly one element from each list.
+choose :: [[a]] -> [[a]]
+choose (xs : xss) =  [ y : ys | y <- xs, ys <- choose xss ]
+choose [] = [[]]
+ 
+addEquation :: ATerm -> ATerm -> StateT ProblemState TcMonad ()
+addEquation a b = do
+  ca <- genEqs =<< (lift (zonkTerm a))
+  cb <- genEqs =<< (lift (zonkTerm b))
+  -- This is called from saturate, but then the congruence closure state is thrown away and
+  --  the main typechecker will reconstruct it from scratch (this is a bit hacky, but hey).
+  --  So we don't need to supply a real proof term at this point.
+  let proof = RawAssumption (error "internal error: addEquation proof term forced", RawRefl)
+  propagate [(proof, Left (EqConstConst ca cb))]
 
-  return (subst hole b a',
-          ALet Erased 
-               (bind (hole, hole_eq, embed b) pf_ba_ba')
-               (Logic, ATyEq (subst hole b a) (subst hole b a')))
 
--- Try to step a once, returning Nothing if it is really stuck, or 
--- Just (a', pf : a = a').
--- Uses just the operational semantics, not equational reasoning
-dumbStep :: ATerm -> TcMonad (Maybe (ATerm,ATerm))
-dumbStep a = do
-  --(liftIO . putStrLn $ "Trying to dumb-step " ++ (render . disp $  a))
-  ma' <- astep a
-  case ma' of
-    Nothing -> return Nothing
-    Just a' -> do
-      --Sometimes astep takes an "extra" step (due to cast-shuffling).
-      ea  <- erase a
-      ea' <- erase a'
-      --(liftIO . putStrLn $ "Dumb step to " ++ (render . disp $  a'))
-      if (ea `aeq` ea')
-        then return $ Just (a', AJoin a 0 a 0 CBV)
-        else return $ Just (a', AJoin a 1 a' 0 CBV)
+-- In the implementation of saturate, we need to typecheck terms in
+-- the extended context because the term may contain namedSubexp's.
+getTypeUnderUnfolds :: ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) (Theta, ATerm)
+getTypeUnderUnfolds a = do
+  ctx <- get
+  lift . lift $ extendCtxs (map (\(y,ty,_) -> ASig y Logic ty) ctx) $ getType a
+
+aTsUnderUnfolds :: ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) (Theta, ATerm)
+aTsUnderUnfolds a = do
+  ctx <- get
+  lift . lift $ extendCtxs (map (\(y,ty,_) -> ASig y Logic ty) ctx) $ aTs a
 
 --See intoArrow for the prototypical use case. 
 intoFoo :: (ATerm->Bool) -> ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
@@ -1092,9 +999,11 @@ intoFoo isFoo a typ = do
   cs <- classMembers typ isFoo
   case cs of
     [] -> return Nothing
-    ((typ',pf) : _) -> if typ' `aeq` typ
-                         then return $ Just (a, typ)
-                         else return $ Just (AConv a pf, typ')
+    ((typ',pfThunk) : _) -> if typ' `aeq` typ
+                             then return $ Just (a, typ)
+                             else do
+                                    pf <- lift pfThunk 
+                                    return $ Just (AConv a pf, typ')
 
 -- Take an arbitrary term 'a' of type 'typ'. Try to find an arrow type 
 --  which is equal to 'typ' and apply a coercion to 'a' to make it have that type.
@@ -1127,11 +1036,12 @@ outofFoo isFoo typ ifDo elseDo = do
   cs <- classMembers typ isFoo
   case cs of
     [] -> lift elseDo
-    ((typ',pf) : _) -> 
+    ((typ',pfThunk) : _) -> 
       if typ' `aeq` typ
         then lift $ ifDo typ
         else do 
               a <- lift $ ifDo typ'
+              pf <- lift pfThunk
               symPf <- lift $ symEq typ typ' pf 
               return $ AConv a symPf
 
@@ -1152,17 +1062,18 @@ outofArrow typ ifDo elseDo = do
   cs <- classMembers typ (isArrow.eraseToHead)
   case cs of
     [] -> lift elseDo
-    ((typ'@(AArrow _  _ _ bnd'),pf) : others) -> do
+    ((typ'@(AArrow _  _ _ bnd'),pfThunk) : others) -> do
       --First, check that the injectivity condition holds.
       ((x,unembed->domTy), _) <- unbind bnd'
       extendCtx (ASig x Logic domTy) $ injRngFor typ' (AVar x)
-
       if typ' `aeq` typ
         then lift $ ifDo typ
         else do 
               a <- lift $ ifDo typ'
+              pf <- lift pfThunk
               symPf <- lift $ symEq typ typ' pf 
               return $ AConv a symPf
+    _ -> error "internal error: classMembers returned an expression not satisfying isArrow"
 
 
 --- Checking the "range injectivity condition"
@@ -1178,8 +1089,9 @@ injRngFor (eraseToHead -> arr@(AArrow _ _ _ bnd)) c = do
   ((x, unembed->a), b) <- lift $ unbind bnd
   cs <- classMembers arr (isArrow.eraseToHead)
   forM_ cs $
-    (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pf) -> do
+    (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pfThunk) -> do
         ((x', unembed->a'), b') <- lift $ unbind bnd'
+        pf <- lift pfThunk
         pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
         let ca  = subst x c b
         let ca' = subst x' (AConv c pf_a) b'

@@ -215,7 +215,7 @@ ta (At ty th') (AType i) = do
    @-types are so ubiquitous that if we used some syntactic mark in the program
    (e.g. (box a), like we do in the pretty-printed core terms), all terms would
    be really cluttered. So instead we try to put them in guided by the 
-   bidirectional types, which works kindof poorly (in particular it is not
+   bidirectional types, which works rather poorly; in particular it is not
    clear how to do an "up-to-congruence" search without some term constructor
    to trigger it.
 
@@ -225,7 +225,7 @@ ta (At ty th') (AType i) = do
    e.g. search for a function type equivalent to that @-type...  
 
    On the other hand, it should come after the Tcase and Tlet rules so
-   that we don't overcomit to a box too early... This is very brittle.
+   that we don't overcommit to a box too early... This is very brittle.
    -}
 
 -- Horrible hack to avoid applying Box* too eagerly.
@@ -479,21 +479,13 @@ ta (Rec ep lbnd) ty = do
           DD (Rec ep lbnd), DS "was ascribed type", DD ty])
 
 
-    -- Elaborating 'unfold' directives; checking version
+    -- Elaborating 'unfold' directives.
 ta (Unfold n a b) tyB = do
    (ea,_)  <- ts a
-   --ea' <- asteps n ea 
    availableEqs <- getAvailableEqs
-   (ea', p) <- smartSteps availableEqs ea n
-   x   <- fresh $ string2Name "unfolds"
-   y   <- fresh $ string2Name "_"
-   (th, eb)  <- extendCtxSolve (ASig x Logic (ATyEq ea ea')) $ do
-                  eb <- ta b tyB      
-                  th <- aGetTh eb
-                  return (th,eb)
-   return (ALet Runtime (bind (x, y, embed p) eb) (th, tyB))
+   moreEqs <- saturate availableEqs n ea
+   taUnderUnfolds (S.toList moreEqs) b tyB
 
-   
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
 ta (DCon c args) (ATCon tname eparams) = do
@@ -582,6 +574,19 @@ ta a tyB = do
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
                    DS "was inferred instead.",
                    DS "(No automatic coersion was attempted.)"]
+
+-- Check b after adding a bunch of bindings to the context.
+taUnderUnfolds :: [(AName, ATerm,ATerm)] -> Term -> ATerm -> TcMonad ATerm
+taUnderUnfolds [] b tyB = ta b tyB
+taUnderUnfolds ((x,ty,pf):rest) b tyB = do
+   y   <- fresh $ string2Name (name2String x ++ "_eq")
+   --liftIO $ putStrLn . render . disp $ [ DS "Adding", DD (AVar x), DD (AVar y), DD ty, DD pf, DS "to the context"]
+   (th, eb)  <- extendCtx (ASig x Logic ty) $ 
+                  extendCtx (ASig y Logic (ATyEq (AVar x) pf)) $ do
+                    eb <- taUnderUnfolds rest b tyB
+                    th <- aGetTh eb
+                    return (th,eb)
+   return (ALet Erased (bind (x, y, embed pf) eb) (th, tyB))
 
 -- maybeCumul a tyA tyB 
 -- tries to insert a use of ACulum to change tyA to tyB.

@@ -216,6 +216,25 @@ getType (ATrustMe ty) = do
 
 getType (AHighlight a) = getType a
 
+getType (AReflEq a) = return (Logic, ATyEq a a)
+
+getType (ASymEq a) = do
+  (_, aTy) <- getType a
+  case aTy of 
+    ATyEq a1 a2 -> return (Logic, ATyEq a2 a1)
+    _-> coreErr [DS "getType: ASymEq proof produced non-equation", DD aTy]
+
+getType (ATransEq a b) = do
+  (_, aTy) <- getType a
+  (_, bTy) <- getType b
+  case (aTy, bTy) of 
+    (ATyEq a1 a2, ATyEq b1 b2) -> return (Logic, ATyEq a1 b2)
+    _ -> coreErr [DS "getType: ATransEq proof produced non-equation", DD aTy, DD bTy]
+
+getType (AEraseEq a) = getType a
+
+
+
 -------------------
 -------------------
 -- Typechecking!
@@ -395,12 +414,18 @@ aTs (ACong prfs bnd ty@(ATyEq lhs rhs)) = do
   let aTy2 = substs (zip xs (map snd eqs)) template
   eqTy1   <- aeq <$> erase lhs  <*> erase aTy1
   eqTy2   <- aeq <$> erase rhs  <*> erase aTy2
-  unless eqTy1 $ 
-    coreErr [DS "AConv: the cong-expression was annotated as", DD ty, 
-             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1]
-  unless eqTy2 $ 
-    coreErr [DS "AConv: the cong-expression was annotated as", DD ty, 
-             DS "but substituting the RHSs of the equations into the template creates the type", DD aTy2]
+  unless eqTy1 $  do
+    lhs_diffed <- diff lhs aTy1
+    aTy1_diffed <- diff aTy1 lhs
+    coreErr [DS "ACong: the cong-expression was annotated as", DD (ATyEq lhs_diffed rhs), 
+             DS "but substituting the LHSs of the equations into the template creates the type", DD aTy1_diffed,
+             DS "When synthesizing the type of", DD (ACong prfs bnd ty)]
+  unless eqTy2 $ do
+    rhs_diffed <- diff rhs aTy2
+    aTy2_diffed <- diff aTy2 rhs
+    coreErr [DS "ACong: the cong-expression was annotated as", DD (ATyEq lhs rhs_diffed), 
+             DS "but substituting the RHSs of the equations into the template creates the type", DD aTy2_diffed,           
+             DS "When synthesizing the type of", DD (ACong prfs bnd ty)]
   aKc ty
   return (Logic, ty)
 
@@ -603,6 +628,34 @@ aTs (ATrustMe ty) = do
   return (Logic, ty)
 
 aTs (AHighlight a) = aTs a
+
+aTs (AReflEq a) = do
+  _ <- aTs a
+  return (Logic, ATyEq a a)
+
+aTs (ASymEq a) = do
+  aTy <- aTsLogic a
+  case aTy of 
+    ATyEq a1 a2 -> return (Logic, ATyEq a2 a1)
+    _-> coreErr [DS "ASymEq proof produced non-equation", DD aTy]
+
+aTs (ATransEq a b) = do
+  aTy <- aTsLogic a
+  bTy <- aTsLogic b
+  case (aTy, bTy) of 
+    (ATyEq a1 a2, ATyEq b1 b2) -> do
+          isEq <- aeq <$> erase a2 <*> erase b1
+          unless isEq $
+            coreErr [DS "ATransEq: the erasures of", DD a2, DS "and", DD b1, DS "are not equal"]             
+          return (Logic, ATyEq a1 b2)
+    _ -> coreErr [DS "ATransEq proof produced non-equation", DD aTy, DD bTy]
+
+aTs (AEraseEq a) = do
+  aTy <- aTsLogic a
+  case aTy of
+    ATyEq _ _ -> return (Logic, aTy)
+    _ -> coreErr [DS "AEraseEq: type should be an equation but is", DD aTy]
+
 
 -- Synthesize a type and enforce that it can be checked at L, using FO if necessary.
 aTsLogic :: ATerm -> TcMonad ATerm

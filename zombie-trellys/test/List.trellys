@@ -52,7 +52,6 @@ foldrfusion = \[a][b][c] h f g e cond . ind ff xs =
 			   _
        
 
-
 null : [a : Type] => (List a @ log) -> Bool
 null = \ [a] xs . case xs [_] of 
   Nil -> True
