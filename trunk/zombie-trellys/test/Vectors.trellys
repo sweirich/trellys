@@ -58,15 +58,17 @@ repeat = \ [A] a .
       Zero -> VNil [_]
       Succ m -> VCons [m][_] a (rep m [ord n_eq])
 
-{-
-log zap : [A:Type 0] => [B:Type 0] => [n:Nat] => Vector (A @ log -> B) n -> Vector A n -> Vector B n
+log zap : [A:Type 0] => [B:Type 0] => [n:Nat] => 
+          Vector ((A @ log) -> B) n -> Vector A n -> Vector B n
 zap = \[A][B].
   ind zap [n] = \ v1 v2 . 
-     case v1 [v1_eq] , v2 [v2_eq] of
-        VNil [_]      , VNil [_] -> VNil
- 		  VCons [p][_] _, VNil [_] -> contra (_ : 0 = (Succ p))
-		  
--}
+     case v1 [v1_eq]   , v2 [v2_eq] of
+        VNil  [p]      ,  VNil [q] -> VNil [p]
+        VCons [n'][p] _ _ ,  VNil [q] -> contra (_ : 0 = (Succ n'))
+        VNil [p] , VCons [n'][p'] _ _ -> contra (_ : 0 = (Succ n'))
+        VCons [n'][p] f fs , VCons [n''][p''] x xs -> 
+          let _ = injectivity (_ : Succ n' = Succ n'') 0 in
+            VCons [n'][p] (f x) (!zap [n'] [ord p] fs xs)
 
 -- update the mth component of the vector to be 'a'
 log set : [A:Type 0] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n

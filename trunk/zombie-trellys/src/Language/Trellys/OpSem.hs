@@ -17,9 +17,14 @@ import Language.Trellys.GenericBind
 
 import Control.Applicative 
 import Control.Monad hiding (join)
+import Control.Monad.Trans
+import Control.Monad.Trans.Maybe
 import Data.List (find)
---import Data.Map (Map)
---import qualified Data.Map as M
+
+--Stuff used for debugging.
+import Language.Trellys.PrettyPrint ()
+import Text.PrettyPrint.HughesPJ 
+
 
 ---------------------------------------------------------------
 -- Erasing core terms. 
@@ -54,16 +59,16 @@ erase (AInjDCon a i) = return EJoin
 erase (ASmaller a b) = ESmaller <$> erase a <*> erase b
 erase (AOrdAx _ _) = return EOrdAx
 erase (AOrdTrans _ _) = return EOrdAx
-erase (AInd _  ep bnd) = do
-  ((f, y), r) <- unbind bnd
-  if (ep == Runtime) 
-   then EIndPlus <$> (bind (translate f, translate y) <$> erase r)
-   else EIndMinus <$> (bind (translate f) <$> erase r)
-erase (ARec _ ep bnd) = do
-  ((f, y), r) <- unbind bnd
-  if (ep == Runtime) 
-   then ERecPlus <$> (bind (translate f, translate y) <$> erase r)
-   else ERecMinus <$> (bind (translate f) <$> erase r)
+erase (AInd _ty bnd) = do
+  ((f, ys), r) <- unbind bnd
+  let eys= map (\(y, ep) -> if ep==Runtime then IsRuntime (translate y) else IsErased)
+               ys
+  EInd <$> (bind (translate f, eys) <$> erase r)
+erase (ARec _ty bnd) = do
+  ((f, ys), r) <- unbind bnd
+  let eys= map (\(y, ep) -> if ep==Runtime then IsRuntime (translate y) else IsErased)
+               ys
+  ERec <$> (bind (translate f, eys) <$> erase r)
 erase (ALet ep bnd _) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
   if ep == Runtime
@@ -109,22 +114,6 @@ eraseToHead (ABox a th) = eraseToHead a
 eraseToHead (AConv a _) = eraseToHead a
 eraseToHead a = a
 
-{-
--- Tries to undo the effect of substDefs. This is slow, but it's only
--- called when printing the error message for join failure.
-unsubstDefsWith :: (Map ETerm EName) -> ETerm -> ETerm
-unsubstDefsWith invdefs = RL.everywhere (RL.mkT unsubstDefsOnce)
-  where unsubstDefsOnce m =
-          case M.lookup m invdefs of
-            Just x  -> EVar x
-            Nothing -> m           
-
-getInvDefs :: TcMonad (Map ETerm EName)
-getInvDefs = do
-  defs <- getDefs
-  M.fromList <$> (mapM (\(x,a) -> (,) <$> erase a <*> pure (translate x)) defs)
--}
-
 -- | Checks if two terms have a common reduct within n full steps
 join :: Int -> Int -> ETerm -> ETerm -> EvaluationStrategy -> TcMonad Bool
 join s1 s2 m n strategy = do
@@ -135,126 +124,139 @@ join s1 s2 m n strategy = do
   n' <- nsteps s2 n
   let joined = m' `aeq` n'
   unless joined $ do
-    --invDefs <- getInvDefs
     warn [DS "Join failure:",
           DD m, DS ("reduces in "++show s1++" steps to"),  DD m',
-          --DD (unsubstDefsWith invDefs m'),
           DS "and",
           DD n, DS ("reduces in "++show s2++" steps to"),  DD n'
-          --DD (unsubstDefsWith invDefs n')
          ]
   return joined
 
 -- | Small-step semantics.
 -- Returns Nothing when the argument cannot reduce 
-cbvStep :: ETerm -> TcMonad (Maybe ETerm)
-cbvStep (EVar x)         = do def <- lookupDef (translate x)
-                              case def of 
-                                Nothing -> return Nothing
-                                Just d -> Just <$> (erase d)
-cbvStep (EUniVar _)      = return Nothing
-cbvStep (ETCon c idxs)   = return Nothing
-cbvStep (EDCon c args)   = stepArgs [] args
-  where stepArgs _       []         = return Nothing
-        stepArgs prefix (a:as) = do
-          stpa <- cbvStep a
-          case stpa of
-            Nothing -> stepArgs (a:prefix) as
-            Just EAbort -> return $ Just EAbort
-            Just a'     -> return $ Just (EDCon c (reverse prefix ++ a' : as))
-cbvStep (EType _)        = return Nothing
-cbvStep (EArrow _ _ _)   = return Nothing 
-cbvStep (ELam _)         = return Nothing
-cbvStep (EILam _)        = return Nothing
-cbvStep (EApp a b)       =
-  do stpa <- cbvStep a
-     case stpa of
-       Just EAbort -> return $ Just EAbort
-       Just a'     -> return $ Just $ EApp a' b
-       Nothing     ->
-         if not (isEValue a) then return Nothing
-           else do
-             stpb <- cbvStep b
-             case stpb of
-               Just EAbort -> return $ Just EAbort
-               Just b'     -> return $ Just $ EApp a b'
-               Nothing     ->
-         -- These lines are necessary for correctness, but temporarily 
-         -- commented out since they break most unit tests...:
-                 if (isEValue b) then
-                   case a of
-                     ELam bnd ->
-                       do (x,body) <- unbind bnd
-                          return $ Just $ subst x b body
-                     ERecPlus bnd ->
-                       do ((f,x),body) <- unbind bnd
-                          return $ Just $ subst f a $ subst x b body
-                     EIndPlus bnd ->
-                       do ((f,x),body) <- unbind bnd
-                          x' <- fresh (string2Name "x")
-                          return $ Just $ subst x b $ subst f (ELam (bind x' (EILam (EApp a (EVar x')))))  body
-                     _ -> return  Nothing
-                  else return Nothing
-cbvStep (EIApp a) =
-  do stpa <- cbvStep a
-     case stpa of 
-       Just EAbort -> return $ Just EAbort
-       Just a'     -> return $ Just $ EIApp a'
-       Nothing     ->        
-         case a of
-           EILam body -> return $ Just $  body
-           ERecMinus bnd ->
-             do (f,body) <- unbind bnd
-                return $ Just $ subst f a $ body
-           EIndMinus bnd ->
-             do (f,body) <- unbind bnd
-                return $ Just $ subst f (EILam (EILam (EIApp a))) $ body
-           _ -> do --warn [DS "The argument to EIApp does not step, it was", DD a]
-                   return  Nothing
-cbvStep (ETyEq _ _)     = return Nothing
-cbvStep EJoin           = return Nothing
-cbvStep EAbort          = return $ Just EAbort
-cbvStep EContra         = return Nothing
-cbvStep (ERecPlus _)    = return Nothing
-cbvStep (ERecMinus _)  = return Nothing
-cbvStep (EIndPlus _)    = return Nothing
-cbvStep (EIndMinus _)  = return Nothing
-cbvStep (ECase b mtchs) =
-  do stpb <- cbvStep b
-     case stpb of
-       Just EAbort -> return $ Just EAbort
-       Just b'     -> return $ Just $ ECase b' mtchs
-       Nothing     ->
-         case b of
-           (EDCon c tms) ->
-             case find (\(EMatch c' _) -> c' == c) mtchs of
-               Nothing  -> return Nothing
-               Just (EMatch c' bnd) ->
-                 do (delta,mtchbody) <- unbind bnd
-                    if (length delta /= length tms) then return Nothing
-                      else return $ Just $ substs (zip delta tms) mtchbody
-           _ -> return Nothing
-cbvStep (ESmaller _ _) = return Nothing
-cbvStep EOrdAx = return Nothing
---cbvStep (ETerminationCase _ _) = err [DS "Tried to excute a termination-case"]
-cbvStep (ELet m bnd)   =
-  do stpm <- cbvStep m
-     case stpm of
-       Just EAbort -> return $ Just EAbort
-       Just m'     -> return $ Just $ ELet m' bnd
-       Nothing -> 
-            if not (isEValue m) 
-              then return Nothing
-              else do (x,n) <- unbind bnd
-                      return $ Just $ subst x m n
-cbvStep (EAt _ _) = return Nothing
-cbvStep ETrustMe = return Nothing
+cbvStep :: ETerm -> MaybeT TcMonad ETerm
+cbvStep m = cbvStepHead m []
+
+-- This version goes under n-ary function applications. That is,
+--   cbvStepHead m [IsRuntime n1, IsErased, IsRuntime n3]
+-- is equivalent to
+--   cbvStep (EApp (EIApp (EApp m n1)) n2).
+cbvStepHead :: ETerm -> [Erasable ETerm] -> MaybeT TcMonad ETerm
+cbvStepHead (EVar x) ctx = do 
+  d <- MaybeT (lookupDef (translate x))
+  ed <- lift (erase d)
+  return $ app ed ctx
+cbvStepHead a@(EUniVar _)    ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(ETCon c idxs) ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(EDCon c args) ctx = stepArgs [] args
+  where stepArgs _       []         = app a <$> cbvStepArgs ctx
+        stepArgs prefix (v:bs) | isEValue v  = stepArgs (v:prefix) bs
+        stepArgs prefix (EAbort:bs) = return EAbort
+        stepArgs prefix (b:bs) = do
+          b' <- cbvStep b
+          return $ app (EDCon c (reverse prefix ++ b' : bs)) ctx
+cbvStepHead a@(EType _)        ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(EArrow _ _ _)   ctx = app a <$> cbvStepArgs ctx
+cbvStepHead (ELam bnd)  (IsRuntime v : ctx) | isEValue v = do 
+  (x,body) <- unbind bnd
+  return $ app (subst x v body) ctx
+cbvStepHead a@(ELam _) ctx = app a <$> cbvStepArgs ctx
+cbvStepHead (EILam body) (IsErased : ctx) = 
+  return $ app body ctx
+cbvStepHead (EILam _) _ = mzero
+cbvStepHead (EApp a b) ctx = cbvStepHead a (IsRuntime b : ctx)
+cbvStepHead (EIApp a) ctx = cbvStepHead a (IsErased : ctx)
+cbvStepHead a@(ETyEq _ _)       ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@EJoin             ctx = app a <$> cbvStepArgs ctx
+cbvStepHead EAbort              ctx = return EAbort
+cbvStepHead a@EContra           ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(ERec bnd)        ctx | all isEValueArg (take (numArgs bnd) ctx) = do
+  ((f,xs), body) <- unbind bnd 
+  (usedargs, rest) <- cbvMatchArgs xs ctx
+  return $ app (substs usedargs $ subst f a body) rest
+cbvStepHead a@(ERec _)          ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(EInd bnd)        ctx | all isEValueArg (take (numArgs bnd) ctx) = do
+  ((f,xs), body) <- unbind bnd
+  (usedargs, rest) <- cbvMatchArgs xs ctx
+  wa <- lift $ wrapInd xs a
+  return $ app (substs usedargs $ subst f wa body) rest
+cbvStepHead a@(EInd _)           ctx = app a <$> cbvStepArgs ctx
+cbvStepHead (ECase EAbort mtchs) ctx = return EAbort
+cbvStepHead (ECase (EDCon c tms) mtchs)   ctx =
+  case find (\(EMatch c' _) -> c' == c) mtchs of
+     Nothing  -> mzero
+     Just (EMatch c' bnd) ->
+       do (delta,mtchbody) <- unbind bnd
+          guard (length delta == length tms) 
+          return $ app (substs (zip delta tms) mtchbody) ctx
+cbvStepHead (ECase b mtchs)      ctx = do
+  b' <- cbvStep b
+  return $ app (ECase b' mtchs) ctx
+cbvStepHead a@(ESmaller _ _)     ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@EOrdAx             ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@(EAt _ _)          ctx = app a <$> cbvStepArgs ctx
+cbvStepHead a@ETrustMe           ctx = app a <$> cbvStepArgs ctx
+cbvStepHead (ELet v bnd)         ctx | isEValue v = do
+  (x,n) <- unbind bnd
+  return $ app (subst x v n) ctx
+cbvStepHead (ELet EAbort bnd)    ctx = return EAbort
+cbvStepHead (ELet m bnd)         ctx = do 
+  m' <- cbvStep m
+  return $ app (ELet m' bnd) ctx
+
+-- In the step rule for Ind, we need to do something like an
+-- eta-expansion: instead of substituting 
+--   (rec f x1 .. xn . body) 
+-- for the recursive variable, we substitute 
+--   (\x1 ... xn [] . (rec f x1 .. xn. body) x1 .. xn),
+-- in order to get rid of the subterm proof. This
+-- function builds that lambda-expression.
+wrapInd :: [Erasable EName] -> ETerm -> TcMonad ETerm
+wrapInd [] a = return (EILam a)
+wrapInd (IsRuntime x : xs) a = do
+  x' <- fresh x
+  a' <- wrapInd xs (EApp a (EVar x'))
+  return $ ELam (bind x' a')
+wrapInd (IsErased : xs) a = EILam <$> wrapInd xs (EIApp a)
+
+-- Try to reduce the list of arguments to values.
+-- If one of them is a stuck nonvalue, the whole thing is considered stuck.
+cbvStepArgs :: [Erasable ETerm] -> MaybeT TcMonad [Erasable ETerm]
+cbvStepArgs [] = mzero
+cbvStepArgs (IsErased : args) = 
+  (IsErased :) <$> cbvStepArgs  args
+cbvStepArgs (IsRuntime v:args) | isEValue v = 
+  (IsRuntime v :) <$> cbvStepArgs  args
+cbvStepArgs (IsRuntime a:args) = 
+  (: args) <$> (IsRuntime <$> cbvStep a)
+
+app :: ETerm -> [Erasable ETerm] -> ETerm
+app a [] = a
+app a (IsRuntime b : bs) = app (EApp a b) bs
+app a (IsErased : bs) = app (EIApp a) bs
+
+numArgs :: Bind (EName, [Erasable EName]) ETerm -> Int
+numArgs bnd = length xs
+  where ((_f,xs),_) = unsafeUnbind bnd
+
+isEValueArg :: Erasable ETerm -> Bool
+isEValueArg IsErased = True
+isEValueArg (IsRuntime a) = isEValue a
+
+cbvMatchArgs :: [Erasable EName] -> [Erasable ETerm] 
+                -> MaybeT TcMonad ([(EName,ETerm)], [Erasable ETerm])
+cbvMatchArgs [] as = return ([], as)
+cbvMatchArgs (IsErased : xs) (IsErased : as) = cbvMatchArgs xs as
+cbvMatchArgs (IsRuntime x:xs) (IsRuntime a:as) = do
+  do (usedargs,rest) <- cbvMatchArgs xs as
+     return ((x,a) : usedargs, rest)
+cbvMatchArgs _ _ = mzero 
 
 -- takes up to n steps
 cbvNSteps :: Int -> ETerm -> TcMonad ETerm
-cbvNSteps n tm =
+cbvNSteps n tm = do
+  --liftIO $ putStrLn . render . disp $ [ DS "------->", DD tm ]
   if n == 0 then return tm else
-    do stptm <- cbvStep tm
+    do stptm <- runMaybeT (cbvStep tm)
        case stptm of
          Nothing -> return tm
          Just tm' -> cbvNSteps (n - 1) tm'
@@ -288,58 +290,43 @@ parStep deep (ELam bnd)       = do
   ELam <$> (bind x <$> parStep True b)
 parStep deep (EILam b)         = EILam <$> parStep True b
 parStep deep (EApp EAbort _)   = return EAbort
--- Note: for correctness, need a value restriction on b here,
---  and in the corresponding cases for RecPlus and IndPlus
+-- Todo: pstep for n-ary rec/ind.
 parStep deep (EApp a b) = 
   if (isEValue b) then 
     case (deep, a) of 
       (_,ELam bnd) -> 
         do (x,body) <- unbind bnd
            return $ subst x b body
-      (False, ERecPlus bnd) ->
-        do ((f,x),body) <- unbind bnd
+      (False, ERec bnd) ->
+        --Todo: fail more gracefully if IsErased
+        do ((f,[IsRuntime x]),body) <- unbind bnd
            return $ subst f a $ subst x b body
-      (False, EIndPlus bnd) ->
-        do ((f,x),body) <- unbind bnd
+      (False, EInd bnd) ->
+        do ((f,[IsRuntime x]),body) <- unbind bnd
            x' <- fresh (string2Name "x")
            return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
       _ -> EApp <$> parStep deep a <*> parStep deep b
   else 
     EApp <$> parStep deep a <*> parStep deep b
-{-
-parStep False (EApp a@(ERecPlus bnd) b) = do
-  ((f,x),body) <- unbind bnd
-  return $ subst f a $ subst x b body
-parStep False (EApp a@(EIndPlus bnd) b) = do
-  ((f,x),body) <- unbind bnd
-  x' <- fresh (string2Name "x")
-  return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
-parStep deep (EApp a b) = EApp <$> parStep deep a <*> parStep deep b
--}
 parStep deep  (EIApp (EILam body)) = return body
-parStep False (EIApp a@(ERecMinus bnd)) = do
-  (f,body) <- unbind bnd
+--Todo: pstep for n-ary rec/ind
+parStep False (EIApp a@(ERec bnd)) = do
+  ((f,[IsErased]),body) <- unbind bnd
   return $ subst f a $ body
-parStep False (EIApp a@(EIndMinus bnd)) = do
-   (f,body) <- unbind bnd
+parStep False (EIApp a@(EInd bnd)) = do
+   ((f,[IsErased]),body) <- unbind bnd
    return $ subst f (EILam (EILam (EIApp a))) $ body
 parStep deep (EIApp a) = EIApp <$> parStep deep a
 parStep deep (ETyEq a b)     = ETyEq <$> parStep deep a <*> parStep deep b
 parStep deep a@EJoin         = return a
 parStep deep a@EAbort        = return a 
 parStep deep a@EContra       = return a
-parStep deep (ERecPlus bnd)  = do
-  ((f,x), b) <- unbind bnd
-  ERecPlus <$> (bind (f,x) <$> parStep True b)
-parStep deep (ERecMinus bnd)  = do
-  (f,b) <- unbind bnd
-  ERecMinus <$> (bind f <$> parStep True b)
-parStep deep (EIndPlus bnd)    = do
-  ((f,x), b) <- unbind bnd
-  EIndPlus <$> (bind (f,x) <$> parStep True b)
-parStep deep (EIndMinus bnd)  = do
-  (f,b) <- unbind bnd
-  EIndMinus <$> (bind f <$> parStep True b)
+parStep deep (ERec bnd)  = do
+  ((f,args), b) <- unbind bnd
+  ERec <$> (bind (f,args) <$> parStep True b)
+parStep deep (EInd bnd)  = do
+  ((f,args),b) <- unbind bnd
+  EInd <$> (bind (f,args) <$> parStep True b)
 parStep deep (ECase EAbort mtchs) = return EAbort
 -- Todo: need a value-restriction for correctness.
 parStep deep a@(ECase (EDCon c args) mtchs) | all isEValue args = 
@@ -392,8 +379,8 @@ isValue (OrdTrans _ _)     = return True
 isValue (TyEq _ _)         = return True
 isValue (Join _ _ _)       = return True
 isValue Abort              = return False
-isValue (Ind ep _)         = return True
-isValue (Rec ep _)         = return True
+isValue (Ind _)            = return True
+isValue (Rec _)            = return True
 isValue (ComplexCase _)    = return False
 isValue (Let _ Erased a) = do
   (_,a') <- unbind a 
@@ -427,13 +414,12 @@ isEValue EOrdAx           = True
 isEValue (ETyEq _ _)      = True
 isEValue EJoin            = True
 isEValue EAbort           = False
-isEValue (ERecPlus _)     = True
-isEValue (ERecMinus _)    = True
-isEValue (EIndPlus _)     = True
-isEValue (EIndMinus _)    = True
+isEValue (ERec _)         = True
+isEValue (EInd _)         = True
 isEValue (ECase _ _)      = False
 isEValue (ELet _ _)       = False
 isEValue EContra          = False
 isEValue (EAt _ _)        = False
---isEValue (ETerminationCase _ _) = False
 isEValue ETrustMe          = True
+
+

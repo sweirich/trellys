@@ -10,7 +10,7 @@ import Arithmetic
 
 -- 'div' calculates ceiling(n/m+1)
 prog div : Nat -> Nat -> Nat
-rec div n m =
+rec div n = \m.
   case n of
     Zero -> Zero
     Succ pred -> Succ (div (minus pred m) m)

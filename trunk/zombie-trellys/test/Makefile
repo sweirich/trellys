@@ -70,7 +70,7 @@ fail:
 	@./expect_error Test_T_Rec2_FV "variable n appears free in body"
 	@./expect_error Bug_T_Case_FV "should not appear in the erasure of the case expression"
 	@./expect_error Bug_T_Case_FV_2 "should not appear in the erasure of the case expression"
-	@./expect_error Test_T_RN2_FV "variable n appears free in body"
+	@./expect_error Test_T_RN2_FV "appears free in body"
 	@./expect_error JoinTest "The erasures of terms .* are not joinable."
 	@./expect_error DeepMatchError1 "must be a member of a datatype, but is not."
 	@./expect_error DeepMatchError2 "is a member of an abstract datatype"

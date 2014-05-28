@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-orphans #-}
 
 module Language.Trellys.EqualityReasoning 
-  (underHypotheses, prove, solveConstraints, uneraseEq, -- smartSteps, 
+  (underHypotheses, prove, solveConstraints, uneraseEq, 
    intoArrow, intoTCon, outofArrow, outofTyEq, injRngFor,
    saturate)
 where
@@ -29,8 +29,6 @@ import Control.Applicative
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
 import Control.Monad.State.Strict
 import Control.Monad.Error (catchError)
---import Data.Foldable (foldrM)
---mport Data.List (partition, sortBy)
 import Data.Maybe (fromJust,isNothing)
 import qualified Data.Set as S
 import Data.Set (Set)
@@ -45,9 +43,6 @@ import Debug.Trace
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon)
-{-
-import Language.Trellys.TypeCheckCore (aTs)
--}
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -483,14 +478,14 @@ decompose _ avoid (AOrdAx t1 t2) =
   return $ AOrdAx canonical canonical
 decompose _ avoid (AOrdTrans t1 t2) =
   return $ AOrdAx canonical canonical
-decompose _ avoid (AInd ty ep bnd) = do
-  ((x,y), t) <- unbind bnd
-  r <- decompose True (S.insert x (S.insert y avoid)) t
-  return $ AInd canonical ep (bind (x,y) r)  
-decompose _ avoid (ARec ty ep bnd) = do
-  ((x,y), t) <- unbind bnd
-  r <- decompose True (S.insert x (S.insert y avoid)) t
-  return $ ARec canonical ep (bind (x,y) r)
+decompose _ avoid (AInd ty bnd) = do
+  ((f,ys), t) <- unbind bnd
+  r <- decompose True (S.insert f (S.union (S.fromList $ map fst ys) avoid)) t
+  return $ AInd canonical (bind (f,ys) r)  
+decompose _ avoid (ARec ty bnd) = do
+  ((f,ys), t) <- unbind bnd
+  r <- decompose True (S.insert f (S.union (S.fromList $ map fst ys) avoid)) t
+  return $ ARec canonical (bind (f,ys) r)
 decompose _ avoid (ALet Runtime bnd (th,ty)) = do
   ((x,y, unembed->t1), t2) <- unbind bnd
   r1 <- decompose True avoid t1
@@ -581,10 +576,10 @@ match vars (AContra t1 t2) (AContra t1' t2') = return M.empty
 match vars (ASmaller t1 t2) (ASmaller t1' t2') =
   match vars t1 t1' `mUnion` match vars t2 t2'
 match vars a1 a2 | isOrdVariant a1 && isOrdVariant a2 = return M.empty
-match vars (AInd ty ep bnd) (AInd ty' ep' bnd') = do
+match vars (AInd ty bnd) (AInd ty' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
   match vars t t'
-match vars (ARec ty ep bnd) (ARec ty' ep' bnd') = do
+match vars (ARec ty bnd) (ARec ty' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
   match vars t t'
 match vars (ALet Runtime bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
@@ -645,11 +640,11 @@ genEqs t = do
   a <- recordName t
   case (eraseToHead t) of 
     AUniVar x _ -> do
-                    (_,tTy) <- lift $ getType t
-                    aTy <- case (eraseToHead tTy) of
-                             (AType i) -> recordName tTy
-                             _         -> genEqs tTy
-                    recordUniVar a x aTy
+                      (_,tTy) <- lift $ getType t
+                      aTy <- case (eraseToHead tTy) of
+                               (AType i) -> recordName tTy
+                               _         -> genEqs tTy
+                      recordUniVar a x aTy
     _           -> return ()
 
   (s,ss) <- runWriterT (decompose False S.empty t)
@@ -747,8 +742,8 @@ valueFlavour ConstructorValue = isConstructorValue
 
 isFunctionValue :: ATerm -> Bool
 isFunctionValue (eraseToHead -> (ALam _ _ _ _)) = True
-isFunctionValue (eraseToHead -> (AInd _ _ _)) = True
-isFunctionValue (eraseToHead -> (ARec _ _ _)) = True
+isFunctionValue (eraseToHead -> (AInd _ _)) = True
+isFunctionValue (eraseToHead -> (ARec _ _)) = True
 isFunctionValue _ = False
 
 isConstructorValue :: ATerm -> Bool
@@ -784,8 +779,8 @@ isAnyValue (AContra _ _) = True
 isAnyValue (ASmaller _ _) = True
 isAnyValue (AOrdAx _ _) = True
 isAnyValue (AOrdTrans _ _) = True
-isAnyValue (AInd _ _ _) = True
-isAnyValue (ARec _ _ _) = True
+isAnyValue (AInd _ _) = True
+isAnyValue (ARec _ _) = True
 isAnyValue (ADomEq _) = True
 isAnyValue (ARanEq _ _ _) = True
 isAnyValue (AAtEq _) = True
@@ -1026,7 +1021,7 @@ intoTCon = intoFoo isTCon
 
 -- outofFoo isFoo typ ifFoo elseDo
 -- uses the union-find structure in the state to find some type typ' which satisfies is foo,
--- then calls (ifDo typ'), and applies a coersion from typ' to typ to waht it rerturned. 
+-- then calls (ifDo typ'), and applies a coersion from typ' into typ to what it returned. 
 -- If there is no suitable typ', it just returns elseDo, without any coercion.
 outofFoo :: (ATerm -> Bool) -> ATerm
             -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm

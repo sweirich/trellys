@@ -46,14 +46,14 @@ diff (ALam th ty ep bnd) (ALam _th' _ty' ep' bnd') | ep==ep' = do
   Just (x, a, _, b) <- unbind2 bnd bnd'
   da <- diff a b
   return $ ALam th ty ep (bind x da)
-diff (AInd ty ep bnd) (AInd _ty' ep' bnd') | ep==ep' = do
+diff (AInd ty bnd) (AInd _ty'  bnd') = do
   Just ((x,y), a, (_,_), b) <- unbind2 bnd bnd'
   da <- diff a b
-  return $ AInd ty ep (bind (x,y) da)
-diff (ARec ty ep bnd) (ARec _ty' ep' bnd') | ep==ep' = do
+  return $ AInd ty (bind (x,y) da)
+diff (ARec ty bnd) (ARec _ty' bnd') = do
   Just ((x,y), a, (_,_), b) <- unbind2 bnd bnd'
   da <- diff a b
-  return $ ARec ty ep (bind (x,y) da)
+  return $ ARec ty (bind (x,y) da)
 diff (ALet Runtime bnd (th,ty)) (ALet Runtime bnd' _) = do
   Just ((x,y,unembed -> a1), a2, (_,_,unembed -> b1), b2) <- unbind2 bnd bnd'
   da1 <- diff a1 b1

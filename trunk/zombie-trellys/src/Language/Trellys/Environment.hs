@@ -15,7 +15,7 @@ module Language.Trellys.Environment
    getCtx, getLocalCtx, extendCtx, extendCtxs, extendCtxTele, extendCtxsGlobal,
    extendCtxMods,
    extendHints,
-   extendSourceLocation, getSourceLocation,
+   extendSourceLocation, getSourceLocation, getCurrentPos,
    getDefs, substDefs,
    err, warn,
    zonk, zonkTerm, zonkTele, zonkWithBindings
@@ -42,6 +42,7 @@ import Data.List
 import Data.Maybe (listToMaybe, catMaybes)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Text.ParserCombinators.Parsec.Pos(newPos)
 
 -- | Environment manipulation and accessing functions
 -- The context 'gamma' is a list
@@ -243,6 +244,13 @@ extendSourceLocation p t =
 
 getSourceLocation :: MonadReader Env m => m [SourceLocation]
 getSourceLocation = asks sourceLocation
+
+getCurrentPos :: MonadReader Env m => m SourcePos
+getCurrentPos = do
+  sourceLoc <- asks sourceLocation
+  return $ case sourceLoc of
+             (SourceLocation (Just p) _ : _) -> p
+             _ -> newPos "unknown location" 0 0
 
 -- | Add a type hint
 extendHints :: (MonadReader Env m) => AHint -> m a -> m a

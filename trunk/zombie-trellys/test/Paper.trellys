@@ -25,13 +25,13 @@ data Nat : Type where
 
 
 plus : Nat -> Nat -> Nat
-ind plus n m =
+ind plus n = \ m. 
   case n [cw] of
     Zero -> m
     Succ pred -> Succ (plus pred [ord cw] m)
 
 minus : Nat -> Nat -> Nat
-ind minus n m =
+ind minus n = \m .
    case n [cn] of
      Zero -> Zero
      Succ pred -> case m [cm] of
@@ -40,7 +40,7 @@ ind minus n m =
 
 -- 'x > y'
 gt : Nat -> Nat -> Bool
-ind gt x y =
+ind gt x = \y.
    case x [xpf] of
         Zero    -> False
         Succ x' -> case y of
@@ -52,14 +52,14 @@ lt x y = gt y x
 
 -- 'x <= y'
 le : Nat -> Nat -> Bool
-ind le x y =
+ind le x = \ y.
   case x [xpf], y of
     Zero , _ -> True
     Succ _ , Zero -> False
     Succ x' , Succ y' -> le x' [ord xpf] y'
 
 eq : Nat -> Nat -> Bool
-ind eq x y = 
+ind eq x = \y . 
   case x [xpf], y [_] of 
      Zero, Zero -> True
      Succ x', Succ y' -> eq x' [ord xpf] y'
@@ -74,7 +74,7 @@ void = True = False
 
 log lt_neq : (x : Nat) -> (y : Nat) 
               -> (lt x y = True) -> (eq x y = False)
-ind lt_neq x y h =
+ind lt_neq x = \ y h.
   case x [x_eq], y [y_eq] of 
     _ , Zero -> 
       unfold lt x Zero in contra (_ : True = False)
@@ -90,7 +90,7 @@ ind lt_neq x y h =
 
 log lt_neq_Zero : (x : Nat) -> (y : Nat) 
                    -> (lt x y = True) -> (eq y Zero = False)
-ind lt_neq_Zero x y h =
+ind lt_neq_Zero x = \y h.
   case y of 
     Zero -> 
       unfold lt x Zero in contra (_ : True = False)
@@ -108,7 +108,7 @@ ind le_refl x =
 
 log le_Succ : (x : Nat) -> (y : Nat) 
               -> le x y = True -> le x (Succ y) = True
-ind le_Succ x y h = 
+ind le_Succ x = \y h. 
   case x [x_eq] , y of
     Zero , y -> 
       let _ = (join : le Zero y = True) in
@@ -157,7 +157,7 @@ ind succ_minus_one x =
 log minus_smaller : 
   (x:Nat) -> (y:Nat) -> (eq x Zero = False) -> (eq y Zero = False)
   -> (minus x y < x)
-ind minus_smaller x y h1 h2 =
+ind minus_smaller x = \y h1 h2.
   case x [x_eq] , y of
     Zero , _ -> 
        let _ = (join : eq Zero Zero = True) in contra (_ : True = False)
@@ -180,7 +180,7 @@ ind minus_smaller x y h1 h2 =
 log minus_le : 
   (x:Nat) -> (y:Nat) -> (eq x Zero = False) -> (eq y Zero = False)
   -> le (Succ (minus x y)) x = True
-ind minus_le x y h1 h2 = 
+ind minus_le x = \ y h1 h2 .
   case x [x_eq] , y of
     Zero , _ -> 
        let _ = (join : eq Zero Zero = True) in contra (_ : True = False)
@@ -207,7 +207,7 @@ log not : Bool -> Bool
 not b = if b then False else True
 
 prog div : Nat -> Nat -> Nat
-rec div n m = if (lt n m) then 0
+rec div n = \m. if (lt n m) then 0
     else (plus 1 (div (minus n m) m))
 
 prog gyre : Bool -> Bool
@@ -265,7 +265,7 @@ data Div_le_Answer (n : Nat) (m : Nat) : Type where
             (pf2 : le k n = True)
 
 log div_le_helper : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> Div_le_Answer n m
-ind div_le_helper n m hm = 
+ind div_le_helper n = \m hm .
   case (lt n m) [lt_pf] of
     True -> 
       unfold (div n m) in
@@ -317,7 +317,7 @@ rec silly x = case x of
   Succ (Succ n) -> Succ (silly (Succ n))
 
 log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ log) -> (silly n = n)
-ind lemma_silly n pf = 
+ind lemma_silly n = \pf. 
   case n [n_eq] of 
     Zero -> unfold void in 
             contra (pf n_eq : True = False)
@@ -361,7 +361,7 @@ boom = bar md3 0
 
 prog maybe_map : [a : Type 0] => [b : Type 0] => 
 	 ((a @ log) -> b @ prog) -> (Maybe a @ prog) -> Maybe b
-maybe_map = \ [a] [b] f n . 
+maybe_map [a] [b] f n =
   case  n [_] of
     Just x -> Just (f x) 
     _      -> Nothing 

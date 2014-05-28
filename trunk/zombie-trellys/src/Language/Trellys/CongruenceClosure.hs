@@ -539,7 +539,7 @@ guessVars = do
                                   S.null (uniVars (names BM.!> c)) ] --huge hack.
 --                             not (x `S.member` uniVars (names BM.!> c)) ] --occurs check
            when (null candidates) $
-             liftIO $ putStrLn . render . disp $ [ DS "Oops, no candidates for guessing a variable  of type",
+             liftIO $ putStrLn . render . disp $ [ DS "Oops, no candidates for guessing the variable", DD x, DS  "of type",
                                                    DD (names BM.!> xTy)]
            guard (not $ null candidates)
            let a = head $ candidates

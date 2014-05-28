@@ -388,12 +388,12 @@ valDef = do
   return $ Def n val
 
 indDef = do
-  r@(Ind _ b) <- ind
+  r@(Ind b) <- ind
   let ((n,_),_) = unsafeUnbind b
   return $ Def n r
 
 recDef = do
- r@(Rec _ b) <- rec
+ r@(Rec b) <- rec
  let ((n,_),_) = unsafeUnbind b
  return $ Def n r
 
@@ -584,27 +584,20 @@ ind :: LParser Term
 ind = do
   reserved "ind"
   f <- variable
-  (x,ep) <- impOrExpBind
-  binds <- many impOrExpBind
+  args <-  many1 impOrExpBind
   reservedOp "="
   body <- expr
-  let rhs = foldr (\(x',ep') m -> Lam ep' (bind x' m))
-                           body binds
-  return $ (Ind ep (bind (f,x) rhs))
+  return $ (Ind (bind (f,args) body))
 
 -- recursive abstractions, with the syntax 'rec f x = e', no type annotation.
 rec :: LParser Term
 rec = do
   reserved "rec"
   f <- variable
-  (x,ep) <- impOrExpBind
-  binds <- many impOrExpBind
+  args <- many1 impOrExpBind
   reservedOp "="
   body <- expr
-  let rhs = foldr (\(x',ep') m -> Lam ep' (bind x' m))
-                           body binds
-
-  return $ (Rec ep (bind (f,x) rhs))
+  return $ (Rec (bind (f,args) body))
 
 ifExpr :: LParser Term
 ifExpr = 
