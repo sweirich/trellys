@@ -10,10 +10,8 @@ module Language.Trellys.TypeCheck
 where
 
 import Language.Trellys.Syntax
-
 import Language.Trellys.PrettyPrint(Disp(..))
 import Language.Trellys.OpSem
-
 import Language.Trellys.Diff
 import Language.Trellys.Options
 import Language.Trellys.Environment
@@ -25,11 +23,12 @@ import Language.Trellys.TypeCheckCore
 --import Language.Trellys.TestReduction
 
 import Generics.RepLib.Lib(subtrees)
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ hiding (first)
 
 import Control.Applicative ((<$>))
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
+import Control.Arrow (first)
 
 import Language.Trellys.GenericBind
 
@@ -393,90 +392,95 @@ ta (Lam lep lbody) ty = do
 
 -- rules T_ind1 and T_ind2
 -- TODO: to match the ICFP paper we should have an injRng check here too.
-ta (Ind ep lbnd) ty = do
+ta (Ind bnd) ty = do
   hyps <- getAvailableEqs
+  -- Note, this is not quite right. Properly when checking an n-ary
+  -- rec we should call outofArrow once for each argument
   underHypotheses hyps $ outofArrow ty
-    (\arr@(AArrow k ex aep abnd) -> do
+    (\arr -> do
        -- Note that the the arrow type is assumed to by kind-checked already.
+       ((translate->f, map (first translate)->ys), a) <- unbind bnd
 
-       unless (ep == aep) $
-          err [DS "ta : expecting argument of ind to be", DD aep,
-               DS "got", DD ep]
-
-       ((old_f, old_y), a) <- unbind lbnd
-       let f = translate old_f
-       let y = translate old_y
-       ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
-       let tyB = subst dumb_y (AVar y) dumb_tyB
-
-       -- next we must construct the type C.  we need new variables for x and z
-       x <- fresh (string2Name "x")
-       z <- fresh (string2Name "z")
-       let xTyB = subst y (AVar x) tyB
-           smallerType = ASmaller (AVar x)
-                                  (AVar y)
-
-           tyC = AArrow k ex ep (bind (x, embed tyA) 
-                              (AArrow k Explicit Erased (bind (z, embed smallerType) xTyB)))
-       -- Finally we can typecheck the fuction body in an extended environment
-       (ea,eaTh) <- extendCtx (ASig (translate f) Logic tyC) $
-                      extendCtxSolve (ASig y Logic tyA) $ do
-                        ea <- ta a tyB
-                        eaTh <- aGetTh ea
-                        return (ea, eaTh)
-       unless (eaTh == Logic) $
-          err [DS "body of ind must check at L, but here checks at P"]
-
-       -- in the case where ep is Erased, we have the two extra checks:
-       aE <- erase ea
-       when (ep == Erased && translate y `S.member` fv aE) $
-            err [DS "ta: In implicit ind, variable", DD y,
-                 DS "appears free in body", DD a]
-
-       when (ep == Erased) $ do
-            unless (isEValue aE) $
-                   err [DS "The body of an implicit ind must be a value",
-                        DS "but here is:", DD a]
-       zarr <- zonkTerm arr
-       return (AInd zarr ep (bind (f,y) ea)))
+       -- fTy accumulates the type of the recursive variable, difference-list style.
+       let go fTy body [] =
+             err [DS "An ind-expression must have at least one argument, but", 
+                  DD (Ind bnd), DS "has none"]
+           go fTy (eraseToHead-> (AArrow k' ex' ep' bnd')) ((x,ep):xs) = do
+             unless (ep'==ep) $
+               err [DS "Expected argument of ind to be", DD ep',
+                    DS "but it is marked", DD ep ]
+             ((x', unembed->domTy), rngTy) <- unbind bnd'
+             ea <- 
+              if null xs
+                then do
+                       x0 <- fresh x
+                       z0 <- fresh (string2Name "z")
+                       let fTyEnd =  
+                               AArrow k' ex' ep
+                                      (bind (x0, embed domTy)
+                                        (AArrow k' Explicit Erased
+                                          (bind (z0, embed (ASmaller (AVar x0) (AVar x)))
+                                             (subst x' (AVar x0) rngTy))))
+                       extendCtx (ASig x Logic domTy) $
+                         extendCtxSolve (ASig f Logic (fTy fTyEnd)) $ do
+                          ea <- ta a (subst x' (AVar x) rngTy)
+                          eaTh <- aGetTh ea
+                          unless (eaTh == Logic) $
+                            err [DS "body of ind must check at L, but here checks at P"]
+                          return ea
+                else extendCtx (ASig x Logic domTy) $ do
+                       go (\rest->fTy$AArrow k' ex' ep (bind (x, embed domTy) rest))  
+                          (subst x' (AVar x) rngTy) 
+                          xs
+             aE <- erase ea
+             when (ep == Erased && translate x `S.member` fv aE) $
+                     err [DS "ta: In implicit ind, variable", DD x,
+                          DS "appears free in body", DD a,
+                          DS "(which erases to", DD aE, DS ")"]
+             return ea
+           go _ _ (_ : _) = 
+             err [DS "The ind-expression", DD (Ind bnd), 
+                      DS ("has " ++ show (length ys) ++ " arguments"),
+                      DS "but was ascribed the type", DD arr]
+       ea <- go (\x->x) arr ys
+       zarr <- zonkTerm arr --extendContextSolve may have instantiated a univar.
+       return (AInd zarr (bind (f,ys) ea)))
     (err [DS "Functions should be ascribed arrow types, but",
-          DD (Ind ep lbnd), DS "was ascribed type", DD ty])
+          DD (Ind bnd), DS "was ascribed type", DD ty])
 
 -- rules T_rec1 and T_rec2
 -- TODO: to match the ICFP paper we should have an injRng check here too.
-ta (Rec ep lbnd) ty = do
+ta (Rec bnd) ty = do
   hyps <- getAvailableEqs
+  -- Note, this is not quite right. Properly when checking an n-ary
+  -- rec we should call outofArrow once for each argument
   underHypotheses hyps $ outofArrow ty
-    (\arr@(AArrow k ex aep abnd) -> do
-       -- Note that the arrow type is assumed to be already type checked.
+    (\arr -> do
+       --(the arrow type is assumed to be already type checked).
+       ((translate->f, map (first translate)-> ys), a) <- unbind bnd
 
-       unless (ep == aep) $
-              err [DS "ta : expecting argument of rec to be",
-                   DD aep, DS ", got", DD ep]
-
-       ((old_f, old_y), a) <- unbind lbnd
-       let f = translate old_f
-       let y = translate old_y
-       ((dumb_y, unembed -> tyA), dumb_tyB) <- unbind abnd
-       let tyB = subst dumb_y (AVar y) dumb_tyB
-
-       ea <- extendCtx (ASig f Program arr) $
-               extendCtxSolve (ASig y Program tyA) $
-                 ta a tyB
-
-       -- perform the FV and value checks if in T_RecImp
-       aE <- erase ea
-       when (ep == Erased && translate y `S.member` fv aE) $
-            err [DS "ta: In implicit rec, variable", DD y,
-                 DS "appears free in body", DD a]
-       when (ep == Erased) $ do
-         unless (isEValue aE) $
-            err [DS "ta : The body of an implicit rec must be a value",
-                 DS "but here is:", DD a]
-       zarr <- zonkTerm arr
-       return (ARec zarr ep (bind (f,y) ea)))
+       let go (eraseToHead->(AArrow k' ex' ep' bnd')) ((x,ep):xs) = do
+             unless (ep'==ep) $
+                err [DS "Expected argument of rec to be", DD ep', 
+                     DS "but it is marked", DD ep]
+             ((translate->x', unembed->domTy), rngTy_beforeSubst) <- unbind bnd'
+             let rngTy = subst x' (AVar x) rngTy_beforeSubst
+             ea <- extendCtx (ASig x Program domTy) $ go rngTy xs --TODO: make Logic, to match TypeCheckCore?
+             aE <- erase ea
+             when (ep == Erased && translate x `S.member` fv aE) $
+                    err [DS "ta: In implicit rec, variable", DD x,
+                         DS "appears free in body", DD a]
+             return ea
+           go bodyTy [] = extendCtxSolve (ASig f Program arr) $ ta a bodyTy
+           go _ (_ : _) = 
+             err [DS "The rec-expression", DD (Rec bnd), 
+                  DS ("has " ++ show (length ys) ++ " arguments"),
+                  DS "but was ascribed the type", DD arr]
+       ea <- go arr ys
+       zarr <- zonkTerm arr --extendCtxSolve may have instantiated univars.
+       return (ARec zarr (bind (f,ys) ea)))
     (err [DS "Functions should be ascribed arrow types, but",
-          DD (Rec ep lbnd), DS "was ascribed type", DD ty])
+          DD (Rec bnd), DS "was ascribed type", DD ty])
 
 
     -- Elaborating 'unfold' directives.
@@ -950,7 +954,6 @@ instantiateInferredsTele (ACons (unrebind->((x,unembed->ty,ep),tele))) a = do
   let u = (AUniVar n ty)
   (us, a') <-  instantiateInferredsTele tele (subst x u a)
   return (u:us, a')
-   
 
 -- | Is 'a' an arrow type that has inferred arguments?
 hasInferreds :: ATerm -> TcMonad Bool

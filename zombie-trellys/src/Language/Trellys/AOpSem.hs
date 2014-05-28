@@ -185,9 +185,9 @@ astep (AOrdAx _ _) = return Nothing
 
 astep (AOrdTrans _ _) = return Nothing
 
-astep (AInd _ _ _) = return Nothing
+astep (AInd _ _) = return Nothing
 
-astep (ARec _ _ _) = return Nothing
+astep (ARec _ _) = return Nothing
 
 astep (ALet eps bnd annot) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
@@ -273,14 +273,15 @@ stepFun :: ATerm -> ATerm -> MaybeT TcMonad ATerm
 stepFun (ALam _ _ _ bnd) b = do
   (x,body) <- unbind bnd
   return  $ subst x b body
-stepFun a@(ARec _ _ bnd) b = do
-  ((f,x),body) <- unbind bnd
+stepFun a@(ARec _ty bnd) b = do
+  ((f,[(x,ep)]),body) <- unbind bnd   --TODO: n-ary rec
   return $ subst f a $ subst x b body
-stepFun a@(AInd (eraseToHead -> AArrow i ex epsArr tyBnd) _ bnd) b = do
+stepFun a@(AInd (eraseToHead -> AArrow i ex epsArr tyBnd) bnd) b = do
   -- We can't use unbind2 here, because bnd and tyBnd have
   -- different numbers of variables.
-  ((f,x),body)                    <- unbind bnd
-  ( (tyVar,unembed -> ty1), ty2 ) <- unbind tyBnd
+  --TODO: generalize to n-ary ind.
+  ((f,[(x,_xep)]),body)           <- unbind bnd   --TODO: n-ary ind
+  ((tyVar,unembed -> ty1), ty2 ) <- unbind tyBnd
   x'  <- fresh $ string2Name "y"
   p   <- fresh $ string2Name "p"
   let tyArr2 = AArrow i ex       epsArr . bind (x', embed $ ty1)

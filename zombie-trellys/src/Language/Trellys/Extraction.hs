@@ -73,28 +73,30 @@ extractTerm a = do
     --return $ parens (text "Obj.magic" <+> ea)
     return ea
   extractTerm' (AContra pf ty) = return $ parens (text "raise Contra")
-  extractTerm' (AInd ty ep bnd) =
-    underInd (AInd ty ep bnd) 
-             (\x f body -> do
+  extractTerm' (AInd ty bnd) =
+    underInd (AInd ty bnd) 
+             (\f xs body _bodyTy -> do
                y <- fresh (string2Name "y")
                g <- fresh (string2Name "g")
+               let exs = hsep $ map (extractTermName.fst) xs
                ebody <- extractTerm body
                return . parens $
                   vcat [text "let rec" 
-                         <+> extractTermName f <+> extractTermName x <+> text "_" <+> text "=",
+                         <+> extractTermName f <+> exs <+> text "_" <+> text "=",
                         nest 10 ebody,
                         text "    and" 
                          <+> extractTermName g <+> extractTermName y <+> text "=",
                         nest 10 (extractTermName f <+> extractTermName y <+> text "()"),
                         text "in",
                            nest 2 (extractTermName g)])
-  extractTerm' (ARec ty ep bnd) =
-    underRec (ARec ty ep bnd) 
-             (\x f body -> do
+  extractTerm' (ARec ty bnd) =
+    underRec (ARec ty bnd) 
+             (\f xs body _bodyTy -> do
                ebody <- extractTerm body
+               let exs = map (extractTermName . fst) xs
                return . parens $
                  vcat [text "let rec"
-                         <+> extractTermName f <+> extractTermName x <+> text "=",
+                         <+> extractTermName f <+> hsep exs <+> text "=",
                          nest 10 ebody,
                          text "in",
                          nest 2 (extractTermName f)])
@@ -190,6 +192,7 @@ extractConstructorDef (AConstructorDef c args) = do
          exs <- extendCtx (ASig x Program ty) $
                   extractTypes xs
          return $ ety : exs         
+       extractTypes (ACons _) = error "this case is unreachable, but GHC's coverage check is not smart enough to see that"
 
 extractDecl :: ADecl -> TcMonad Doc
 extractDecl (ASig x th a) = return empty

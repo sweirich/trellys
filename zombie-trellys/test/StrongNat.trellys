@@ -348,7 +348,7 @@ test_cdiv5 = join 1000
 
 -- this version of fdiv diverges when n = 0
 prog fdiv : Nat -> Nat -> Nat
-rec fdiv m n = 
+rec fdiv m = \n. 
   if (lt m n) 
   then 0
   else Succ (fdiv (minus m n) n)

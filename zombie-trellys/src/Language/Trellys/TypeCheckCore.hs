@@ -155,21 +155,21 @@ getType (AOrdTrans a b) = do
        return $ (Logic, ASmaller t1 t3')
     _ -> coreErr [DS "getType: The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
-getType (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = 
+getType (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) bnd) = 
   return (Logic, AArrow k ex epTy bndTy)
 
-getType (AInd _ _ _) = coreErr [DS "getType: Annotation type on AInd incorrect"]
+getType (AInd _ _) = coreErr [DS "getType: Annotation type on AInd incorrect"]
 
-getType  (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) =
+getType  (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) bnd) =
   return (Program, AArrow k ex epTy bndTy)
 
-getType (ARec _ _ _) = coreErr [DS "getType: Annotation type on ARec incorrect"]
+getType (ARec _ _) = coreErr [DS "getType: Annotation type on ARec incorrect"]
 
 getType (ALet ep bnd annot) = return annot
 
 getType (ACase a bnd annot) = return annot
 
--- From (A->A')=(B->B'), conclude B=A. Note the built-in application of symmetry!
+-- From (A->A')=(B->B'), conclude B=A. Note the built-in application of symmetry.
 getType t@(ADomEq a) = do
   (th, aTy) <- aTs a
   case aTy of
@@ -493,49 +493,42 @@ aTs (AOrdTrans a b) = do
        return $ (Logic, ASmaller t1 t3')
     _ -> coreErr [DS "The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
-aTs t@(AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = do
-  unless (epTy == ep) $
-    coreErr [DS "AInd ep"]
-  aKc (AArrow k ex epTy bndTy)
-  ty' <- underInd t (\y f body -> do
-                      when (ep == Erased) $ do
-                        runtimeVars <- fv <$> erase body
-                        when (translate y `S.member` runtimeVars) $ do
-                          erasedBody <- erase body
-                          coreErr [DS "AInd: the variable", DD y, DS "is marked erased,",
-                                   DS "but it appears in an unerased position in the body", 
-                                   DD erasedBody]
-                      aTy' <- aTsLogic (AVar y)
-                      bTy' <- aTsLogic body
-                      return (AArrow k ex epTy (bind (y, embed aTy') bTy')))
-  tyEq <- aeq <$> erase (AArrow k ex epTy bndTy) <*> erase ty'
-  unless tyEq $    
-    coreErr [DS "AInd should have type", DD (AArrow k ex epTy bndTy), 
-             DS "but has type", DD ty']
-  return $ (Logic, AArrow k ex epTy bndTy)
+-- TODO: n-ary ind.
+aTs t@(AInd ty@(eraseToHead -> (AArrow k ex epTy bndTy)) bnd) = do
+  aKc ty
+  ty' <- underInd t 
+                  (\f ys body bodyTy -> do
+                    runtimeVars <- fv <$> erase body
+                    when (any (\(y,ep) -> ep==Erased && translate y `S.member` runtimeVars) 
+                          ys) $
+                      coreErr [DS "AInd Erased var"]
+                    bodyTy' <- aTsLogic body
+                    isEq <- aeq <$> erase bodyTy' <*> erase bodyTy'
+                    unless isEq $
+                      coreErr [DS "Body of AInd was annotated as", DD bodyTy, 
+                               DS "but has type", DD bodyTy']
+                    return ())
+  return $ (Logic, ty)
 
-aTs (AInd ty _ _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
+aTs (AInd ty _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs t@(ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) = do
-  unless (epTy == ep) $
-    coreErr [DS "ARec ep"]
-  aKc (AArrow k ex epTy bndTy)
-  ty' <- underRec t
-                  (\y f body -> do
-                     when (ep == Erased) $ do
-                       runtimeVars <- fv <$> erase body
-                       when (translate y `S.member` runtimeVars) $
-                         coreErr [DS "ARec Erased var"]
-                     (_, aTy') <- aTs (AVar y)
-                     (_,  bTy') <- aTs body
-                     return (AArrow k ex epTy (bind (y, embed aTy') bTy')))
-  tyEq <- aeq <$> erase (AArrow k ex epTy bndTy) <*> erase ty'
-  unless tyEq $
-    coreErr [DS "ARec should have type", DD (AArrow k ex epTy bndTy), 
-             DS "but has type", DD ty']
-  return $ (Program, AArrow k ex epTy bndTy)
+aTs t@(ARec ty@(eraseToHead -> (AArrow k ex epTy bndTy))  bnd) = do
+  aKc ty
+  underRec t
+           (\f ys body bodyTy -> do
+              runtimeVars <- fv <$> erase body
+              when (any (\(y,ep) -> ep==Erased && translate y `S.member` runtimeVars) 
+                    ys) $
+                coreErr [DS "ARec Erased var"]
+              (_,  bodyTy') <- aTs body
+              isEq <- aeq <$> erase bodyTy' <*> erase bodyTy'
+              unless isEq $
+                coreErr [DS "Body of ARec was annotated as", DD bodyTy, 
+                         DS "but has type", DD bodyTy']
+              return ())
+  return $ (Program, ty)
   
-aTs (ARec ty _ _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
+aTs (ARec ty _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
 
 aTs (ALet ep bnd (th, ty)) = do  
   ((_, _, unembed -> a), _) <- unbind bnd
@@ -706,11 +699,16 @@ aKcTele (ACons (unrebind->((x,unembed->ty,ep),rest))) = do
      coreErr [DS "All types in a telescope needs to be first-order, but", DD ty, DS "is not"]
   extendCtx (ASig x Program ty) $ aKcTele rest
 
--- Take an ind expression and apply fun to the body. 
-underInd :: ATerm -> (AName -> AName -> ATerm -> TcMonad a) -> TcMonad a
-underInd (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) fun  = do
+-- Take an ind expression and apply cont to the body
+-- This function also checks that the number and epsilon of the variables
+-- matches arrow type in the annotation.
+-- The two ATerms given to the continuation is the body and the type the body should have.
+underInd :: ATerm -> (AName -> [(AName,Epsilon)] -> ATerm -> ATerm -> TcMonad a) 
+            -> TcMonad a
+{-
+underInd (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) bnd) fun  = do
   ((y, unembed -> aTy), bTy) <-unbind bndTy
-  ((f,dumby), dumbb) <- unbind bnd
+  ((f,[(dumby,ep)]), dumbb) <- unbind bnd
   let b = subst dumby (AVar y) dumbb
   x <- fresh (string2Name "x")
   z <- fresh (string2Name "z")
@@ -721,19 +719,73 @@ underInd (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) fun  = do
                                             (subst y (AVar x) bTy))))
   extendCtx (ASig y Logic aTy) $
     extendCtx (ASig f Logic fTy) $
-      fun y f b
+      fun (y,ep) f b 
+-}
+underInd (AInd funTy bnd) cont  = do
+  ((f,ys), body) <- unbind bnd
+
+  -- fTy accumulates the type of the recursive variable, difference-list style.
+  let go fTy bodyTy [] = 
+             coreErr [DS "An ind-expression must have at least one argument, but", 
+                      DD (AInd funTy bnd), DS "has none"]
+      go fTy (eraseToHead-> (AArrow k' ex' ep' bnd')) ((x,ep):xs) = do
+        unless (ep'==ep) $
+          coreErr [DS "Epsilon of annotation and rec-expression do not match",
+                   DS "for variable", DD x]
+        ((x', unembed->domTy), rngTy) <- unbind bnd'
+        if null xs
+         then do
+                x0 <- fresh (string2Name "x")
+                z0 <- fresh (string2Name "z")
+                let fTyEnd =  
+                        AArrow k' Explicit ep
+                               (bind (x0, embed domTy)
+                                 (AArrow k' Explicit Erased
+                                   (bind (z0, embed (ASmaller (AVar x0) (AVar x)))
+                                      (subst x' (AVar x0) rngTy))))
+                extendCtx (ASig x Logic domTy) $
+                  extendCtx (ASig f Logic (fTy fTyEnd)) $
+                    cont f ys body (subst x' (AVar x) rngTy)
+         else extendCtx (ASig x Logic domTy) $
+                go (\rest -> fTy $ AArrow k' ex' ep (bind (x, embed domTy) rest))  
+                   (subst x' (AVar x) rngTy) 
+                   xs
+      go _ _ (_ : _) = 
+        coreErr [DS "The ind-expression", DD (ARec funTy bnd), 
+                 DS ("has " ++ show (length ys) ++ " arguments"),
+                 DS "but was ascribed the type", DD funTy]
+    in
+      go (\x->x) funTy ys
+
+
 underInd _ fun = err [DS "internal error: underInd applied to non-ind expression"]
 
--- Take a rec expression and apply fun to the body
-underRec :: ATerm -> (AName -> AName -> ATerm -> TcMonad a) -> TcMonad a
-underRec (ARec (eraseToHead -> (AArrow k ex epTy bndTy)) ep bnd) fun = do
-  ((y, unembed -> aTy), bTy) <- unbind bndTy
-  ((f,dumby), dumbb) <- unbind bnd
-  let b = subst dumby (AVar y) dumbb
-  extendCtx (ASig y Logic aTy) $
-    extendCtx (ASig f Logic (AArrow k ex epTy bndTy)) $
-       fun y f b  
+-- Take a rec expression and apply cont to the body
+-- This function also checks that the number and epsilon of the variables
+-- matches arrow type in the annotation.
+-- The two ATerms given to the continuation is the body and the type the body should have.
+underRec :: ATerm -> (AName -> [(AName,Epsilon)] -> ATerm -> ATerm -> TcMonad a)
+            -> TcMonad a
+underRec (ARec funTy bnd) cont = do
+  ((f,ys), body) <- unbind bnd
+  let go (eraseToHead-> (AArrow k' ex' ep' bnd')) ((x,ep):xs) = do
+        unless (ep'==ep) $
+          coreErr [DS "Epsilon of annotation and rec-expression do not match",
+                   DS "for variable", DD x]
+        ((x', unembed->domTy), rngTy) <- unbind bnd'
+        extendCtx (ASig x Logic domTy) $
+          go (subst x' (AVar x) rngTy) xs
+      go _ (_ : _) = 
+        coreErr [DS "The rec-expression", DD (ARec funTy bnd), 
+                 DS ("has " ++ show (length ys) ++ " arguments"),
+                 DS "but was ascribed the type", DD funTy]
+      go bodyTy [] = 
+             extendCtx (ASig f Logic funTy) $
+               cont f ys body bodyTy
+    in
+      go funTy ys
 underRec _ fun = err [DS "internal error: underRec called on non-rec expression."]
+
 
 -- Take a case-expression, and apply fun to each case alternative.
 underCase :: ATerm -> (AName -> ATelescope -> ATerm -> TcMonad a) -> TcMonad [a]

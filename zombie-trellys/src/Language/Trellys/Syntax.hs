@@ -11,6 +11,7 @@ module Language.Trellys.Syntax where
 import Generics.RepLib hiding (Arrow,Con)
 import qualified Generics.RepLib as RL
 
+
 import Language.Trellys.GenericBind
 
 import Text.ParserCombinators.Parsec.Pos
@@ -21,6 +22,7 @@ import qualified Data.Set as S
 import Data.Binary
 import qualified GHC.Generics as GHCGen
 import Unbound.LocallyNameless.Types ()
+import Control.Applicative
 
 type TName = Name Term
 type EName = Name ETerm
@@ -113,9 +115,10 @@ data Term = Var TName    -- | variables
           -- | The @abort@ expression.
           | Abort
           -- | Recursive Definitions
-          --  @ind f x = body@ is represented as @(Bind (f,x) body)@
-          | Rec Epsilon (Bind (TName, TName) Term)
-          | Ind Epsilon (Bind (TName, TName) Term)
+          --  @ind f x1 .. xn = body@ is represented as 
+          --  @(Bind (f,[(x1,ep1), ...(xn,epn)]) body)@
+          | Rec (Bind (TName, [(TName,Epsilon)]) Term)
+          | Ind (Bind (TName, [(TName,Epsilon)]) Term)
           -- | Annotated terms
           | Ann Term Term
           -- | 'Paren' is for a parenthesized term, useful for pretty printing.
@@ -271,7 +274,7 @@ instance Alpha Explicitness where
 
 data ATerm = 
     AVar AName
-  | AUniVar AName ATerm --the second ATerm is the type of the univar. Todo: Probably we should keep the context also.
+  | AUniVar AName ATerm  --the second ATerm is the type of the univar. Todo: Probably we should keep the context also.
   | ACumul ATerm Int 
   | AType Int
   | ATCon AName [ATerm] 
@@ -306,9 +309,9 @@ data ATerm =
   | AOrdAx ATerm ATerm 
   | AOrdTrans ATerm ATerm 
   -- ET_indPlus and ET_indMinus (the first ATerm is the (pi) type of the function):
-  | AInd ATerm Epsilon (Bind (AName, AName) ATerm)
+  | AInd ATerm (Bind (AName, [(AName,Epsilon)]) ATerm)
   -- ET_recPlus and ET_recMinus:
-  | ARec ATerm Epsilon (Bind (AName, AName) ATerm)
+  | ARec ATerm (Bind (AName, [(AName,Epsilon)]) ATerm)
   -- Why is let in the core language? To get more readable core terms.
   | ALet Epsilon (Bind (AName, AName, Embed ATerm) ATerm) (Theta,ATerm)
    -- the final ATerm is the type of the entire match.
@@ -483,6 +486,13 @@ substATele _ _ _ = error "internal error: substATele called with unequal-length 
 
 deriving instance Show ETerm
 
+-- Isomophic to Maybe, used to mark places in the erased syntax which has 
+-- an epsilon in the annotated syntax.
+data Erasable a = 
+   IsRuntime a
+ | IsErased
+  deriving (Show)
+
 -- ETerm for "erased" term
 data ETerm = EVar EName
            | EUniVar EName 
@@ -499,16 +509,12 @@ data ETerm = EVar EName
            | ETyEq ETerm ETerm
            | EJoin
            | EAbort
-           | ERecPlus (Bind (EName, EName) ETerm)
-           | ERecMinus (Bind EName ETerm)
-           | EIndPlus (Bind (EName, EName) ETerm)
-           | EIndMinus (Bind EName ETerm)
+           | ERec (Bind (EName, [Erasable EName]) ETerm)
+           | EInd (Bind (EName, [Erasable EName]) ETerm)
            | ECase ETerm [EMatch]
            | ELet ETerm (Bind EName ETerm)
            | EContra
            | EAt ETerm Theta
---           | ETerminationCase ETerm (Bind EName (ETerm, 
---              (Bind EName ETerm)))
            | ETrustMe 
 
 deriving instance Show EMatch
@@ -531,7 +537,7 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Explicitness, ''EvaluationStrategy, 
+$(derive [''Epsilon, ''Theta, ''Explicitness, ''EvaluationStrategy, ''Erasable,
          ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
          ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope ])
@@ -544,16 +550,11 @@ instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
 instance Alpha EvaluationStrategy
+instance Alpha a => Alpha (Erasable a)
 
 instance Subst Term Term where
   isvar (Var x) = Just (SubstName x)
   isvar _ = Nothing
-
--- aterms should never contain term variables.
-instance Subst Term ATerm where
-  isvar _ = Nothing
-instance Subst Term AMatch
-instance Subst Term ATelescope
 
 instance Subst Term Epsilon
 instance Subst Term Explicitness
@@ -577,7 +578,6 @@ instance Subst ATerm Epsilon
 instance Subst ATerm Explicitness
 instance Subst ATerm Theta
 instance Subst ATerm EvaluationStrategy
-
 instance Subst ATerm AMatch
 instance Subst ATerm ATelescope
 
@@ -592,6 +592,7 @@ instance Subst ETerm EMatch
 instance Subst ETerm Epsilon
 instance Subst ETerm Explicitness
 instance Subst ETerm Theta
+instance (Subst ETerm a) => Subst ETerm (Erasable a)
 
 instance Eq ETerm where
   (==) = aeq
@@ -608,6 +609,7 @@ deriving instance GHCGen.Generic Theta
 deriving instance GHCGen.Generic Epsilon
 deriving instance GHCGen.Generic Explicitness
 deriving instance GHCGen.Generic EvaluationStrategy
+deriving instance GHCGen.Generic (Erasable a)
 deriving instance GHCGen.Generic (Name a)
 deriving instance GHCGen.Generic ATerm
 deriving instance GHCGen.Generic AMatch
@@ -621,6 +623,7 @@ instance Binary Theta
 instance Binary Epsilon
 instance Binary Explicitness
 instance Binary EvaluationStrategy
+instance Binary a => Binary (Erasable a)
 instance Binary AMatch
 instance Binary ATerm
 instance Binary ATelescope
@@ -628,6 +631,10 @@ instance Binary AConstructorDef
 instance Binary ADecl
 instance Binary ConstructorNames
 instance Binary AModule
+
+instance Binary SourcePos where
+  put pos = do put (sourceName pos) ; put (sourceLine pos) ; put (sourceColumn pos)
+  get = newPos <$> get <*> get <*> get
 
 -----------------------------------------------------------
 -- Equational reasoning proofs, constructed by the 
@@ -648,7 +655,7 @@ isAUniVar _ = Nothing
 -- | Gather all unification variables that occur in a term.
 uniVars :: ATerm -> Set AName 
 uniVars = RL.everything S.union (RL.mkQ S.empty uniVarsHere) 
-  where uniVarsHere (AUniVar x _)   = S.singleton x
+  where uniVarsHere (AUniVar x  _)   = S.singleton x
         uniVarsHere  _ = S.empty
 
 -- Also, need to know which head forms have injectivity rules.

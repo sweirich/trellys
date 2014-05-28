@@ -149,8 +149,8 @@ instance Disp Module where
            vcat (map disp (moduleEntries m))
 
 instance Disp Decl where
-  disp (Def n r@(Ind _ bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
-  disp (Def n r@(Rec _ bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
+  disp (Def n r@(Ind bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
+  disp (Def n r@(Rec bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
   disp (Sig n th ty) =
@@ -230,21 +230,21 @@ instance Display Term where
       return $ text "\\" <+> bindParens ep dn
                <+> text "." <+> db
 
-  display (Ind ep binding) =
-    lunbind binding $ \ ((n,x),body) -> do
+  display (Ind binding) =
+    lunbind binding $ \ ((n,args),body) -> do
       dn <- display n
-      dx <- display x
+      dargs <- hsep <$> mapM display args
       db <- display body
-      return $ text "ind" <+> dn <+> bindParens ep dx <+> text "="
+      return $ text "ind" <+> dn <+> dargs <+> text "="
                <+> db
 
-  display (Rec ep binding) =
-    lunbind binding $ \ ((n,x),body) -> do
+  display (Rec binding) =
+    lunbind binding $ \ ((n,args),body) -> do
       dn <- display n
-      dx <- display x
+      dargs <- hsep <$> mapM display args
       db <- display body
       return $ parens $
-             text "rec" <+> dn <+> bindParens ep (dx) <+> text "=" $$
+             text "rec" <+> dn <+> dargs <+> text "=" $$
                     (nest 2 db)
 
   display (App ep f x) = do
@@ -533,25 +533,25 @@ instance Display ATerm where
     da <- display a
     db <- display b
     return $ text "ordtrans" <+> parens da <+> parens db
-  display (AInd ty ep bnd) = 
-    lunbind bnd $ \((n,m), body) -> do
+  display (AInd ty  bnd) = 
+    lunbind bnd $ \((n,xs), body) -> do
       isVerbose <- asks verbose
       dty <- display ty
       dn <- display n
-      dm <- display m
+      dxs <- hsep <$> mapM display xs
       dbody <- display body
-      return . parens $ sep [text "ind" <+> dn <+> bindParens ep dm 
+      return . parens $ sep [text "ind" <+> dn <+> dxs
                                <+> (if isVerbose then colon <+> dty else empty)
                                <+> text "=",
                              nest 2 dbody]
-  display (ARec ty ep bnd) = 
-    lunbind bnd $ \((n,m), body) -> do
+  display (ARec ty bnd) = 
+    lunbind bnd $ \((n,xs), body) -> do
       isVerbose <- asks verbose
       dty <- display ty
       dn <- display n
-      dm <- display m
+      dxs <- hsep <$> mapM display xs
       dbody <- display body
-      return $ parens (text "rec" <+> dn <+> bindParens ep dm 
+      return $ parens (text "rec" <+> dn <+> dxs
                          <+> (if isVerbose then colon <+> dty else empty)
                          <+> text "="
                         $$ nest 2 dbody)
@@ -705,34 +705,20 @@ instance Display ETerm where
        return (eWraparg e0 de0 <+> text "=" <+> eWraparg e1 de1)
   display EJoin = return $ text "join"
   display EAbort = return $ text "abort"
-  display (ERecPlus bnd) =
-     lunbind bnd $ \ ((n,w),body) -> do
+  display (ERec bnd) =
+     lunbind bnd $ \ ((n,args),body) -> do
         dn <- display n
-        dw <- display w
+        dargs <- hsep <$> mapM display args
         db <- display body
-        return $ parens ( text "rec" <+> dn <+> brackets (dw)
+        return $ parens ( text "rec" <+> dn <+> dargs
                           <+> text "."
                           <+> db )
-  display (EIndPlus bnd) =
-     lunbind bnd $ \ ((n,w),body) -> do
+  display (EInd bnd) =
+     lunbind bnd $ \ ((n,args),body) -> do
         dn <- display n
-        dw <- display w
+        dargs <- hsep <$> mapM display args
         db <- display body
-        return $ parens ( text "ind" <+> dn <+> dw
-                          <+> text "."
-                          <+> db )
-  display (ERecMinus bnd) =
-     lunbind bnd $ \ (n,body) -> do
-        dn <- display n
-        db <- display body
-        return $ parens ( text "rec" <+> dn
-                          <+> text "."
-                          <+> db )
-  display (EIndMinus bnd) =
-     lunbind bnd $ \ (n,body) -> do
-        dn <- display n
-        db <- display body
-        return $ parens ( text "ind" <+> dn
+        return $ parens ( text "ind" <+> dn <+> dargs
                           <+> text "."
                           <+> db )
   display (ECase dis matches) = do
@@ -796,9 +782,13 @@ instance Disp Label where
    let (vars, body) = unsafeUnbind bnd in
      text "<" <> hsep (map disp vars) <> text ">." <+> disp body
 
-instance Disp (AName, Epsilon) where
+instance Rep a => Disp (Name a, Epsilon) where
   disp (x,Runtime) = disp x
-  disp (x,Erased) = brackets (disp x)
+  disp (x,Erased)  = brackets (disp x)
+
+instance Display a => Display (Erasable a) where
+  display (IsRuntime a) = display a
+  display IsErased = return $ text "[]"
 
 -- Assumes that all terms were opened safely earlier.
 instance Rep a => Display (Name a) where

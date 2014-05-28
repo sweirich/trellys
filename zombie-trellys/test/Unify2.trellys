@@ -34,8 +34,8 @@ singleton x t = unfold Substitution in
                        False -> Nothing
 
 -- apply a substitution to a term
-log subst : Substitution -> Term -> Term
-subst s = ind go t = case t [eqt] of
+log ap : Substitution -> Term -> Term
+ap s = ind go t = case t [eqt] of
                       Leaf -> Leaf
                       Branch t1 t2 -> Branch (go t1 [ord eqt]) 
                                              (go t2 [ord eqt])
@@ -47,56 +47,56 @@ subst s = ind go t = case t [eqt] of
 log compose : Substitution -> Substitution -> Substitution
 compose = unfold Substitution in
   \ s' s x . case (s x) of
-               Just t ->  Just (subst s' t)
+               Just t ->  Just (ap s' t)
                Nothing -> s' x
 
-log substCompose : (s1 : Substitution) -> (s2 : Substitution) ->
+log apCompose : (s1 : Substitution) -> (s2 : Substitution) ->
                     (t : Term) -> 
-                    subst (compose s1 s2) t = subst s1 (subst s2 t)
-substCompose s1 s2 t =
+                    ap (compose s1 s2) t = ap s1 (ap s2 t)
+apCompose s1 s2 t =
    unfold Substitution in
    TRUSTME
     
 
-log varSingleton : (x : Nat) -> (t : Term) -> t = subst (singleton x t) (Var x)
+log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (Var x)
 varSingleton x t = TRUSTME
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
-                   (notFreeIn x t = True) -> (subst (singleton x s) t = t)
+                   (notFreeIn x t = True) -> (ap (singleton x s) t = t)
 singletonNotFree = TRUSTME
 
 data Unify (t1 : Term) (t2 : Term) : Type where
-  No 
-  Yes of (s : Substitution) (pf : subst s t1 = subst s t2)
+  no 
+  yes of (s : Substitution) (pf : ap s t1 = ap s t2)
 
 prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
   case t1 , t2 of
-    Leaf, Leaf -> Yes empty _
-    Leaf, Branch _ _ -> No
-    Branch _ _ , Leaf -> No
+    Leaf, Leaf -> yes empty _
+    Leaf, Branch _ _ -> no
+    Branch _ _ , Leaf -> no
     Branch t11 t12, Branch t21 t22 ->
       case (unify t11 t21) of
-        No -> No 
-        Yes s p -> case (unify (subst s t12) (subst s t22)) of
-                     No -> No
-                     Yes s' p' ->
+        no -> no 
+        yes s p -> case (unify (ap s t12) (ap s t22)) of
+                     no -> no
+                     yes s' p' ->
                        let s'' = compose s' s in
-                       let [_] = (join : subst s'' (Branch t11 t12)
-                                         = Branch (subst s'' t11) (subst s'' t12)) in
-                       let [_] = (join : subst s'' (Branch t21 t22)
-                                         = Branch (subst s'' t21) (subst s'' t22)) in
-                       let [_] = (substCompose s' s t11) in
-                       let [_] = (substCompose s' s t12) in
-                       let [_] = (substCompose s' s t21) in
-                       let [_] = (substCompose s' s t22) in
-                         Yes s'' _
+                       let [_] = (join : ap s'' (Branch t11 t12)
+                                         = Branch (ap s'' t11) (ap s'' t12)) in
+                       let [_] = (join : ap s'' (Branch t21 t22)
+                                         = Branch (ap s'' t21) (ap s'' t22)) in
+                       let [_] = (apCompose s' s t11) in
+                       let [_] = (apCompose s' s t12) in
+                       let [_] = (apCompose s' s t21) in
+                       let [_] = (apCompose s' s t22) in
+                         yes s'' _
     t , (Var x) -> case (notFreeIn x t) of
-                     False -> No
+                     False -> no
                      True  -> 
                         let [_] = varSingleton x t in
                         let [_] = singletonNotFree t x t _ in
-                          Yes (singleton x t) _
+                          yes (singleton x t) _
     (Var x) , t -> case (unify t (Var x)) of
-                     No -> No
-                     Yes s p -> Yes s _ 
+                     no -> no
+                     yes s p -> yes s _ 

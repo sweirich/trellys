@@ -175,7 +175,7 @@ ind next_var [n] = \ v .
 
 prog dpll : [n:Nat] => (formula : Formula n) 
            -> Vector (Maybe Bool) n -> (Answer n formula @ log)
-rec dpll [n] formula assign =
+rec dpll [n] = \ formula assign.
  case (satisfies assign formula) of 
    Just True  -> SAT assign _
    Just False -> UNSAT
