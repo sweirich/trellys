@@ -66,9 +66,6 @@ instance Disp AConstructorDef where
 -- Adapted From AuxFuns
 -------------------------------------------------------------------------
 -- | The data structure for information about the display
--- 
--- In a more perfect world this would also include the current precedence
--- level, so we could print parenthesis exactly when needed.
 data DispInfo = DI
   {
   useTerminalHighlighting :: Bool,  -- Should we use color?
@@ -81,8 +78,8 @@ initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
               useTerminalHighlighting = unsafePerformIO (queryTerminal stdOutput),
---              verbose = False,
-              verbose = True,
+              verbose = False,
+--              verbose = True,
               dispAvoid = S.empty                    
          }
 

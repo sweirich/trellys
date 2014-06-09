@@ -15,8 +15,8 @@ import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
 import Language.Trellys.Environment(setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
-                                   extendCtx, extendCtxs,
-                                   err, 
+                                   extendCtx,
+                                   err, warn,
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
@@ -26,6 +26,7 @@ import Language.Trellys.CongruenceClosure
 import Language.Trellys.GenericBind hiding (avoid)
 
 import Control.Applicative 
+import Control.Monad.List (ListT(..), runListT)
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
 import Control.Monad.State.Strict
 import Control.Monad.Error (catchError)
@@ -792,56 +793,141 @@ isAnyValue (ASymEq _) = True
 isAnyValue (ATransEq _ _) = True
 isAnyValue (AEraseEq _) = True
 
--- Invent a name for a subexpression, and record it.
--- There is no need to name subexpressions which already are values of the right flavour.
-nameActivePos :: (Fresh m) => ValueFlavour -> ATerm -> WriterT [(AName, (ATerm, ValueFlavour))] m ATerm
-nameActivePos flavour a | valueFlavour flavour a = return a
-nameActivePos flavour a = do 
-  x <- fresh $ string2Name "hole"
-  tell [(x, (a, flavour))]
-  return (AVar x)
-
--- Invent names for subexpressions in active positions which are not already suitable values.
---   If activePos a = (a', s)
---   then
---      subst (map fst . M.toList s) a'  == a
---   and if each variable in dom(s) is replaced with a value of the
---   correct flavour results in a non-stuck expression. (I.e. it is
---   either a value or it can step).
---
---   The naming is done "shallowly", e.g. given an application (a b c
---   d) we will just mark the subexpressions (a b c) and d. The main
---   algorithm will go on to recursively investigate how (a b c) can
---   step.
-activePositions :: ATerm -> TcMonad (ATerm, [(AName, (ATerm, ValueFlavour))])
-activePositions t = runWriterT (go t)
-   where go :: ATerm -> WriterT  [(AName, (ATerm, ValueFlavour))] TcMonad ATerm
-         go (ACumul a lvl) = ACumul <$> go a <*> pure lvl
-         go (ADCon c th params args) = ADCon c th params <$> mapM (\(a,ep) -> (,) <$> (nameActivePos AnyValue a) <*> pure ep) args
-         go (AApp Erased a b ty)  = AApp Erased <$> go a <*> pure b <*> pure ty
-         go (AApp Runtime a b ty) = AApp Runtime <$> nameActivePos FunctionValue a <*> nameActivePos AnyValue b <*> pure ty
-         go (ALet ep bnd ty) = do
-          ((x,xeq,unembed->a), b) <- unbind bnd
-          a' <- nameActivePos AnyValue a
-          return $ ALet ep (bind (x,xeq, embed a') b) ty
--- Going under lets to find active positions is problematic because it changes the context, which would require extra
--- work in saturate.
 {-
-         go (ALet Erased bnd ty) = do
-           ((x,xeq,unembed->a), b) <- unbind bnd
-           ALet Erased <$> (bind (x,xeq, embed a) <$> go b) <*> pure ty
-         go (ALet Runtime bnd ty) = do
-           ((x,xeq,unembed->a),b) <- unbind bnd
-           a' <- nameActivePos AnyValue a
-           b' <- go b
-           return $ ALet Erased (bind (x,xeq, embed a') b') ty
+
+b is an _immediately active_ subexpression of a if 
+  * a is a case-expression and b is its scrutinee, or
+  * a is a let-expressions and b is the initialized, or
+  * a is an application and b is the function or the argument.
+  * (and some extra cases if the top-level form of a erases to b).
+
+b is an _active_ subexpression of a if (inductively)
+  * it is an immediately active subexpression, or
+  * it is an active subexpression of an immediately active subexpression.
+
+We have two mutually recursive procedures:
+  unfold :: AExp -> m ()
+    take an expression, and step it in all possible ways.
+    If there are no active redexes this is a no-op. Otherwise, it adds a bunch of equations to the context.
+
+  activize :: AExp -> m [AExp]
+    Find all "immediate" active subexpressions. Unfold them, then find CC-equivalent values of 
+    the right flavour. Return a list of all ways this can be done.
 -}
-         go (ACase a bnd ty) =
-             ACase <$> nameActivePos ConstructorValue a <*> pure bnd <*> pure ty
-         go (ABox a th) = ABox <$> go a <*> pure th
-         go (AConv a pf) = AConv <$> go a <*> pure pf
-         -- The rest of the cases are already values:
-         go a = return a
+
+-- unfold active subexpressions, then replace them with values.
+activize :: Int -> ATerm -> ListT (StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad)) ATerm
+activize fuel (ACumul a lvl) = ACumul <$> activize fuel a <*> pure lvl
+activize fuel (ADCon c th params args) 
+  -- TODO: Insert casts, this will require some thinking.
+  = ADCon c th params <$> mapM (\(a,ep) -> do 
+                                  lift $ unfold (fuel-1) a
+                                  (aTh,aTy) <- lift $ underUnfolds (getType a)
+                                  (a', _) <- ListT $ classMembersWithTy a aTy aTh AnyValue
+                                  return (a',ep))
+                               args
+activize fuel (AApp Erased a b ty)  = do
+  lift $ unfold (fuel-1) a
+  (aTh,aTy) <- lift $ underUnfolds (getType a)
+  (a', _) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
+  return $ AApp Erased a' b ty
+activize fuel (AApp Runtime a b ty) = do
+  lift $ unfold (fuel-1) a
+  (aTh,aTy) <- lift $ underUnfolds (getType a)
+  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
+  lift $ unfold (fuel-1) b
+  (bTh,bTy) <- lift $ underUnfolds (getType b)
+  (b', bPf) <- ListT $ classMembersWithTy b bTy bTh AnyValue
+  -- TODO: insert a cast.
+  return $ AApp Runtime a' b' ty
+activize fuel (ALet ep bnd ty) = do
+ ((x,xeq,unembed->a), b) <- unbind bnd
+ lift $ unfold (fuel-1) a
+ (aTh,aTy) <- lift $ underUnfolds (getType a)
+ (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
+ -- TODO: fix the type of xeq
+ return $ ALet ep (bind (x,xeq, embed a') b) ty
+activize fuel (ACase a bnd ty) = do
+ lift $ unfold (fuel-1) a
+ (aTh,aTy) <- lift $ underUnfolds (getType a)
+ (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh ConstructorValue
+ (y_eq, mtchs) <- unbind bnd
+ {- In the original expressions we had
+     y_eq : a = pattern
+    After replacing the scrutinee we get
+     y_eq : a' = pattern
+     aPf : a = a'
+    So 
+     (trans aPf y_eq) : a = pattern
+    as required. -}
+ aPf <- lift.lift.lift $ aPfThunk
+ return $ ACase a' (bind y_eq (subst y_eq (ATransEq aPf (AVar y_eq)) mtchs)) ty
+activize fuel (ABox a th) = ABox <$> activize fuel a <*> pure th
+activize fuel (AConv a pf) = AConv <$> activize fuel a <*> pure pf
+-- The rest of the cases are already values:
+activize fuel a = return a
+
+-- This function is similar to classMembers, but:
+--  (1) it lives inside the monad so it can check types
+--  (2) it does the "name a pure value" trick.
+classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour 
+                   -> StateT [(AName,AName,ATerm,ATerm)] 
+                          (StateT ProblemState TcMonad)
+                            [(ATerm, TcMonad ATerm)]
+classMembersWithTy b bTy bTh flavour = do
+     members <- lift $ classMembers b (valueFlavour flavour)
+     {- Note: an alternative would be to look for terms with
+        CC-equivalent types, not just strictly equal. But let's first
+        see if this is expressive enough. -}
+     filtered <- filterM (\(c,_) -> do
+                                     (cTh,cTy) <- underUnfolds (getType c)
+                                     isEq <- aeq <$> erase cTy <*> erase bTy
+                                     return $ cTh <= bTh && isEq)
+                         members
+     if null filtered && flavour == AnyValue && bTh == Logic
+      then do
+        -- If the term is logical and any value will do, but there is no such value,
+        -- then we can create one by introducing an erased let which names the subexpression.
+        y <- fresh $ string2Name "namedSubexp"
+        y_eq <- fresh $ string2Name "namedSubexp_eq"
+        alreadyEqual <- lift $ addEquation b (AVar y) (AVar y_eq)
+        unless alreadyEqual $
+          modify ((y, y_eq, bTy, b):)
+        return [(AVar y, return (AVar y_eq))]
+      else 
+        return filtered
+
+unfold :: Int -> ATerm -> StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad) ()
+unfold fuel a | fuel <= 0  = return ()
+unfold fuel a = do
+  liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+                                        DS ("with "++ show fuel ++ " units of fuel left")] 
+  _ <-  lift $ genEqs a
+  -- Gor every combination of values in the active positions, see if the term steps.
+  activeVariants <- runListT (activize fuel a)
+  forM_ activeVariants $ \term -> do
+                               -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
+                               -- TODO, eventually this will be fixed in activize.
+                               welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
+                               unless welltyped $
+                                  warn [DS "rejecting illtyped variant", DD term]
+                               when welltyped $ do
+                                 mterm' <- lift . lift $ astep term
+                                 case mterm' of
+                                   Nothing -> return ()
+                                   Just term' -> do 
+                                                    y <- fresh $ string2Name "unfolds"
+                                                    y_eq <- fresh $ string2Name "unfolds_eq"
+
+                                                    isEq <- aeq <$> erase term <*> erase term'
+                                                    let proof = if isEq 
+                                                                  then  AJoin term 0 term 0 CBV
+                                                                  else  AJoin term 1 term' 0 CBV
+                                                    alreadyEqual <- lift $ addEquation term term' proof
+                                                    unless alreadyEqual $
+                                                       modify ((y, y_eq, ATyEq term term', proof):)
+                                                    unfold (fuel-1) term'
+
 
 -- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
@@ -876,14 +962,13 @@ classMembers :: ATerm -> (ATerm -> Bool) -> StateT ProblemState TcMonad [(ATerm,
 classMembers a predi = do
   names <- gets naming
   candidates <- classMembersExplain (bmlook names a)
---  candidates <- classMembersExplain (names BM.! a)
   let cs = [(a',p)
             | (c,p) <- candidates,
               let a' = (names BM.!> c),
               predi a']
   mapM (\(a',p) -> do
-           -- smartStep and intoArrow will only use one of the list values, and saturate
-           -- does not use the proof terms at all, so we want this to be a lazy thunk.
+           -- smartStep and intoArrow will only use one of the list values, 
+           -- so we want this to be a lazy thunk.
            let pf = (genProofTerm 
                          <=< return . simplProof
                          <=< chainProof' a a'
@@ -893,95 +978,32 @@ classMembers a predi = do
            return (a',pf))
        cs
 
-
-{-
-  TODO: maybe we should also keep track of terms which have already been explored, to avoid redundant work?
-  I don't know how big an issue that would be in practice. 
--}
-saturate1 :: Int -> ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) ()
-saturate1 0 a = return ()
-saturate1 fuel a = do
-  _ <-  lift $ genEqs a
-  (context, subexps) <- lift . lift $ activePositions a
-  -- First process all the subexpressions.
-  forM_ subexps (\(x, (b,_)) -> saturate1 (fuel-1) b)
-  -- For each active position, see if we can find suitable values.
-  subexps' <- mapM 
-                -- We throw away the proof that they are equal (the second component) of the pair.
-                -- The main elaboration pass will construct a new one later.
-                (\(x, (b, flavour)) -> do
-                                         (bTh,bTy) <- getTypeUnderUnfolds b
-                                         --Todo: an alternative would be to look for terms with CC-equivalent types,
-                                         -- not just strictly equal. But let's first see if this is expressive enough.
-                                         members <- map fst <$> (filterM (\(c,_) -> do (cTh,cTy) <- getTypeUnderUnfolds c
-                                                                                       isEq <- aeq <$> erase cTy <*> erase bTy
-                                                                                       return $ cTh <= bTh && isEq)
-                                                                         =<< lift (classMembers b  (valueFlavour flavour)))
-                                         if null members && flavour == AnyValue && bTh == Logic
-                                           then do
-                                             -- If the term is logical and any value will do, but there is no such value,
-                                             -- then we can create one by introducing an erased let which names the subexpression.
-                                             y <- fresh $ string2Name "namedSubexp"
-                                             modify ((y, bTy, b):)
-                                             lift $ addEquation b (AVar y)
-                                             return [(x, AVar y)]
-                                           else 
-                                             return (map (x,) members))                                           
-                subexps
-  -- Then for every combination of values in the active positions, see if the term steps.
-  forM_ (choose subexps') $ \vals -> do
-                               let term = substs vals context
-                               -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
-                               welltyped <- (do _ <- aTsUnderUnfolds term; return True) `catchError` (\ _ -> return False)
-                               when welltyped $ do
---                               do
-                                 mterm' <- lift . lift $ astep term
-                                 case mterm' of
-                                   Nothing -> return ()
-                                   Just term' -> do 
-                                                    y <- fresh $ string2Name "unfolds"
-                                                    isEq <- aeq <$> erase term <*> erase term'
-                                                    let proof = if isEq 
-                                                                  then  AJoin term 0 term 0 CBV
-                                                                  else  AJoin term 1 term' 0 CBV
-                                                    modify ((y, ATyEq term term', proof):)
-                                                    lift $ addEquation term term'
-                                                    saturate1 (fuel-1) term'
-
-saturate :: [(Theta,ATerm,ATerm)] -> Int -> ATerm -> TcMonad (Set (AName,ATerm,ATerm))
+saturate :: [(Theta,ATerm,ATerm)] -> Int -> ATerm -> TcMonad (Set (AName,AName,ATerm,ATerm))
 saturate hyps fuel a = 
   flip evalStateT newState $ do
     mapM_ processHyp hyps
-    S.fromList <$> execStateT (saturate1 fuel a) []
+    S.fromList <$> execStateT (unfold fuel a) []
 
-
--- Enumerate all ways to choose exactly one element from each list.
-choose :: [[a]] -> [[a]]
-choose (xs : xss) =  [ y : ys | y <- xs, ys <- choose xss ]
-choose [] = [[]]
- 
-addEquation :: ATerm -> ATerm -> StateT ProblemState TcMonad ()
-addEquation a b = do
+addEquation :: ATerm -> ATerm -> ATerm -> StateT ProblemState TcMonad Bool
+addEquation a b pf = do
   ca <- genEqs =<< (lift (zonkTerm a))
   cb <- genEqs =<< (lift (zonkTerm b))
-  -- This is called from saturate, but then the congruence closure state is thrown away and
-  --  the main typechecker will reconstruct it from scratch (this is a bit hacky, but hey).
-  --  So we don't need to supply a real proof term at this point.
-  let proof = RawAssumption (error "internal error: addEquation proof term forced", RawRefl)
-  propagate [(proof, Left (EqConstConst ca cb))]
+  sameClass <- inSameClass ca cb
+  propagate [(RawAssumption (pf, RawRefl), Left (EqConstConst ca cb))]
+  return sameClass
 
 
 -- In the implementation of saturate, we need to typecheck terms in
 -- the extended context because the term may contain namedSubexp's.
-getTypeUnderUnfolds :: ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) (Theta, ATerm)
-getTypeUnderUnfolds a = do
+underUnfolds :: TcMonad a -> StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad) a
+underUnfolds a = do
   ctx <- get
-  lift . lift $ extendCtxs (map (\(y,ty,_) -> ASig y Logic ty) ctx) $ getType a
-
-aTsUnderUnfolds :: ATerm -> StateT [(AName,ATerm,ATerm)] (StateT ProblemState TcMonad) (Theta, ATerm)
-aTsUnderUnfolds a = do
-  ctx <- get
-  lift . lift $ extendCtxs (map (\(y,ty,_) -> ASig y Logic ty) ctx) $ aTs a
+  go ctx
+ where go [] = lift . lift $  a
+       go ((x,x_eq, bTy, b) : ctx) = 
+         extendCtx (ASig x Logic bTy) $ 
+           extendCtx (ASig x_eq Logic (ATyEq (AVar x) b)) $
+             go ctx
 
 --See intoArrow for the prototypical use case. 
 intoFoo :: (ATerm->Bool) -> ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
