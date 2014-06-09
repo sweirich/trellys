@@ -580,10 +580,9 @@ ta a tyB = do
                    DS "(No automatic coersion was attempted.)"]
 
 -- Check b after adding a bunch of bindings to the context.
-taUnderUnfolds :: [(AName, ATerm,ATerm)] -> Term -> ATerm -> TcMonad ATerm
+taUnderUnfolds :: [(AName, AName,ATerm,ATerm)] -> Term -> ATerm -> TcMonad ATerm
 taUnderUnfolds [] b tyB = ta b tyB
-taUnderUnfolds ((x,ty,pf):rest) b tyB = do
-   y   <- fresh $ string2Name (name2String x ++ "_eq")
+taUnderUnfolds ((x,y,ty,pf):rest) b tyB = do
    --liftIO $ putStrLn . render . disp $ [ DS "Adding", DD (AVar x), DD (AVar y), DD ty, DD pf, DS "to the context"]
    (th, eb)  <- extendCtx (ASig x Logic ty) $ 
                   extendCtx (ASig y Logic (ATyEq (AVar x) pf)) $ do
