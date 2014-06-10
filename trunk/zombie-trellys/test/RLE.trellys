@@ -82,7 +82,9 @@ encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
      let _ = (pjoin : decode (encodeFrom eq (Nil) n x0)
                    = append (replicate n x0) (Nil)) in
      _
+     -- unfold (decode (encodeFrom eq xs n x0)) in _
     Cons x ys ->
+     -- unfold (decode (encodeFrom eq xs n x0)) in
      let _ = (pjoin : (encodeFrom eq (Cons  x ys) n x0)
                    = (case (eq x x0) [_] of
                         Just q -> encodeFrom eq ys (Succ n) x0

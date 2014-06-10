@@ -96,11 +96,10 @@ log clause_is_unsat : [n:Nat] => (partial : Vector (Maybe Bool) n)
                       -> Maybe ((phi : Vector Bool n)
                                    -> Extends partial phi
                                    -> any (interp_lit phi) clause = False)
-clause_is_unsat = \[n] partial = ind loop c = 
+clause_is_unsat = \[n] partial . ind loop c = 
   case c of
     Nil -> Nothing
-    Cons c
-
+    Cons x xs -> 
 
 -- Precondition: f is known to not be satified already.
 -- Returns either an unassigned variable or a proof that f is unsatisfiable.
