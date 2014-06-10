@@ -114,5 +114,44 @@ plus_associates = ind pa i = \j k .
                in (_ : (plus (plus i j) k) = (plus i (plus j k)))
 
 
+{-
+plus_associates' : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
+plus_associates' = ind pa i = \j k .
+  case i [ieq] of
+    Zero ->  
+     unfold (plus (plus i j) k) in 
+     unfold (plus i (plus j k)) in
+        _ 
+    Succ i' -> let ih = pa i' [ord ieq] j k
+               -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
+
+               in unfold (plus (plus i j) k)
+               in unfold (plus (Succ (plus i' j)) k)
+
+               in let _ = (_ : plus i j = plus (Succ i') j) 
+
+-- Huh, so this works...
+               in let _ = (_ : plus (Succ i') j = Succ (plus i' j)) 
+-- ... but this doesn't??
+               in let _ = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k))
+
+               --in unfold (plus i (plus j k))
+
+                
+
+
+               {-
+               in let _  = (_ : plus (Succ i') j = Succ (plus i' j))
+               in let [plus_i'_j] = plus i' j
+               in let _  = (_ : plus (Succ plus_i'_j) k = Succ (plus plus_i'_j k))
+               in let [plus_j_k] = plus j k
+               in let _ = (_ : plus (Succ i') plus_j_k = Succ (plus i' plus_j_k))
+               -}
+
+--               in _
+               in TRUSTME
+
+-}
+
 main : Nat
 main = plus 2 3

@@ -11,9 +11,9 @@ usually log
 -- We use natural numbers for variables everywhere
 
 data Term : Type where
-  Leaf 
-  Branch of (t1 : Term) (t2 : Term)
-  Var of (x : Nat)
+  leaf 
+  branch of (t1 : Term) (t2 : Term)
+  var of (x : Nat)
 
 
 -- notFreeIn x t = True if x is not free in t. 
@@ -36,13 +36,13 @@ singleton x t = unfold Substitution in
 -- apply a substitution to a term
 log ap : Substitution -> Term -> Term
 ap s = ind go t = case t [eqt] of
-                      Leaf -> Leaf
-                      Branch t1 t2 -> Branch (go t1 [ord eqt]) 
+                      leaf -> leaf
+                      branch t1 t2 -> branch (go t1 [ord eqt]) 
                                              (go t2 [ord eqt])
-                      Var x -> unfold Substitution in
+                      var x -> unfold Substitution in
                                  case (s x) of 
                                    Just t -> t
-                                   Nothing -> Var x
+                                   Nothing -> var x
 
 log compose : Substitution -> Substitution -> Substitution
 compose = unfold Substitution in
@@ -53,12 +53,16 @@ compose = unfold Substitution in
 log apCompose : (s1 : Substitution) -> (s2 : Substitution) ->
                     (t : Term) -> 
                     ap (compose s1 s2) t = ap s1 (ap s2 t)
-apCompose s1 s2 t =
-   unfold Substitution in
-   TRUSTME
-    
+apCompose s1 s2 = ind IH t =
+  case t [teq] of
+    leaf -> unfold (ap (compose s1 s2) t) in
+            unfold (ap s1 (ap s2 t)) in
+	      _
+    branch t1 t2 -> TRUSTME
+    var x -> TRUSTME
+       
 
-log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (Var x)
+log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
 varSingleton x t = TRUSTME
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
@@ -72,31 +76,34 @@ data Unify (t1 : Term) (t2 : Term) : Type where
 prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
   case t1 , t2 of
-    Leaf, Leaf -> yes empty _
-    Leaf, Branch _ _ -> no
-    Branch _ _ , Leaf -> no
-    Branch t11 t12, Branch t21 t22 ->
+    leaf, leaf -> yes empty _
+    leaf, branch _ _ -> no
+    branch _ _ , leaf -> no
+    branch t11 t12, branch t21 t22 ->
       case (unify t11 t21) of
         no -> no 
-        yes s p -> case (unify (ap s t12) (ap s t22)) of
-                     no -> no
-                     yes s' p' ->
-                       let s'' = compose s' s in
-                       let [_] = (join : ap s'' (Branch t11 t12)
-                                         = Branch (ap s'' t11) (ap s'' t12)) in
-                       let [_] = (join : ap s'' (Branch t21 t22)
-                                         = Branch (ap s'' t21) (ap s'' t22)) in
-                       let [_] = (apCompose s' s t11) in
-                       let [_] = (apCompose s' s t12) in
-                       let [_] = (apCompose s' s t21) in
-                       let [_] = (apCompose s' s t22) in
-                         yes s'' _
-    t , (Var x) -> case (notFreeIn x t) of
-                     False -> no
-                     True  -> 
-                        let [_] = varSingleton x t in
-                        let [_] = singletonNotFree t x t _ in
-                          yes (singleton x t) _
-    (Var x) , t -> case (unify t (Var x)) of
-                     no -> no
-                     yes s p -> yes s _ 
+        yes s p -> 
+          case (unify (ap s t12) (ap s t22)) of
+            no -> no
+	    yes s' p' ->
+	      let s'' = compose s' s in
+	      let [_] = (pjoin:  ap s'' (branch t11 t12)
+   		               = branch (ap s'' t11) (ap s'' t12)) in
+	      let [_] = (pjoin:  ap s'' (branch t21 t22)
+			       = branch (ap s'' t21) (ap s'' t22)) in
+	      let [_] = (apCompose s' s t11) in
+	      let [_] = (apCompose s' s t12) in
+	      let [_] = (apCompose s' s t21) in
+	      let [_] = (apCompose s' s t22) in
+		yes s'' _
+    t , (var x) -> 
+      case (notFreeIn x t) of
+        False -> no
+        True  -> 
+           let [_] = varSingleton x t in
+           let [_] = singletonNotFree t x t _ in
+             yes (singleton x t) _
+    (var x) , t -> 
+      case (unify t (var x)) of
+        no -> no
+        yes s p -> yes s _ 

@@ -14,9 +14,9 @@ isNo (yes _) = false
 isNo (no _) =  true
  
 data Term : Set where
-  leaf : Term
+  leaf   : Term
   branch : Term → Term → Term
-  var  : ℕ → Term
+  var    : ℕ → Term
 
 _∉FV_ : ℕ → Term → Bool
 x ∉FV leaf = false
@@ -37,22 +37,22 @@ singleton x t y with  (x ≟ y)
 ...               | no ¬p = nothing
 
 ap : Substitution → Term  → Term
-ap σ leaf = leaf
-ap σ (branch t1 t2) = branch (ap σ t1) (ap σ t2)
-ap σ (var x) with σ x
+ap s leaf = leaf
+ap s (branch t1 t2) = branch (ap s t1) (ap s t2)
+ap s (var x) with s x
 ...         | (just t) =  t
 ...         | (nothing) = var x
 
 -- Composing subsitutions
 compose : Substitution → Substitution → Substitution
-compose σ1 σ2 x with σ2 x
-...           | just t = just (ap σ1 t)
-...           | nothing = σ1 x
+compose s1 s2 x with s2 x
+...           | just t = just (ap s1 t)
+...           | nothing = s1 x
 
-apCompose : ∀ {σ σ'} → (t : Term) → ap (compose σ σ') t  ≡ ap σ (ap σ' t)
+apCompose : ∀ {s s'} → (t : Term) → ap (compose s s') t  ≡ ap s (ap s' t)
 apCompose leaf = refl
 apCompose (branch t1 t2) = cong₂ branch (apCompose t1) (apCompose t2)
-apCompose {σ} {σ'} (var x) with σ' x 
+apCompose {s} {s'} (var x) with s' x 
 ...               | just t' = refl
 ...               | nothing = refl
 
@@ -74,7 +74,7 @@ singleton-∉FV (var y) x s with (x ≟ y)
 
 data Unify : (t1 t2 : Term) → Set where
   no  : ∀{t1 t2} → Unify t1 t2
-  yes : ∀{t1 t2} (σ : Substitution) → ap σ t1 ≡ ap σ t2 → Unify t1 t2   
+  yes : ∀{t1 t2} (s : Substitution) → ap s t1 ≡ ap s t2 → Unify t1 t2   
 
 {-# NO_TERMINATION_CHECK #-}
 unify : (t1 t2 : Term) → Unify t1 t2
@@ -83,33 +83,35 @@ unify leaf (branch t2 t3) = no
 unify (branch t1 t2) leaf = no
 unify (branch t11 t12) (branch t21 t22) 
       with unify t11 t21 
-... | no = no
-... | yes σ p with unify (ap σ t12) (ap σ t22) 
+...    | no = no
+...    | yes s p with unify (ap s t12) (ap s t22) 
 ...               | no = no
-...               | yes σ' q =  yes (compose σ' σ) 
-                                    (begin
-                                       ap (compose σ' σ) (branch t11 t12)
-                                     ≡⟨ apCompose (branch t11 t12)  ⟩
-                                       ap σ' (ap σ (branch t11 t12))
-                                     ≡⟨ refl  ⟩
-                                       branch (ap σ' (ap σ t11)) (ap σ' (ap σ t12))
-                                     ≡⟨ cong₂ (λ s t → branch (ap σ' s) t) p q ⟩
-                                       branch (ap σ' (ap σ t21)) (ap σ' (ap σ t22))
-                                     ≡⟨ refl ⟩
-                                       ap σ' (ap σ (branch t21 t22))
-                                     ≡⟨ sym (apCompose (branch t21 t22)) ⟩
-                                       ap (compose σ' σ) (branch t21 t22)
-                                     ∎ )
+...               | yes s' q 
+  =  yes (compose s' s) 
+         (begin
+            ap (compose s' s) (branch t11 t12)
+          ≡⟨ apCompose (branch t11 t12)  ⟩
+            ap s' (ap s (branch t11 t12))
+          ≡⟨ refl ⟩
+            branch (ap s' (ap s t11)) (ap s' (ap s t12))
+          ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
+            branch (ap s' (ap s t21)) (ap s' (ap s t22))
+          ≡⟨ refl ⟩
+            ap s' (ap s (branch t21 t22))
+          ≡⟨ sym (apCompose (branch t21 t22)) ⟩
+            ap (compose s' s) (branch t21 t22)
+          ∎)
 unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
-...                | true | [ q ] =  yes (singleton x t) 
-                                         (begin
-                                            ap (singleton x t) t
-                                          ≡⟨ singleton-∉FV t x t q  ⟩
-                                            t
-                                          ≡⟨ varSingleton x t  ⟩
-                                            ap (singleton x t) (var x)
-                                          ∎)
-...                          | false | _ =  no
+...               | true | [ q ] 
+  =  yes (singleton x t) 
+         (begin
+            ap (singleton x t) t
+          ≡⟨ singleton-∉FV t x t q  ⟩
+            t
+          ≡⟨ varSingleton x t  ⟩
+            ap (singleton x t) (var x)
+          ∎)
+...              | false | _ =  no
 unify (var x) t with unify t (var x) 
-...                | no = no
-...                | yes σ p = yes σ (sym p)
+...              | no = no
+...              | yes s p = yes s (sym p)

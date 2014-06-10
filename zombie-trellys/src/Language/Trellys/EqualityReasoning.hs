@@ -815,40 +815,48 @@ We have two mutually recursive procedures:
     the right flavour. Return a list of all ways this can be done.
 -}
 
+
+data UnfoldState = UnfoldState {
+                     fuelLeft :: Int,
+                     alreadyUnfolded :: Set ATerm,
+                     unfoldEquations :: [(AName, AName, ATerm, ATerm)]
+                   }
+
+
 -- unfold active subexpressions, then replace them with values.
-activize :: Int -> ATerm -> ListT (StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad)) ATerm
-activize fuel (ACumul a lvl) = ACumul <$> activize fuel a <*> pure lvl
-activize fuel (ADCon c th params args) 
+activize :: ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
+activize (ACumul a lvl) = ACumul <$> activize a <*> pure lvl
+activize (ADCon c th params args) 
   -- TODO: Insert casts, this will require some thinking.
   = ADCon c th params <$> mapM (\(a,ep) -> do 
-                                  lift $ unfold (fuel-1) a
+                                  lift $ unfold a
                                   (aTh,aTy) <- lift $ underUnfolds (getType a)
                                   (a', _) <- ListT $ classMembersWithTy a aTy aTh AnyValue
                                   return (a',ep))
                                args
-activize fuel (AApp Erased a b ty)  = do
-  lift $ unfold (fuel-1) a
+activize (AApp Erased a b ty)  = do
+  lift $ unfold a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', _) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
   return $ AApp Erased a' b ty
-activize fuel (AApp Runtime a b ty) = do
-  lift $ unfold (fuel-1) a
+activize (AApp Runtime a b ty) = do
+  lift $ unfold a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', aPf) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
-  lift $ unfold (fuel-1) b
+  lift $ unfold b
   (bTh,bTy) <- lift $ underUnfolds (getType b)
   (b', bPf) <- ListT $ classMembersWithTy b bTy bTh AnyValue
   -- TODO: insert a cast.
   return $ AApp Runtime a' b' ty
-activize fuel (ALet ep bnd ty) = do
+activize (ALet ep bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
- lift $ unfold (fuel-1) a
+ lift $ unfold a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
  -- TODO: fix the type of xeq
  return $ ALet ep (bind (x,xeq, embed a') b) ty
-activize fuel (ACase a bnd ty) = do
- lift $ unfold (fuel-1) a
+activize (ACase a bnd ty) = do
+ lift $ unfold a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh ConstructorValue
  (y_eq, mtchs) <- unbind bnd
@@ -862,16 +870,16 @@ activize fuel (ACase a bnd ty) = do
     as required. -}
  aPf <- lift.lift.lift $ aPfThunk
  return $ ACase a' (bind y_eq (subst y_eq (ATransEq aPf (AVar y_eq)) mtchs)) ty
-activize fuel (ABox a th) = ABox <$> activize fuel a <*> pure th
-activize fuel (AConv a pf) = AConv <$> activize fuel a <*> pure pf
+activize (ABox a th) = ABox <$> activize a <*> pure th
+activize (AConv a pf) = AConv <$> activize a <*> pure pf
 -- The rest of the cases are already values:
-activize fuel a = return a
+activize a = return a
 
 -- This function is similar to classMembers, but:
 --  (1) it lives inside the monad so it can check types
 --  (2) it does the "name a pure value" trick.
 classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour 
-                   -> StateT [(AName,AName,ATerm,ATerm)] 
+                   -> StateT UnfoldState
                           (StateT ProblemState TcMonad)
                             [(ATerm, TcMonad ATerm)]
 classMembersWithTy b bTy bTh flavour = do
@@ -890,45 +898,45 @@ classMembersWithTy b bTy bTh flavour = do
         -- then we can create one by introducing an erased let which names the subexpression.
         y <- fresh $ string2Name "namedSubexp"
         y_eq <- fresh $ string2Name "namedSubexp_eq"
-        alreadyEqual <- lift $ addEquation b (AVar y) (AVar y_eq)
-        unless alreadyEqual $
-          modify ((y, y_eq, bTy, b):)
+        lift $ addEquation b (AVar y) (AVar y_eq)
+        modify (\st -> st{unfoldEquations = (y, y_eq, bTy, b):(unfoldEquations st)})
         return [(AVar y, return (AVar y_eq))]
       else 
         return filtered
 
-unfold :: Int -> ATerm -> StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad) ()
-unfold fuel a | fuel <= 0  = return ()
-unfold fuel a = do
-  liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
-                                        DS ("with "++ show fuel ++ " units of fuel left")] 
-  _ <-  lift $ genEqs a
-  -- Gor every combination of values in the active positions, see if the term steps.
-  activeVariants <- runListT (activize fuel a)
-  forM_ activeVariants $ \term -> do
-                               -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
-                               -- TODO, eventually this will be fixed in activize.
-                               welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
-                               unless welltyped $
-                                  warn [DS "rejecting illtyped variant", DD term]
-                               when welltyped $ do
-                                 mterm' <- lift . lift $ astep term
-                                 case mterm' of
-                                   Nothing -> return ()
-                                   Just term' -> do 
-                                                    y <- fresh $ string2Name "unfolds"
-                                                    y_eq <- fresh $ string2Name "unfolds_eq"
+unfold :: ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
+unfold a = do
+  fuel <- gets fuelLeft
+  visited <- gets alreadyUnfolded
+  when (fuel > 0 && not (a `S.member` visited)) $ do
+    modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
+                        alreadyUnfolded = S.insert a (alreadyUnfolded st)})
+    liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+                                          DS ("with "++ show fuel ++ " units of fuel left")] 
+    _ <-  lift $ genEqs a
+    -- Gor every combination of values in the active positions, see if the term steps.
+    activeVariants <- runListT (activize a)
+    forM_ activeVariants $ \term -> do
+                                 -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
+                                 -- TODO, eventually this will be fixed in activize.
+                                 welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
+                                 unless welltyped $
+                                    warn [DS "rejecting illtyped variant", DD term]
+                                 when welltyped $ do
+                                   mterm' <- lift . lift $ astep term
+                                   case mterm' of
+                                     Nothing -> return ()
+                                     Just term' -> do 
+                                                      y <- fresh $ string2Name "unfolds"
+                                                      y_eq <- fresh $ string2Name "unfolds_eq"
 
-                                                    isEq <- aeq <$> erase term <*> erase term'
-                                                    let proof = if isEq 
-                                                                  then  AJoin term 0 term 0 CBV
-                                                                  else  AJoin term 1 term' 0 CBV
-                                                    alreadyEqual <- lift $ addEquation term term' proof
-                                                    unless alreadyEqual $
-                                                       modify ((y, y_eq, ATyEq term term', proof):)
-                                                    unfold (fuel-1) term'
-
-
+                                                      isEq <- aeq <$> erase term <*> erase term'
+                                                      let proof = if isEq 
+                                                                    then  AJoin term 0 term 0 CBV
+                                                                    else  AJoin term 1 term' 0 CBV
+                                                      lift $ addEquation term term' proof
+                                                      modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
+                                                      unfold term'
 -- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
   disp hyps = 
@@ -982,22 +990,19 @@ saturate :: [(Theta,ATerm,ATerm)] -> Int -> ATerm -> TcMonad (Set (AName,AName,A
 saturate hyps fuel a = 
   flip evalStateT newState $ do
     mapM_ processHyp hyps
-    S.fromList <$> execStateT (unfold fuel a) []
+    S.fromList . unfoldEquations <$> execStateT (unfold a) (UnfoldState fuel S.empty [])
 
-addEquation :: ATerm -> ATerm -> ATerm -> StateT ProblemState TcMonad Bool
+addEquation :: ATerm -> ATerm -> ATerm -> StateT ProblemState TcMonad ()
 addEquation a b pf = do
   ca <- genEqs =<< (lift (zonkTerm a))
   cb <- genEqs =<< (lift (zonkTerm b))
-  sameClass <- inSameClass ca cb
   propagate [(RawAssumption (pf, RawRefl), Left (EqConstConst ca cb))]
-  return sameClass
-
 
 -- In the implementation of saturate, we need to typecheck terms in
 -- the extended context because the term may contain namedSubexp's.
-underUnfolds :: TcMonad a -> StateT [(AName,AName,ATerm,ATerm)] (StateT ProblemState TcMonad) a
+underUnfolds :: TcMonad a -> StateT UnfoldState (StateT ProblemState TcMonad) a
 underUnfolds a = do
-  ctx <- get
+  ctx <- gets unfoldEquations
   go ctx
  where go [] = lift . lift $  a
        go ((x,x_eq, bTy, b) : ctx) = 
