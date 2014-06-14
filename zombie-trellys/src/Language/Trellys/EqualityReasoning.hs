@@ -13,7 +13,8 @@ where
 
 import Language.Trellys.TypeMonad
 import Language.Trellys.Syntax
-import Language.Trellys.Environment(setUniVars, lookupUniVar,
+import Language.Trellys.Environment(getFlag,
+                                   setUniVars, lookupUniVar,
                                    Constraint(..), getConstraints, clearConstraints,
                                    extendCtx,
                                    err, warn,
@@ -22,6 +23,7 @@ import Language.Trellys.OpSem(erase, eraseToHead)
 import Language.Trellys.AOpSem (astep)
 import Language.Trellys.TypeCheckCore (getType, aTs)
 import Language.Trellys.CongruenceClosure
+import Language.Trellys.Options
 
 import Language.Trellys.GenericBind hiding (avoid)
 
@@ -911,8 +913,8 @@ unfold a = do
   when (fuel > 0 && not (a `S.member` visited)) $ do
     modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
                         alreadyUnfolded = S.insert a (alreadyUnfolded st)})
-    liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
-                                          DS ("with "++ show fuel ++ " units of fuel left")] 
+    --liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+    --                                      DS ("with "++ show fuel ++ " units of fuel left")] 
     _ <-  lift $ genEqs a
     -- Gor every combination of values in the active positions, see if the term steps.
     activeVariants <- runListT (activize a)
@@ -1106,24 +1108,26 @@ outofArrow typ ifDo elseDo = do
 -- Uses the union-find structure from the state.
 injRngFor ::ATerm -> ATerm -> StateT ProblemState TcMonad () 
 injRngFor (eraseToHead -> arr@(AArrow _ _ _ bnd)) c = do 
-  _ <- genEqs arr
-  _ <- genEqs c
-  ((x, unembed->a), b) <- lift $ unbind bnd
-  cs <- classMembers arr (isArrow.eraseToHead)
-  forM_ cs $
-    (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pfThunk) -> do
-        ((x', unembed->a'), b') <- lift $ unbind bnd'
-        pf <- lift pfThunk
-        pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
-        let ca  = subst x c b
-        let ca' = subst x' (AConv c pf_a) b'
-        nca   <- genEqs ca
-        nca'  <- genEqs ca'
-        -- So here is another question: ought we call unify at this point?
-        same <- inSameClass nca nca'
-        if same
-          then return ()
-          else err [DS "Injectivity condition failed. Could not prove that", DD ca , DS "and", DD ca', DS "are equal"])
+  noInjrngCheck <- getFlag NoInjrngCheck
+  unless noInjrngCheck $ do
+    _ <- genEqs arr
+    _ <- genEqs c
+    ((x, unembed->a), b) <- lift $ unbind bnd
+    cs <- classMembers arr (isArrow.eraseToHead)
+    forM_ cs $
+      (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pfThunk) -> do
+          ((x', unembed->a'), b') <- lift $ unbind bnd'
+          pf <- lift pfThunk
+          pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
+          let ca  = subst x c b
+          let ca' = subst x' (AConv c pf_a) b'
+          nca   <- genEqs ca
+          nca'  <- genEqs ca'
+          -- So here is another question: ought we call unify at this point?
+          same <- inSameClass nca nca'
+          if same
+            then return ()
+            else err [DS "Injectivity condition failed. Could not prove that", DD ca , DS "and", DD ca', DS "are equal"])
 injRngFor _ _ = error "internal error: injRngFor applied to non-arrow expression"
         
 

@@ -10,7 +10,8 @@ options = [Option "r" ["reduce"] (NoArg Reduce) "reduce the last term in the mod
            Option "n" ["nocoercions"] (NoArg NoCoercions) "do not automatically infer equality proofs",
            Option ""  ["no-tc-core"] (NoArg NoTypeCheckCore) "suppress type checking the core language", 
            Option "" ["typeclassy"] (NoArg Typeclassy) "enable some ad hoc typeclass hackery",
-           Option "e" ["extraction"] (NoArg DoExtraction) "extract to OCaml code"
+           Option "e" ["extraction"] (NoArg DoExtraction) "extract to OCaml code",
+           Option "" ["no-injrng"] (NoArg NoInjrngCheck) "disable the injrng check"
           ]
 
 data Flag = NoTypeCheckCore
@@ -19,5 +20,6 @@ data Flag = NoTypeCheckCore
           | LibDir FilePath
           | DoExtraction
           | Typeclassy
+          | NoInjrngCheck
           | SecondPass   --used internally, when we re-check the elaborated core term. 
   deriving (Eq,Show,Read)

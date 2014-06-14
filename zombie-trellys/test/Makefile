@@ -52,11 +52,9 @@ all: clean pass fail
 clean:
 	-rm *.trellys-elaborated *.trellys-bin
 
-pass: plain_pass typeclassy_pass
+pass: plain_pass BST.passtypeclassy UnfoldTests.passnoinjrng
 
 plain_pass: $(foreach p,$(PASS),$(p).pass) 
-
-typeclassy_pass: BST.passtypeclassy
 
 fail:
 	@./expect_error FreeVarsBug "variable n appears free in body"
@@ -104,6 +102,11 @@ todo: todo_pass todo_fail
 %.passtypeclassy:	%.trellys
 	@echo -n "$<: "
 	@if ! $(TYPECHECK) --typeclassy $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
+
+%.passnoinjrng:	%.trellys
+	@echo -n "$<: "
+	@if ! $(TYPECHECK) --no-injrng $<; then echo -e "\033[1;31mfailed\033[0;30m (should pass)" >&2; else echo; fi
+
 
 %.fail: %.trellys
 	@echo -n "$<: "
