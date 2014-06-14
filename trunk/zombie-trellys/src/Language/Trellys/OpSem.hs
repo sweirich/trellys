@@ -268,7 +268,7 @@ cbvNSteps n tm = do
 --  to find further redexes in the subterms of a redex.
 --
 -- Unlike a standard parallel reduction relation, once it goes under a
--- binder it only reduces lambdas and case-expressions, not ind
+-- binder it only reduces lambdas and case-expressions, not ind and rec
 -- expressions.  This decreases the risk of unfolding a term
 -- indefinitely.  The boolean argument tracks whether we are under a
 -- binder, when deep==True we don't unfold ind/rec.
@@ -328,7 +328,6 @@ parStep deep (EInd bnd)  = do
   ((f,args),b) <- unbind bnd
   EInd <$> (bind (f,args) <$> parStep True b)
 parStep deep (ECase EAbort mtchs) = return EAbort
--- Todo: need a value-restriction for correctness.
 parStep deep a@(ECase (EDCon c args) mtchs) | all isEValue args = 
   case find (\(EMatch c' _) -> c' == c) mtchs of
     Nothing  -> return a  --This should probably never happen?
