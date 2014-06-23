@@ -18,6 +18,7 @@ data Term : Set where
   branch : Term → Term → Term
   var    : ℕ → Term
 
+-- returns true when x is not free in t
 _∉FV_ : ℕ → Term → Bool
 x ∉FV leaf = false
 x ∉FV (branch t1 t2) = (x ∉FV t1) ∧ (x ∉FV t2)
@@ -36,6 +37,7 @@ singleton x t y with  (x ≟ y)
 ...               | yes p = just t
 ...               | no ¬p = nothing
 
+-- apply a substitution to a term
 ap : Substitution → Term  → Term
 ap s leaf = leaf
 ap s (branch t1 t2) = branch (ap s t1) (ap s t2)
