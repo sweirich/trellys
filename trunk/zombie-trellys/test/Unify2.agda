@@ -1,9 +1,11 @@
 module Unify2 where
 
+open import Function using (_∘_)
 open import Data.Bool hiding (_≟_)
 open import Data.Nat
 open import Data.Maybe
 open import Data.Empty
+open import Data.Sum
 open import Relation.Binary.PropositionalEquality
 open import Relation.Nullary.Core
 
@@ -17,6 +19,16 @@ data Term : Set where
   leaf   : Term
   branch : Term → Term → Term
   var    : ℕ → Term
+
+injvar : ∀ {x y} -> var x ≡ var y -> x ≡ y
+injvar refl = refl
+
+injbr1  : ∀ {s1 s2 t1 t2} -> branch s1 t1 ≡ branch s2 t2 -> s1 ≡ s2
+injbr1 refl = refl 
+
+injbr2  : ∀ {s1 s2 t1 t2} -> branch s1 t1 ≡ branch s2 t2 -> t1 ≡ t2
+injbr2 refl = refl 
+
 
 -- returns true when x is not free in t
 _∉FV_ : ℕ → Term → Bool
@@ -62,6 +74,8 @@ varSingleton : ∀ x t → t ≡ ap (singleton x t) (var x)
 varSingleton x t with x ≟ x 
 varSingleton x t | yes p =  refl
 varSingleton x t | no ¬p = ⊥-elim (¬p refl)
+
+-- interaction between singleton and fv
 
 singleton-∉FV : ∀ t x s → (x ∉FV t) ≡ true → ap (singleton x s) t ≡ t
 singleton-∉FV leaf x s = λ _ →  refl
@@ -115,5 +129,86 @@ unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
           ∎)
 ...              | false | _ =  no
 unify (var x) t with unify t (var x) 
+...              | no = no
+...              | yes s p = yes s (sym p)
+
+
+
+{- Another agda version that returns a proof when checking whether 
+   a variable is free in the term.  -}
+data _∈_ : ℕ → Term → Set where 
+  invar   : ∀{x} → x ∈ (var x)
+  inleft  : ∀ {x t1 t2} → x ∈ t1 -> x ∈ (branch t1 t2)
+  inright : ∀ {x t1 t2} → x ∈ t2 -> x ∈ (branch t1 t2)
+  
+invvar : ∀ {x y} -> x ∈ (var y) -> x ≡ y
+invvar invar = refl
+
+invbranch : ∀ {x t1 t2} -> x ∈ (branch t1 t2) -> (x ∈ t1) ⊎ (x ∈ t2)
+invbranch (inleft x) = inj₁ x
+invbranch (inright x) = inj₂ x
+
+lemma : ∀ {x t1 t2} -> ¬ (x ∈ t1) -> ¬ (x ∈ t2) -> ¬ (x ∈ (branch t1 t2))
+lemma ¬p ¬q (inleft x) = ¬p x
+lemma ¬p ¬q (inright x) = ¬q x
+
+_is∈_ : (x : ℕ) -> (t : Term) -> Dec (x ∈ t)
+x is∈ leaf = no (\ ())
+x is∈ (branch t1 t2) with (x is∈ t1) | (x is∈ t2) 
+... | yes p  | _      = yes (inleft p)
+... | no _   | yes p  = yes (inright p)
+... | no ¬p  | no ¬q  = no  (lemma ¬p ¬q)
+x is∈ (var y) with (x ≟ y) 
+.x is∈ (var x) | yes refl = yes invar
+...            | no ¬p    = no (¬p ∘ invvar)
+
+singleton-∉ : ∀ t x s → ¬ (x ∈ t) → ap (singleton x s) t ≡ t
+singleton-∉ leaf x s = λ _ →  refl
+singleton-∉ (branch t1 t2) x s with (x is∈ t1) | (x is∈ t2)
+...                                | yes p | _     = λ br -> ⊥-elim (br (inleft p))
+...                                | no  _ | yes p = λ br -> ⊥-elim (br (inright p))
+...                                | no p1 | no  p2 = λ _ → cong₂ branch (singleton-∉ t1 x s p1) 
+                                                                         (singleton-∉ t2 x s p2) 
+singleton-∉ (var y) x s with (x ≟ y) 
+singleton-∉ (var .x) x s | (yes refl) = λ br -> ⊥-elim (br invar)
+...  | (no ¬p)                        = λ br → refl
+
+{-# NO_TERMINATION_CHECK #-}
+unify' : (t1 t2 : Term) → Unify t1 t2
+unify' leaf leaf = yes empty refl
+unify' leaf (branch t2 t3) = no
+unify' (branch t1 t2) leaf = no
+unify' (branch t11 t12) (branch t21 t22) 
+      with unify' t11 t21 
+...    | no = no
+...    | yes s p with unify' (ap s t12) (ap s t22) 
+...               | no = no
+...               | yes s' q 
+  =  yes (compose s' s) 
+         (begin
+            ap (compose s' s) (branch t11 t12)
+          ≡⟨ apCompose (branch t11 t12)  ⟩
+            ap s' (ap s (branch t11 t12))
+          ≡⟨ refl ⟩
+            branch (ap s' (ap s t11)) (ap s' (ap s t12))
+          ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
+            branch (ap s' (ap s t21)) (ap s' (ap s t22))
+          ≡⟨ refl ⟩
+            ap s' (ap s (branch t21 t22))
+          ≡⟨ sym (apCompose (branch t21 t22)) ⟩
+            ap (compose s' s) (branch t21 t22)
+          ∎)
+unify' t (var x) with (x is∈ t)
+...               | no q 
+  =  yes (singleton x t) 
+         (begin
+            ap (singleton x t) t
+          ≡⟨ singleton-∉ t x t q  ⟩
+            t
+          ≡⟨ varSingleton x t  ⟩
+            ap (singleton x t) (var x)
+          ∎)
+...              | yes _ =  no
+unify' (var x) t with unify' t (var x) 
 ...              | no = no
 ...              | yes s p = yes s (sym p)
