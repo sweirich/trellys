@@ -10,6 +10,22 @@ usually log
 
 -- We use natural numbers for variables everywhere
 
+data Dec (p : Type) : Type where
+  Yes of (p)
+  No  of (p -> Void)
+
+-- equality for natural numbers is decidable
+
+dec_eq : (n1 : Nat) -> (n2 : Nat) -> Dec (n1 = n2)
+ind dec_eq x = \ y . 
+  case x [x_eq], y [y_eq] of 
+     Zero, Zero -> Yes _
+     Succ m, Succ n -> case (dec_eq m [ord x_eq] n) [_] of 
+                         Yes _ -> Yes _
+                         No pf -> No (\x. pf (sm_eq_Sn__m_eq_n m n _))
+     Zero , Succ n -> No (\x. contra (_ : (0 = Succ n)))
+     Succ m , Zero -> No (\x. contra (_ : (Succ m = 0)))
+
 data Term : Type where
   leaf 
   branch of (t1 : Term) (t2 : Term)
@@ -18,7 +34,12 @@ data Term : Type where
 
 -- notFreeIn x t = True if x is not free in t. 
 notFreeIn : Nat -> Term -> Bool
-notFreeIn = TRUSTME
+notFreeIn = \x. ind IH t = case t [teq] of 
+    leaf -> True
+    branch t1 t2 -> or (IH t1 [ord teq]) (IH t2 [ord teq])
+    var y -> case (dec_eq x y) [_] of 
+                 Yes _ -> False
+                 No  _ -> True
 
 Substitution : Type
 Substitution = Nat -> Maybe Term
@@ -29,9 +50,9 @@ empty = unfold Substitution in
 
 singleton : Nat -> Term -> Substitution
 singleton x t = unfold Substitution in
-                 \y. case (eq x y) [_] of
-                       True -> Just t
-                       False -> Nothing
+                 \y. case (dec_eq x y) [_] of
+                       Yes _ -> Just t
+                       No  _ -> Nothing
 
 -- apply a substitution to a term
 log ap : Substitution -> Term -> Term
@@ -53,21 +74,76 @@ compose = unfold Substitution in
 log apCompose : (s1 : Substitution) -> (s2 : Substitution) ->
                     (t : Term) -> 
                     ap (compose s1 s2) t = ap s1 (ap s2 t)
-apCompose s1 s2 = TRUSTME {- ind IH t =
+apCompose s1 s2 = ind IH t =
+  let s' = compose s1 s2 in
   case t [teq] of
-    leaf -> unfold (ap (compose s1 s2) t) in
-            unfold (ap s1 (ap s2 t)) in
-	      _
-    branch t1 t2 -> TRUSTME
-    var x -> TRUSTME -}
+    leaf -> unfold (ap s' t) in
+				unfold (ap s1 (ap s2 t)) in
+            _
+
+    branch t1 t2 -> unfold (ap s' t) in
+	                 unfold (ap s2 t) in 
+						  let t1' = ap s2 t1 in 
+						  let t2' = ap s2 t2 in
+						  unfold (ap s1 (branch t1' t2')) in
+						  let [_] = IH t1 [ord teq] in
+                    let [_] = IH t2 [ord teq] in
+                    _
+    var x -> unfold Substitution in
+             unfold (ap s' t) in
+				 unfold (ap s2 t) in
+             case (s2 x) [_] of
+               Just t  -> unfold (ap (compose s1 s2) (var x)) in 
+						        TRUSTME
+               Nothing -> TRUSTME
        
+            
 
 log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
-varSingleton x t = TRUSTME
+varSingleton x t = 
+   case (dec_eq x x) [eqx] of 
+     Yes p  -> 
+	    unfold Substitution in
+       let s = singleton x t in
+       unfold (s x) in
+       unfold (ap s (var x)) in
+		 {- SCW: these next three shouldn't be necessary, if unfold keeps going -}
+       let _ = (join : ((singleton x t) x) = (case (dec_eq x x) [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term)) in
+       let _ = (join : (case (Yes p)  [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term) = (Just t)) in 
+       let _ = (join : (case (Just t) [_] of { Just t -> t ; Nothing -> var x } : Term) = t) in
+		 _
+     No p -> case (p _) [_] of {}
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
                    (notFreeIn x t = True) -> (ap (singleton x s) t = t)
-singletonNotFree = TRUSTME
+singletonNotFree = ind IH t = \ x s p . 
+  unfold Substitution in
+  let s' = singleton x s in
+  unfold (singleton x s) in
+  case t [eqt] of 
+    leaf -> 
+            unfold (notFreeIn x leaf) in
+            unfold (ap s' leaf) in 
+            _
+    var y -> unfold (ap s' (var y)) in
+             case (dec_eq x y) [_] of 
+                Yes pf -> unfold (notFreeIn x (var y)) in
+                          contra (p : False = True)
+                No q  -> unfold (ap s' (var y)) in _
+    branch t1 t2 -> unfold (ap s' (branch t1 t2)) in
+                    let _ = (join : notFreeIn x (branch t1 t2) = or (notFreeIn x t1) (notFreeIn x t2)) in
+                    case (notFreeIn x t1) [_] of 
+                       False -> unfold (or False (notFreeIn x t2)) in 
+							           let _ = (_ : notFreeIn x t = False) in
+                                TRUSTME -- contra (p : False = True)
+                       True  -> case (notFreeIn x t2) [_] of 
+                                   False -> unfold (or True False) in 
+											           let _ = (_ : notFreeIn x t = False) in
+                                            contra (p : False = True)
+                                   True  -> let _ = IH t1 [ord eqt] x s _ in 
+                                            let _ = IH t2 [ord eqt] x s _ in
+                                            _
+
 
 data Unify (t1 : Term) (t2 : Term) : Type where
   no 
