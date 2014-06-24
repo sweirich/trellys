@@ -18,24 +18,20 @@ data Term : Type where
 
 -- notFreeIn x t = True if x is not free in t. 
 notFreeIn : Nat -> Term -> Bool
-notFreeIn = \x . ind go t = case t [eqt] of 
-  leaf -> False
-  branch t1 t2 -> and (go t1 [ord eqt]) (go t2 [ord eqt])
-  var y -> not (nat_eq x y) 
-    
+notFreeIn = TRUSTME
 
 Substitution : Type
 Substitution = Nat -> Maybe Term
 
 empty : Substitution
 empty = unfold Substitution in
-          \ x . Nothing
+         \ x . Nothing
 
 singleton : Nat -> Term -> Substitution
 singleton x t = unfold Substitution in
                  \y. case (eq x y) [_] of
                        True -> Just t
-                       False -> Nothing 
+                       False -> Nothing
 
 -- apply a substitution to a term
 log ap : Substitution -> Term -> Term
@@ -46,7 +42,7 @@ ap s = ind go t = case t [eqt] of
                       var x -> unfold Substitution in
                                  case (s x) of 
                                    Just t -> t
-                                   Nothing -> var x 
+                                   Nothing -> var x
 
 log compose : Substitution -> Substitution -> Substitution
 compose = unfold Substitution in
@@ -57,32 +53,17 @@ compose = unfold Substitution in
 log apCompose : (s1 : Substitution) -> (s2 : Substitution) ->
                     (t : Term) -> 
                     ap (compose s1 s2) t = ap s1 (ap s2 t)
-apCompose s1 s2 = ind IH t =
+apCompose s1 s2 = TRUSTME {- ind IH t =
   case t [teq] of
     leaf -> unfold (ap (compose s1 s2) t) in
             unfold (ap s1 (ap s2 t)) in
 	      _
-    branch t1 t2 -> 
-      unfold (ap (compose s1 s2) t) in
-      unfold (ap s1 (ap s2 t)) in
-      let _ = IH t1 in
-      let _ = IH t2 in
-      _
-
-    var x -> 
-      unfold Substitution in
-      unfold (ap (compose s1 s2) t) in
-      unfold (ap s1 (ap s2 t)) in
-      case (s2 x) [_] of 
-        Just t' -> _
-        Nothing -> _
+    branch t1 t2 -> TRUSTME
+    var x -> TRUSTME -}
        
 
 log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
-varSingleton x t = 
-  case (eq_nat x x) of 
-    True  -> unfold (ap (singleton x t) (var x)) in _
-    False -> unfold (ap (singleton x t) (var x)) in _
+varSingleton x t = TRUSTME
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
                    (notFreeIn x t = True) -> (ap (singleton x s) t = t)
