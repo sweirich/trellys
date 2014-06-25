@@ -101,6 +101,12 @@ eraseTele (ACons (unrebind-> ((x,_,Runtime), tele))) = (translate x:) <$> eraseT
 eraseTele (ACons (unrebind-> ((x,_,Erased),  tele))) = eraseTele tele
 eraseTele _ = error "Impossible, but GHC can't tell that the above pattern matches are comprehensive."
 
+
+
+
+
+
+
 -- | Remove all completely-erased syntactic form, until we get to the first 
 --   constructor which shows up in the erased version.
 

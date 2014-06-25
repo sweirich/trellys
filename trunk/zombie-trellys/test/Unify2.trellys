@@ -89,7 +89,7 @@ apCompose s1 s2 = ind IH t =
 						  let [_] = IH t1 [ord teq] in
                     let [_] = IH t2 [ord teq] in
                     _
-    var x -> 
+    var x -> TRUSTME {-
              unfold Substitution in
              let _ = (join : (ap s' (var x)) = 
                          (case (s' x) of { Just t -> t; Nothing -> var x } : Term)) in
@@ -101,12 +101,12 @@ apCompose s1 s2 = ind IH t =
                           let _ = (join : (case (Just u) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = Just t') in
 								  let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
 								  let _ = (join : (case (Just t') [_] of { Just u -> u ; Nothing -> var x } : Term) = t') in
-								  let _ = (_ : (ap s' t) = t') in
-								  let _ = (_ : ap s1 (ap s2 t) = ap s1 u) in
-                          _
+								  -- let _ = (_ : (ap s' t) = t') in
+								  -- let _ = (_ : ap s1 (ap s2 t) = ap s1 u) in
+                          TRUSTME
                Nothing -> let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
                           let _ = (join : (case (Nothing : Maybe Term) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = s1 x) in
-								  _
+								  TRUSTME  -}
 
        
             
@@ -116,10 +116,12 @@ varSingleton x t =
    case (dec_eq x x) [eqx] of 
      Yes p  -> 
 	    unfold Substitution in
-       let s = singleton x t in
-       unfold (s x) in
-       unfold (ap s (var x)) in
-		 {- SCW: these next three shouldn't be necessary, if unfold keeps going -}
+		 {- SCW: these next three shouldn't be necessary, if unfold keeps going. Would like to be able to say either:
+		 unfold (ap (singleton x t) (var x)) in _
+       --  or just
+       join  -- using the checked type
+		 -}
+		 let _ = (join : (ap (singleton x t) (var x)) = (case (singleton x t x) [_] of {  Just t -> t ;  Nothing -> var x } : Term)) in 
        let _ = (join : ((singleton x t) x) = (case (dec_eq x x) [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term)) in
        let _ = (join : (case (Yes p)  [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term) = (Just t)) in 
        let _ = (join : (case (Just t) [_] of { Just t -> t ; Nothing -> var x } : Term) = t) in
@@ -145,7 +147,7 @@ singletonNotFree = ind IH t = \ x s p .
     branch t1 t2 -> unfold (ap s' (branch t1 t2)) in
                     let _ = (join : notFreeIn x (branch t1 t2) = or (notFreeIn x t1) (notFreeIn x t2)) in
                     case (notFreeIn x t1) [_] of 
-                       False -> unfold (or False (notFreeIn x t2)) in 
+                       False -> let _ = (or False (notFreeIn x t2)) = False in
 							           let _ = (_ : notFreeIn x t = False) in
                                 TRUSTME -- contra (p : False = True)
                        True  -> case (notFreeIn x t2) [_] of 

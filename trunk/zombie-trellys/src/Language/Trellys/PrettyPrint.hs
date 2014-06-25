@@ -181,7 +181,7 @@ instance Disp Goal where
    $+$ text (show statement)
 -}
    
-   where dispAssumption (th, a, aTy) = disp th <+> disp a <+> colon <+> disp aTy
+   where dispAssumption (th, a, aTy) = disp th <+> disp a <+> colon <+> disp (erase' aTy)
          
 
 instance Disp ConstructorDef where
