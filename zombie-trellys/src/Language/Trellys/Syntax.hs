@@ -707,3 +707,77 @@ data Proof =
 
 
 $(derive [''Proof])
+
+---------------------------------------------------------------
+-- Erasing core terms (non monadically). 
+---------------------------------------------------------------
+erase' :: ATerm -> ETerm
+erase' (AVar x) =  EVar (translate x)
+erase' (AUniVar x _) =  EUniVar (translate x)
+erase' (ACumul a i) = erase' a
+erase' (AType i) =  EType i
+erase' (ATCon c indxs) = ETCon (translate c) $ map erase' indxs
+erase' (ADCon c _ indxs args) = EDCon (translate c) $ map (erase' . fst) (filter ((==Runtime) . snd) args)
+erase' (AArrow _ ex ep bnd) = 
+  let ((x, unembed -> a), b) = unsafeUnbind bnd in
+  EArrow ep (erase' a) (bind (translate x) $ erase' b)
+erase' (ALam _ _ ep bnd) = 
+  let (x, body) = unsafeUnbind bnd in
+  if ep == Runtime
+    then ELam  $ (bind (translate x) $ erase' body)
+    else EILam $ erase' body
+erase' (AApp Runtime a b ty) = EApp  (erase' a) (erase' b)
+erase' (AApp Erased a b ty)  = EIApp $ erase' a
+erase' (AAt a th) = EAt (erase' a) th
+erase' (AUnbox a) = erase' a
+erase' (ABox a th) = erase' a
+erase' (AAbort _) = EAbort
+erase' (ATyEq a b) = ETyEq (erase' a) (erase' b)
+erase' (AJoin a i b j strategy) = EJoin
+erase' (AConv a _) = erase' a
+erase' (ACong _ _ _) = EJoin
+erase' (AContra a ty) = EContra
+erase' (AInjDCon a i) = EJoin
+erase' (ASmaller a b) = ESmaller (erase' a) (erase' b)
+erase' (AOrdAx _ _) = EOrdAx
+erase' (AOrdTrans _ _) = EOrdAx
+erase' (AInd _ty bnd) = 
+  let ((f, ys), r) = unsafeUnbind bnd in
+  let eys= map (\(y, ep) -> if ep==Runtime then IsRuntime (translate y) else IsErased)
+               ys in
+  EInd $ (bind (translate f, eys) $ erase' r)
+erase' (ARec _ty bnd) = 
+  let ((f, ys), r) = unsafeUnbind bnd in
+  let eys= map (\(y, ep) -> if ep==Runtime then IsRuntime (translate y) else IsErased)
+               ys in
+  ERec $ (bind (translate f, eys) $ erase' r)
+erase' (ALet ep bnd _) = 
+  let ((x, _, unembed -> a), b) = unsafeUnbind bnd in
+  if ep == Runtime
+    then ELet (erase' a) (bind (translate x) $ erase' b)
+    else erase' b
+erase' (ACase a bnd _) = 
+  let (_, matchs) = unsafeUnbind bnd in
+  ECase (erase' a) (map erase'Match matchs)
+erase' (ADomEq _) = EJoin
+erase' (ARanEq _ _ _) = EJoin
+erase' (AAtEq _) = EJoin
+erase' (ANthEq _ _) = EJoin
+erase' (ATrustMe _) = ETrustMe
+erase' (AHighlight a) = erase' a
+erase' (AReflEq a) = EJoin
+erase' (ASymEq a) = EJoin
+erase' (ATransEq a b) = EJoin
+erase' (AEraseEq a) = EJoin
+
+
+erase'Match  :: AMatch -> EMatch
+erase'Match (AMatch c bnd) = 
+  let (args, b) = unsafeUnbind bnd in
+  EMatch (translate c)$ (bind (erase'Tele args)(erase' b))
+
+erase'Tele :: ATelescope -> [EName]
+erase'Tele AEmpty = []
+erase'Tele (ACons (unrebind-> ((x,_,Runtime), tele))) = (translate x:) $ erase'Tele tele
+erase'Tele (ACons (unrebind-> ((x,_,Erased),  tele))) = erase'Tele tele
+erase'Tele _ = error "Impossible, but GHC can't tell that the above pattern matches are comprehensive."
