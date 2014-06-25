@@ -68,7 +68,7 @@ ap s = ind go t = case t [eqt] of
 log compose : Substitution -> Substitution -> Substitution
 compose = unfold Substitution in
   \ s' s x . case (s x) of
-               Just t ->  Just (ap s' t)
+               Just t -> Just (ap s' t)
                Nothing -> s' x
 
 log apCompose : (s1 : Substitution) -> (s2 : Substitution) ->
@@ -89,13 +89,25 @@ apCompose s1 s2 = ind IH t =
 						  let [_] = IH t1 [ord teq] in
                     let [_] = IH t2 [ord teq] in
                     _
-    var x -> unfold Substitution in
-             unfold (ap s' t) in
-				 unfold (ap s2 t) in
+    var x -> 
+             unfold Substitution in
+             let _ = (join : (ap s' (var x)) = 
+                         (case (s' x) of { Just t -> t; Nothing -> var x } : Term)) in
+			    let _ = (join : (compose s1 s2 x) = 
+                         (case (s2 x) of { Just t -> Just (ap s1 t); Nothing -> s1 x } : Maybe Term)) in 
              case (s2 x) [_] of
-               Just t  -> unfold (ap (compose s1 s2) (var x)) in 
-						        TRUSTME
-               Nothing -> TRUSTME
+               Just u  -> let t' = ap s1 u in
+								  let _ = (_ : (ap s' t) = (case (s' x) [_] of { Just u -> u ; Nothing -> var x } : Term)) in
+                          let _ = (join : (case (Just u) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = Just t') in
+								  let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
+								  let _ = (join : (case (Just t') [_] of { Just u -> u ; Nothing -> var x } : Term) = t') in
+								  let _ = (_ : (ap s' t) = t') in
+								  let _ = (_ : ap s1 (ap s2 t) = ap s1 u) in
+                          _
+               Nothing -> let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
+                          let _ = (join : (case (Nothing : Maybe Term) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = s1 x) in
+								  _
+
        
             
 

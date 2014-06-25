@@ -144,9 +144,11 @@ data _∈_ : ℕ → Term → Set where
 invvar : ∀ {x y} -> x ∈ (var y) -> x ≡ y
 invvar invar = refl
 
+{-
 invbranch : ∀ {x t1 t2} -> x ∈ (branch t1 t2) -> (x ∈ t1) ⊎ (x ∈ t2)
 invbranch (inleft x) = inj₁ x
 invbranch (inright x) = inj₂ x
+-}
 
 lemma : ∀ {x t1 t2} -> ¬ (x ∈ t1) -> ¬ (x ∈ t2) -> ¬ (x ∈ (branch t1 t2))
 lemma ¬p ¬q (inleft x) = ¬p x
@@ -171,7 +173,7 @@ singleton-∉ (branch t1 t2) x s with (x is∈ t1) | (x is∈ t2)
                                                                          (singleton-∉ t2 x s p2) 
 singleton-∉ (var y) x s with (x ≟ y) 
 singleton-∉ (var .x) x s | (yes refl) = λ br -> ⊥-elim (br invar)
-...  | (no ¬p)                        = λ br → refl
+...                      | (no ¬p)    = λ _ → refl
 
 {-# NO_TERMINATION_CHECK #-}
 unify' : (t1 t2 : Term) → Unify t1 t2
