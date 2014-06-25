@@ -180,9 +180,10 @@ ta (Let th' ep bnd) tyB =
            DD a, DS "checks at P"]
       
     -- premise 2
+    let extendEq = if name2String x == "_" then id 
+                   else extendCtxSolve (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) 
     (eb,th) <- extendCtx (ASig (translate x) th' tyA) $
-                 extendCtxSolve (ASig (translate y) Logic 
-                                (ATyEq (AVar (translate x)) ea)) $ do
+                 extendEq $ do
                    eb <- ta b tyB
                    th <- aGetTh eb
                    return (eb,th)
@@ -584,8 +585,8 @@ taUnderUnfolds :: [(AName, AName,ATerm,ATerm)] -> Term -> ATerm -> TcMonad ATerm
 taUnderUnfolds [] b tyB = ta b tyB
 taUnderUnfolds ((x,y,ty,pf):rest) b tyB = do
    --liftIO $ putStrLn . render . disp $ [ DS "Adding", DD (AVar x), DD (AVar y), DD ty, DD pf, DS "to the context"]
-   (th, eb)  <- extendCtx (ASig x Logic ty) $ 
-                  extendCtx (ASig y Logic (ATyEq (AVar x) pf)) $ do
+   let extendEq = if name2String x == "_" then id else extendCtx (ASig y Logic (ATyEq (AVar x) pf)) 
+   (th, eb)  <- extendCtx (ASig x Logic ty) $ extendEq $ do
                     eb <- taUnderUnfolds rest b tyB
                     th <- aGetTh eb
                     return (th,eb)
@@ -882,7 +883,8 @@ ts (Let th' ep bnd) =
     unless (aTh <= th') $
       err [DS "The variable", DD y, DS "was marked as L but checks at P"]
     -- premise 2
-    (eb,tyB, bTh) <- extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) $
+    let extendEq = if name2String x == "_" then id else extendCtx (ASig (translate y) Logic (ATyEq (AVar (translate x)) ea)) 
+    (eb,tyB, bTh) <- extendEq $
                      extendCtxSolve (ASig (translate x) th' tyA) $ do
                         (eb, tyB) <- ts b
                         bTh <- aGetTh eb
