@@ -147,7 +147,7 @@ instance Disp Module where
 
 instance Disp Decl where
   disp (Def n r@(Ind bnd)) | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
-  disp (Def n r@(Rec bnd))    | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
+  disp (Def n r@(Rec bnd))  | name2String(fst(fst(unsafeUnbind bnd)))==name2String n = disp r
   disp (Def n term) = disp n <+> text "=" <+> disp term
 
   disp (Sig n th ty) =
@@ -180,7 +180,9 @@ instance Disp Goal where
    $+$ text "========================================="
    $+$ text (show statement)
 -}
+   
    where dispAssumption (th, a, aTy) = disp th <+> disp a <+> colon <+> disp aTy
+         
 
 instance Disp ConstructorDef where
   disp (ConstructorDef _ c tele) = disp c <+> text "of" <+> disp tele
@@ -389,10 +391,10 @@ aWrapf a =  case a of
 
 aWraparg :: Epsilon -> ATerm -> Doc -> Doc
 aWraparg ep b = case b of
-                 AVar _        -> bindParens ep
-                 ATCon _ []    -> bindParens ep 
+                 AVar _          -> bindParens ep
+                 ATCon _ []      -> bindParens ep 
                  ADCon _ _ [] [] -> bindParens ep
-                 _             -> mandatoryBindParens ep
+                 _               -> mandatoryBindParens ep
 
 eWrapf :: ETerm -> Doc -> Doc
 eWrapf a =  case a of
@@ -484,7 +486,7 @@ instance Display ATerm where
   display (ATyEq a b) = do
     da <- display a
     db <- display b
-    return $ parens da <+> text "=" <+> parens db
+    return $ (aWraparg Runtime a da) <+> text "=" <+> (aWraparg Runtime b db)
   display (AJoin a i b j strategy) = do
     da <- display a
     db <- display b

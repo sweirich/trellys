@@ -922,8 +922,8 @@ unfold a = do
                                  -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
                                  -- TODO, eventually this will be fixed in activize.
                                  welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
-                                 unless welltyped $
-                                    warn [DS "rejecting illtyped variant", DD term]
+                                 -- unless welltyped $
+                                 --   warn [DS "rejecting illtyped variant", DD term]
                                  when welltyped $ do
                                    mterm' <- lift . lift $ astep term
                                    case mterm' of
