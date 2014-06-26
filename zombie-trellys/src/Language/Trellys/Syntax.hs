@@ -62,6 +62,9 @@ deriving instance Ord Epsilon
 data EvaluationStrategy = CBV | PAR_CBV
   deriving (Show)
 
+data Smartness = Smart | Dumb
+  deriving (Show)
+
 ------------------------------
 ------------------------------
 --- Source Language
@@ -105,9 +108,9 @@ data Term = Var TName    -- | variables
           | TyEq Term Term
           -- | The 'join' expression, written @join k1 k2@ or @pjoin k1 k2@  We
           -- bidirectionally infer the terms
-          | Join Int Int EvaluationStrategy
+          | Join EvaluationStrategy Smartness Int Int 
           -- | The 'unfold' expression, only present in the surface language.
-          | Unfold Int Term Term
+          | Unfold EvaluationStrategy Int Term Term
           -- | @contra a@ says @a@ is a contradiction and has any type
           | Contra Term
           -- If a proves (c a1 .. an)=(c b1 .. bn),  then (injectivity a i) proves ai=bi
@@ -537,7 +540,7 @@ splitEApp e = splitEApp' e []
 -- LangLib instances
 --------------------
 
-$(derive [''Epsilon, ''Theta, ''Explicitness, ''EvaluationStrategy, ''Erasable,
+$(derive [''Epsilon, ''Theta, ''Explicitness, ''EvaluationStrategy, ''Smartness, ''Erasable,
          ''Term, ''Match, ''ComplexMatch, 
          ''ETerm, ''Pattern, ''EMatch, 
          ''ATerm, ''AMatch, ''ADecl, ''AConstructorDef, ''ATelescope ])
@@ -550,6 +553,7 @@ instance Alpha Pattern
 instance Alpha Theta
 instance Alpha Epsilon
 instance Alpha EvaluationStrategy
+instance Alpha Smartness
 instance Alpha a => Alpha (Erasable a)
 
 instance Subst Term Term where
@@ -560,6 +564,7 @@ instance Subst Term Epsilon
 instance Subst Term Explicitness
 instance Subst Term Theta
 instance Subst Term EvaluationStrategy
+instance Subst Term Smartness
 
 instance Subst Term Match
 instance Subst Term ComplexMatch
@@ -578,6 +583,7 @@ instance Subst ATerm Epsilon
 instance Subst ATerm Explicitness
 instance Subst ATerm Theta
 instance Subst ATerm EvaluationStrategy
+instance Subst ATerm Smartness
 instance Subst ATerm AMatch
 instance Subst ATerm ATelescope
 
@@ -609,6 +615,7 @@ deriving instance GHCGen.Generic Theta
 deriving instance GHCGen.Generic Epsilon
 deriving instance GHCGen.Generic Explicitness
 deriving instance GHCGen.Generic EvaluationStrategy
+deriving instance GHCGen.Generic Smartness
 deriving instance GHCGen.Generic (Erasable a)
 deriving instance GHCGen.Generic (Name a)
 deriving instance GHCGen.Generic ATerm
@@ -623,6 +630,7 @@ instance Binary Theta
 instance Binary Epsilon
 instance Binary Explicitness
 instance Binary EvaluationStrategy
+instance Binary Smartness
 instance Binary a => Binary (Erasable a)
 instance Binary AMatch
 instance Binary ATerm
@@ -714,11 +722,11 @@ $(derive [''Proof])
 erase' :: ATerm -> ETerm
 erase' (AVar x) =  EVar (translate x)
 erase' (AUniVar x _) =  EUniVar (translate x)
-erase' (ACumul a i) = erase' a
+erase' (ACumul a _i) = erase' a
 erase' (AType i) =  EType i
 erase' (ATCon c indxs) = ETCon (translate c) $ map erase' indxs
-erase' (ADCon c _ indxs args) = EDCon (translate c) $ map (erase' . fst) (filter ((==Runtime) . snd) args)
-erase' (AArrow _ ex ep bnd) = 
+erase' (ADCon c _ _indxs args) = EDCon (translate c) $ map (erase' . fst) (filter ((==Runtime) . snd) args)
+erase' (AArrow _ _ex ep bnd) = 
   let ((x, unembed -> a), b) = unsafeUnbind bnd in
   EArrow ep (erase' a) (bind (translate x) $ erase' b)
 erase' (ALam _ _ ep bnd) = 
@@ -726,18 +734,18 @@ erase' (ALam _ _ ep bnd) =
   if ep == Runtime
     then ELam  $ (bind (translate x) $ erase' body)
     else EILam $ erase' body
-erase' (AApp Runtime a b ty) = EApp  (erase' a) (erase' b)
-erase' (AApp Erased a b ty)  = EIApp $ erase' a
+erase' (AApp Runtime a b _ty) = EApp  (erase' a) (erase' b)
+erase' (AApp Erased a _b _ty)  = EIApp $ erase' a
 erase' (AAt a th) = EAt (erase' a) th
 erase' (AUnbox a) = erase' a
-erase' (ABox a th) = erase' a
+erase' (ABox a _th) = erase' a
 erase' (AAbort _) = EAbort
 erase' (ATyEq a b) = ETyEq (erase' a) (erase' b)
-erase' (AJoin a i b j strategy) = EJoin
+erase' (AJoin _a _i _b _j _strategy) = EJoin
 erase' (AConv a _) = erase' a
 erase' (ACong _ _ _) = EJoin
-erase' (AContra a ty) = EContra
-erase' (AInjDCon a i) = EJoin
+erase' (AContra _a _ty) = EContra
+erase' (AInjDCon _a _i) = EJoin
 erase' (ASmaller a b) = ESmaller (erase' a) (erase' b)
 erase' (AOrdAx _ _) = EOrdAx
 erase' (AOrdTrans _ _) = EOrdAx
@@ -765,10 +773,10 @@ erase' (AAtEq _) = EJoin
 erase' (ANthEq _ _) = EJoin
 erase' (ATrustMe _) = ETrustMe
 erase' (AHighlight a) = erase' a
-erase' (AReflEq a) = EJoin
-erase' (ASymEq a) = EJoin
-erase' (ATransEq a b) = EJoin
-erase' (AEraseEq a) = EJoin
+erase' (AReflEq _a) = EJoin
+erase' (ASymEq _a) = EJoin
+erase' (ATransEq _a _b) = EJoin
+erase' (AEraseEq _a) = EJoin
 
 
 erase'Match  :: AMatch -> EMatch
@@ -779,5 +787,5 @@ erase'Match (AMatch c bnd) =
 erase'Tele :: ATelescope -> [EName]
 erase'Tele AEmpty = []
 erase'Tele (ACons (unrebind-> ((x,_,Runtime), tele))) = (translate x:) $ erase'Tele tele
-erase'Tele (ACons (unrebind-> ((x,_,Erased),  tele))) = erase'Tele tele
+erase'Tele (ACons (unrebind-> ((_,_,Erased),  tele))) = erase'Tele tele
 erase'Tele _ = error "Impossible, but GHC can't tell that the above pattern matches are comprehensive."

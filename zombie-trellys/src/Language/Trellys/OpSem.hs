@@ -380,7 +380,7 @@ isValue (Smaller _ _)      = return True
 isValue (OrdAx _)          = return True
 isValue (OrdTrans _ _)     = return True
 isValue (TyEq _ _)         = return True
-isValue (Join _ _ _)       = return True
+isValue (Join _ _ _ _)       = return True
 isValue Abort              = return False
 isValue (Ind _)            = return True
 isValue (Rec _)            = return True
@@ -398,7 +398,7 @@ isValue (At _ _)           = return True
 isValue (TerminationCase _ _)     = return False
 isValue TrustMe            = return True
 isValue InferMe            = return False --Hm, dunno.
-isValue (Unfold _ _ b)     = isValue b  --acts like erased let
+isValue (Unfold _ _ _ b)     = isValue b  --acts like erased let
 
 -- | checks if an erased term is a value.
 isEValue :: ETerm -> Bool

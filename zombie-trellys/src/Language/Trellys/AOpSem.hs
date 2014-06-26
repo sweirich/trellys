@@ -1,3 +1,4 @@
+
 {-# LANGUAGE ViewPatterns, TupleSections, FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
@@ -315,11 +316,11 @@ aParStep deep a = do
   a' <- aRealParStep deep a
   a'E <- erase a'
   unless (aE' `aeq` a'E) $
-    err [DS "Internal error: reduction mismatch for the expression", DD a,
-         DS "which erases to", DD aE,
-         DS "parStep steps to", DD aE',
-         DS "aParStep steps to", DD a',
-         DS "which erases to", DD a'E ]
+    warn [DS "Internal error: reduction mismatch for the expression", DD a,
+          DS "which erases to", DD aE,
+          DS "parStep steps to", DD aE',
+          DS "aParStep steps to", DD a',
+          DS "which erases to", DD a'E ]
   return a'
 
 -- type-preserving parallel reduction relation.

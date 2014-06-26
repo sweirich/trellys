@@ -304,19 +304,24 @@ instance Display Term where
       da <- display a
       db <- display b
       return $ wraparg a da <+> text "=" <+> wraparg b db
-  display (Join s1 s2 strategy) =
-    return $ (case strategy of 
-                CBV     -> text "join" 
-                PAR_CBV -> text "pjoin")
+  display (Join strategy smartness s1 s2) =
+    return $ (case (smartness, strategy) of 
+                (Dumb, CBV)      -> text "join" 
+                (Dumb,PAR_CBV)   -> text "pjoin"
+                (Smart, CBV)     -> text "smartjoin" 
+                (Smart,PAR_CBV)  -> text "pjoin")
              <+> text (if s1 == s2
                          then if s1 == 100
                                  then ""
                                  else show s1
                          else show s1 ++ " " ++ show s2)
-  display (Unfold s a b) = do
+  display (Unfold str n a b) = do
+    let keyword = case str of
+                    CBV -> text "unfold"
+                    PAR_CBV -> text "punfold"
     da <- display a
     db <- display b
-    return $ text "unfold" <+> text (show s) <+> da <+> text "in"
+    return $ keyword <+> text (show n) <+> da <+> text "in"
               $$ nest 2 db
   display (Contra ty)  = do
      dty <- display ty
