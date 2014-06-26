@@ -30,10 +30,8 @@ import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
 import Language.Trellys.TypeMonad
 
 --Stuff used for debugging.
-{-
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
--}
 
 -------------------
 -------------------
@@ -705,22 +703,6 @@ aKcTele (ACons (unrebind->((x,unembed->ty,ep),rest))) = do
 -- The two ATerms given to the continuation is the body and the type the body should have.
 underInd :: ATerm -> (AName -> [(AName,Epsilon)] -> ATerm -> ATerm -> TcMonad a) 
             -> TcMonad a
-{-
-underInd (AInd (eraseToHead -> (AArrow k ex epTy bndTy)) bnd) fun  = do
-  ((y, unembed -> aTy), bTy) <-unbind bndTy
-  ((f,[(dumby,ep)]), dumbb) <- unbind bnd
-  let b = subst dumby (AVar y) dumbb
-  x <- fresh (string2Name "x")
-  z <- fresh (string2Name "z")
-  let fTy =  AArrow k Explicit
-                    ep 
-                    (bind (x, embed aTy)
-                    (AArrow k Explicit Erased (bind (z, embed (ASmaller (AVar x) (AVar y)))
-                                            (subst y (AVar x) bTy))))
-  extendCtx (ASig y Logic aTy) $
-    extendCtx (ASig f Logic fTy) $
-      fun (y,ep) f b 
--}
 underInd (AInd funTy bnd) cont  = do
   ((f,ys), body) <- unbind bnd
 

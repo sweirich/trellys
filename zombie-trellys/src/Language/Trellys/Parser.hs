@@ -456,7 +456,7 @@ ordtrans =
       
 join :: LParser Term
 join =
-  do strategy <-     try (reserved "join" >> return PAR_CBV {-CBV-} )  --quick hack to see if this breaks anything.
+  do strategy <-     try (reserved "join" >> return CBV )  
                  <|> (reserved "pjoin" >> return PAR_CBV)
      s1 <- optionMaybe natural
      s2 <- optionMaybe natural
