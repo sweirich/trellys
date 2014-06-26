@@ -203,7 +203,10 @@ trellysStyle = Token.LanguageDef
                   ,"ordtrans"
                   ,"join"
                   ,"pjoin"
+                  ,"smartjoin"
+                  ,"smartpjoin"
                   ,"unfold"
+                  ,"punfold"
                   ,"rec"
                   ,"ind"
                   ,"Type"
@@ -456,27 +459,30 @@ ordtrans =
       
 join :: LParser Term
 join =
-  do strategy <-     try (reserved "join" >> return CBV )  
-                 <|> (reserved "pjoin" >> return PAR_CBV)
+  do style <-     try (reserved "join" >> return (Join CBV Dumb))  
+                 <|> try (reserved "pjoin" >> return (Join PAR_CBV Dumb))
+                 <|> try (reserved "smartjoin" >> return (Join CBV Smart))
+                 <|> (reserved "smartpjoin" >> return (Join PAR_CBV Smart))
      s1 <- optionMaybe natural
      s2 <- optionMaybe natural
      case (s1,s2) of
-       (Nothing,Nothing) -> return $ Join 1000 1000 strategy
-       (Just n,Nothing)  -> return $ Join n n strategy
-       (Just n1,Just n2) -> return $ Join n1 n2 strategy
+       (Nothing,Nothing) -> return $ style 1000 1000
+       (Just n,Nothing)  -> return $ style n n
+       (Just n1,Just n2) -> return $ style n1 n2
        _                 -> error $ "Internal error: nat after no nat"
 
 
 unfold :: LParser Term
 unfold = 
-  do reserved "unfold"
+  do strategy <-   try (reserved "unfold" >> return CBV)
+                    <|> (reserved "punfold" >> return PAR_CBV)
      s <- optionMaybe natural
      e <- expr
      reserved "in"
      e' <- expr
      case s of
-       Nothing -> return $ Unfold 100 e e'
-       Just n  -> return $ Unfold n e e'
+       Nothing -> return $ Unfold strategy 100 e e'
+       Just n  -> return $ Unfold strategy n e e'
 
 -- Expressions
 

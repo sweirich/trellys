@@ -20,7 +20,7 @@ import Language.Trellys.Environment(getFlag,
                                    err, warn,
                                    zonkTerm, zonkWithBindings)
 import Language.Trellys.OpSem(erase, eraseToHead)
-import Language.Trellys.AOpSem (astep)
+import Language.Trellys.AOpSem (astep, aParStep)
 import Language.Trellys.TypeCheckCore (getType, aTs)
 import Language.Trellys.CongruenceClosure
 import Language.Trellys.Options
@@ -32,7 +32,7 @@ import Control.Monad.List (ListT(..), runListT)
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
 import Control.Monad.State.Strict
 import Control.Monad.Error (catchError)
-import Data.Maybe (fromJust,isNothing)
+import Data.Maybe (fromJust,fromMaybe,isNothing)
 import qualified Data.Set as S
 import Data.Set (Set)
 import qualified Data.Map as M
@@ -586,12 +586,15 @@ match vars (AInd ty bnd) (AInd ty' bnd') = do
 match vars (ARec ty bnd) (ARec ty' bnd') = do
   Just ((_,_), t, (_,_), t') <- unbind2 bnd bnd'
   match vars t t'
-match vars (ALet Runtime bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
+match vars (ALet Runtime bnd (_,ty)) (ALet Runtime bnd' (_,ty')) = do
   Just ((_,_,unembed -> t1), t2, (_,_,unembed -> t1'), t2') <- unbind2 bnd bnd'
   match vars t1 t1' `mUnion` match vars t2 t2'
-match vars (ALet Erased bnd (_,ty)) (ALet ep' bnd' (_,ty')) = do
-  Just ((_,_,unembed -> t1), t2, (_,_,unembed -> t1'), t2') <- unbind2 bnd bnd'
-  match vars t2 t2'
+match vars (ALet Erased bnd (_,ty)) t' = do
+  ((_,_,unembed -> t1), t2) <- unbind bnd
+  match vars t2 t'
+match vars t (ALet Erased bnd' (_,ty)) = do
+  ((_,_,unembed -> t1'), t2') <- unbind bnd'
+  match vars t t2'
 match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
   Just (_, alts, _, alts') <- unbind2 bnd bnd'
   (foldr M.union M.empty <$> zipWithM (matchMatch vars) alts alts')
@@ -599,8 +602,8 @@ match vars (ACase t1 bnd (_,ty)) (ACase t1' bnd' (_,ty')) = do
 match vars (ATrustMe t)   (ATrustMe t')    = return M.empty
 match vars (AHighlight a) a' = match vars a a'
 match vars a (AHighlight a') = match vars a a'
-match _ t t' = error $ "internal error: match called on non-matching terms "
-                       ++ show t ++ " and " ++ show t' ++ "."
+match _ t t' = 
+  error.render.disp $ [ DS "internal error: match called on non-matching terms", DD t, DS "and", DD t' ]
 
 matchMatch :: (Applicative m, Monad m, Fresh m) =>
               [AName] -> AMatch -> AMatch -> m (Map AName ATerm)
@@ -813,7 +816,7 @@ We have two mutually recursive procedures:
     take an expression, and step it in all possible ways.
     If there are no active redexes this is a no-op. Otherwise, it adds a bunch of equations to the context.
 
-  activize :: AExp -> m [AExp]
+  activate :: AExp -> m [AExp]
     Find all "immediate" active subexpressions. Unfold them, then find CC-equivalent values of 
     the right flavour. Return a list of all ways this can be done.
 -}
@@ -827,39 +830,39 @@ data UnfoldState = UnfoldState {
 
 
 -- unfold active subexpressions, then replace them with values.
-activate :: ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
-activate (ACumul a lvl) = ACumul <$> activate a <*> pure lvl
-activate (ADCon c th params args) 
+activate :: EvaluationStrategy -> ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
+activate str (ACumul a lvl) = ACumul <$> activate str a <*> pure lvl
+activate str (ADCon c th params args) 
   -- TODO: Insert casts, this will require some thinking.
   = ADCon c th params <$> mapM (\(a,ep) -> do 
-                                  lift $ unfold a
+                                  lift $ unfold str a
                                   (aTh,aTy) <- lift $ underUnfolds (getType a)
                                   (a', _) <- ListT $ classMembersWithTy a aTy aTh AnyValue
                                   return (a',ep))
                                args
-activate (AApp Erased a b ty)  = do
-  lift $ unfold a
+activate str (AApp Erased a b ty)  = do
+  lift $ unfold str a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', _) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
   return $ AApp Erased a' b ty
-activate (AApp Runtime a b ty) = do
-  lift $ unfold a
+activate str (AApp Runtime a b ty) = do
+  lift $ unfold str a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', aPf) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
-  lift $ unfold b
+  lift $ unfold str b
   (bTh,bTy) <- lift $ underUnfolds (getType b)
   (b', bPf) <- ListT $ classMembersWithTy b bTy bTh AnyValue
   -- TODO: insert a cast.
   return $ AApp Runtime a' b' ty
-activate (ALet ep bnd ty) = do
+activate str (ALet ep bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
- lift $ unfold a
+ lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
  -- TODO: fix the type of xeq
  return $ ALet ep (bind (x,xeq, embed a') b) ty
-activate (ACase a bnd ty) = do
- lift $ unfold a
+activate str (ACase a bnd ty) = do
+ lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh ConstructorValue
  (y_eq, mtchs) <- unbind bnd
@@ -873,10 +876,10 @@ activate (ACase a bnd ty) = do
     as required. -}
  aPf <- lift.lift.lift $ aPfThunk
  return $ ACase a' (bind y_eq (subst y_eq (ATransEq aPf (AVar y_eq)) mtchs)) ty
-activate (ABox a th) = ABox <$> activate a <*> pure th
-activate (AConv a pf) = AConv <$> activate a <*> pure pf
+activate str (ABox a th) = ABox <$> activate str a <*> pure th
+activate str (AConv a pf) = AConv <$> activate str a <*> pure pf
 -- The rest of the cases are already values:
-activate a = return a
+activate str a = return a
 
 -- This function is similar to classMembers, but:
 --  (1) it lives inside the monad so it can check types
@@ -907,43 +910,44 @@ classMembersWithTy b bTy bTh flavour = do
       else 
         return filtered
 
-unfold :: ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
-unfold a = do
+unfold :: EvaluationStrategy -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
+unfold str a = do
   fuel <- gets fuelLeft
   visited <- gets alreadyUnfolded
   when (fuel > 0 && not (a `S.member` visited)) $ do
     modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
                         alreadyUnfolded = S.insert a (alreadyUnfolded st)})
-    liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
-                                          DS ("with "++ show fuel ++ " units of fuel left")] 
+    --liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+    --                                      DS ("with "++ show fuel ++ " units of fuel left")] 
     _ <-  lift $ genEqs a
     -- Gor every combination of values in the active positions, see if the term steps.
-    activeVariants <- runListT (activate a)
-    liftIO $ putStrLn.render.disp $ [DS ("There are " ++ show (length activeVariants) ++ " active variants, namely"), DD activeVariants ]
-    forM_ activeVariants $ \term -> do
-                                 liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
+    activeVariants <- runListT (activate str a)
+    --liftIO $ putStrLn.render.disp $ [DS ("There are " ++ show (length activeVariants) ++ " active variants, namely"), DD activeVariants ]
+    -- Let's greedily commit to just one variant, and see if that helps.
+    forM_ (take 1 activeVariants) $ \term -> do
+                                 --liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
                                  -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
                                  -- TODO, eventually this will be fixed in activate.
                                  welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
                                  unless welltyped $
                                     warn [DS "rejecting illtyped variant", DD term]
                                  when welltyped $ do
-                                   -- term' <- underUnfolds $ aParStep False term
-                                   mterm' <- underUnfolds $ astep term
-                                   let term' = case mterm' of 
-                                                 Just something -> something
-                                                 Nothing -> term
+                                   term' <- case str of
+                                              CBV -> fromMaybe term <$> (underUnfolds $ astep term)
+                                              PAR_CBV -> underUnfolds $ aParStep False term
                                    when (not (term `aeq` term')) $ do
                                       y <- fresh $ string2Name "unfolds"
                                       y_eq <- fresh $ string2Name "unfolds_eq"
 
                                       isEq <- aeq <$> erase term <*> erase term'
                                       let proof = if isEq 
-                                                    then  AJoin term 0 term 0 CBV
-                                                    else  AJoin term 1 term' 0 CBV
+                                                    then  AJoin term 0 term 0 str
+                                                    else  AJoin term 1 term' 0 str
                                       lift $ addEquation term term' proof True
                                       modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
-                                      unfold term'
+                                      unfold str term'
+
+
 -- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
   disp hyps = 
@@ -998,11 +1002,11 @@ classMembers a predi = do
            return (a',pf))
        cs
 
-saturate :: [(Theta,ATerm,ATerm)] -> Int -> ATerm -> TcMonad (Set (AName,AName,ATerm,ATerm))
-saturate hyps fuel a = 
+saturate :: [(Theta,ATerm,ATerm)] -> EvaluationStrategy -> Int -> ATerm -> TcMonad (Set (AName,AName,ATerm,ATerm))
+saturate hyps str fuel a = 
   flip evalStateT newState $ do
     mapM_ processHyp hyps
-    S.fromList . unfoldEquations <$> execStateT (unfold a) (UnfoldState fuel S.empty [])
+    S.fromList . unfoldEquations <$> execStateT (unfold str a) (UnfoldState fuel S.empty [])
 
 addEquation :: ATerm -> ATerm -> ATerm -> Bool -> StateT ProblemState TcMonad ()
 addEquation a b pf isFine = do

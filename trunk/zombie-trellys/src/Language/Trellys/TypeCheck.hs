@@ -272,7 +272,7 @@ ta a (AAt tyA th') = do
     _  -> err [DD a, DS "should check at L but checks at P"]
 
 -- rule T_join
-ta (Join s1 s2 strategy) (ATyEq a b) = do
+ta (Join strategy smartness s1 s2) (ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
 
@@ -492,14 +492,11 @@ ta (Rec bnd) ty = do
 
 
     -- Elaborating 'unfold' directives.
-ta (Unfold n a b) tyB = do
+ta (Unfold str n a b) tyB = do
    (ea,_)  <- ts a
    availableEqs <- getAvailableEqs
-   moreEqs <- saturate availableEqs n ea
-   liftIO $ putStrLn "calling taUnderUnfolds"
-   res <- taUnderUnfolds (S.toList moreEqs) b tyB
-   liftIO $ putStrLn "done."
-   return res
+   moreEqs <- saturate availableEqs str n ea
+   taUnderUnfolds (S.toList moreEqs) b tyB
 
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
