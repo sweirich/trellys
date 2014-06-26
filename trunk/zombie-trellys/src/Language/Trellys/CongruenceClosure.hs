@@ -11,6 +11,7 @@ module Language.Trellys.CongruenceClosure(
   recordName, recordInhabitant, recordUniVar,
   guessVars, classMembersExplain,
   dumpState,
+  fineUnion,
   inSameClass, 
   unify, -- main function, runState is run for UniM monad  
 
@@ -54,6 +55,7 @@ import qualified Data.Bimap as BM
 import Data.List (intercalate)
 import Control.Monad.Trans
 import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.List
 
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
@@ -118,9 +120,20 @@ type Reprs = IntMap (Either (Proof, Constant) ClassInfo)
                                         -- (p:i=i', i')
 type ExplainedEquation = (Proof, Equation)
 
+-- We also maintain a finer equivalence relation between terms which
+-- were proved equal by parallel-reductions by the unfold tactic. It
+-- is used by classMembersExplain.  This lets unfold avoid wasting
+-- work on ~p>-equivalent terms.
+--
+-- Note: the map is defined for things which are not their own representatives.
+type FineReprs = IntMap Constant
+
 data ProblemState = ProblemState {
   -- union-find structure mapping constants to their representative.
   reprs :: Reprs,
+
+  -- also a union-find structure mapping constants to representatives
+  fineReprs :: FineReprs,
 
   -- maps c to list of equations l(a1..an)=b such that some ai is related to c.
   uses :: Map Constant [(Proof, EqBranchConst)],
@@ -222,6 +235,7 @@ recordEquation  c (a,b) = do
 newState :: ProblemState
 newState =
   ProblemState{reprs = IM.empty,
+               fineReprs = IM.empty,
                uses = M.empty,
                lookupeq = M.empty,
                unboundVars = M.empty,
@@ -281,13 +295,17 @@ findExplainInfo x = do
 
 -- Given a constant, return all the constants in its equivalence class,
 --  and a proof that they are equal.
+-- Actually it's not all the constants, because we only return one representative from
+-- each "fine" equivalence class.
 classMembersExplain :: Monad m => Constant -> StateT ProblemState m [(Constant, Proof)]
 classMembersExplain x = do
   (p, x', xinfo) <- findExplainInfo x
-  mapM (\y -> do
-          (q, y') <- findExplain y
-          return $ (y, RawTrans p (RawSymm q)))
-       (S.toList $ classMembers xinfo)
+  runListT $ do
+    y <- ListT . return . S.toList $ classMembers xinfo
+    (q, y') <- lift $ findExplain y
+    y'' <- lift $ fineFind y   
+    guard (y == y'')   --filter out duplicates from the same fine class.
+    return $ (y, RawTrans p (RawSymm q))
 
 -- Returns the old representative of the smaller class.
 union :: Monad m => Constant -> Constant -> Proof -> StateT ProblemState m Constant
@@ -550,3 +568,22 @@ guessVars = do
                                 ++ ")."
            giveBinding x a)
         
+----------------------------------------------------------------
+-- Maintaining the "fine" equivalence relation
+
+fineFind :: Monad m => Constant -> StateT ProblemState m Constant
+fineFind x = do
+  content <- return (IM.lookup) `ap` return x `ap` (gets fineReprs)
+  case content of
+    Just x' -> do
+       x'' <- fineFind x'
+       modify (\st -> st{ fineReprs = IM.insert x x'' (fineReprs st) })
+       return x''
+    Nothing -> return x
+
+-- Perhaps somewhat confusingly, this is an asymmetric operation.
+-- (fineUnion a a') means "a simplifies to a', so always prefer a' over a".
+fineUnion :: Monad m => Constant -> Constant -> StateT ProblemState m ()
+fineUnion x y = do
+  y' <- fineFind y
+  modify (\st -> st{ fineReprs = IM.insert x y' (fineReprs st) })

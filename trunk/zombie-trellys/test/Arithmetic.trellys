@@ -91,8 +91,8 @@ ind lemma_minus_plus_id m = \n .
                  (lemma_minus_plus_id m' [ord m_eq] n)
 
 
-plus_associates' : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
-plus_associates' = ind pa i = \j k .
+plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
+plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
     Zero ->  
@@ -113,7 +113,6 @@ plus_associates' = ind pa i = \j k .
                in (_ : (plus (plus i j) k) = (plus i (plus j k)))
 
 
-{-
 plus_associates' : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates' = ind pa i = \j k .
   case i [ieq] of
@@ -132,10 +131,9 @@ plus_associates' = ind pa i = \j k .
 -- Huh, so this works...
                in let _ = (_ : plus (Succ i') j = Succ (plus i' j)) 
 -- ... but this doesn't??
-               in let _ = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k))
+               --in let _ = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k))
 
                --in unfold (plus i (plus j k))
-
                 
 
 
@@ -150,7 +148,6 @@ plus_associates' = ind pa i = \j k .
 --               in _
                in TRUSTME
 
--}
 
 main : Nat
 main = plus 2 3

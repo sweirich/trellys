@@ -18,7 +18,7 @@ import Language.Trellys.Environment
 import Language.Trellys.Error
 import Language.Trellys.TypeMonad
 import Language.Trellys.EqualityReasoning
-import Language.Trellys.TypeCheckCore
+import Language.Trellys.TypeCheckCore --hiding (getType, aGetTh, aKc, aTs)
 --import qualified Language.Trellys.TypeCheckCore as TypeCheckCore
 --import Language.Trellys.TestReduction
 
@@ -38,8 +38,14 @@ import Data.Set (Set)
 import qualified Data.Set as S
 
 
-{-
 -- For debugging:
+{-
+aTs a = do
+   liftIO $ putStrLn . render. disp $
+      [ DS "aTs of", DD a]
+   result <- TypeCheckCore.aTs a
+   liftIO $ putStrLn "done"
+   return result
 getType a = do
    liftIO $ putStrLn . render. disp $
       [ DS "getType of", DD a]
@@ -59,6 +65,7 @@ aKc a = do
    liftIO $ putStrLn "done"
    return result
 -}
+
 
 {-
   We rely on two mutually recursive judgements:
@@ -489,7 +496,10 @@ ta (Unfold n a b) tyB = do
    (ea,_)  <- ts a
    availableEqs <- getAvailableEqs
    moreEqs <- saturate availableEqs n ea
-   taUnderUnfolds (S.toList moreEqs) b tyB
+   liftIO $ putStrLn "calling taUnderUnfolds"
+   res <- taUnderUnfolds (S.toList moreEqs) b tyB
+   liftIO $ putStrLn "done."
+   return res
 
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
@@ -584,7 +594,6 @@ ta a tyB = do
 taUnderUnfolds :: [(AName, AName,ATerm,ATerm)] -> Term -> ATerm -> TcMonad ATerm
 taUnderUnfolds [] b tyB = ta b tyB
 taUnderUnfolds ((x,y,ty,pf):rest) b tyB = do
-   --liftIO $ putStrLn . render . disp $ [ DS "Adding", DD (AVar x), DD (AVar y), DD ty, DD pf, DS "to the context"]
    let extendEq = if name2String x == "_" || erase' (eraseToHead pf) == EJoin then id else extendCtx (ASig y Logic (ATyEq (AVar x) pf)) 
    (th, eb)  <- extendCtx (ASig x Logic ty) $ extendEq $ do
                     eb <- taUnderUnfolds rest b tyB
@@ -1197,7 +1206,8 @@ getAvailableEqs :: TcMonad [(Theta, ATerm, ATerm)]
 getAvailableEqs = do
   context <- getLocalCtx
   catMaybes <$> mapM (\d -> case d of
-                              ASig x th ty -> do
+                              -- The "unfolds_eq" equations are never helpful, and makes everything slow and unreadable.
+                              ASig x th ty | name2String x /= "unfolds_eq" -> do
                                                  zty <- zonkTerm ty
                                                  -- could return Nothing here, for "uninteresting" things
                                                  Just <$> adjustTheta th (AVar x) zty

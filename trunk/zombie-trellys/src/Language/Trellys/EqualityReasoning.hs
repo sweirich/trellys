@@ -40,12 +40,13 @@ import Data.Map (Map)
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.Function (on)
+import Data.List
 import Text.PrettyPrint.HughesPJ (render)
 import Debug.Trace
 
 --Stuff used for debugging.
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon)
+import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon, comma, nest, brackets)
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -826,9 +827,9 @@ data UnfoldState = UnfoldState {
 
 
 -- unfold active subexpressions, then replace them with values.
-activize :: ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
-activize (ACumul a lvl) = ACumul <$> activize a <*> pure lvl
-activize (ADCon c th params args) 
+activate :: ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
+activate (ACumul a lvl) = ACumul <$> activate a <*> pure lvl
+activate (ADCon c th params args) 
   -- TODO: Insert casts, this will require some thinking.
   = ADCon c th params <$> mapM (\(a,ep) -> do 
                                   lift $ unfold a
@@ -836,12 +837,12 @@ activize (ADCon c th params args)
                                   (a', _) <- ListT $ classMembersWithTy a aTy aTh AnyValue
                                   return (a',ep))
                                args
-activize (AApp Erased a b ty)  = do
+activate (AApp Erased a b ty)  = do
   lift $ unfold a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', _) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
   return $ AApp Erased a' b ty
-activize (AApp Runtime a b ty) = do
+activate (AApp Runtime a b ty) = do
   lift $ unfold a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', aPf) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
@@ -850,14 +851,14 @@ activize (AApp Runtime a b ty) = do
   (b', bPf) <- ListT $ classMembersWithTy b bTy bTh AnyValue
   -- TODO: insert a cast.
   return $ AApp Runtime a' b' ty
-activize (ALet ep bnd ty) = do
+activate (ALet ep bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
  lift $ unfold a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
  -- TODO: fix the type of xeq
  return $ ALet ep (bind (x,xeq, embed a') b) ty
-activize (ACase a bnd ty) = do
+activate (ACase a bnd ty) = do
  lift $ unfold a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh ConstructorValue
@@ -872,10 +873,10 @@ activize (ACase a bnd ty) = do
     as required. -}
  aPf <- lift.lift.lift $ aPfThunk
  return $ ACase a' (bind y_eq (subst y_eq (ATransEq aPf (AVar y_eq)) mtchs)) ty
-activize (ABox a th) = ABox <$> activize a <*> pure th
-activize (AConv a pf) = AConv <$> activize a <*> pure pf
+activate (ABox a th) = ABox <$> activate a <*> pure th
+activate (AConv a pf) = AConv <$> activate a <*> pure pf
 -- The rest of the cases are already values:
-activize a = return a
+activate a = return a
 
 -- This function is similar to classMembers, but:
 --  (1) it lives inside the monad so it can check types
@@ -900,7 +901,7 @@ classMembersWithTy b bTy bTh flavour = do
         -- then we can create one by introducing an erased let which names the subexpression.
         y <- fresh $ string2Name "namedSubexp"
         y_eq <- fresh $ string2Name "namedSubexp_eq"
-        lift $ addEquation b (AVar y) (AVar y_eq)
+        lift $ addEquation b (AVar y) (AVar y_eq) False
         modify (\st -> st{unfoldEquations = (y, y_eq, bTy, b):(unfoldEquations st)})
         return [(AVar y, return (AVar y_eq))]
       else 
@@ -913,32 +914,36 @@ unfold a = do
   when (fuel > 0 && not (a `S.member` visited)) $ do
     modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
                         alreadyUnfolded = S.insert a (alreadyUnfolded st)})
-    --liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
-    --                                      DS ("with "++ show fuel ++ " units of fuel left")] 
+    liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+                                          DS ("with "++ show fuel ++ " units of fuel left")] 
     _ <-  lift $ genEqs a
     -- Gor every combination of values in the active positions, see if the term steps.
-    activeVariants <- runListT (activize a)
+    activeVariants <- runListT (activate a)
+    liftIO $ putStrLn.render.disp $ [DS ("There are " ++ show (length activeVariants) ++ " active variants, namely"), DD activeVariants ]
     forM_ activeVariants $ \term -> do
+                                 liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
                                  -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
-                                 -- TODO, eventually this will be fixed in activize.
+                                 -- TODO, eventually this will be fixed in activate.
                                  welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
-                                 -- unless welltyped $
-                                 --   warn [DS "rejecting illtyped variant", DD term]
+                                 unless welltyped $
+                                    warn [DS "rejecting illtyped variant", DD term]
                                  when welltyped $ do
-                                   mterm' <- lift . lift $ astep term
-                                   case mterm' of
-                                     Nothing -> return ()
-                                     Just term' -> do 
-                                                      y <- fresh $ string2Name "unfolds"
-                                                      y_eq <- fresh $ string2Name "unfolds_eq"
+                                   -- term' <- underUnfolds $ aParStep False term
+                                   mterm' <- underUnfolds $ astep term
+                                   let term' = case mterm' of 
+                                                 Just something -> something
+                                                 Nothing -> term
+                                   when (not (term `aeq` term')) $ do
+                                      y <- fresh $ string2Name "unfolds"
+                                      y_eq <- fresh $ string2Name "unfolds_eq"
 
-                                                      isEq <- aeq <$> erase term <*> erase term'
-                                                      let proof = if isEq 
-                                                                    then  AJoin term 0 term 0 CBV
-                                                                    else  AJoin term 1 term' 0 CBV
-                                                      lift $ addEquation term term' proof
-                                                      modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
-                                                      unfold term'
+                                      isEq <- aeq <$> erase term <*> erase term'
+                                      let proof = if isEq 
+                                                    then  AJoin term 0 term 0 CBV
+                                                    else  AJoin term 1 term' 0 CBV
+                                      lift $ addEquation term term' proof True
+                                      modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
+                                      unfold term'
 -- Disp instances, used for debugging.
 instance Disp [(Theta, ATerm, ATerm)] where
   disp hyps = 
@@ -947,7 +952,7 @@ instance Disp [(Theta, ATerm, ATerm)] where
                hyps
 
 instance Disp [ATerm] where 
-  disp = hsep . map disp
+  disp = vcat . intersperse comma . map (nest 4 . disp)
 
 instance Disp EqConstConst where
   disp (EqConstConst a b) = text (show a) <+> text "=" <+> text (show b)
@@ -957,6 +962,11 @@ instance Disp (EqBranchConst) where
 
 instance Disp (Proof, Equation) where 
   disp (p, eq) = disp p <+> text ":" <+> disp eq
+
+instance Disp [(AName, AName, ATerm, ATerm)] where
+  disp eqs = vcat $ map dispEq eqs
+    where dispEq (x, y, a, aTy) = disp x <+> brackets (disp y) <+> colon <+> disp a <+> disp aTy
+
 
 -- A version of BM.! which gives a helpful error message (to make debugging easier).
 bmlook ::  Bimap ATerm Constant -> ATerm -> Constant
@@ -994,11 +1004,13 @@ saturate hyps fuel a =
     mapM_ processHyp hyps
     S.fromList . unfoldEquations <$> execStateT (unfold a) (UnfoldState fuel S.empty [])
 
-addEquation :: ATerm -> ATerm -> ATerm -> StateT ProblemState TcMonad ()
-addEquation a b pf = do
+addEquation :: ATerm -> ATerm -> ATerm -> Bool -> StateT ProblemState TcMonad ()
+addEquation a b pf isFine = do
   ca <- genEqs =<< (lift (zonkTerm a))
   cb <- genEqs =<< (lift (zonkTerm b))
   propagate [(RawAssumption (pf, RawRefl), Left (EqConstConst ca cb))]
+  when isFine $
+    fineUnion ca cb
 
 -- In the implementation of saturate, we need to typecheck terms in
 -- the extended context because the term may contain namedSubexp's.

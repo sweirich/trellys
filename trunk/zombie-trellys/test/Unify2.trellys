@@ -152,7 +152,7 @@ singletonNotFree = ind IH t = \ x s p .
                                 TRUSTME -- contra (p : False = True)
                        True  -> case (notFreeIn x t2) [_] of 
                                    False -> unfold (or True False) in 
-											           let _ = (_ : notFreeIn x t = False) in
+					    let _ = (_ : notFreeIn x t = False) in
                                             contra (p : False = True)
                                    True  -> let _ = IH t1 [ord eqt] x s _ in 
                                             let _ = IH t2 [ord eqt] x s _ in

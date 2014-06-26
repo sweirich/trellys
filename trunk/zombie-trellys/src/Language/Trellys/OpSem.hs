@@ -6,7 +6,7 @@
 -- defined in just-in-time fashion, and should be replaced with an
 -- implementation that systematically defines the operational semantics.
 module Language.Trellys.OpSem
-  (join, cbvStep, cbvNSteps, isEValue, isValue, erase, eraseToHead)
+  (join, cbvStep, cbvNSteps, parStep, isEValue, isValue, erase, eraseToHead)
 where
 
 import Language.Trellys.Syntax
@@ -295,34 +295,31 @@ parStep deep (ELam bnd)       = do
   (x,b) <- unbind bnd
   ELam <$> (bind x <$> parStep True b)
 parStep deep (EILam b)         = EILam <$> parStep True b
-parStep deep (EApp EAbort _)   = return EAbort
 -- Todo: pstep for n-ary rec/ind.
-parStep deep (EApp a b) = 
-  if (isEValue b) then 
-    case (deep, a) of 
-      (_,ELam bnd) -> 
-        do (x,body) <- unbind bnd
-           return $ subst x b body
-      (False, ERec bnd) ->
-        --Todo: fail more gracefully if IsErased
-        do ((f,[IsRuntime x]),body) <- unbind bnd
-           return $ subst f a $ subst x b body
-      (False, EInd bnd) ->
-        do ((f,[IsRuntime x]),body) <- unbind bnd
-           x' <- fresh (string2Name "x")
-           return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x b body
-      _ -> EApp <$> parStep deep a <*> parStep deep b
-  else 
-    EApp <$> parStep deep a <*> parStep deep b
-parStep deep  (EIApp (EILam body)) = return body
---Todo: pstep for n-ary rec/ind
+parStep deep (EApp EAbort _) = return EAbort
+parStep deep (EApp _ EAbort) = return EAbort
+parStep deep (EApp (ELam bnd) v) | isEValue v = do
+  (x,body) <- unbind bnd
+  return $ subst x v body
+parStep False (EApp a@(ERec bnd) v) | isEValue v = do
+  --Todo: fail more gracefully if IsErased
+  ((f,[IsRuntime x]),body) <- unbind bnd
+  return $ subst f a $ subst x v body
+parStep False (EApp a@(EInd bnd) v) | isEValue v = do
+  ((f,[IsRuntime x]),body) <- unbind bnd
+  x' <- fresh (string2Name "x")
+  return $ subst f (ELam (bind x' (EILam (EApp a (EVar x'))))) $ subst x v body
+parStep deep (EApp a b) = EApp <$> parStep deep a <*> parStep deep b
+parStep deep (EIApp EAbort) = return EAbort
+parStep deep (EIApp (EILam body)) = return body
 parStep False (EIApp a@(ERec bnd)) = do
   ((f,[IsErased]),body) <- unbind bnd
   return $ subst f a $ body
 parStep False (EIApp a@(EInd bnd)) = do
-   ((f,[IsErased]),body) <- unbind bnd
-   return $ subst f (EILam (EILam (EIApp a))) $ body
+  ((f,[IsErased]),body) <- unbind bnd
+  return $ subst f (EILam (EILam (EIApp a))) $ body
 parStep deep (EIApp a) = EIApp <$> parStep deep a
+--Todo: pstep for n-ary rec/ind
 parStep deep (ETyEq a b)     = ETyEq <$> parStep deep a <*> parStep deep b
 parStep deep a@EJoin         = return a
 parStep deep a@EAbort        = return a 
@@ -333,17 +330,16 @@ parStep deep (ERec bnd)  = do
 parStep deep (EInd bnd)  = do
   ((f,args),b) <- unbind bnd
   EInd <$> (bind (f,args) <$> parStep True b)
-parStep deep (ECase EAbort mtchs) = return EAbort
-parStep deep a@(ECase (EDCon c args) mtchs) | all isEValue args = 
+parStep deep (ECase EAbort _) = return EAbort
+parStep deep a@(ECase (EDCon c args) mtchs) | all isEValue args =
   case find (\(EMatch c' _) -> c' == c) mtchs of
     Nothing  -> return a  --This should probably never happen?
     Just (EMatch c' bnd) ->
         do (delta,mtchbody) <- unbind bnd
            if (length delta /= length args) 
-             then return a
+             then return a --This should also not happen.
              else return $ substs (zip delta args) mtchbody
-parStep deep (ECase a mtchs) = 
-  ECase <$> parStep deep a <*> mapM parStepMatch mtchs
+parStep deep (ECase a mtchs) = ECase <$> parStep deep a <*> mapM parStepMatch mtchs
   where parStepMatch (EMatch c bnd) = do (xs,b) <- unbind bnd
                                          EMatch c <$> (bind xs <$> parStep True b)
 parStep deep (ESmaller a b) = ESmaller <$> parStep deep a <*> parStep deep b
@@ -354,7 +350,9 @@ parStep deep (ELet v bnd) | isEValue v = do
    return $ subst x v b
 parStep deep (ELet a bnd) = do
    (x,b) <- unbind bnd
-   ELet <$> parStep deep a <*> (bind x <$> parStep True b)
+   a' <- parStep deep a
+   b' <- parStep True b
+   return $ ELet a' (bind x b')
 parStep deep (EAt a th) = EAt <$> parStep deep a <*> pure th
 parStep deep a@ETrustMe = return a
 

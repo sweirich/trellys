@@ -463,7 +463,8 @@ instance Display ATerm where
       dty <- display ty     
       dn <- display n
       dbody <- display body
-      return $ sep [text "\\" <+> dn 
+      return $ sep [text "\\"
+                     <+> (case ep of Runtime -> dn ; Erased -> brackets dn)
                      <+> (if isVerbose then colon <+> dty else empty)
                      <+> text ".",
                     nest 2 dbody]
@@ -560,7 +561,7 @@ instance Display ATerm where
       dm <- display m
       da <- display a
       db <- display b
-      return $ sep [text "let" <+> dn <+> brackets dm <+> text "="
+      return $ sep [text "let" <+> bindParens ep dn <+> brackets dm <+> text "="
                        <+> da <+> text "in",
                     nest 2 db]
   display (ACase a bnd (th,ty)) =
