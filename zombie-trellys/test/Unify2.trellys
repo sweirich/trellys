@@ -276,10 +276,10 @@ rec unify' t1 = \ t2 .
    		               = branch (ap s'' t11) (ap s'' t12)) in
 	      let [_] = (pjoin:  ap s'' (branch t21 t22)
 			       = branch (ap s'' t21) (ap s'' t22)) in
-	      let [_] = (apCompose s' s t11) in
-	      let [_] = (apCompose s' s t12) in
-	      let [_] = (apCompose s' s t21) in
-	      let [_] = (apCompose s' s t22) in
+	      let [_] = apCompose s' s t11 in
+	      let [_] = apCompose s' s t12 in
+	      let [_] = apCompose s' s t21 in
+	      let [_] = apCompose s' s t22 in
 		yes s'' _
     t , (var x) -> 
       case (isin x t) of
