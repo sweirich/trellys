@@ -89,21 +89,21 @@ singleton-∉FV (var y) x s with (x ≟ y)
 ...  | (no ¬p)   = λ _ → refl
 
 data Unify : (t1 t2 : Term) → Set where
-  no  : ∀{t1 t2} → Unify t1 t2
-  yes : ∀{t1 t2} (s : Substitution) → ap s t1 ≡ ap s t2 → Unify t1 t2   
+  nomatch  : ∀{t1 t2} → Unify t1 t2
+  match : ∀{t1 t2} (s : Substitution) → ap s t1 ≡ ap s t2 → Unify t1 t2   
 
 {-# NO_TERMINATION_CHECK #-}
 unify : (t1 t2 : Term) → Unify t1 t2
-unify leaf leaf = yes empty refl
-unify leaf (branch t2 t3) = no
-unify (branch t1 t2) leaf = no
+unify leaf leaf = match empty refl
+unify leaf (branch t2 t3) = nomatch
+unify (branch t1 t2) leaf = nomatch
 unify (branch t11 t12) (branch t21 t22) 
       with unify t11 t21 
-...    | no = no
-...    | yes s p with unify (ap s t12) (ap s t22) 
-...               | no = no
-...               | yes s' q 
-  =  yes (compose s' s) 
+...    | nomatch = nomatch
+...    | match s p with unify (ap s t12) (ap s t22) 
+...               | nomatch = nomatch
+...               | match s' q 
+  =  match (compose s' s) 
          (begin
             ap (compose s' s) (branch t11 t12)
           ≡⟨ apCompose (branch t11 t12)  ⟩
@@ -119,7 +119,7 @@ unify (branch t11 t12) (branch t21 t22)
           ∎)
 unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
 ...               | true | [ q ] 
-  =  yes (singleton x t) 
+  =  match (singleton x t) 
          (begin
             ap (singleton x t) t
           ≡⟨ singleton-∉FV t x t q  ⟩
@@ -127,10 +127,10 @@ unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
           ≡⟨ varSingleton x t  ⟩
             ap (singleton x t) (var x)
           ∎)
-...              | false | _ =  no
+...              | false | _ =  nomatch
 unify (var x) t with unify t (var x) 
-...              | no = no
-...              | yes s p = yes s (sym p)
+...              | nomatch = nomatch
+...              | match s p = match s (sym p)
 
 
 
@@ -158,7 +158,7 @@ _is∈_ : (x : ℕ) -> (t : Term) -> Dec (x ∈ t)
 x is∈ leaf = no (\ ())
 x is∈ (branch t1 t2) with (x is∈ t1) | (x is∈ t2) 
 ... | yes p  | _      = yes (inleft p)
-... | no _   | yes p  = yes (inright p)
+... | no _   | yes q  = yes (inright q)
 ... | no ¬p  | no ¬q  = no  (lemma ¬p ¬q)
 x is∈ (var y) with (x ≟ y) 
 .x is∈ (var x) | yes refl = yes invar
@@ -177,16 +177,16 @@ singleton-∉ (var .x) x s | (yes refl) = λ br -> ⊥-elim (br invar)
 
 {-# NO_TERMINATION_CHECK #-}
 unify' : (t1 t2 : Term) → Unify t1 t2
-unify' leaf leaf = yes empty refl
-unify' leaf (branch t2 t3) = no
-unify' (branch t1 t2) leaf = no
+unify' leaf leaf = match empty refl
+unify' leaf (branch t2 t3) = nomatch
+unify' (branch t1 t2) leaf = nomatch
 unify' (branch t11 t12) (branch t21 t22) 
       with unify' t11 t21 
-...    | no = no
-...    | yes s p with unify' (ap s t12) (ap s t22) 
-...               | no = no
-...               | yes s' q 
-  =  yes (compose s' s) 
+...    | nomatch = nomatch
+...    | match s p with unify' (ap s t12) (ap s t22) 
+...               | nomatch = nomatch
+...               | match s' q 
+  =  match (compose s' s) 
          (begin
             ap (compose s' s) (branch t11 t12)
           ≡⟨ apCompose (branch t11 t12)  ⟩
@@ -202,7 +202,7 @@ unify' (branch t11 t12) (branch t21 t22)
           ∎)
 unify' t (var x) with (x is∈ t)
 ...               | no q 
-  =  yes (singleton x t) 
+  =  match (singleton x t) 
          (begin
             ap (singleton x t) t
           ≡⟨ singleton-∉ t x t q  ⟩
@@ -210,7 +210,7 @@ unify' t (var x) with (x is∈ t)
           ≡⟨ varSingleton x t  ⟩
             ap (singleton x t) (var x)
           ∎)
-...              | yes _ =  no
+...              | yes _ =  nomatch
 unify' (var x) t with unify' t (var x) 
-...              | no = no
-...              | yes s p = yes s (sym p)
+...              | nomatch = nomatch
+...              | match s p = match s (sym p)
