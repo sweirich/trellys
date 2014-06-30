@@ -889,7 +889,7 @@ classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour
                           (StateT ProblemState TcMonad)
                             [(ATerm, TcMonad ATerm)]
 classMembersWithTy b bTy bTh flavour = do
-     members <- lift $ classMembers b (valueFlavour flavour)
+     members <- lift $ classMembers b (const True)
      {- Note: an alternative would be to look for terms with
         CC-equivalent types, not just strictly equal. But let's first
         see if this is expressive enough. -}
@@ -898,7 +898,8 @@ classMembersWithTy b bTy bTh flavour = do
                                      isEq <- aeq <$> erase cTy <*> erase bTy
                                      return $ cTh <= bTh && isEq)
                          members
-     if null filtered && flavour == AnyValue && bTh == Logic
+     let values = filter (valueFlavour flavour .fst ) filtered
+     if null values && flavour == AnyValue && bTh == Logic
       then do
         -- If the term is logical and any value will do, but there is no such value,
         -- then we can create one by introducing an erased let which names the subexpression.
@@ -907,8 +908,27 @@ classMembersWithTy b bTy bTh flavour = do
         lift $ addEquation b (AVar y) (AVar y_eq) False
         modify (\st -> st{unfoldEquations = (y, y_eq, bTy, b):(unfoldEquations st)})
         return [(AVar y, return (AVar y_eq))]
-      else 
-        return filtered
+      else if null values && flavour == ConstructorValue
+             then do
+                  case (filter (headedByConstructor.fst) filtered) of
+                    (((eraseToHead->(ADCon con th params args)), _pf) : _) -> do
+                      args' <- mapM (\(a, ep) -> do
+                                       (aTh, aTy) <- underUnfolds (getType a)
+                                       aMembers <- classMembersWithTy a aTy aTh AnyValue
+                                       case aMembers of
+                                         ((a',pfThunk):_) -> return (a', ep)
+                                         [] -> return (a,ep))
+                                    args
+                      let b' = ADCon con th params args'
+                      if (valueFlavour ConstructorValue b')
+                         then return [(b', return (ATrustMe (ATyEq b b')))]
+                         else return []
+                    _ -> return []               
+             else return values
+
+headedByConstructor :: ATerm -> Bool
+headedByConstructor (eraseToHead -> ADCon _ _ _ _) = True
+headedByConstructor _ = False
 
 unfold :: EvaluationStrategy -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
 unfold str a = do
