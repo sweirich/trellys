@@ -79,7 +79,7 @@ apCompose s1 s2 = ind IH t =
   let s' = compose s1 s2 in
   case t [teq] of
     leaf -> unfold (ap s' t) in
-				unfold (ap s1 (ap s2 t)) in
+	    unfold (ap s1 (ap s2 t)) in
             _
 
     branch t1 t2 -> unfold (ap s' t) in
@@ -91,33 +91,14 @@ apCompose s1 s2 = ind IH t =
                     let [_] = IH t2 [ord teq] in
                     _
     var x -> case (s2 x) [_] of
-               Just u ->  TRUSTME
+               Just u ->  unfold (ap (compose  s1 s2) t) in
+                          unfold (ap s2 t) in
+                          unfold (ap s1 (var x)) in
+                            _
                Nothing -> unfold (ap (compose  s1 s2) t) in
                           unfold (ap s2 t) in
                           unfold (ap s1 (var x)) in
                             _
-{-
-
-
-             unfold Substitution in
-             let _ = (join : (ap s' (var x)) = 
-                         (case (s' x) of { Just t -> t; Nothing -> var x } : Term)) in
-			    let _ = (join : (compose s1 s2 x) = 
-                         (case (s2 x) of { Just t -> Just (ap s1 t); Nothing -> s1 x } : Maybe Term)) in 
-             case (s2 x) [_] of
-               Just u  -> let t' = ap s1 u in
-								  let _ = (_ : (ap s' t) = (case (s' x) [_] of { Just u -> u ; Nothing -> var x } : Term)) in
-                          let _ = (join : (case (Just u) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = Just t') in
-								  let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
-								  let _ = (join : (case (Just t') [_] of { Just u -> u ; Nothing -> var x } : Term) = t') in
-								  -- let _ = (_ : (ap s' t) = t') in
-								  -- let _ = (_ : ap s1 (ap s2 t) = ap s1 u) in
-                          TRUSTME
-               Nothing -> let _ = (join : (compose s1 s2 x) = (case (s2 x) [_] of { Just u -> Just (ap s1 u) ; Nothing -> s1 x } : Maybe Term)) in
-                          let _ = (join : (case (Nothing : Maybe Term) [_] of { Just u -> Just t' ; Nothing -> s1 x } : Maybe Term) = s1 x) in
-								  TRUSTME 
--}
-       
             
 
 log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
@@ -126,14 +107,6 @@ varSingleton x t =
      Yes p  -> 
 	    unfold Substitution in
             unfold (ap (singleton x t) (var x)) in _
-
-{-
-       let _ = (join : (ap (singleton x t) (var x)) = (case (singleton x t x) [_] of {  Just t -> t ;  Nothing -> var x } : Term)) in 
-       let _ = (join : ((singleton x t) x) = (case (dec_eq x x) [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term)) in
-       let _ = (join : (case (Yes p)  [_] of { Yes _ -> Just t; No _ -> Nothing } : Maybe Term) = (Just t)) in 
-       let _ = (join : (case (Just t) [_] of { Just t -> t ; Nothing -> var x } : Term) = t) in
-		 _
--}
      No p -> case (p _) [_] of {}
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
