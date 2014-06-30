@@ -182,11 +182,8 @@ rec unify t1 = \ t2 .
         yes s p -> yes s _ 
 -}
 
-data In (x : Nat) (t : Term) : Type where
-  invar  of [t = var x]
-  inleft of (t1 : Term) (t2:Term)[t = branch t1 t2](In x t1)
-  inright of (t1 : Term) (t2:Term)[t = branch t1 t2](In x t2)
 
+-- Constructors of Term data type are injective
 injvar : (x : Nat) -> (y : Nat) -> (var x = var y) -> x = y
 injvar = \ x y pf . TRUSTME
 
@@ -196,41 +193,51 @@ injbr1 = \t1 t2 t1' t2' pf . TRUSTME
 injbr2 : (t1 : Term) -> (t2 : Term) -> (t1' : Term) -> (t2' : Term ) -> (branch t1 t2 = branch t1' t2') -> t2 = t2'
 injbr2 = \t1 t2 t1' t2' pf . TRUSTME
           
+-- variable x appears in term t          
+data In (x : Nat) (t : Term) : Type where
+  invar  of [t = var x]
+  inleft of [t1 : Term][t2:Term][t = branch t1 t2](In x t1)
+  inright of [t1 : Term][t2:Term][t = branch t1 t2](In x t2)          
           
+-- inversion principle for In relation
 invvar : (x: Nat) -> (y : Nat) -> In x (var y) -> x = y
 invvar = \ x y pf . case pf [_] of 
-   invar [_] -> injvar x y _         
-   inleft t1 t2 [pf'] _ -> contra (pf' : var y = branch t1 t2)
-   inright t1 t2 [pf'] _ -> contra (pf' : var y = branch t1 t2)
-
+   invar   [_] -> injvar x y _         
+   inleft  [t1][t2][pf'] _ -> contra (pf' : var y = branch t1 t2)
+   inright [t1][t2][pf'] _ -> contra (pf' : var y = branch t1 t2)
+   
+invleaf : [A:Type] -> [x:Nat] -> In x leaf -> A
+invleaf = \[A] [x] pf . 
+   case pf [_] of 
+     invar [pf'] -> contra ( pf' : leaf = var x)
+     inleft [t1] [t2] [pf'] _ -> contra ( pf' : leaf = branch t1 t2)
+     inright [t1] [t2] [pf'] _ -> contra ( pf' : leaf = branch t1 t2)
+     
+-- determining whether a variable appears in a term is decidable     
 isin : (x: Nat) -> (t : Term) -> Dec (In x t)
 isin = \x . ind IH t = 
   case t [teq] of 
-    leaf -> No (\ pf . 
-                  {- SCW: maybe we can beef up exhaustivity checker and replace this with
-                  case pf [_] of {}  -}
-                  case pf [_] of 
-                         invar [pf'] -> contra ( pf' : leaf = var x)
-                         inleft t1 t2 [pf'] _ -> contra ( pf' : leaf = branch t1 t2)
-                         inright t1 t2 [pf'] _ -> contra ( pf' : leaf = branch t1 t2))
+    leaf -> No (\ pf . invleaf [_][_] pf)
     branch t1 t2 -> case (IH t1 [ord teq]) [_] of 
-      Yes p -> Yes (inleft _ _ [_] p)
+      Yes p -> Yes (inleft [_] [_] [_] p)
       No np -> case (IH t2 [ord teq]) [_] of 
-                   Yes q -> Yes (inright _ _ [_] q)
-                   No nq -> No (\ pf . case pf [_] of 
+                   Yes q -> Yes (inright [_] [_] [_] q)
+                   No nq -> No (\ pf . case pf [_] of  
+                               -- can inline this case instead of defining a lemma as in Agda version
                                invar [pf'] -> contra (pf' : branch t1 t2 = var x)
-                               inleft t1' t2' [pf'] p -> 
+                               inleft [t1'] [t2'] [pf'] p -> 
                                    let [_] = (injbr1 t1 _ t1' _ 
                                         (pf' : branch t1 t2 = branch t1' t2')) in
                                    np p
-                               inright t1' t2' [pf'] q -> 
+                               inright [t1'] [t2'] [pf'] q -> 
                                    let [_] = (injbr2 _ t2 _ t2' (pf' : branch t1 t2 = branch t1' t2')) in
                                    nq q)
     var y -> case (dec_eq x y) [_] of
       Yes p  -> Yes (invar [_])
       No  np -> No  (\ z . np (invvar x y z))
       
-singletonNotIn : (t : Term) -> (x: Nat) -> (s : Term) -> (((In x t)@log) -> Void) -> ap (singleton x s) t = t
+singletonNotIn : (t : Term) -> (x: Nat) -> (s : Term)
+               -> (((In x t)@log) -> Void) -> ap (singleton x s) t = t
 singletonNotIn = ind IH t = \x s . 
   case t [teq] of  
     leaf -> \ p . 
@@ -238,11 +245,11 @@ singletonNotIn = ind IH t = \x s .
                _
     branch t1 t2 -> case (isin x t1) [_] of 
       Yes p -> unfold (ap (singleton x s) t) in
-               \ br . void_elim [_] (br (inleft _ _ [_] p))
+               \ br . void_elim [_] (br (inleft [_] [_] [_] p))
  
       No np -> case (isin x t2) [_] of 
         Yes q -> unfold (ap (singleton x s) t) in
-                 \ br . case (br (inright _ _ [_] q)) [_] of {}
+                 \ br . case (br (inright [_] [_] [_] q)) [_] of {}
         No nq -> let _ = IH t1 [ord teq] x s np in 
                  let _ = IH t2 [ord teq] x s nq in
                  unfold (ap (singleton x s) t) in                 
