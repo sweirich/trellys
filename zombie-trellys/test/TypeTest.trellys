@@ -132,9 +132,8 @@ ind plusZero a =
    case a [aeq] of
      Zero -> (join : add 0 0 = 0)
      Succ x ->
-       let _ = (join : Succ (add x 0) = add (Succ x) 0) in
        let _ = plusZero x [ord aeq] in
-        _
+        (join : (add (Succ x) 0) = Succ (add x 0))
 
 -- The old-style code with explicit conversions:
 {-
