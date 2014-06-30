@@ -32,14 +32,6 @@ data Term : Type where
   var of (x : Nat)
 
 
--- notFreeIn x t = True if x is not free in t. 
-notFreeIn : Nat -> Term -> Bool
-notFreeIn = \x. ind IH t = case t [teq] of 
-    leaf -> True
-    branch t1 t2 -> and (IH t1 [ord teq]) (IH t2 [ord teq])
-    var y -> case (dec_eq x y) [_] of 
-                 Yes _ -> False
-                 No  _ -> True
 
 Substitution : Type
 Substitution = Nat -> Maybe Term
@@ -109,6 +101,22 @@ varSingleton x t =
             unfold (ap (singleton x t) (var x)) in _
      No p -> case (p _) [_] of {}
 
+data Unify (t1 : Term) (t2 : Term) : Type where
+  no 
+  yes of (s : Substitution) (pf : ap s t1 = ap s t2)
+
+
+{-
+-- notFreeIn x t = True if x is not free in t. 
+notFreeIn : Nat -> Term -> Bool
+notFreeIn = \x. ind IH t = case t [teq] of 
+    leaf -> True
+    branch t1 t2 -> and (IH t1 [ord teq]) (IH t2 [ord teq])
+    var y -> case (dec_eq x y) [_] of 
+                 Yes _ -> False
+                 No  _ -> True
+
+
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
                    (notFreeIn x t = True) -> (ap (singleton x s) t = t)
 singletonNotFree = ind IH t = \ x s p . 
@@ -137,9 +145,6 @@ singletonNotFree = ind IH t = \ x s p .
                                             _
 
 
-data Unify (t1 : Term) (t2 : Term) : Type where
-  no 
-  yes of (s : Substitution) (pf : ap s t1 = ap s t2)
 
 prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
@@ -173,5 +178,110 @@ rec unify t1 = \ t2 .
              yes (singleton x t) _
     (var x) , t -> 
       case (unify t (var x)) of
+        no -> no
+        yes s p -> yes s _ 
+-}
+
+data In (x : Nat) (t : Term) : Type where
+  invar  of [t = var x]
+  inleft of (t1 : Term) (t2:Term)[t = branch t1 t2](In x t1)
+  inright of (t1 : Term) (t2:Term)[t = branch t1 t2](In x t2)
+
+injvar : (x : Nat) -> (y : Nat) -> (var x = var y) -> x = y
+injvar = \ x y pf . TRUSTME
+
+injbr1 : (t1 : Term) -> (t2 : Term) -> (t1' : Term) -> (t2' : Term ) -> (branch t1 t2 = branch t1' t2') -> t1 = t1'
+injbr1 = \t1 t2 t1' t2' pf . TRUSTME
+
+injbr2 : (t1 : Term) -> (t2 : Term) -> (t1' : Term) -> (t2' : Term ) -> (branch t1 t2 = branch t1' t2') -> t2 = t2'
+injbr2 = \t1 t2 t1' t2' pf . TRUSTME
+          
+          
+invvar : (x: Nat) -> (y : Nat) -> In x (var y) -> x = y
+invvar = \ x y pf . case pf [_] of 
+   invar [_] -> injvar x y _         
+   inleft t1 t2 [pf'] _ -> contra (pf' : var y = branch t1 t2)
+   inright t1 t2 [pf'] _ -> contra (pf' : var y = branch t1 t2)
+
+isin : (x: Nat) -> (t : Term) -> Dec (In x t)
+isin = \x . ind IH t = 
+  case t [teq] of 
+    leaf -> No (\ pf . 
+                  {- SCW: maybe we can beef up exhaustivity checker and replace this with
+                  case pf [_] of {}  -}
+                  case pf [_] of 
+                         invar [pf'] -> contra ( pf' : leaf = var x)
+                         inleft t1 t2 [pf'] _ -> contra ( pf' : leaf = branch t1 t2)
+                         inright t1 t2 [pf'] _ -> contra ( pf' : leaf = branch t1 t2))
+    branch t1 t2 -> case (IH t1 [ord teq]) [_] of 
+      Yes p -> Yes (inleft _ _ [_] p)
+      No np -> case (IH t2 [ord teq]) [_] of 
+                   Yes q -> Yes (inright _ _ [_] q)
+                   No nq -> No (\ pf . case pf [_] of 
+                               invar [pf'] -> contra (pf' : branch t1 t2 = var x)
+                               inleft t1' t2' [pf'] p -> 
+                                   let [_] = (injbr1 t1 _ t1' _ 
+                                        (pf' : branch t1 t2 = branch t1' t2')) in
+                                   np p
+                               inright t1' t2' [pf'] q -> 
+                                   let [_] = (injbr2 _ t2 _ t2' (pf' : branch t1 t2 = branch t1' t2')) in
+                                   nq q)
+    var y -> case (dec_eq x y) [_] of
+      Yes p  -> Yes (invar [_])
+      No  np -> No  (\ z . np (invvar x y z))
+      
+singletonNotIn : (t : Term) -> (x: Nat) -> (s : Term) -> (((In x t)@log) -> Void) -> ap (singleton x s) t = t
+singletonNotIn = ind IH t = \x s . 
+  case t [teq] of  
+    leaf -> \ p . 
+               unfold (ap (singleton x s) leaf) in
+               _
+    branch t1 t2 -> case (isin x t1) [_] of 
+      Yes p -> unfold (ap (singleton x s) t) in
+               \ br . void_elim [_] (br (inleft _ _ [_] p))
+ 
+      No np -> case (isin x t2) [_] of 
+        Yes q -> unfold (ap (singleton x s) t) in
+                 \ br . case (br (inright _ _ [_] q)) [_] of {}
+        No nq -> let _ = IH t1 [ord teq] x s np in 
+                 let _ = IH t2 [ord teq] x s nq in
+                 unfold (ap (singleton x s) t) in                 
+                 \ br . _
+    var y -> case (dec_eq x y) [_] of       
+      Yes p -> \ br . void_elim [_] (br (invar [_]))
+      No np -> \ _ . unfold (ap (singleton x s) t) in _
+
+prog unify' : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
+rec unify' t1 = \ t2 . 
+  case t1 , t2 of
+    leaf, leaf -> yes empty _
+    leaf, branch _ _ -> no
+    branch _ _ , leaf -> no
+    branch t11 t12, branch t21 t22 ->
+      case (unify' t11 t21) of
+        no -> no 
+        yes s p -> 
+          case (unify' (ap s t12) (ap s t22)) of
+            no -> no
+	    yes s' p' ->
+	      let s'' = compose s' s in
+	      let [_] = (pjoin:  ap s'' (branch t11 t12)
+   		               = branch (ap s'' t11) (ap s'' t12)) in
+	      let [_] = (pjoin:  ap s'' (branch t21 t22)
+			       = branch (ap s'' t21) (ap s'' t22)) in
+	      let [_] = (apCompose s' s t11) in
+	      let [_] = (apCompose s' s t12) in
+	      let [_] = (apCompose s' s t21) in
+	      let [_] = (apCompose s' s t22) in
+		yes s'' _
+    t , (var x) -> 
+      case (isin x t) of
+        No q  -> 
+           let [_] = varSingleton x t in
+           let [_] = singletonNotIn t x t q in
+             yes (singleton x t) _
+        Yes _ -> no
+    (var x) , t -> 
+      case (unify' t (var x)) of
         no -> no
         yes s p -> yes s _ 
