@@ -897,6 +897,10 @@ classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour
                    -> StateT UnfoldState
                           (StateT ProblemState TcMonad)
                             [(ATerm, TcMonad ATerm)]
+-- If b is already a value we should not change it gratuitously (that leads both to huge proofs, 
+--  and (because activate is not quite correct about inserting casts) failed proofs due to ill-typed terms):
+classMembersWithTy b bTy bTh flavour | valueFlavour flavour b = return [(b, return (AReflEq b))]
+-- Otherwise, we look in the equivalence class of b:
 classMembersWithTy b bTy bTh flavour = do
      members <- lift $ classMembers b (const True)
      {- Note: an alternative would be to look for terms with

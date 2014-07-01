@@ -121,27 +121,9 @@ plus_associates' = ind pa i = \j k .
      unfold (plus i (plus j k)) in
         _ 
     Succ i' -> let ih = pa i' [ord ieq] j k in
-
                unfold (plus (plus i j) k) in
-               let _ = (_ : plus i j = Succ (plus i' j)) in
-					let _ = (_ : plus (plus i j) k = plus (Succ (plus i' j)) k) in
-
-					-- unfold needs to keep going! The next step doesn't hold
-					-- let _ = (_ : plus (plus i j) k = Succ (plus (plus i' j) k)) in
-
                unfold (plus i (plus j k)) in
-
-
-
--- Huh, so this works...
-               let _ = (_ : plus (Succ i') j = Succ (plus i' j)) in
--- ... but this doesn't??
-               -- let e2 = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k)) in
-                let e3 = (_ : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k)) in
-
-
-               TRUSTME 
-
+               _
 
 main : Nat
 main = plus 2 3

@@ -74,23 +74,18 @@ apCompose s1 s2 = ind IH t =
             unfold (ap s1 (ap s2 t)) in
             _
     branch t1 t2 -> unfold (ap s' t) in  
-                    -- why not this instead of next 2 lines? -- unfold (ap s1 (ap s2 t)) in
-                    unfold (ap s2 t) in 
-                    unfold (ap s1 (branch (ap s2 t1) (ap s2 t2))) in
+                    unfold (ap s1 (ap s2 t)) in
                     let [_] = IH t1 [ord teq] in
                     let [_] = IH t2 [ord teq] in
                     _
     var x -> 
              case (s2 x) of
-               Just u ->  unfold (ap (compose s1 s2) t) in   -- why can't we change this to s'?
-                          -- why not this instead of next line? -- unfold (ap s1 (ap s2 t)) in
-                          unfold (ap s2 t) in
+               Just u ->  unfold (ap (compose s1 s2) t) in   -- why can't we change this to -- unfold (ap s' t)?
+                          unfold (ap s1 (ap s2 t)) in
                             _
-               Nothing -> unfold (ap (compose s1 s2) t) in -- why can't we change this to s'?
-                          -- why not this instead of next 2 lines? -- unfold (ap s1 (ap s2 t)) in
-                          unfold (ap s2 t) in
-                          unfold (ap s1 (var x)) in
-                            _
+               Nothing -> unfold (ap (compose s1 s2) t) in -- why can't we change this to -- unfold (ap s' t)?
+                          unfold (ap s1 (ap s2 t)) in
+                            _ 
 
 log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
 varSingleton x t = case (dec_eq x x) of 
