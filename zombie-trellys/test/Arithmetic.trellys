@@ -59,7 +59,8 @@ ind minus_same_zero n =
     case n [n_eq] of
       Zero -> (join : minus 0 0 = 0)
       Succ pred ->
-        let _ = (join 20 : (minus (Succ pred) (Succ pred)) = minus pred pred) in
+        unfold (minus n n) in
+          -- let _ = (join : (minus (Succ pred) (Succ pred)) = minus pred pred) in
           minus_same_zero pred [ord n_eq]
 
 -- n - 0 = n
@@ -70,13 +71,12 @@ lemma_minus_zero_id =
     Succ n' -> (join 10 : minus (Succ n') 0 = Succ n')
 
 -- n + 0 = n
-prog lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
-rec lemma_plus_zero_id n =
+log lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
+ind lemma_plus_zero_id n =
  case n [eq_n] of 
     Zero -> unfold (plus 0 0) in _
-    Succ n' -> let _ = (pjoin : plus (Succ n') 0 = Succ (plus n' 0)) in
-	            let prog _ = lemma_plus_zero_id n'
-					in _ 
+    Succ n' -> let [_] = lemma_plus_zero_id n' [ord eq_n] in
+					(join : plus (Succ n') 0 = Succ (plus n' 0))
 
 -- (m + n) - m = n
 lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
@@ -120,33 +120,27 @@ plus_associates' = ind pa i = \j k .
      unfold (plus (plus i j) k) in 
      unfold (plus i (plus j k)) in
         _ 
-    Succ i' -> let ih = pa i' [ord ieq] j k
-               -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
+    Succ i' -> let ih = pa i' [ord ieq] j k in
 
-               in unfold (plus (plus i j) k)
-               in unfold (plus (Succ (plus i' j)) k)
+               unfold (plus (plus i j) k) in
+               let _ = (_ : plus i j = Succ (plus i' j)) in
+					let _ = (_ : plus (plus i j) k = plus (Succ (plus i' j)) k) in
 
-               in let _ = (_ : plus i j = plus (Succ i') j) 
+					-- unfold needs to keep going! The next step doesn't hold
+					-- let _ = (_ : plus (plus i j) k = Succ (plus (plus i' j) k)) in
+
+               unfold (plus i (plus j k)) in
+
+
 
 -- Huh, so this works...
-               in let _ = (_ : plus (Succ i') j = Succ (plus i' j)) 
+               let _ = (_ : plus (Succ i') j = Succ (plus i' j)) in
 -- ... but this doesn't??
-               --in let _ = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k))
-
-               --in unfold (plus i (plus j k))
-                
+               -- let e2 = (_ : plus (Succ (plus i' j)) k = Succ (plus (plus i' j) k)) in
+                let e3 = (_ : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k)) in
 
 
-               {-
-               in let _  = (_ : plus (Succ i') j = Succ (plus i' j))
-               in let [plus_i'_j] = plus i' j
-               in let _  = (_ : plus (Succ plus_i'_j) k = Succ (plus plus_i'_j k))
-               in let [plus_j_k] = plus j k
-               in let _ = (_ : plus (Succ i') plus_j_k = Succ (plus i' plus_j_k))
-               -}
-
---               in _
-               in TRUSTME
+               TRUSTME 
 
 
 main : Nat
