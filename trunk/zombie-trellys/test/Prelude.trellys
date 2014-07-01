@@ -143,6 +143,6 @@ data Void : Type 0 where {}
 void_elim : [A : Type] -> Void -> A
 void_elim = \[A] v . case v [_] of {}
 
-log cast : [A : Type] -> [ B : Type ] -> [A = B] -> (A@log) -> (B@log)
+log cast : [A : Type] -> [B : Type] -> [A = B] -> (A@log) -> (B@log)
 cast [A] [B] [p] x = x
 
