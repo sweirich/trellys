@@ -379,6 +379,7 @@ genProofTerm (AnnInj l i p) = do
       -- FIXME: the fact that we can just use (Type 0), which does not have the
       -- right type, is a bug in the core type checker...
       return $ ARanEq p' (AType 0) (AType 0)
+    (ADCon con Logic params args, _) -> return $ AInjDCon p' i            
     _           -> error "internal error: unknown type of injectivity"
 
 -- From (tyA=tyB) and (tyB=tyC), conclude (tyA=tyC).
@@ -847,13 +848,21 @@ activate str (AApp Erased a b ty)  = do
   return $ AApp Erased a' b ty
 activate str (AApp Runtime a b ty) = do
   lift $ unfold str a
-  (aTh,aTy) <- lift $ underUnfolds (getType a)
-  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
+  (aTh, aTy@(eraseToHead -> AArrow _ _ _ bnd)) <- lift $ underUnfolds (getType a)   --We know a must have an arrow type.
+  (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
   lift $ unfold str b
   (bTh,bTy) <- lift $ underUnfolds (getType b)
-  (b', bPf) <- ListT $ classMembersWithTy b bTy bTh AnyValue
-  -- TODO: insert a cast.
-  return $ AApp Runtime a' b' ty
+  (b', bPfThunk) <- ListT $ classMembersWithTy b bTy bTh AnyValue
+  ((x,unembed->aDom), aRng) <- unbind bnd
+  let ty' = subst x b' aRng
+  if (ty' `aeq` ty)  --Do we need to insert a cast?
+    then return $ AApp Runtime a' b' ty 
+    else do
+      liftIO $ putStrLn "about to force that thunk"
+      bPf <- lift $ underUnfolds bPfThunk
+      liftIO $ putStrLn "Ok, done"
+      return $ AConv (AApp Runtime a' b' ty') 
+                     (ACong [ASymEq bPf] (bind [x] aRng) (ATyEq ty' ty))
 activate str (ALet ep bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
  lift $ unfold str a
@@ -905,7 +914,7 @@ classMembersWithTy b bTy bTh flavour = do
         -- then we can create one by introducing an erased let which names the subexpression.
         y <- fresh $ string2Name "namedSubexp"
         y_eq <- fresh $ string2Name "namedSubexp_eq"
-        lift $ addEquation b (AVar y) (AVar y_eq) False
+        lift $ addEquation (AVar y) b (AVar y_eq) False
         modify (\st -> st{unfoldEquations = (y, y_eq, bTy, b):(unfoldEquations st)})
         return [(AVar y, return (AVar y_eq))]
       else if null values && flavour == ConstructorValue

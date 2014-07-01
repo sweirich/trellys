@@ -453,10 +453,10 @@ aTs (AInjDCon a i) = do
        unless (c == c') $
          coreErr [DS "AInjDCon: the term", DD a, 
                   DS "should prove an equality where both sides are headed by the same data constructor, but in ", DD aTy, DS "the constructors are not equal"]
-       eargs <- mapM (erase . fst) args
-       eargs' <- mapM (erase . fst) args'
-       unless (all isEValue eargs && all isEValue eargs') $
-         coreErr [DS "AInjDCon: not all constructor arguments in", DD aTy, DS "are values."]
+       good   <- and <$> mapM isGoodArg args
+       good'  <- and <$> mapM isGoodArg args'
+       unless (good && good') $ 
+         coreErr [DS "AInjDCon: not all constructor arguments in", DD aTy, DS "are values or logical expressions."]
        unless (length args == length args') $
          coreErr [DS "AInjDCon: the two sides of", DD aTy, DS "have different numbers of arguments"]
        unless (i < length args) $
@@ -464,6 +464,10 @@ aTs (AInjDCon a i) = do
        return (Logic, ATyEq (fst (args !! i)) (fst (args' !! i)))
      _ -> coreErr [DS "AInjDCon: the term", DD a, 
                    DS"should prove an equality of datatype constructors, but it has type", DD aTy]
+  where isGoodArg (a,ep) = do
+           (aTh, _) <- aTs a
+           aE <- erase a
+           return $ aTh==Logic || isEValue aE
 
 aTs (ASmaller a b)  = do
   _ <- aTs a   

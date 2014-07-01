@@ -369,7 +369,6 @@ data AModule = AModule { aModuleName :: MName,
                          aModuleConstructors :: ConstructorNames
                        }
 
-
 declname :: ADecl -> AName
 declname (ASig x _ _) = x
 declname (ADef x _) = x
@@ -679,9 +678,13 @@ injectiveLabelPositions l = do
    case a of 
      (AAt _ _) -> [0]
      (ATCon _ _) -> [0..(length xs - 1)]
-     (AArrow _ _ _ (unsafeUnbind -> (_, AVar y))) | y `elem` xs ->  [0,1]  --Simple function type.
-     (AArrow _ _ _ _) -> [0]   --Actual dependent function type.
-     --(ADCon _ _ _ _) = ?? --Dcon is more tricky, because of value restriction.
+       --Simple function type; injectivity is available for both domain and range.
+     (AArrow _ _ _ (unsafeUnbind -> (_, AVar y))) | y `elem` xs ->  [0,1]
+      -- Actually dependent function type; injectivity for domain only.
+     (AArrow _ _ _ _) -> [0]  
+     -- Because of value restriction we don't have injectivity for all data 
+     --  constructors, but it is fine as long as it lives in Log. 
+     (ADCon _ Logic _ _) -> [0..(length xs -1)]
      _ -> []
 
 isEqualityLabel :: Label -> Bool 
