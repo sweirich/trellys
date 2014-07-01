@@ -89,8 +89,12 @@ data ClassInfo  = ClassInfo {
   classUniVars     :: Set (AName,Constant),             -- All unification variables that are elements of the class; 
                                                         --    also remember which c they correspond to.
   classApps        :: Set (Label, [Constant]),          -- All applications that are elements of the class
-  classInjTerm     :: Maybe (Label, [Constant]),        -- If there is a term headed by an injective
-                                                        --    label in the class.
+  classInjTerm     :: Maybe (Proof, Label, [Constant], Constant),
+        -- This is Just(p, l,as c)   
+        -- If there is a term headed by an injective label in the class.
+        -- Here, 
+        --   p :  l as = c
+        --  where c is some constant in the class. 
   classEquations   :: Set (Constant,Constant,Constant), -- (c,a,b) such that c is in the class and c == (a=b).
   classInhabitants :: Set Constant                      -- Constants whose type is this constant.
                                                         --   Note we only track variables from the context here.
@@ -330,36 +334,41 @@ recordApplication a app = do
   setRepr a' (Right $ ia{ classApps = S.insert app (classApps ia)})
 
 -- Add an application term to the injTerm field of an equivalence class of a constant
-recordInjTerm :: (Monad m) => Constant -> (Label, [Constant]) 
+recordInjTerm :: (Monad m) =>  Constant -> (Proof, Label, [Constant], Constant) 
                      -> StateT ProblemState m ()
 recordInjTerm a app = do
   (_,a',ia) <- findExplainInfo a
   setRepr a' (Right $ ia{ classInjTerm = (classInjTerm ia) `orElse` (Just app) })
 
+{-
 -- Given a term f(a1..an), return the constant which represents its equivalence class.
 standardize :: Monad m => Label -> [Constant] -> StateT ProblemState m (Constant, Proof)
 standardize l as = do
   (rs {- : ai = ai' -} ,as') <- findExplains as
+  
   Just (ps {- : bi = ai' -}, q {- : bs = b -}, EqBranchConst _ bs b) <- 
       return (M.lookup (l,as')) `ap`  (gets lookupeq)
   (s {- : b = b' -} , b') <- findExplain b
   let l_as__eq__l_as' = RawCong l rs
   let l_as'__eq__l_bs = RawCong l (map RawSymm ps)
   return (b',  RawTrans l_as__eq__l_as' (RawTrans l_as'__eq__l_bs (RawTrans q s)))
+-}
 
 -- Called when we have just unified two equivalence classes. If both classes contained
 -- an injective term, we return the list of new equations.
 -- Preconditions: the labels should be injective, the two terms should be equal.
-possiblyInjectivity :: (Monad m) => Maybe (Label, [Constant]) -> Maybe (Label, [Constant]) ->
+possiblyInjectivity :: (Monad m) => Maybe (Proof, Label, [Constant], Constant) 
+                                 -> Maybe (Proof, Label, [Constant], Constant) ->
                        StateT ProblemState m [ExplainedEquation]
-possiblyInjectivity (Just (l1, as)) (Just (l2, bs)) | l1/=l2 = do
+possiblyInjectivity (Just (p, l1, as, a)) (Just (q, l2, bs, b)) | l1/=l2 = do
   -- todo: register that we found a contradiction
   return []
-possiblyInjectivity (Just (l, as)) (Just (l2, bs)) | l==l2 = do
-  (_, p1) <- standardize l as --We expect these to be the same class now.
-  (_, p2) <- standardize l bs
-  let p = RawTrans p1 (RawSymm p2) {- : l(as) = l(bs)  -}
-  return $ zipWith3 (\ i a b -> (RawInj i p, Left (EqConstConst a b)))
+possiblyInjectivity (Just (p, l, as, a)) (Just (q, l2, bs, b)) | l==l2 = do
+  (p1, _a') <- findExplain a
+  (q1, _b') <- findExplain b
+  -- By the precondition to the function, we know that _a' == _b', so this proof is valid.
+  let pf = (RawTrans (RawTrans p p1) (RawSymm (RawTrans q q1))) {- : l(as) = l(bs)  -}
+  return $ zipWith3 (\ i lhs rhs -> (RawInj i pf, Left (EqConstConst lhs rhs)))
                     (injectiveLabelPositions l)
                     as
                     bs
@@ -406,7 +415,7 @@ propagate ((p, Left (EqConstConst a b)):eqs) = do
 propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
   recordApplication a (l,as)
   when (injectiveLabelPositions l /= []) $ 
-    recordInjTerm a (l,as)
+    recordInjTerm a (p,l,as,a)  
   when (isEqualityLabel l) $
     recordEquation a ((as!!0), (as!!1))
   (ps, as') <- findExplains as
