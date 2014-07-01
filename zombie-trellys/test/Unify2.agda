@@ -11,6 +11,14 @@ open import Relation.Nullary.Core
 
 open ≡-Reasoning
 
+≡-cong : {A B : Set}{x y : A} -> (f : A -> B) -> (x ≡ y) -> f x ≡ f y
+≡-cong f refl = refl
+
+plus_assoc : (i j k : ℕ) -> ((i + j) + k ≡ i + (j + k))
+plus_assoc zero j k = refl
+plus_assoc (suc i') j k = ≡-cong suc (plus_assoc i' j k)
+
+
 isNo : ∀ {a} {P : Set a} → Dec P → Bool
 isNo (yes _) = false
 isNo (no _) =  true

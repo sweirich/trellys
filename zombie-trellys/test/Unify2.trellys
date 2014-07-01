@@ -181,6 +181,61 @@ data In (x : Nat) (t : Term) : Type where
   inleft  of [t1 : Term][t2:Term][t = branch t1 t2](In x t1)
   inright of [t1 : Term][t2:Term][t = branch t1 t2](In x t2)          
           
+example : In 3 (branch (branch (var 2) leaf) (branch leaf (var 3)))
+example = inright [_][_][_] (inright [_][_][_] (invar [_]))
+
+mirror : Term -> Term 
+ind mirror t = case t [teq] of 
+  leaf -> leaf
+  branch t1 t2 -> branch (mirror t2 [ord teq]) (mirror t1 [ord teq])
+  var _ -> t
+
+lemma : [x:Nat] -> [t : Term] -> In x t -> In x (mirror t)
+ind lemma [x][t] pf = case pf [pfeq] of 
+  invar [_] -> unfold (mirror t) in 
+       invar [_]
+  inleft [t1][t2][_] pf' -> unfold (mirror t) in 
+       inright [mirror t2][mirror t1][_] (lemma [x][t1] pf' [ord pfeq])
+  inright [t1][t2][_] pf' -> unfold (mirror t) in 
+       inleft [mirror t2][mirror t1][_] (lemma [x][t2] pf' [ord pfeq])
+
+freeIn : Nat -> Term -> Bool
+freeIn = \x. ind IH t = case t [teq] of 
+    leaf -> False
+    branch t1 t2 -> or (IH t1 [ord teq]) (IH t2 [ord teq])
+    var y -> case (dec_eq x y) of 
+                 yes _ -> True
+                 no  _ -> False
+
+{-
+-- ack! x is relevant
+lemma2 : [x:Nat] -> [t:Term] -> In x t -> freeIn x t = True
+ind lemma2 [x][t] pf = case pf [peq] of 
+  invar [_] -> 
+      case (dec_eq x x) of 
+         yes _ -> unfold (freeIn x t) in _
+         no  p -> void_elim [_] (p _)  
+  inleft [t1][t2][_] pf' -> unfold (freeIn x t) in 
+    let [_] = lemma2 [x][t1] pf' [ord peq] in 
+	    TRUSTME
+  inright [t1][t2][_] pf' -> unfold (freeIn x t) in 
+    let [_] = lemma2 [x][t2] pf' [ord peq] in 
+	    TRUSTME
+
+
+lemma3 : [x:Nat] -> (t:Term) -> freeIn x t = True -> In x t
+ind lemma3 [x] t = \pf . 
+  case t of 
+    leaf -> unfold (freeIn x t) in 
+       case (dec_eq x x) of 
+         yes _ -> TRUSTME
+         no  _ -> void_elim [_] (p _)  
+    branch t1 t2 -> unfold (freeIn x t) in TRUSTME
+    var y -> case (dec_eq x y) of 
+       yes _ -> invar _ 
+       no _  -> TRUSTME
+-}
+
 -- inversion principle for In relation
 invvar : (x: Nat) -> (y : Nat) -> In x (var y) -> x = y
 invvar = \ x y pf . case pf of 

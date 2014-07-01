@@ -1,51 +1,94 @@
 module Fin where
 
 import Prelude
+import Arithmetic
+
+usually log
 
 data Fin (n : Nat) : Type 0 where
-  FZ of [m:Nat][ m_eq : (n = Succ m) ] 
-  FS of [m:Nat][ m_eq : (n = Succ m) ](_ : Fin m)
+  FZ of [m:Nat][n = Succ m] 
+  FS of [m:Nat][n = Succ m](Fin m)
 
 fin_succ : [n : Nat] => [m:Nat] -> [ m_eq : (n = Succ m) ] -> (Fin m @ log) -> Fin n
 fin_succ = \[n][m][m_eq] f . FS [m][m_eq] f
 
+-- conversions
+
+toNat : [n : Nat] -> Fin n -> Nat
+ind toNat [n] = \f . case f of 
+  FZ [_][_] -> 0
+  FS [m][meq] f' -> toNat [m][ord meq] f'
+
+
+fromNat : (n : Nat) -> Fin (Succ n)
+ind fromNat n = case n [neq] of 
+  Zero   -> FZ [_][_]
+  Succ m -> FS [_][_](fromNat m [ord neq])
+
+-- raise m "n" = "m + n".
+
+{-
+raise : ∀ {m} n → Fin m → Fin (n N+ m)
+raise zero    i = i
+raise (suc n) i = suc (raise n i)
+
+inject+ : ∀ {m} n → Fin m → Fin (m N+ n)
+inject+ n zero    = zero
+inject+ n (suc i) = suc (inject+ n i)
+
+inject₁ : ∀ {m} → Fin m → Fin (suc m)
+inject₁ zero    = zero
+inject₁ (suc i) = suc (inject₁ i)
+-}
+
+
+raise : [m : Nat] -> (n : Nat) -> Fin m -> Fin (plus n m)
+raise [m] = ind raise n = \ i . case n [neq] of 
+  Zero ->    unfold (plus n m) in i
+  Succ n' -> unfold (plus n m) in 
+             FS [plus n' m][_] (raise n' [ord neq] i)
+
+injectp : [m : Nat] -> (n : Nat) -> Fin m -> Fin (plus m n)
+ind injectp [m] = \n fm . case fm of 
+  FZ [m'][_] -> unfold (plus m n) in FZ [plus m' n][_]
+  FS [m'][meq] fm' -> unfold (plus m n) in 
+         FS [plus m' n][_] (injectp [m'][ord meq] n fm')
+
 -- equality is decidable
-log fin_eq : [n: Nat] -> (Fin n) -> (Fin n) -> Bool
+fin_eq : [n: Nat] -> (Fin n) -> (Fin n) -> Bool
 fin_eq =  
  ind eq [n] = \fn1 fn2 .
-   case fn1 [n1_eq], fn2 [_] of 
-      FZ [m1][m1_eq], FZ [m2][m2_eq] -> True
-      FS [m1][m1_eq] fn1', FS [m2][m2_eq] fn2' -> 
-		   let _ = uneraseEq [Nat][Nat][m1][m2] [sm_eq_Sn__m_eq_n m1 m2 _] in
-		   eq [m1] [ord m1_eq] fn1' ( fn2' : Fin m1 )
+   case fn1 , fn2 of 
+      FZ [_][_], FZ [_][_] -> True
+      FS [m1][m1_eq] fn1', FS [_][_] fn2' -> 
+		   eq [m1] [ord m1_eq] fn1' fn2'
       _ , _ -> False
 
 -- correctness of fin_eq
-log fin_eq_True : [n: Nat] -> (i : Fin n) -> (j : Fin n) -> (fin_eq [n] i j = True) -> i = j
+fin_eq_True : [n: Nat] -> (i : Fin n) -> (j : Fin n) -> (fin_eq [n] i j = True) -> i = j
 ind fin_eq_True [n] = \i j h.
-  case i [_], j [_] of
-      FZ [m1][m1_eq], FZ [m2][m2_eq] -> _
-      FS [m1][m1_eq] i', FS [m2][m2_eq] j' -> 
-        -- Note: unfold will not give the recursion equation on the next line. 
-        let _ = (join : fin_eq [n] (FS [_][_] i') (FS [_][_] j') = fin_eq [m1] i' j') in
+  case i , j of
+      FZ [m1][m1_eq], FZ [_][_] -> _
+      FS [m1][m1_eq] i', FS [_][_] j' -> 
+        unfold (fin_eq [n] i j) in 
         let _ = fin_eq_True [m1] [ord m1_eq] i' j' _ in
           _
-      FZ [m1][m1_eq], FS [m2][m2_eq] j' -> 
-        unfold (fin_eq [n] (FZ [m1][_]) (FS [m2][_] j')) in
+      FZ [m1][m1_eq], FS [_][_] j' -> 
+        unfold (fin_eq [n] i j) in
           contra (_ : True = False)
-      FS [m1][m1_eq] i', FZ [m2][m2_eq] ->
-        unfold (fin_eq [n] (FS [m1][_] i') (FZ [m2][_])) in
+      FS [m1][m1_eq] i', FZ [_][_] ->
+        unfold (fin_eq [n] i j) in
           contra (_ : True = False)
 
 -- inject a fin into a larger set
-log promote : [n:Nat] -> (Fin n) -> Fin (Succ n)
+promote : [n:Nat] -> (Fin n) -> Fin (Succ n)
 ind promote [n] = \ x .
   case x [x_eq] of 
     FZ [m][m_eq]    -> FZ [Succ m][_]
     FS [m][m_eq] m' -> FS [Succ m][_] (promote [m] [ord m_eq] m')
 
 -- take advantage of heterogeneous equality
-log promote_spec : [n:Nat] -> (x : Fin n) -> promote [n] x = x
+promote_spec : [n:Nat] -> (x : Fin n) -> promote [n] x = x
 ind promote_spec [n] = \ x. 
    case x [x_eq] of 
     FZ [m][m_eq]    -> 
