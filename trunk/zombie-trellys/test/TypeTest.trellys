@@ -60,9 +60,6 @@ z = id [Nat] Zero
 
 v2 = pred 0 -- (VNil [Nat])
 
-axiom inj_succ :(a:Nat) -> (b:Nat) -> (p : Succ a = Succ b) -> (a = b)
---inj_succ = \a b p .
--- value restriction makes this one, via the "pred succ" method, hard
 
 join_test : (pred (Succ Zero)) = Zero
 join_test = join 20
@@ -89,7 +86,6 @@ tail = \ n [a] dis .
   case dis [diseq] of
     VNil [neq] -> contra neq
     VCons [sz] [neq] x xs -> 
-        let [_] = inj_succ sz n neq in
 	  xs
 
 v1 : Vector Bool (Succ Zero)

@@ -38,9 +38,7 @@ head = \ [A][n] v . case v [v_eq] of
 log tail : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> Vector A n
 tail = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
-  VCons [m][m_eq] f t ->
-    let _ = injectivity (_ : Succ n = Succ m) 0
-      in t
+  VCons [m][m_eq] f t -> t
 
 log lookup : [A: Type 0] => [n:Nat] => Fin n -> Vector A n -> A
 lookup = \ [A] . 
@@ -67,7 +65,6 @@ zap = \[A][B].
         VCons [n'][p] _ _ ,  VNil [q] -> contra (_ : 0 = (Succ n'))
         VNil [p] , VCons [n'][p'] _ _ -> contra (_ : 0 = (Succ n'))
         VCons [n'][p] f fs , VCons [n''][p''] x xs -> 
-          let _ = injectivity (_ : Succ n' = Succ n'') 0 in
             VCons [n'][p] (f x) (!zap [n'] [ord p] fs xs)
 
 -- update the mth component of the vector to be 'a'
@@ -94,7 +91,6 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
        let _ = (join : lookup (FZ [p][_]) (VCons [m][_] a xs) = a) in
          _ 
     FS [p][p_eq] j , VCons [m][m_eq] x xs -> 
-       let _ = injectivity (_ : Succ p = Succ m) 0 in
        let _ = (pjoin : (!set [A] [n] (FS [p][_] j) a (VCons [m][m_eq] x xs) : Vector A n)
                      = (VCons [m][m_eq] x (set j a xs) : Vector A n)) in
        let xs' = set j a xs in
@@ -114,8 +110,6 @@ lookup_set2 = \[A]. ind ih [n] = \ i j a v h .
       unfold (fin_eq [n] (FZ [p][_]) (FZ [q][_])) in
         contra (_ : True = False)       
     FS [p][p_eq] i' , FS [q][q_eq] j' , VCons [m][m_eq] x xs -> 
-      let _ = injectivity (_ : Succ p = Succ q) 0 in
-      let _ = injectivity (_ : Succ q = Succ m) 0 in
       let _ = (pjoin : (!set [A] [n] (FS [p][_] j') a (VCons [m][m_eq] x xs) : Vector A n)
                     = (VCons [m][m_eq] x (set j' a xs) : Vector A n)) in
       let xs' = set j' a xs in
