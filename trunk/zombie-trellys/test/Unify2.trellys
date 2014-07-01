@@ -11,20 +11,20 @@ usually log
 -- We use natural numbers for variables everywhere
 
 data Dec (p : Type) : Type where
-  Yes of (p)
-  No  of (p -> Void)
+  yes of (p)
+  no  of (p -> Void)
 
 -- equality for natural numbers is decidable
 
 dec_eq : (n1 : Nat) -> (n2 : Nat) -> Dec (n1 = n2)
 ind dec_eq x = \ y . 
   case x [x_eq], y [y_eq] of 
-     Zero, Zero -> Yes _
+     Zero, Zero -> yes _
      Succ m, Succ n -> case (dec_eq m [ord x_eq] n) [_] of 
-                         Yes _ -> Yes _
-                         No pf -> No (\x. pf (sm_eq_Sn__m_eq_n m n _))
-     Zero , Succ n -> No (\x. contra (_ : (0 = Succ n)))
-     Succ m , Zero -> No (\x. contra (_ : (Succ m = 0)))
+                         yes _ -> yes _
+                         no pf -> no (\x. pf (sm_eq_Sn__m_eq_n m n _))
+     Zero , Succ n -> no (\x. contra (_ : (0 = Succ n)))
+     Succ m , Zero -> no (\x. contra (_ : (Succ m = 0)))
 
 data Term : Type where
   leaf 
@@ -43,8 +43,8 @@ empty = unfold Substitution in
 singleton : Nat -> Term -> Substitution
 singleton x t = unfold Substitution in
                  \y. case (dec_eq x y) of
-                       Yes _ -> Just t
-                       No  _ -> Nothing
+                       yes _ -> Just t
+                       no  _ -> Nothing
 
 -- apply a substitution to a term
 log ap : Substitution -> Term -> Term
@@ -94,13 +94,13 @@ apCompose s1 s2 = ind IH t =
 
 log varSingleton : (x : Nat) -> (t : Term) -> t = ap (singleton x t) (var x)
 varSingleton x t = case (dec_eq x x) of 
-     Yes p  -> unfold Substitution in
+     yes p  -> unfold Substitution in
                unfold (ap (singleton x t) (var x)) in _
-     No p -> void_elim [_] (p _) 
+     no p -> void_elim [_] (p _) 
 
 data Unify (t1 : Term) (t2 : Term) : Type where
-  NoMatch 
-  Match of (s : Substitution) (pf : ap s t1 = ap s t2)
+  nomatch 
+  match of (s : Substitution) (pf : ap s t1 = ap s t2)
 
 
 {-
@@ -110,8 +110,8 @@ notFreeIn = \x. ind IH t = case t [teq] of
     leaf -> True
     branch t1 t2 -> and (IH t1 [ord teq]) (IH t2 [ord teq])
     var y -> case (dec_eq x y) of 
-                 Yes _ -> False
-                 No  _ -> True
+                 yes _ -> False
+                 no  _ -> True
 
 
 singletonNotFree : (t : Term) -> (x : Nat) -> (s : Term) ->
@@ -127,9 +127,9 @@ singletonNotFree = ind IH t = \ x s p .
             _
     var y -> unfold (ap s' (var y)) in
              case (dec_eq x y) of 
-                Yes pf -> unfold (notFreeIn x (var y)) in
+                yes pf -> unfold (notFreeIn x (var y)) in
                           contra (p : False = True)
-                No q  -> unfold (ap s' (var y)) in _
+                no q  -> unfold (ap s' (var y)) in _
     branch t1 t2 -> unfold (ap s' (branch t1 t2)) in
                     case (notFreeIn x t1) of 
                        False -> unfold (notFreeIn x t) in
@@ -147,15 +147,15 @@ prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
   case t1 , t2 of
     leaf, leaf -> yes empty _
-    leaf, branch _ _ -> NoMatch
-    branch _ _ , leaf -> NoMatch
+    leaf, branch _ _ -> nomatch
+    branch _ _ , leaf -> nomatch
     branch t11 t12, branch t21 t22 ->
       case (unify t11 t21) of
-        NoMatch -> NoMatch 
-        Match s p -> 
+        nomatch -> nomatch 
+        match s p -> 
           case (unify (ap s t12) (ap s t22)) of
-            NoMatch -> NoMatch
-	    Match s' p' ->
+            nomatch -> nomatch
+	    match s' p' ->
 	      let s'' = compose s' s in
 	      let [_] = (pjoin:  ap s'' (branch t11 t12)
    		               = branch (ap s'' t11) (ap s'' t12)) in
@@ -165,18 +165,18 @@ rec unify t1 = \ t2 .
 	      let [_] = (apCompose s' s t12) in
 	      let [_] = (apCompose s' s t21) in
 	      let [_] = (apCompose s' s t22) in
-		Match s'' _
+		match s'' _
     t , (var x) -> 
       case (notFreeIn x t) of
-        False -> NoMatch
+        False -> nomatch
         True  -> 
            let [_] = varSingleton x t in
            let [_] = singletonNotFree t x t _ in
-             Match (singleton x t) _
+             match (singleton x t) _
     (var x) , t -> 
       case (unify t (var x)) of
-        NoMatch -> NoMatch
-        Match s p -> Match s _ 
+        nomatch -> nomatch
+        match s p -> match s _ 
 -}
 
           
@@ -204,65 +204,62 @@ invleaf = \[A] [x] pf .
 -- determining whether a variable appears in a term is decidable     
 isin : (x: Nat) -> (t : Term) -> Dec (In x t)
 isin = \x . ind IH t = case t [teq] of 
-    leaf -> No (\ pf . invleaf [_][_] pf)
+    leaf -> no (\ pf . invleaf [_][_] pf)
     branch t1 t2 -> case (IH t1 [ord teq]) , (IH t2 [ord teq]) of 
-      Yes p , _     -> Yes (inleft [_] [_] [_] p)
-      No _  , Yes q -> Yes (inright [_] [_] [_] q)
-      No np , No nq -> No (\ pf . case pf of  
+      yes p , _     -> yes (inleft [_] [_] [_] p)
+      no _  , yes q -> yes (inright [_] [_] [_] q)
+      no np , no nq -> no (\ pf . case pf of  
                       -- can inline this case instead of defining a lemma as in Agda version
-                      invar [pf'] -> contra (pf' : branch t1 t2 = var x)
-                      inleft [t1'] [t2'] [pf'] p -> 
-                        np p
-                      inright [t1'] [t2'] [pf'] q -> 
-                        nq q)
+                      invar   [pf'] -> contra (pf' : branch t1 t2 = var x)
+                      inleft  [_] [_] [pf'] p -> np p
+                      inright [_] [_] [pf'] q -> nq q)
     var y -> case (dec_eq x y) of
-      Yes p  -> Yes (invar [_])
-      No  np -> No  (\ z . np (invvar _ _ z))
+      yes p  -> yes (invar [_])
+      no  np -> no  (\ z . np (invvar _ _ z))
       
 singletonNotIn : (t : Term) -> (x: Nat) -> (s : Term)
                -> (((In x t)@log) -> Void) -> ap (singleton x s) t = t
 singletonNotIn = ind IH t = \x s . case t [teq] of  
     leaf -> \ _ . unfold (ap (singleton x s) t) in _
     branch t1 t2 -> case (isin x t1), (isin x t2) of 
-      Yes p , _ -> unfold (ap (singleton x s) t) in
+      yes p , _ -> unfold (ap (singleton x s) t) in
                \ br . void_elim [_] (br (inleft [_] [_] [_] p))
-      No _ , Yes q -> unfold (ap (singleton x s) t) in
+      no _ , yes q -> unfold (ap (singleton x s) t) in
                \ br . void_elim [_] (br (inright [_] [_] [_] q)) 
-      No np , No nq -> unfold (ap (singleton x s) t) in                 
+      no np , no nq -> unfold (ap (singleton x s) t) in                 
                \ _ . let _ = IH t1 [ord teq] x s np in 
                      let _ = IH t2 [ord teq] x s nq in
                      _
     var y -> case (dec_eq x y) of       
-      Yes p -> \ br . void_elim [_] (br (invar [_]))
-      No np -> \ _ . unfold (ap (singleton x s) t) in _
+      yes p -> \ br . void_elim [_] (br (invar [_]))
+      no np -> \ _ . unfold (ap (singleton x s) t) in _
 
 prog unify' : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify' t1 = \ t2 . 
   case t1 , t2 of
-    leaf, leaf -> Match empty _
-    leaf, branch _ _ -> NoMatch
-    branch _ _ , leaf -> NoMatch
+    leaf, leaf -> match empty _
+    leaf, branch _ _ -> nomatch
+    branch _ _ , leaf -> nomatch
     branch t11 t12, branch t21 t22 ->
       case (unify' t11 t21) of
-        NoMatch -> NoMatch 
-        Match s p -> 
+        nomatch -> nomatch 
+        match s p -> 
           case (unify' (ap s t12) (ap s t22)) of
-            NoMatch -> NoMatch
-            Match s' p' ->
-              -- let s'' = compose s' s in
+            nomatch -> nomatch
+            match s' p' ->
               let [_] = apCompose s' s t1 in
               unfold (ap s' (ap s t1)) in
               unfold (ap s' (ap s t2)) in 
               let [_] = apCompose s' s t2 in
-                 Match (compose s' s) _
-    t , (var x) -> 
-      case (isin x t) of
-        No q  -> 
-           let [_] = varSingleton x t in
-           let [_] = singletonNotIn t x t q in
-             Match (singleton x t) _
-        Yes _ -> NoMatch
-    (var x) , t -> 
-      case (unify' t (var x)) of
-        NoMatch -> NoMatch
-        Match s p -> Match s _ 
+                 match (compose s' s) _
+    _ , var x -> 
+      case (isin x t1) of
+        no q  -> 
+           let [_] = varSingleton x t1 in
+           let [_] = singletonNotIn t1 x t1 q in
+             match (singleton x t1) _  
+        yes _ -> nomatch
+    var x, _ -> 
+      case (unify' t2 t1) of
+        nomatch -> nomatch
+        match s p -> match s _   

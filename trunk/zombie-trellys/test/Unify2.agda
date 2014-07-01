@@ -190,18 +190,18 @@ unify' (branch t11 t12) (branch t21 t22)
          (begin
             ap (compose s' s) (branch t11 t12)
           ≡⟨ apCompose (branch t11 t12)  ⟩
-            ap s' (ap s (branch t11 t12))
-          ≡⟨ refl ⟩
+--            ap s' (ap s (branch t11 t12))
+--          ≡⟨ refl ⟩
             branch (ap s' (ap s t11)) (ap s' (ap s t12))
           ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
             branch (ap s' (ap s t21)) (ap s' (ap s t22))
-          ≡⟨ refl ⟩
-            ap s' (ap s (branch t21 t22))
+--          ≡⟨ refl ⟩
+--            ap s' (ap s (branch t21 t22))
           ≡⟨ sym (apCompose (branch t21 t22)) ⟩
             ap (compose s' s) (branch t21 t22)
           ∎)
 unify' t (var x) with (x is∈ t)
-...               | no q 
+...               | no q  -- proof that ¬ (x ∈ t)
   =  match (singleton x t) 
          (begin
             ap (singleton x t) t
