@@ -91,6 +91,7 @@ false_lit = \[n] p lit .
   (maybe_eq bool_eq) (partial_interp_lit p lit) (Just False)
 
 -- a clause is known to be false if all literals are assigned false.
+{-
 log clause_is_unsat : [n:Nat] => (partial : Vector (Maybe Bool) n) 
                       -> (clause : List (Times (Fin n) Bool) @ log) 
                       -> Maybe ((phi : Vector Bool n)
@@ -99,7 +100,8 @@ log clause_is_unsat : [n:Nat] => (partial : Vector (Maybe Bool) n)
 clause_is_unsat = \[n] partial . ind loop c = 
   case c of
     Nil -> Nothing
-    Cons x xs -> 
+    Cons x xs -> TRUSTME
+-}
 
 -- Precondition: f is known to not be satified already.
 -- Returns either an unassigned variable or a proof that f is unsatisfiable.
@@ -198,7 +200,6 @@ extends_same [n] i psi phi extends =
                   let b' = lookup j phi in
                   let _ = (lookup_set i (Just (lookup i phi)) psi 
                             : lookup i psi' = Just b') in 
-                  let _ = injectivity (_ : Just b' = Just b) 0 in
                     _
          False -> let _ = (lookup_set2 j i (Just (lookup i phi)) psi _) in
                   let _ = extends j b _ in

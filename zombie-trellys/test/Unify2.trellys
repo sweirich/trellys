@@ -179,16 +179,6 @@ rec unify t1 = \ t2 .
         Match s p -> Match s _ 
 -}
 
-
--- Constructors of Term data type are injective
-injvar : (x : Nat) -> (y : Nat) -> (var x = var y) -> x = y
-injvar = \ x y pf . TRUSTME
-
-injbr1 : (t1 : Term) -> (t2 : Term) -> (t1' : Term) -> (t2' : Term ) -> (branch t1 t2 = branch t1' t2') -> t1 = t1'
-injbr1 = \t1 t2 t1' t2' pf . TRUSTME
-
-injbr2 : (t1 : Term) -> (t2 : Term) -> (t1' : Term) -> (t2' : Term ) -> (branch t1 t2 = branch t1' t2') -> t2 = t2'
-injbr2 = \t1 t2 t1' t2' pf . TRUSTME
           
 -- Proposition that variable x appears in term t          
 data In (x : Nat) (t : Term) : Type where
@@ -199,7 +189,7 @@ data In (x : Nat) (t : Term) : Type where
 -- inversion principle for In relation
 invvar : (x: Nat) -> (y : Nat) -> In x (var y) -> x = y
 invvar = \ x y pf . case pf of 
-   invar   [_] -> injvar x y _         
+   invar   [_] -> _ 
    inleft  [t1][t2][pf'] _ -> contra (pf' : var y = branch t1 t2)
    inright [t1][t2][pf'] _ -> contra (pf' : var y = branch t1 t2)
    
@@ -222,12 +212,8 @@ isin = \x . ind IH t = case t [teq] of
                       -- can inline this case instead of defining a lemma as in Agda version
                       invar [pf'] -> contra (pf' : branch t1 t2 = var x)
                       inleft [t1'] [t2'] [pf'] p -> 
-                        -- this part will be better when datacon injectivity is included
-                        let [_] = (injbr1 t1 _ t1' _ 
-                                    (pf' : branch t1 t2 = branch t1' t2')) in
                         np p
                       inright [t1'] [t2'] [pf'] q -> 
-                        let [_] = (injbr2 _ t2 _ t2' (pf' : branch t1 t2 = branch t1' t2')) in
                         nq q)
     var y -> case (dec_eq x y) of
       Yes p  -> Yes (invar [_])

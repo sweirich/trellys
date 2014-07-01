@@ -26,11 +26,10 @@ ind fin_eq_True [n] = \i j h.
   case i [_], j [_] of
       FZ [m1][m1_eq], FZ [m2][m2_eq] -> _
       FS [m1][m1_eq] i', FS [m2][m2_eq] j' -> 
-		   let _ = injectivity (_ : Succ m1 = Succ m2) 0 in
-                   -- Note: unfold will not give the recursion equation on the next line. 
-                   let _ = (join : fin_eq [n] (FS [_][_] i') (FS [_][_] j') = fin_eq [m1] i' j') in
-                   let _ = fin_eq_True [m1] [ord m1_eq] i' j' _ in
-                     _
+        -- Note: unfold will not give the recursion equation on the next line. 
+        let _ = (join : fin_eq [n] (FS [_][_] i') (FS [_][_] j') = fin_eq [m1] i' j') in
+        let _ = fin_eq_True [m1] [ord m1_eq] i' j' _ in
+          _
       FZ [m1][m1_eq], FS [m2][m2_eq] j' -> 
         unfold (fin_eq [n] (FZ [m1][_]) (FS [m2][_] j')) in
           contra (_ : True = False)

@@ -20,7 +20,7 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE Sat Paper Unify2 \
+     RLE Sat Unsat Paper Unify2 \
      InjRngSuccess InjRngSuccess2
 
 # These were broken by correctly doing CBV-reduction:

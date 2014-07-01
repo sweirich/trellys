@@ -34,3 +34,21 @@ test_many_at2 : (T1 : Type) -> (T2 : Type) -> (T3 : Type) ->
 	        ((T1@log) = (T2@log)) -> ((T2@log) = (T3@log)) 
 		-> (T1=T3)
 test_many_at2 T1 T2 T3 h1 h2 = _
+
+
+-- Injectivity of _data_ constructors 
+
+-- Simple values.
+test_succ_val : (n:Nat) -> (m:Nat) -> (Succ n = Succ m) -> n = m
+test_succ_val n m h = _
+
+
+plus : Nat -> Nat -> Nat
+ind plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [ord cw] m)
+
+-- Logical expressions
+test_succ_plus : (n:Nat) -> (m:Nat) -> (Succ (plus n n) = Succ (plus m m)) -> (plus n n)  = (plus m m)
+test_succ_plus n m h = _
