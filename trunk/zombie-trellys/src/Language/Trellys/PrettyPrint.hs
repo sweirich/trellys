@@ -492,7 +492,7 @@ instance Display ATerm where
   display (ATyEq a b) = do
     da <- display a
     db <- display b
-    return $ (aWraparg Runtime a da) <+> text "=" <+> (aWraparg Runtime b db)
+    return $ sep [aWraparg Runtime a da, text "=", aWraparg Runtime b db]
   display (AJoin a i b j strategy) = do
     da <- display a
     db <- display b
@@ -707,7 +707,7 @@ instance Display ETerm where
   display (ETyEq e0 e1) = do
        de0 <- display e0
        de1 <- display e1
-       return (eWraparg e0 de0 <+> text "=" <+> eWraparg e1 de1)
+       return $ sep [eWraparg e0 de0, text "=", eWraparg e1 de1]
   display EJoin = return $ text "join"
   display EAbort = return $ text "abort"
   display (ERec bnd) =
