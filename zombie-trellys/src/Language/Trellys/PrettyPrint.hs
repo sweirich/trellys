@@ -452,8 +452,7 @@ instance Display ATerm where
     dn <- display n
     dparams <- mapM (\a -> aWraparg Runtime a <$> (brackets <$> (display a))) params
     dargs <-   mapM (\(a,ep) -> aWraparg ep a <$> (bindParens ep <$> (display a))) args
-    return $ dn <+> (if isVerbose then text (show th) else empty)
-                <+> hsep dparams <+> hsep dargs
+    return $ dn <+> (if isVerbose then text (show th) else empty) <+> sep (dparams ++ dargs)
   display (AArrow _ ex ep bnd) = 
     lunbind bnd $ \((n, unembed -> a), b) -> do 
       dn <- display n
@@ -496,11 +495,11 @@ instance Display ATerm where
   display (AJoin a i b j strategy) = do
     da <- display a
     db <- display b
-    return $ (case strategy of 
-                CBV     -> text "join"
-                PAR_CBV -> text "pjoin")
-             <+> parens da <+> disp i
-             <+> parens db <+> disp j
+    return $ sep [(case strategy of 
+                    CBV     -> text "join"
+                    PAR_CBV -> text "pjoin"),
+                  (parens da <+> disp i),
+                  (parens db <+> disp j)]
   display (AConv a pf) = do
     isVerbose <- asks verbose
     da <- display a
@@ -566,9 +565,15 @@ instance Display ATerm where
       dm <- display m
       da <- display a
       db <- display b
+
+      -- When displaying many lets after each other, we don't indent, so that the lets line up.
+      let dbody = case b of
+                   (ALet _ _ _) -> db
+                   _            -> nest 2 db
+
       return $ sep [text "let" <+> bindParens ep dn <+> brackets dm <+> text "="
                        <+> da <+> text "in",
-                    nest 2 db]
+                    dbody]
   display (ACase a bnd (th,ty)) =
     lunbind bnd $ \(n,mtchs) -> do
       da <- display a
