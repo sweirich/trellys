@@ -222,3 +222,49 @@ unify' t (var x) with (x is∈ t)
 unify' (var x) t with unify' t (var x) 
 ...              | nomatch = nomatch
 ...              | match s p = match s (sym p)
+
+
+{-# NO_TERMINATION_CHECK #-}
+unify'' : (t1 t2 : Term) → Unify t1 t2
+unify'' leaf leaf = match empty refl
+unify'' leaf (branch t2 t3) = nomatch
+unify'' (branch t1 t2) leaf = nomatch
+unify'' (branch t11 t12) (branch t21 t22) 
+      with unify'' t11 t21 
+...     | nomatch = nomatch
+...     | match s p with unify'' (ap s t12) (ap s t22) 
+...                 | nomatch = nomatch
+...                 | match s' q 
+  =  match (compose s' s) 
+           (trans (apCompose (branch t11 t12))
+           (trans (cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q)
+                  (sym (apCompose (branch t21 t22)))))
+ {-        (begin
+            ap (compose s' s) (branch t11 t12)
+          ≡⟨ apCompose (branch t11 t12)  ⟩
+--            ap s' (ap s (branch t11 t12))
+--          ≡⟨ refl ⟩
+            branch (ap s' (ap s t11)) (ap s' (ap s t12))
+          ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
+            branch (ap s' (ap s t21)) (ap s' (ap s t22))
+--          ≡⟨ refl ⟩
+--            ap s' (ap s (branch t21 t22))
+          ≡⟨ sym (apCompose (branch t21 t22)) ⟩
+            ap (compose s' s) (branch t21 t22)
+          ∎) -}
+unify'' t (var x) with (x is∈ t)
+...               | no q  -- proof that ¬ (x ∈ t)
+  =  match (singleton x t) 
+           (trans (singleton-∉ t x t q) 
+                  (varSingleton x t))
+{-         (begin
+            ap (singleton x t) t
+          ≡⟨ singleton-∉ t x t q  ⟩
+            t
+          ≡⟨ varSingleton x t  ⟩
+            ap (singleton x t) (var x)
+          ∎) -}
+...              | yes _ =  nomatch
+unify'' (var x) t with unify'' t (var x) 
+...              | nomatch = nomatch
+...              | match s p = match s (sym p)
