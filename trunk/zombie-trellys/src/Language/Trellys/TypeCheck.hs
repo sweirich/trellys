@@ -272,7 +272,7 @@ ta a (AAt tyA th') = do
     _  -> err [DD a, DS "should check at L but checks at P"]
 
 -- rule T_join
-ta (Join strategy smartness s1 s2) (ATyEq a b) = do
+ta (Join strategy smartness s1 s2) ty@(ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
 
@@ -293,7 +293,12 @@ ta (Join strategy smartness s1 s2) (ATyEq a b) = do
   unless joinable $
     err [DS "The erasures of terms", DD za, DS "and", DD zb,
          DS "are not joinable."]
-  return (AJoin a s1 b s2 strategy)
+  noTcCore <- getFlag NoTypeCheckCore    
+  if noTcCore
+    then return (ATrustMe ty)
+    else return (AJoin a s1 b s2 strategy)
+
+    
 
     -- rule T_ord
 ta (OrdAx a) (ASmaller b1 b2) = do
@@ -522,6 +527,7 @@ ta TrustMe ty = return (ATrustMe ty)
 -- to an equality, rather than being on the nose. 
 ta InferMe ty = do
   hyps <- getAvailableEqs
+  noTcCore <- getFlag NoTypeCheckCore
   underHypotheses hyps $ outofTyEq ty
     (\(ATyEq ty1 ty2) -> do
       --It's an equation, prove it.
@@ -534,11 +540,13 @@ ta InferMe ty = do
                ]
         Just p -> do
            pE <- erase p
-           if (S.null (fv pE :: Set EName))
-             then zonkTerm p
-             else zonkTerm =<< (uneraseEq ty1 ty2 p))
+           if noTcCore
+             then (return (ATrustMe (ATyEq ty1 ty2)))
+             else if (S.null (fv pE :: Set EName))
+               then zonkTerm p
+               else zonkTerm =<< (uneraseEq ty1 ty2 p))
     (do
-       -- It's not an equation, just leave it as a unificatoin variable.
+       -- It's not an equation, just leave it as a unification variable.
        x <- fresh (string2Name "")
        addConstraint (ShouldHaveType x ty)
        return (AUniVar x ty))
@@ -547,6 +555,7 @@ ta InferMe ty = do
 ta a tyB = do
   (ea,tyA) <- ts a 
   noCoercions <- getFlag NoCoercions
+  noTcCore    <- getFlag NoTypeCheckCore
   ztyB <- zonkTerm tyB
   tyA_eq_ztyB <- tyA `aeqSimple` ztyB
   if (tyA_eq_ztyB)
@@ -579,8 +588,9 @@ ta a tyB = do
                     zztyB <- zonkTerm ztyB
                     if (zztyA `aeq` zztyB)
                       then zonkTerm ea
-                      else do
-                         zonkTerm $ AConv ea p
+                      else if noTcCore
+                           then return (AConv ea (ATrustMe (ATyEq tyA tyB)))
+                           else zonkTerm $ AConv ea p
          else err [DS "When checking term", DD a, DS "against type",
                    DD ztyB,  DS ("(" ++ show ztyB ++ ")"),
                    DS "the distinct type", DD tyA, DS ("("++ show tyA++")"),
@@ -614,6 +624,7 @@ maybeCumul _ _ _ = Nothing
 coerce :: ATerm -> ATerm -> ATerm -> TcMonad (Maybe ATerm)
 coerce a tyA tyB = do
   noCoercions <- getFlag NoCoercions
+  noTcCore    <- getFlag NoTypeCheckCore
   tyA_eq_tyB <- tyA `aeqSimple` tyB
   if (tyA_eq_tyB)
     then return (Just a)   --already got the right type.
@@ -636,10 +647,12 @@ coerce a tyA tyB = do
                     -- in which case we do not need to insert a conversion after all.
                     ztyA <- zonkTerm tyA
                     ztyB <- zonkTerm tyB
+                    za   <- zonkTerm a
                     if (ztyA `aeq` ztyB)
-                      then Just <$> zonkTerm a
-                      else do
-                         Just <$> (zonkTerm $ AConv a p)
+                      then return $ Just za
+                      else if noTcCore  
+                              then return $ Just (AConv za (ATrustMe (ATyEq ztyA ztyB)))
+                              else Just <$> (zonkTerm $ AConv a p)
 
 -- | Checks a list of terms against a telescope of types
 -- with the proviso that each term needs to check at Logic.
