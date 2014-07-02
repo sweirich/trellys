@@ -128,13 +128,8 @@ unify (branch t11 t12) (branch t21 t22)
 unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
 ...               | true | [ q ] 
   =  match (singleton x t) 
-         (begin
-            ap (singleton x t) t
-          ≡⟨ singleton-∉FV t x t q  ⟩
-            t
-          ≡⟨ varSingleton x t  ⟩
-            ap (singleton x t) (var x)
-          ∎)
+        (trans (singleton-∉FV t x t q) 
+                (varSingleton x t))
 ...              | false | _ =  nomatch
 unify (var x) t with unify t (var x) 
 ...              | nomatch = nomatch

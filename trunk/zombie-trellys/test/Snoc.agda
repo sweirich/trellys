@@ -1,16 +1,20 @@
 -- A challenge for Agda pattern matching 
 -- from Daniel Peebles
--- https://plus.google.com/106318233255980016498/posts/9MsYQAGEKSp
+-- https://plus.google.com/106318233255980016498/posts/9MsYQAGEKSp  
+-- This is a "private" google plus post, so reference as Personal Communication
 
--- He writes: 
+-- Daniel writes: 
 --    Ulf Norell went so far as to say “it’s quite fun”.  
---    This problem is just a little trickier than it looks and might even teach you something about using “with”!  
+--    This problem is just a little trickier than it looks and might even teach you something about using “with”!
+
+-- found with google "agda tricky pattern matching"  
 
 module Snoc (A : Set) where
 
+open import Relation.Binary.Core
+open import Relation.Binary.PropositionalEquality
+
 infixr 5 _∷_ _++_
-infixl 5 _|>_
-infix 4 _≡_
 
 data List : Set where
   _∷_ : A → List → List
@@ -20,24 +24,21 @@ _++_ : List → List → List
 []       ++ ys = ys
 (x ∷ xs) ++ ys = x ∷ (xs ++ ys)
 
-_|>_ : List → A → List
-xs |> x = xs ++ x ∷ []
+snoc : List → A → List
+snoc xs x = xs ++ x ∷ []
 
-data _≡_ (x : List) : List → Set where
-  refl : x ≡ x
-
--- this helper would make it SOOO much easier. But nope, not allowed 
--- according to the challenge
+-- this helper would make it SOOO much easier. But nope, not allowed.
+-- EDIT: maybe it wouldn't help that much.
 ::inv2 : ∀ {x y : A}{xs ys : List} -> (x ∷ xs) ≡ (y ∷ ys) -> xs ≡ ys 
 ::inv2 refl = refl
 
+
 -- Your challenge is to implement the following using only pattern matching
 -- and with clauses.
-snoc-inv : ∀ xs ys z → xs |> z ≡ ys |> z → xs ≡ ys
-snoc-inv (x ∷ xs) (y ∷ ys) z pf with (xs |> z)
-...                                | sxs with (ys |> z) 
-snoc-inv (.y ∷ xs) (y ∷ ys) z refl | .sys | sys with (snoc-inv xs ys z {! !} ) 
-... | pf' = {! !}
+snoc-inv : ∀ xs ys z → (snoc xs z ≡ snoc ys z) → xs ≡ ys
+snoc-inv (x ∷ xs) (y ∷ ys) z pf with (snoc xs z) | (snoc ys z) | inspect (snoc xs) z | inspect (snoc ys) z
+snoc-inv (.y ∷ xs) (y ∷ ys) z refl | .s2 | s2 | [ p ] | [ q ] with (snoc-inv xs ys z (trans p (sym q))) 
+snoc-inv (.y ∷ .ys) (y ∷ ys) z refl | .s2 | s2 | [ p ] | [ q ] | refl = refl
 snoc-inv (x ∷ x₁ ∷ xs) [] z () 
 snoc-inv (x ∷ []) [] z ()
 snoc-inv [] (x ∷ x₁ ∷ ys) z () 
