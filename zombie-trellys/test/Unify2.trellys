@@ -98,7 +98,7 @@ data Unify (t1 : Term) (t2 : Term) : Type where
   match of (s : Substitution) (pf : ap s t1 = ap s t2)
 
 
-{-
+
 -- notFreeIn x t = True if x is not free in t. 
 notFreeIn : Nat -> Term -> Bool
 notFreeIn = \x. ind IH t = case t [teq] of 
@@ -141,7 +141,7 @@ singletonNotFree = ind IH t = \ x s p .
 prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
   case t1 , t2 of
-    leaf, leaf -> yes empty _
+    leaf, leaf -> match empty _
     leaf, branch _ _ -> nomatch
     branch _ _ , leaf -> nomatch
     branch t11 t12, branch t21 t22 ->
@@ -151,16 +151,11 @@ rec unify t1 = \ t2 .
           case (unify (ap s t12) (ap s t22)) of
             nomatch -> nomatch
 	    match s' p' ->
-	      let s'' = compose s' s in
-	      let [_] = (pjoin:  ap s'' (branch t11 t12)
-   		               = branch (ap s'' t11) (ap s'' t12)) in
-	      let [_] = (pjoin:  ap s'' (branch t21 t22)
-			       = branch (ap s'' t21) (ap s'' t22)) in
-	      let [_] = (apCompose s' s t11) in
-	      let [_] = (apCompose s' s t12) in
-	      let [_] = (apCompose s' s t21) in
-	      let [_] = (apCompose s' s t22) in
-		match s'' _
+              let [_] = apCompose s' s t1 in
+              unfold (ap s' (ap s t1)) in
+              unfold (ap s' (ap s t2)) in 
+              let [_] = apCompose s' s t2 in
+                 match (compose s' s) _
     t , (var x) -> 
       case (notFreeIn x t) of
         False -> nomatch
@@ -172,7 +167,7 @@ rec unify t1 = \ t2 .
       case (unify t (var x)) of
         nomatch -> nomatch
         match s p -> match s _ 
--}
+
 
           
 -- Proposition that variable x appears in term t          
