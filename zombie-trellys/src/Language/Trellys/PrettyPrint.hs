@@ -515,9 +515,9 @@ instance Display ATerm where
       dtemplate <- display template
       drhs <- display rhs
       return $ sep [text "cong",
-                    nest 2 (hsep dpfs),
-                    nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate),
-                    nest 2 (colon <+> drhs)]
+                     nest 2 (sep $  punctuate comma $ map parens dpfs),
+                     nest 2 (text "at" <+> hsep dxs <+> text "." <+> dtemplate),
+                     nest 2 (colon <+> drhs)]
   display (AContra a aTy) = do
     da <- display a
     daTy <- display aTy
@@ -604,7 +604,8 @@ instance Display ATerm where
     da <- display a
     return $ parens (text "TRUSTME" <+> colon <+> da)
   display (AHighlight a) = do
-    isaTTY <- asks useTerminalHighlighting
+    --isaTTY <- asks useTerminalHighlighting
+    let isaTTY = True
     da <- display a
     if isaTTY
       then return (text (setSGRCode [ SetColor Foreground Dull Red ])
@@ -785,7 +786,14 @@ instance Disp Theta where
   disp Program = text "prog"
 
 instance Disp Proof where
-  disp _ = text "prf"
+  disp (RawAssumption (a, RawRefl)) = parens $ text "asm" <+>  (parens (disp a))
+  disp (RawAssumption (a, p)) = parens $ text "asmconv" <+> (parens (disp a)) 
+                                          <+> text "by" <+> (disp p)
+  disp RawRefl = text "refl"
+  disp (RawSymm p) = parens $ text "symm" <+> disp p
+  disp (RawTrans p1 p2) = parens $ sep [text "trans", disp p1, disp p2]
+  disp (RawCong l ps) = parens $ text "cong" <+> disp l <+> brackets (sep (map disp ps))
+  disp (RawInj i p) = parens $ text "inj" <+> disp i <+> disp p
 
 instance Disp Label where
   disp bnd = 

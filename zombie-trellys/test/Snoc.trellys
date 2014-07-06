@@ -13,14 +13,10 @@ snoc_inv : [A : Type] -> (xs : List A) -> (ys: List A) -> (z : A)
 ind snoc_inv [A] xs = \ ys z pf.
      case xs [xeq], ys of 
         Cons x xs' , Cons y ys' -> 
-		     -- the difficult case for Agda!
-		     -- would morejoin help here?
-           unfold (snoc xs z) in 
-			  unfold (snoc xs' z) in 
-           unfold (snoc ys z) in 
-			  unfold (snoc ys' z) in
-			  let [_] = snoc_inv [A] xs' [ord xeq] ys' z _ in
-			  _
+           let _ = (smartjoin : (snoc xs z) = Cons x (snoc xs' z)) in
+           let _ = (smartjoin : (snoc ys z) = Cons y (snoc ys' z)) in
+           let [_] = snoc_inv [A] xs' [ord xeq] ys' z _ in
+	     _
         Nil , Nil -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in _

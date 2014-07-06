@@ -385,6 +385,12 @@ getLastDef decs1 = gld decs1 Nothing
         ADef an at -> gld decs (Just (an,at))
         _          -> gld decs acc
 
+
+-- The size of a term
+atermSize :: ATerm -> Int
+atermSize = gsize
+
+
 -------------
 -- Annotated Telescopes
 -------------

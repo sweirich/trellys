@@ -8,7 +8,7 @@
 module Language.Trellys.EqualityReasoning 
   (underHypotheses, prove, solveConstraints, uneraseEq, 
    intoArrow, intoTCon, outofArrow, outofTyEq, injRngFor,
-   saturate)
+   unfold, setFuel, runUnfoldT, underUnfoldsCC)
 where
 
 import Language.Trellys.TypeMonad
@@ -27,6 +27,7 @@ import Language.Trellys.Options
 
 import Language.Trellys.GenericBind hiding (avoid)
 
+import Control.Arrow (second)
 import Control.Applicative 
 import Control.Monad.List (ListT(..), runListT)
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
@@ -41,12 +42,13 @@ import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.Function (on)
 import Data.List
-import Text.PrettyPrint.HughesPJ (render)
-import Debug.Trace
 
 --Stuff used for debugging.
+import Text.PrettyPrint.HughesPJ (render)
+import Debug.Trace
 import Language.Trellys.PrettyPrint
-import Text.PrettyPrint.HughesPJ ((<+>),hsep,text, parens, vcat, colon, comma, nest, brackets)
+import Language.Trellys.Environment
+import Text.PrettyPrint.HughesPJ ((<+>),hsep, sep,text, parens, vcat, colon, comma, nest, brackets)
 
 -- In the decompose function, we will need to "canonicalize" certain fields
 -- that should not matter in the erased language. For readability we use
@@ -113,6 +115,15 @@ data Raw1Proof =
  | Raw1Cong Label [Raw1Proof]
  | Raw1Inj Int Raw1Proof
   deriving Show
+
+instance Disp Raw1Proof where
+  disp (Raw1Assumption o (a, Raw1Refl)) = parens $ text "asm" <+> text (show o) <+> (parens (disp a))
+  disp (Raw1Assumption o (a, p)) = parens $ text "asmconv" <+> text (show o) <+> (parens (disp a)) 
+                                    <+> text "by" <+> (disp p)
+  disp Raw1Refl = text "refl"
+  disp (Raw1Trans p1 p2) = parens $ sep [text "trans", disp p1, disp p2]
+  disp (Raw1Cong l ps) = parens $ text "cong" <+> disp l <+> brackets (sep (map disp ps))
+  disp (Raw1Inj i p) = parens $ text "inj" <+> disp i <+> disp p
 
 flipOrientation :: Orientation -> Orientation
 flipOrientation Swapped = NotSwapped
@@ -280,6 +291,7 @@ checkProof tyA tyB (Cong template ps)  =  do
                               (_,_,p') <- chainProof (Just subA) (Just subB) p
                               return (x, subA, subB, p'))
                  ps
+
   return $ AnnCong template subpfs tyA tyB
 
 -- [chainProof (Just A) (Just B) ps] takes a ChainProof of A=B and returns A, B, and the
@@ -428,7 +440,7 @@ decompose :: (Monad m, Applicative m, Fresh m) =>
              Bool -> Set AName -> ATerm -> WriterT [(AName,ATerm)] m ATerm
 decompose True avoid t | S.null (S.intersection avoid (fv t)) = do
   x <- fresh (string2Name "x")
-  tell [(x, t)]
+  tell [(x, eraseToHead t)]
   return $ AVar x
 decompose _ avoid t@(AVar _) = return t
 decompose _ avoid t@(AUniVar _ _) = return t
@@ -545,7 +557,7 @@ decomposeMatch avoid (AMatch c bnd) = do
 -- match, and that (ABox a) and (a) match.
 match :: (Applicative m, Monad m, Fresh m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
-match vars (AVar x) t | x `elem` vars = return $ M.singleton x t
+match vars (AVar x) t | x `elem` vars = return $ M.singleton x (eraseToHead t)
                       | otherwise     = return M.empty
 match vars (AUniVar _ _) (AUniVar _ _) = return M.empty
 match vars (ACumul t _) t' = match vars t t'
@@ -671,55 +683,33 @@ processHyp (th,n,t) = do
   aTy <- genEqs =<< (lift (zonkTerm t))
   recordInhabitant a aTy --If aTy is an equation, this call will propagate it.
 
--- "Given the context, please prove this other equation."
-prove ::  [(Theta,ATerm,ATerm)] -> (ATerm, ATerm) -> TcMonad (Maybe ATerm)
-prove hyps (lhs, rhs) = do
-  ((c1,c2),st1) <- flip runStateT newState $ do
-                     mapM_ processHyp hyps
-                     --liftIO $ putStrLn . render . disp $  [DS "prove lhs", DD lhs]
-                     c1 <- genEqs =<< (lift (zonkTerm lhs))
-                     --liftIO $ putStrLn . render . disp $  [DS "prove rhs", DD rhs]
-                     c2 <- genEqs =<< (lift (zonkTerm rhs))
-                     return (c1,c2)
-  --dumpState st1
+-- "Given the congruene context from the ProblemState, 
+--  please prove that these terms are equal".
+prove ::  (ATerm, ATerm) -> StateT ProblemState TcMonad (Maybe ATerm)
+prove (lhs, rhs) = do
+  c1 <- genEqs =<< (lift (zonkTerm lhs))
+  c2 <- genEqs =<< (lift (zonkTerm rhs))
+  st1 <- get
   let sts = flip execStateT st1 $
-              unify S.empty 
-                    [WantedEquation c1 c2]
-  case sts of
-    [] -> return Nothing
-    st:_ -> 
-       let bndgs = M.map ((naming st) BM.!>)  (bindings st)
-           pf = (proofs st) M.! (WantedEquation c1 c2) in
-        do
-         {-
-         liftIO $ putStrLn $ "Unification successful, calculated bindings " ++ show (M.map (render . disp) bndgs)
-         liftIO $ putStrLn $ "Proof is: \n" ++ show pf
+              unify S.empty [WantedEquation c1 c2]
+  lift $ case sts of
+           [] -> return Nothing
+           st:_ -> 
+              let bndgs = M.map ((naming st) BM.!>)  (bindings st)
+                  pf = (proofs st) M.! (WantedEquation c1 c2) in
+               do
+                let zlhs = zonkWithBindings bndgs lhs
+                let zrhs = zonkWithBindings bndgs rhs
+                setUniVars bndgs
+                tm <- (genProofTerm 
+                         <=< return . simplProof
+                         <=< chainProof' zlhs zrhs
+                         <=< fuseProof 
+                         . symmetrizeProof 
+                         . associateProof 
+                         . zonkWithBindings bndgs) pf
+                return $ Just tm
 
-         let zonkedAssociated = associateProof $ zonkWithBindings bndgs pf
-         liftIO $ putStrLn $ "Associated: \n" ++ show zonkedAssociated
-
-         let symmetrized = symmetrizeProof zonkedAssociated
-         liftIO $ putStrLn $ "Symmetrized: \n" ++ show symmetrized
-
-         fused <- fuseProof symmetrized
-         liftIO $ putStrLn $ "Fused: \n" ++ show fused
-
-         checked <- chainProof' lhs rhs fused
-         liftIO $ putStrLn $ "Checked: \n" ++ show checked
-
-         let simplified = simplProof checked
-         liftIO $ putStrLn $ "Simplified: \n" ++ show simplified
-         -}
-
-         setUniVars bndgs
-         tm <- (genProofTerm 
-                  <=< return . simplProof
-                  <=< chainProof' lhs rhs
-                  <=< fuseProof 
-                  . symmetrizeProof 
-                  . associateProof 
-                  . zonkWithBindings bndgs) pf
-         return $ Just tm
 
 -- "Given the context, fill in any remaining evars"
 solveConstraints :: [(Theta,ATerm,ATerm)] -> TcMonad ()
@@ -831,7 +821,7 @@ data UnfoldState = UnfoldState {
 
 
 -- unfold active subexpressions, then replace them with values.
-activate :: EvaluationStrategy -> ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
+activate :: (String,EvaluationStrategy) -> ATerm -> ListT (StateT UnfoldState (StateT ProblemState TcMonad)) ATerm
 activate str (ACumul a lvl) = ACumul <$> activate str a <*> pure lvl
 activate str (ADCon c th params args) 
   -- TODO: Insert casts, this will require some thinking.
@@ -858,18 +848,17 @@ activate str (AApp Runtime a b ty) = do
   if (ty' `aeq` ty)  --Do we need to insert a cast?
     then return $ AApp Runtime a' b' ty 
     else do
-      liftIO $ putStrLn "about to force that thunk"
       bPf <- lift $ underUnfolds bPfThunk
-      liftIO $ putStrLn "Ok, done"
+      (_, bPfTy) <- lift $ underUnfolds (aTs bPf)
       return $ AConv (AApp Runtime a' b' ty') 
                      (ACong [ASymEq bPf] (bind [x] aRng) (ATyEq ty' ty))
-activate str (ALet ep bnd ty) = do
+activate str (ALet Runtime bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
  lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
  -- TODO: fix the type of xeq
- return $ ALet ep (bind (x,xeq, embed a') b) ty
+ return $ ALet Runtime (bind (x,xeq, embed a') b) ty
 activate str (ACase a bnd ty) = do
  lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
@@ -883,16 +872,18 @@ activate str (ACase a bnd ty) = do
     So 
      (trans aPf y_eq) : a = pattern
     as required. -}
- aPf <- lift.lift.lift $ aPfThunk
+ aPf <- lift $ underUnfolds aPfThunk
  return $ ACase a' (bind y_eq (subst y_eq (ATransEq aPf (AVar y_eq)) mtchs)) ty
 activate str (ABox a th) = ABox <$> activate str a <*> pure th
 activate str (AConv a pf) = AConv <$> activate str a <*> pure pf
--- The rest of the cases are already values:
+-- The rest of the cases are already values or reducible expressions:
 activate str a = return a
 
 -- This function is similar to classMembers, but:
 --  (1) it lives inside the monad so it can check types
 --  (2) it does the "name a pure value" trick.
+--
+--    (classMembersWithTy b) returns (b',  pf: b = b')
 classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour 
                    -> StateT UnfoldState
                           (StateT ProblemState TcMonad)
@@ -902,7 +893,9 @@ classMembersWithTy :: ATerm -> ATerm -> Theta -> ValueFlavour
 classMembersWithTy b bTy bTh flavour | valueFlavour flavour b = return [(b, return (AReflEq b))]
 -- Otherwise, we look in the equivalence class of b:
 classMembersWithTy b bTy bTh flavour = do
-     members <- lift $ classMembers b (const True)
+     -- because the proofs are returned as lazy thunks we do not strictly need this underUnfolds,
+     --  but having it maybe makes the code clearer.
+     members <- underUnfoldsCC $ classMembers b (const True)
      {- Note: an alternative would be to look for terms with
         CC-equivalent types, not just strictly equal. But let's first
         see if this is expressive enough. -}
@@ -918,9 +911,10 @@ classMembersWithTy b bTy bTh flavour = do
         -- then we can create one by introducing an erased let which names the subexpression.
         y <- fresh $ string2Name "namedSubexp"
         y_eq <- fresh $ string2Name "namedSubexp_eq"
-        lift $ addEquation (AVar y) b (AVar y_eq) False
         modify (\st -> st{unfoldEquations = (y, y_eq, bTy, b):(unfoldEquations st)})
-        return [(AVar y, return (AVar y_eq))]
+        lift $ addEquation (AVar y) b (AVar y_eq) False
+          -- y_eq : namedSubexp = b, so (ASymEq y_eq) : b = namedSubexp, as required.
+        return [(AVar y, return (ASymEq (AVar y_eq)))]
       else if null values && flavour == ConstructorValue
              then do
                   case (filter (headedByConstructor.fst) filtered) of
@@ -934,17 +928,17 @@ classMembersWithTy b bTy bTh flavour = do
                                     args
                       let b' = ADCon con th params args'
                       if (valueFlavour ConstructorValue b')
-                         then return [(b', return (ATrustMe (ATyEq b b')))]
+                         then return [(b', return (ATrustMe (ATyEq b b')))]   --TODO: we should build a real proof.
                          else return []
-                    _ -> return []               
+                    _ -> return []
              else return values
 
 headedByConstructor :: ATerm -> Bool
 headedByConstructor (eraseToHead -> ADCon _ _ _ _) = True
 headedByConstructor _ = False
 
-unfold :: EvaluationStrategy -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
-unfold str a = do
+unfold :: (String,EvaluationStrategy) -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
+unfold str@(namePrefix, actualStr) a = do
   fuel <- gets fuelLeft
   visited <- gets alreadyUnfolded
   when (fuel > 0 && not (a `S.member` visited)) $ do
@@ -961,23 +955,26 @@ unfold str a = do
                                  --liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
                                  -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
                                  -- TODO, eventually this will be fixed in activate.
-                                 welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
+
+                                 --liftIO $ putStrLn "Checking term."
+                                 welltyped <- (do _ <- underUnfolds (aTs term); return True) --`catchError` (\ _ -> return False)
                                  unless welltyped $
-                                    warn [DS "rejecting illtyped variant", DD term]
+                                    warn [DS "rejecting illtyped variant", DD term,
+                                          DS "which is a variant of", DD a]
                                  when welltyped $ do
-                                   term' <- case str of
+                                   term' <- case actualStr of
                                               CBV -> fromMaybe term <$> (underUnfolds $ astep term)
                                               PAR_CBV -> underUnfolds $ aParStep False term
                                    when (not (term `aeq` term')) $ do
-                                      y <- fresh $ string2Name "unfolds"
-                                      y_eq <- fresh $ string2Name "unfolds_eq"
+                                      y <- fresh $ string2Name (namePrefix++"unfolds")
+                                      y_eq <- fresh $ string2Name (namePrefix++"unfolds_eq")
 
                                       isEq <- aeq <$> erase term <*> erase term'
                                       let proof = if isEq 
-                                                    then  AJoin term 0 term 0 str
-                                                    else  AJoin term 1 term' 0 str
-                                      lift $ addEquation term term' proof True
+                                                    then  AJoin term 0 term' 0 actualStr
+                                                    else  AJoin term 1 term' 0 actualStr
                                       modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
+                                      lift $ addEquation term term' proof True
                                       unfold str term'
 
 
@@ -1031,15 +1028,22 @@ classMembers a predi = do
                          <=< chainProof' a a'
                          <=< fuseProof 
                          . symmetrizeProof 
-                         . associateProof) p
+                         . associateProof                         
+                        ) p
            return (a',pf))
        cs
 
-saturate :: [(Theta,ATerm,ATerm)] -> EvaluationStrategy -> Int -> ATerm -> TcMonad (Set (AName,AName,ATerm,ATerm))
-saturate hyps str fuel a = 
+setFuel :: (Monad m) => Int -> StateT UnfoldState m ()
+setFuel fuel = modify (\st -> st{ fuelLeft = fuel})
+
+-- Note: by default is uses 0 fuel, i.e. it will not do anything!
+-- The caller needs to use setFuel in the monadic computation.
+runUnfoldT :: [(Theta,ATerm,ATerm)] -> StateT UnfoldState (StateT ProblemState TcMonad) a
+             -> TcMonad (a, [(AName,AName,ATerm,ATerm)])
+runUnfoldT hyps a = 
   flip evalStateT newState $ do
     mapM_ processHyp hyps
-    S.fromList . unfoldEquations <$> execStateT (unfold str a) (UnfoldState fuel S.empty [])
+    second (reverse . unfoldEquations) <$> runStateT a (UnfoldState 0 S.empty [])    
 
 addEquation :: ATerm -> ATerm -> ATerm -> Bool -> StateT ProblemState TcMonad ()
 addEquation a b pf isFine = do
@@ -1052,14 +1056,19 @@ addEquation a b pf isFine = do
 -- In the implementation of saturate, we need to typecheck terms in
 -- the extended context because the term may contain namedSubexp's.
 underUnfolds :: TcMonad a -> StateT UnfoldState (StateT ProblemState TcMonad) a
-underUnfolds a = do
+underUnfolds a = underUnfoldsCC (lift a)
+
+underUnfoldsCC :: StateT ProblemState TcMonad a -> StateT UnfoldState (StateT ProblemState TcMonad) a
+underUnfoldsCC a = do
   ctx <- gets unfoldEquations
-  go ctx
- where go [] = lift . lift $  a
+  go (reverse ctx)
+ where go [] = lift a
        go ((x,x_eq, bTy, b) : ctx) = 
          extendCtx (ASig x Logic bTy) $ 
            extendCtx (ASig x_eq Logic (ATyEq (AVar x) b)) $
              go ctx
+
+
 
 --See intoArrow for the prototypical use case. 
 intoFoo :: (ATerm->Bool) -> ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
@@ -1089,6 +1098,12 @@ isArrow :: ATerm -> Bool
 isArrow (AArrow _ _ _ _) = True
 isArrow _ = False
 
+isTyEq :: ATerm -> Bool
+isTyEq (ATyEq _ _) = True
+isTyEq _ = False
+
+
+
 -- like intoArrow, but tries to find a datatype.
 -- TODO, should also handle erased toplevel constructors.
 intoTCon :: ATerm -> ATerm -> StateT ProblemState TcMonad (Maybe (ATerm, ATerm))
@@ -1098,32 +1113,25 @@ intoTCon = intoFoo isTCon
         isTCon _ = False
 
 -- outofFoo isFoo typ ifFoo elseDo
--- uses the union-find structure in the state to find some type typ' which satisfies is foo,
+-- uses the union-find structure in the state to find some type typ' which is an equation,
 -- then calls (ifDo typ'), and applies a coersion from typ' into typ to what it returned. 
 -- If there is no suitable typ', it just returns elseDo, without any coercion.
-outofFoo :: (ATerm -> Bool) -> ATerm
-            -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
+outofTyEq :: ATerm
+            -> (ATerm -> StateT ProblemState TcMonad ATerm) -> TcMonad ATerm
             -> StateT ProblemState TcMonad ATerm
-outofFoo isFoo typ ifDo elseDo = do
+outofTyEq  typ ifDo elseDo = do
   _ <- genEqs typ
-  cs <- classMembers typ isFoo
+  cs <- classMembers typ (isTyEq.eraseToHead)
   case cs of
     [] -> lift elseDo
     ((typ',pfThunk) : _) -> 
       if typ' `aeq` typ
-        then lift $ ifDo typ
+        then ifDo typ
         else do 
-              a <- lift $ ifDo typ'
+              a <- ifDo typ'
               pf <- lift pfThunk
               symPf <- lift $ symEq typ typ' pf 
               return $ AConv a symPf
-
-outofTyEq :: ATerm
-            -> (ATerm -> TcMonad ATerm) -> TcMonad ATerm
-            -> StateT ProblemState TcMonad ATerm
-outofTyEq = outofFoo isTyEq 
-  where isTyEq (ATyEq _ _) = True
-        isTyEq _ = False
 
 -- For arrows we need to do a bit more work, because we also need to
 -- check the injectivity condition.

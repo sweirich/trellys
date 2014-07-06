@@ -30,8 +30,10 @@ import Language.Trellys.OpSem (isEValue, erase, eraseToHead, join)
 import Language.Trellys.TypeMonad
 
 --Stuff used for debugging.
+{-
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, render)
+-}
 
 -------------------
 -------------------
@@ -248,26 +250,30 @@ coreErr msg = do
         
 -- Given an environment and a theta, we synthesize a type and a theta or fail.
 --  Since the synthesized type is "very annotated", this is a bit like regularity.
-aTs :: ATerm -> TcMonad (Theta, ATerm)
-aTs (AVar x) = maybeUseFO (AVar x) =<< (lookupTy x)
 
-aTs (AUniVar x ty) = do 
+aTs :: ATerm -> TcMonad (Theta, ATerm)
+aTs a = extendSourceLocation Nothing a $ aTsPos a
+
+aTsPos :: ATerm -> TcMonad (Theta, ATerm)
+aTsPos (AVar x) = maybeUseFO (AVar x) =<< (lookupTy x)
+
+aTsPos (AUniVar x ty) = do 
   secondPass <- getFlag SecondPass
   if secondPass
     then coreErr [DS "Encountered an uninstantiated unification variable", DD x, DS "of type", DD ty]
     -- todo, the Logic is probably wrong, maybe need to do something smarter.
     else return (Logic,ty)
 
-aTs (ACumul a j) = do
+aTsPos (ACumul a j) = do
  (th, aTy) <- aTs a
  ty <- erase aTy
  case ty of
    (EType i) | i <= j -> return $ (th,AType j)
    _ -> coreErr [DS "Subterm of ACulum should be a type but is", DD aTy]
 
-aTs (AType i) = return $ (Logic, AType (i+1))
+aTsPos (AType i) = return $ (Logic, AType (i+1))
 
-aTs deriv@(AUnbox a) = do
+aTsPos deriv@(AUnbox a) = do
   isVal <- isEValue <$> erase a
   (aTh, atTy) <- aTs a
   case eraseToHead atTy of
@@ -279,12 +285,12 @@ aTs deriv@(AUnbox a) = do
     _  -> coreErr [DS "Argument of AUnbox should have an @-type, but has type", DD atTy,
                    DS ("\n when checking (" ++ show deriv ++ ")") ]
 
-aTs (ATCon c idxs) = do
+aTsPos (ATCon c idxs) = do
   (tys, i, _) <- lookupTCon c
   aTcTeleLogic (map (,Runtime) idxs) tys
   return (Logic, AType i)
 
-aTs (ADCon c th' idxs args) = do 
+aTsPos (ADCon c th' idxs args) = do 
   (tyc, indx_tys, (AConstructorDef _ arg_tys)) <- lookupDCon c 
   th <- aTcTele (map (,Runtime) idxs ++ args) (aAppendTele indx_tys arg_tys)
   unless (th <= th') $
@@ -292,7 +298,7 @@ aTs (ADCon c th' idxs args) = do
   aKc (ATCon (translate tyc) idxs)
   return (th', ATCon (translate tyc) idxs)
 
-aTs (AArrow k ex ep bnd) = do
+aTsPos (AArrow k ex ep bnd) = do
   ((x, unembed -> a), b) <- unbind bnd
   fo <- isEFirstOrder <$> (erase a)
   unless fo $ do
@@ -304,7 +310,7 @@ aTs (AArrow k ex ep bnd) = do
     (_, AType _) -> coreErr [DS "domain of an arrow should be a type, but here is", DD tya]
     (_, _) -> coreErr [DS "range of an arrow should be a type, but here is", DD tyb]
 
-aTs (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = do
+aTsPos (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = do
   unless (epTy == ep) $
     coreErr [DS "ALam ep"]  
   aKc (AArrow k ex epTy bndTy)  
@@ -321,9 +327,9 @@ aTs (ALam th (eraseToHead -> (AArrow k ex epTy bndTy))  ep bnd) = do
              DS "The full annotation was", DD (AArrow k ex epTy bndTy)]
   return $ (th, AArrow k ex epTy bndTy)
 
-aTs (ALam _ ty _ _) = coreErr [DS "ALam malformed annotation, should be an arrow type but is", DD ty]
+aTsPos (ALam _ ty _ _) = coreErr [DS "ALam malformed annotation, should be an arrow type but is", DD ty]
 
-aTs (AApp ep a b ty) = do
+aTsPos (AApp ep a b ty) = do
   (tha, tyA) <- aTs a
   (thb, tyB) <- aTs b
   aKc ty
@@ -347,13 +353,13 @@ aTs (AApp ep a b ty) = do
       return (max tha thb, ty)
     _ -> coreErr [DS "AApp: The term being applied,", DD a, DS "should have an arrow type, but here has type", DD tyA]
 
-aTs (AAt a th') = do
+aTsPos (AAt a th') = do
   aTy <- aTsLogic a
   case eraseToHead aTy of 
     AType i -> return $ (Logic, AType i)
     _ -> coreErr [DS "The argument to AAt should be a type, but it is", DD a, DS "which has type", DD aTy]
 
-aTs (ABox a th') = do
+aTsPos (ABox a th') = do
   (th, aTy) <- aTs a
   isVal <- isEValue <$> erase a
   case th of 
@@ -362,16 +368,16 @@ aTs (ABox a th') = do
     Program | th'==Program -> return (Program, AAt aTy th')
     _ -> coreErr [DS "in ABox,", DD a, DS "should check at L but checks at P"]
 
-aTs (AAbort aTy) = do
+aTsPos (AAbort aTy) = do
   aKc aTy
   return (Program, aTy)
 
-aTs (ATyEq a b) = do
+aTsPos (ATyEq a b) = do
   _ <- aTs a
   _ <- aTs b 
   return (Logic, AType 0)
 
-aTs (AJoin a i b j strategy) = do
+aTsPos (AJoin a i b j strategy) = do
   aKc (ATyEq a b)
   aE <- erase a
   bE <- erase b  
@@ -380,7 +386,7 @@ aTs (AJoin a i b j strategy) = do
     coreErr [DS "AJoin: not joinable"]
   return (Logic, ATyEq a b)
 
-aTs (AConv a pf) = do
+aTsPos (AConv a pf) = do
   (th, aTy) <- aTs a
   pfTy <- aTsLogic pf
   (aTy1, aTy2) <- case eraseToHead pfTy of
@@ -395,7 +401,7 @@ aTs (AConv a pf) = do
              DS "(when checking the conv expression", DD (AConv a pf), DS ")"]
   maybeUseFO a (th, aTy2)
 
-aTs (ACong prfs bnd ty@(ATyEq lhs rhs)) = do
+aTsPos (ACong prfs bnd ty@(ATyEq lhs rhs)) = do
   (xs, template) <- unbind bnd
   etemplate <- erase template
   unless (length xs == length prfs) $
@@ -427,13 +433,13 @@ aTs (ACong prfs bnd ty@(ATyEq lhs rhs)) = do
   aKc ty
   return (Logic, ty)
 
-aTs (ACong prfs bnd ty) = err [DS "ACong should be annotated with an equality type, but the annotation here is", DD ty]
+aTsPos (ACong prfs bnd ty) = err [DS "ACong should be annotated with an equality type, but the annotation here is", DD ty]
 
 -- Todo: This currently only considers head-forms of data
 -- constructors, but for the annotated operational semantics, this
 -- will need to consider headforms of all flavours of types?
 -- Maybe it's ok to just consider those cases stuck, though.
-aTs (AContra a ty) = do 
+aTsPos (AContra a ty) = do 
   aKc ty
   aTy <- aTsLogic a
   eaTy <- erase aTy
@@ -446,7 +452,7 @@ aTs (AContra a ty) = do
       return (Logic, ty)
     _ -> coreErr [DS "AContra not equality"]
    
-aTs (AInjDCon a i) = do
+aTsPos (AInjDCon a i) = do
   aTy <- aTsLogic a
   case eraseToHead aTy of
      ATyEq (ADCon c _ _ args) (ADCon c' _ _ args') -> do
@@ -464,17 +470,17 @@ aTs (AInjDCon a i) = do
        return (Logic, ATyEq (fst (args !! i)) (fst (args' !! i)))
      _ -> coreErr [DS "AInjDCon: the term", DD a, 
                    DS"should prove an equality of datatype constructors, but it has type", DD aTy]
-  where isGoodArg (a,ep) = do
-           (aTh, _) <- aTs a
-           aE <- erase a
-           return $ aTh==Logic || isEValue aE
+  where isGoodArg (arg,ep) = do
+           (aTh, _) <- aTs arg
+           argE <- erase arg
+           return $ aTh==Logic || isEValue argE
 
-aTs (ASmaller a b)  = do
+aTsPos (ASmaller a b)  = do
   _ <- aTs a   
   _ <- aTs b
   return (Logic, AType 0)
 
-aTs (AOrdAx pf a1) = do 
+aTsPos (AOrdAx pf a1) = do 
   pfTy <- aTsLogic pf
   _ <- aTs a1
   ea1 <- erase a1
@@ -487,7 +493,7 @@ aTs (AOrdAx pf a1) = do
        return $ (Logic, ASmaller a1 b1)
     _ -> coreErr [DS "AOrdAx badeq"]
         
-aTs (AOrdTrans a b) = do
+aTsPos (AOrdTrans a b) = do
   tya <- aTsLogic a
   tyb <- aTsLogic b
   case (eraseToHead tya, eraseToHead tyb) of
@@ -496,7 +502,7 @@ aTs (AOrdTrans a b) = do
     _ -> coreErr [DS "The subproofs of AOrdTrans do not prove inequalities of the right type."]
 
 -- TODO: n-ary ind.
-aTs t@(AInd ty@(eraseToHead -> (AArrow k ex epTy bndTy)) bnd) = do
+aTsPos t@(AInd ty@(eraseToHead -> (AArrow k ex epTy bndTy)) bnd) = do
   aKc ty
   ty' <- underInd t 
                   (\f ys body bodyTy -> do
@@ -512,9 +518,9 @@ aTs t@(AInd ty@(eraseToHead -> (AArrow k ex epTy bndTy)) bnd) = do
                     return ())
   return $ (Logic, ty)
 
-aTs (AInd ty _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
+aTsPos (AInd ty _) = coreErr [DS "AInd malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs t@(ARec ty@(eraseToHead -> (AArrow k ex epTy bndTy))  bnd) = do
+aTsPos t@(ARec ty@(eraseToHead -> (AArrow k ex epTy bndTy))  bnd) = do
   aKc ty
   underRec t
            (\f ys body bodyTy -> do
@@ -530,9 +536,9 @@ aTs t@(ARec ty@(eraseToHead -> (AArrow k ex epTy bndTy))  bnd) = do
               return ())
   return $ (Program, ty)
   
-aTs (ARec ty _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
+aTsPos (ARec ty _) = coreErr [DS "ARec malformed annotation, should be an arrow type but is", DD ty]  
 
-aTs (ALet ep bnd (th, ty)) = do  
+aTsPos (ALet ep bnd (th, ty)) = do  
   ((_, _, unembed -> a), _) <- unbind bnd
   (th'',bTy) <-  underLet (ALet ep bnd (th,ty)) 
                            (\x x_eq body -> do
@@ -551,7 +557,7 @@ aTs (ALet ep bnd (th, ty)) = do
                                       DS "and the body is", DD th'']
   return (th, bTy) 
 
-aTs (ACase a bnd (th,ty)) = do
+aTsPos (ACase a bnd (th,ty)) = do
   ths <- underCase (ACase a bnd (th,ty))
                    (\c xs body -> do  
                       (th', ty') <- aTs body
@@ -572,7 +578,7 @@ aTs (ACase a bnd (th,ty)) = do
   return (th , ty)     
 
 -- From (A->A')=(B->B'), conclude B=A. Note the built-in application of symmetry!
-aTs (ADomEq a) = do
+aTsPos (ADomEq a) = do
   (th, aTy) <- aTs a
   case aTy of
     ATyEq (AArrow _ _ eps bndTy) (AArrow _ _ eps' bndTy') | eps == eps' ->
@@ -582,7 +588,7 @@ aTs (ADomEq a) = do
                 return (th, ATyEq tyDom' tyDom))
     _ -> coreErr [DS "ADomEq not applied to an equality between arrow types"]
 
-aTs (ARanEq p a a') = do
+aTsPos (ARanEq p a a') = do
   (th,pTy) <- aTs p
   (_, aTy)  <- aTs a
   (_, aTy') <- aTs a'
@@ -601,13 +607,13 @@ aTs (ARanEq p a a') = do
           return (th, ATyEq (subst tyVar a tyRan) (subst tyVar a' tyRan'))
     _ -> coreErr [DS "ARanEq not applied to an equality between arrow types"]
 
-aTs (AAtEq a) = do
+aTsPos (AAtEq a) = do
   (th, aTy) <- aTs a
   case aTy of
     ATyEq (AAt atTy th') (AAt atTy' th'') | th' == th'' -> return (th, ATyEq atTy atTy')
     _ -> coreErr [DS "AAtEq not applied to an equality between at-types"]
 
-aTs (ANthEq i a) = do
+aTsPos (ANthEq i a) = do
   (th, aTy) <- aTs a
   case aTy of
     ATyEq (ATCon c as) (ATCon c' as')
@@ -618,23 +624,23 @@ aTs (ANthEq i a) = do
       | otherwise               -> return $ (th, ATyEq (as !! i) (as' !! i))
     _ -> coreErr [DS "ANthEq not applied to an equality between type constructor applications"]
 
-aTs (ATrustMe ty) = do
+aTsPos (ATrustMe ty) = do
   aKc ty
   return (Logic, ty)
 
-aTs (AHighlight a) = aTs a
+aTsPos (AHighlight a) = aTs a
 
-aTs (AReflEq a) = do
+aTsPos (AReflEq a) = do
   _ <- aTs a
   return (Logic, ATyEq a a)
 
-aTs (ASymEq a) = do
+aTsPos (ASymEq a) = do
   aTy <- aTsLogic a
   case aTy of 
     ATyEq a1 a2 -> return (Logic, ATyEq a2 a1)
     _-> coreErr [DS "ASymEq proof produced non-equation", DD aTy]
 
-aTs (ATransEq a b) = do
+aTsPos (ATransEq a b) = do
   aTy <- aTsLogic a
   bTy <- aTsLogic b
   case (aTy, bTy) of 
@@ -645,7 +651,7 @@ aTs (ATransEq a b) = do
           return (Logic, ATyEq a1 b2)
     _ -> coreErr [DS "ATransEq proof produced non-equation", DD aTy, DD bTy]
 
-aTs (AEraseEq a) = do
+aTsPos (AEraseEq a) = do
   aTy <- aTsLogic a
   case aTy of
     ATyEq _ _ -> return (Logic, aTy)

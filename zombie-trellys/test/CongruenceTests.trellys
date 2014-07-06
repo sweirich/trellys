@@ -156,11 +156,21 @@ decompose_case_branch_binding = \p. _
 ----------------------------------------
 -- Test the assumption-up-to-CC code.
 
+
 -- this requires the check for new given equations in recordInhabitant.
 --  (note that p will be processed before q, because of the way contexts are stored).
 log assumCC1 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (q : Q@log) -> (p : Q = (m=n)) -> m=n
 assumCC1 n m Q q p = _
 
+
+  -- (The same thing, except p is symmetric)
+log assumCC2 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (q : Q@log) -> (p : (m=n) = Q) -> m=n
+assumCC2 n m Q q p = _
+
 -- This one requires the check for new given equations when merging two equivalence classes.
-log assumCC2 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : Q = (m=n)) -> (q : Q@log) -> m=n
-assumCC2 n m Q p q = _
+log assumCC3 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : Q = (m=n)) -> (q : Q@log) -> m=n
+assumCC3 n m Q p q = _
+
+--  (the same thing, except p is symmetric)
+log assumCC4 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : (m=n) = Q) -> (q : Q@log) -> m=n
+assumCC4 n m Q p q = _

@@ -272,7 +272,7 @@ ta a (AAt tyA th') = do
     _  -> err [DD a, DS "should check at L but checks at P"]
 
 -- rule T_join
-ta (Join strategy smartness s1 s2) ty@(ATyEq a b) = do
+ta (Join strategy Dumb s1 s2) ty@(ATyEq a b) = do
   -- The input (ATyEq a b) is already checked to be well-kinded, 
   -- so we don't need a kind-check here.
 
@@ -500,8 +500,34 @@ ta (Rec bnd) ty = do
 ta (Unfold str n a b) tyB = do
    (ea,_)  <- ts a
    availableEqs <- getAvailableEqs
-   moreEqs <- saturate availableEqs str n ea
-   taUnderUnfolds (S.toList moreEqs) b tyB
+   ((), moreEqs) <- runUnfoldT availableEqs $ do
+                      setFuel n
+                      unfold ("plain",str) ea
+   taUnderUnfolds moreEqs b tyB
+
+ta (Join strategy Smart s1 s2) (ATyEq a b) = do
+  availableEqs <- getAvailableEqs
+
+  -- Although we aren't changing the context, the operational semantics
+  -- will not work well with uninstantiated evars, so we insert a solve here...
+  -- (TODO: maybe refine this to only solve for vars that actually occur in a or b?)
+  solveConstraints availableEqs
+  za <- zonkTerm a
+  zb <- zonkTerm b
+
+  (mpf, moreEqs) <- runUnfoldT availableEqs $ do
+                       setFuel s1
+                       unfold ("lhs",strategy) za
+                       setFuel s2
+                       unfold ("rhs",strategy) zb
+                       underUnfoldsCC $ prove (za,zb)
+  case mpf of
+    Nothing -> err [DS "The terms", DD za, DS "and", DD zb,
+                    DS "are not joinable, even using smart reduction"]
+    Just pf -> return $ pfWithBindings moreEqs
+       where pfWithBindings [] = pf
+             pfWithBindings ((x,x_eq,ty,term):rest) = 
+               ALet Erased (bind (x, x_eq, embed term) (pfWithBindings rest)) (Logic, (ATyEq za zb))
 
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
@@ -531,20 +557,20 @@ ta InferMe ty = do
   underHypotheses hyps $ outofTyEq ty
     (\(ATyEq ty1 ty2) -> do
       --It's an equation, prove it.
-      pf <- prove hyps (ty1,ty2)   --TODO: don't calculate this CC twice.
-      case pf of
-        Nothing -> do
-          gamma <- getLocalCtx
-          err [DS "I was unable to prove:", DD (Goal hyps (ATyEq ty1 ty2))
-    --           ,DS "The full local context is", DD gamma
-               ]
-        Just p -> do
-           pE <- erase p
-           if noTcCore
-             then (return (ATrustMe (ATyEq ty1 ty2)))
-             else if (S.null (fv pE :: Set EName))
-               then zonkTerm p
-               else zonkTerm =<< (uneraseEq ty1 ty2 p))
+      pf <- prove (ty1,ty2)
+      lift $ case pf of
+               Nothing -> do
+                gamma <- getLocalCtx
+                err [DS "I was unable to prove:", DD (Goal hyps (ATyEq ty1 ty2))
+          --           ,DS "The full local context is", DD gamma
+                     ]
+               Just p -> do
+                 pE <- erase p
+                 if noTcCore
+                   then (return (ATrustMe (ATyEq ty1 ty2)))
+                   else if (S.null (fv pE :: Set EName))
+                          then zonkTerm p
+                          else zonkTerm =<< (uneraseEq ty1 ty2 p))
     (do
        -- It's not an equation, just leave it as a unification variable.
        x <- fresh (string2Name "")
@@ -570,7 +596,7 @@ ta a tyB = do
          then do
            context <- getTys
            availableEqs <- getAvailableEqs
-           pf <- prove availableEqs (tyA,ztyB)
+           pf <- underHypotheses availableEqs $ prove (tyA,ztyB)
            case pf of 
              Nothing -> do
                tyA_diffed <- diff tyA ztyB
@@ -639,7 +665,7 @@ coerce a tyA tyB = do
          else do
            context <- getTys
            availableEqs <- getAvailableEqs
-           pf <- prove availableEqs (tyA,tyB)
+           pf <- underHypotheses availableEqs $ prove (tyA,tyB)
            case pf of 
              Nothing -> return Nothing
              Just p -> do
