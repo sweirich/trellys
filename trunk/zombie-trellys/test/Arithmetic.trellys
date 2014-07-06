@@ -74,9 +74,17 @@ lemma_minus_zero_id =
 log lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
 ind lemma_plus_zero_id n =
  case n [eq_n] of 
-    Zero -> unfold (plus 0 0) in _
+    Zero -> smartjoin  --or: (join : plus 0 0 = 0)
     Succ n' -> let [_] = lemma_plus_zero_id n' [ord eq_n] in
-					(join : plus (Succ n') 0 = Succ (plus n' 0))
+                 smartjoin --or: (join : plus (Succ n') 0 = Succ (plus n' 0))
+
+lemma_plus_succ : (m : Nat) -> (n : Nat) -> (plus m (Succ n)) = (Succ (plus m n))
+ind lemma_plus_succ m = \n .
+  case m [m_eq] of 
+    Zero -> smartjoin
+    Succ m' -> let IH = (lemma_plus_succ m' [ord m_eq] n) in
+                 smartjoin
+
 
 -- (m + n) - m = n
 lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
@@ -91,39 +99,47 @@ ind lemma_minus_plus_id m = \n .
                  (lemma_minus_plus_id m' [ord m_eq] n)
 
 
+plus_commutes : (m : Nat) -> (n : Nat) -> (plus m n) = (plus n m)
+ind plus_commutes m = \n .
+  case m [m_eq] of
+     Zero -> let _ = (lemma_plus_zero_id n) in
+             unfold (plus m n) in
+              _ 
+     Succ m' -> let _  = (lemma_plus_succ n m') in
+                let IH = (plus_commutes m' [ord m_eq] n) in
+                unfold (plus m n) in
+                unfold (plus n m') in
+                  _
+
 plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
-    Zero ->  
-     unfold (plus (plus Zero j) k) in 
-     unfold (plus i (plus j k)) in
-        _ 
+    Zero -> let _ = (join : plus (plus Zero j) k = plus j k ) in
+            -- We name the subexpression (plus j k) in order to make it a value.
+            let [plus_j_k] = plus j k in
+            let _ = (join : plus Zero (plus_j_k) = plus_j_k) in 
+              _ 
     Succ i' -> let ih = pa i' [ord ieq] j k
                -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
                in let _  = (join : plus (Succ i') j = Succ (plus i' j))
                in let [plus_i'_j] = plus i' j
                in let _  = (join : plus (Succ plus_i'_j) k = Succ (plus plus_i'_j k))
---               in let e2 = (_ : Succ (plus (plus i' j) k) = plus (plus (Succ i') j) k)
                -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
                in let [plus_j_k] = plus j k
                in let _ = (join : plus (Succ i') plus_j_k = Succ (plus i' plus_j_k))
---               in let e3 = (_ : Succ (plus i' (plus j k)) = plus (Succ i') (plus j k))                  
                -- move the `Succ` inside both sides
                in (_ : (plus (plus i j) k) = (plus i (plus j k)))
 
 
+-- The same function as plus_associates, but using the smartjoin tactic to avoid
+-- fiddly equational reasoning.
 plus_associates' : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates' = ind pa i = \j k .
   case i [ieq] of
-    Zero ->  
-     unfold (plus (plus i j) k) in 
-     unfold (plus i (plus j k)) in
-        _ 
+    Zero -> smartjoin
     Succ i' -> let ih = pa i' [ord ieq] j k in
-               unfold (plus (plus i j) k) in
-               unfold (plus i (plus j k)) in
-               _
+                 smartjoin
 
 main : Nat
 main = plus 2 3

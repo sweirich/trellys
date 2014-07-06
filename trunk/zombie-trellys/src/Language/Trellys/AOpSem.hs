@@ -271,8 +271,10 @@ stepCase (AConv (ADCon c th indices vs) b) eqname matches ty = do
               v'  = AConv v
                           (ACong (bs ++ b's)
                                  (bind (xs ++ ys) e)
-                                 (ATyEq (substs (zip xs src ++ zip ys (map fst vs) ) e)
-                                        (substs (zip xs res ++ zip ys (map fst v's)) e)))
+                                 (ATyEq 
+                                        (substs (zip xs src ++ zip ys (map fst vs) ) e)
+                                        (substs (zip xs res ++ zip ys (map fst v's)) e)
+                                    ))
           return $ ((v',eps) : v's, y : ys)
         go _ _ = mzero
     
@@ -293,7 +295,7 @@ stepBareCase cval@(ADCon c _ _ args) eqname matches ty = do
   (delta, matchBody) <- unbind matchBodyBnd
   guardExpected $ aTeleLength delta == length args
   return $
-    subst eqname (AJoin cval 0 cval 0 CBV) $ 
+    subst eqname (AReflEq cval) $ 
         substATele delta (map fst args) matchBody
 stepBareCase _ _ _ _ = mzero
 

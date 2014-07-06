@@ -151,7 +151,8 @@ lookupTy v =
      gamma <- getLocalCtx
      case x of
        Just res -> return res
-       Nothing -> err [DS ("The variable " ++ show v++ " was not found."), DS "in context", DD gamma]
+       Nothing -> err [DS ("The variable " ++ show v++ " was not found."),
+                       DS "in context", DD gamma]
 
 -- | Find a name's def in the context.
 lookupDef :: (MonadReader Env m, MonadError Err m, MonadIO m) 

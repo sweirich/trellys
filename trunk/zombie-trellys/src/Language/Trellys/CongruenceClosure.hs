@@ -54,8 +54,10 @@ import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.List (intercalate)
 import Control.Monad.Trans
-import Control.Monad.Trans.State.Strict
+import Control.Monad.State.Class
+import Control.Monad.Trans.State.Strict (StateT(..))
 import Control.Monad.Trans.List
+
 
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
@@ -96,7 +98,7 @@ data ClassInfo  = ClassInfo {
         --   p :  l as = c
         --  where c is some constant in the class. 
   classEquations   :: Set (Constant,Constant,Constant), -- (c,a,b) such that c is in the class and c == (a=b).
-  classInhabitants :: Set Constant                      -- Constants whose type is this constant.
+  classInhabitants :: Set (Constant,Constant)           -- (c, cTy) such that c : cTy and cTy is in the class.
                                                         --   Note we only track variables from the context here.
 }
 
@@ -173,7 +175,8 @@ dumpState st =
                      ++ intercalate ", " (map showConst (S.toList $ classMembers info)) 
                      ++ "}\n"
                      ++ "has inhabitants:\n {"
-                     ++ intercalate ", " (map showConst (S.toList $ classInhabitants info)) 
+                     ++ intercalate ", " (map (\(c,cTy) -> showConst c ++ " : " ++ showConst cTy) 
+                                           (S.toList $ classInhabitants info))
                      ++ "}\n"
                      ++ "and contains the equations:\n {"
                      ++ intercalate ", " (map (\(c,a,b) -> showConst c)  (S.toList $ classEquations info))
@@ -220,10 +223,11 @@ recordUniVar c x cTy = do
 --  given equations too)
 recordInhabitant :: (Monad m) => Constant -> Constant -> StateT ProblemState m ()
 recordInhabitant c cTy = do
-  (_, cTy', inf) <- findExplainInfo cTy
-  setRepr cTy' (Right inf{ classInhabitants = c `S.insert` classInhabitants inf})
+  --This line is a bug. We know c inhabits cTy, we record that it inhabits cTy', and we throw away the proof they are equal..
+  (_, cTy', inf) <- findExplainInfo cTy    
+  setRepr cTy' (Right inf{ classInhabitants = (c,cTy) `S.insert` classInhabitants inf})
   when (S.null (classInhabitants inf)) $
-    propagate =<< (possiblyNewAssumptions cTy' (Just c) (classEquations inf))
+    propagate =<< (possiblyNewAssumptions (Just (c,cTy)) (classEquations inf))
 
 -- | Record that c is an equation between a and b
 -- (If the equivalence class of c is inhabited, this yields a new given equation too).
@@ -231,7 +235,7 @@ recordEquation :: (Monad m) => Constant -> (Constant,Constant) -> StateT Problem
 recordEquation  c (a,b) = do
   (_, c', inf) <- findExplainInfo c
   setRepr c' (Right inf{ classEquations = (c,a,b) `S.insert` classEquations inf})
-  propagate =<< (possiblyNewAssumptions c' (someElem $ classInhabitants inf) (S.singleton (c,a,b)))
+  propagate =<< (possiblyNewAssumptions (someElem $ classInhabitants inf) (S.singleton (c,a,b)))
 
 -- The list contains all the constants in the state, together with
 --   * if the contant itself represents a variable, the name of the variable.
@@ -340,20 +344,6 @@ recordInjTerm a app = do
   (_,a',ia) <- findExplainInfo a
   setRepr a' (Right $ ia{ classInjTerm = (classInjTerm ia) `orElse` (Just app) })
 
-{-
--- Given a term f(a1..an), return the constant which represents its equivalence class.
-standardize :: Monad m => Label -> [Constant] -> StateT ProblemState m (Constant, Proof)
-standardize l as = do
-  (rs {- : ai = ai' -} ,as') <- findExplains as
-  
-  Just (ps {- : bi = ai' -}, q {- : bs = b -}, EqBranchConst _ bs b) <- 
-      return (M.lookup (l,as')) `ap`  (gets lookupeq)
-  (s {- : b = b' -} , b') <- findExplain b
-  let l_as__eq__l_as' = RawCong l rs
-  let l_as'__eq__l_bs = RawCong l (map RawSymm ps)
-  return (b',  RawTrans l_as__eq__l_as' (RawTrans l_as'__eq__l_bs (RawTrans q s)))
--}
-
 -- Called when we have just unified two equivalence classes. If both classes contained
 -- an injective term, we return the list of new equations.
 -- Preconditions: the labels should be injective, the two terms should be equal.
@@ -380,10 +370,10 @@ possiblyInjectivity _ _ = return []
 --
 -- Note we do not check that the equations were not already known. 
 -- If the generated equations are redundant we will notice later, in propagate.
-possiblyNewAssumptions :: Monad m => Constant -> Maybe Constant -> Set (Constant,Constant,Constant) -> 
+possiblyNewAssumptions :: Monad m => Maybe (Constant,Constant) -> Set (Constant,Constant,Constant) -> 
                           StateT ProblemState m [ExplainedEquation]
-possiblyNewAssumptions _ Nothing _ = return []
-possiblyNewAssumptions c1 (Just c1Inhabitant) qs =  mapM possiblyNewAssumption $ S.elems qs
+possiblyNewAssumptions  Nothing _ = return []
+possiblyNewAssumptions  (Just (c1Inhabitant,c1)) qs =  mapM possiblyNewAssumption $ S.elems qs
  where possiblyNewAssumption (c2,a,b) = do
          names <- gets naming
          (pc1,_) <- findExplain c1
@@ -407,8 +397,8 @@ propagate ((p, Left (EqConstConst a b)):eqs) = do
       a' <- union a b p
       a_uses <- M.findWithDefault [] a' `liftM` (gets uses)
       injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
-      newAssumptions1 <- possiblyNewAssumptions ar (someElem $ classInhabitants ia) (classEquations ib)
-      newAssumptions2 <- possiblyNewAssumptions br (someElem $ classInhabitants ib) (classEquations ia)
+      newAssumptions1 <- possiblyNewAssumptions (someElem $ classInhabitants ia) (classEquations ib)
+      newAssumptions2 <- possiblyNewAssumptions (someElem $ classInhabitants ib) (classEquations ia)
       propagate (map (\(q,eq) -> (q, (Right eq))) a_uses ++ injections ++ newAssumptions1 ++ newAssumptions2 ++ eqs)
    else 
       propagate eqs
@@ -562,9 +552,9 @@ guessVars = do
            -- liftIO $ putStrLn $ "The set of inhabitants is: "
            --                      ++ intercalate ", "  (map (render . disp . (names BM.!>))
            --                                                (S.toList $ classInhabitants inf))
-           let candidates = [ c | c <- (S.toList $ classInhabitants inf), 
+           let candidates = [ c | (c,_cTy) <- (S.toList $ classInhabitants inf), 
                                   S.null (uniVars (names BM.!> c)) ] --huge hack.
---                             not (x `S.member` uniVars (names BM.!> c)) ] --occurs check
+--                                not (x `S.member` uniVars (names BM.!> c)) ] --occurs check
            when (null candidates) $
              liftIO $ putStrLn . render . disp $ [ DS "Oops, no candidates for guessing the variable", DD x, DS  "of type",
                                                    DD (names BM.!> xTy)]

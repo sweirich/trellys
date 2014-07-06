@@ -20,7 +20,7 @@ PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
      TerminationAsValueRestrictionWorkaround Subvert \
      BasicOrd DeepMatch \
-     RLE Sat Unsat Paper Unify2 \
+     RLE Sat Unsat Paper Unify2 Snoc \
      InjRngSuccess InjRngSuccess2
 
 # These were broken by correctly doing CBV-reduction:
@@ -43,7 +43,7 @@ UNKNOWN=  recursion-examples Append
 # A symlink to the ../.capri local trellys, installed by top level make.
 TRELLYS=./trellys 
 # typecheck *quietly*
-TYPECHECK=$(TRELLYS) 1>/dev/null # 2>&1
+TYPECHECK=$(TRELLYS) 1>/dev/null  #2>&1
 
 .PHONY: pass fail todo_pass todo_fail todo
 

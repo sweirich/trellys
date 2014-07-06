@@ -22,9 +22,10 @@ import Control.Monad.Trans.Maybe
 import Data.List (find)
 
 --Stuff used for debugging.
+{-
 import Language.Trellys.PrettyPrint ()
 import Text.PrettyPrint.HughesPJ 
-
+-}
 
 ---------------------------------------------------------------
 -- Erasing core terms. 
