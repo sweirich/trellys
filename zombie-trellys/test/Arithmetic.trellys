@@ -87,7 +87,7 @@ ind lemma_plus_succ m = \n .
 
 
 -- (m + n) - m = n
-lemma_minus_plus_id : (m : Nat) -> (n : Nat) -> ((minus (plus m n) m) = n)
+lemma_minus_plus_id : (m n : Nat) -> ((minus (plus m n) m) = n)
 ind lemma_minus_plus_id m = \n .
   case m [m_eq] of
      Zero -> let _ = (join : n = plus 0 n) in
@@ -99,7 +99,7 @@ ind lemma_minus_plus_id m = \n .
                  (lemma_minus_plus_id m' [ord m_eq] n)
 
 
-plus_commutes : (m : Nat) -> (n : Nat) -> (plus m n) = (plus n m)
+plus_commutes : (m n : Nat) -> (plus m n) = (plus n m)
 ind plus_commutes m = \n .
   case m [m_eq] of
      Zero -> let _ = (lemma_plus_zero_id n) in
@@ -111,7 +111,7 @@ ind plus_commutes m = \n .
                 unfold (plus n m') in
                   _
 
-plus_associates : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
+plus_associates : (i j k: Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
@@ -134,7 +134,7 @@ plus_associates = ind pa i = \j k .
 
 -- The same function as plus_associates, but using the smartjoin tactic to avoid
 -- fiddly equational reasoning.
-plus_associates' : (i:Nat) -> (j:Nat) -> (k:Nat) -> plus (plus i j) k = plus i (plus j k)
+plus_associates' : (i j k: Nat)  -> plus (plus i j) k = plus i (plus j k)
 plus_associates' = ind pa i = \j k .
   case i [ieq] of
     Zero -> smartjoin

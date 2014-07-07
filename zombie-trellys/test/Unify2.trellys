@@ -16,7 +16,7 @@ data Dec (p : Type) : Type where
 
 -- equality for natural numbers is decidable
 
-dec_eq : (n1 : Nat) -> (n2 : Nat) -> Dec (n1 = n2)
+dec_eq : (n1 n2 : Nat) -> Dec (n1 = n2)
 ind dec_eq x = \ y . 
   case x [x_eq], y [y_eq] of 
      Zero, Zero -> yes _
@@ -128,7 +128,7 @@ singletonNotFree = ind IH t = \ x s p .
 
 
 
-prog unify : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
+prog unify : (t1 t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
   case t1 , t2 of
     leaf, leaf -> match empty _
@@ -269,7 +269,7 @@ singletonNotIn = ind IH t = \x s . case t [teq] of
       yes p -> \ br . void_elim [_] (br (invar [_]))
       no np -> \ _ . unfold (ap (singleton x s) t) in _
 
-prog unify' : (t1 : Term) -> (t2 : Term) -> Unify t1 t2
+prog unify' : (t1 t2 : Term) -> Unify t1 t2
 rec unify' t1 = \ t2 . 
   case t1 , t2 of
     leaf, leaf -> match empty _

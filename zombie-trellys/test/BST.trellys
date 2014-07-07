@@ -24,7 +24,7 @@ ordLtIrrefl = \[a].\order.\x.
       let [_] = irrefl x in
       _
 
-ordLtAntiSymm : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) ->
+ordLtAntiSymm : [a:Type 0] -> (order: Ord a) -> (x y: a@log) -> 
                   ordLt x y = False -> ordLt y x = False -> x = y
 ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
   case order [_] of
@@ -33,7 +33,7 @@ ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
       let [_] = antisymm x y h1 h2 in
       _
 
-ordLtTrans : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) -> (z: a@log) ->
+ordLtTrans : [a:Type 0] -> (order: Ord a) -> (x y z: a@log) ->
                   ordLt x y = True -> ordLt y z = True -> ordLt x z = True
 ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
   case order [_] of
@@ -45,7 +45,7 @@ ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
 {-
 lemma: if y < x, then not (x < y).
   Because, suppose x < y. By transitivity we get x < x. This contradicts irrefl.  -}
-ordLtIrrefl1 : [a:Type 0] -> (order: Ord a) -> (x: a@log) -> (y: a@log) 
+ordLtIrrefl1 : [a:Type 0] -> (order: Ord a) -> (x y: a@log)
               -> ordLt y x = True -> ordLt x y = False
 ordLtIrrefl1 = \[a] order x y lt_y_x.
   case (ordLt x y) [lt_x_y] of

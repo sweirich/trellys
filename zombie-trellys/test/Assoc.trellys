@@ -17,8 +17,7 @@ append = ind append xs = \ ys.
       Nil -> ys
       Cons x xs' -> Cons x (append xs' [ord eq] ys)
 
-log append_assoc :  (xs : List A) -> (ys: List A) -> (zs : List A) 
-    -> append (append xs ys) zs = append xs (append ys zs)
+log append_assoc :  (xs ys zs: List A) -> append (append xs ys) zs = append xs (append ys zs)
 append_assoc = ind append_assoc xs = 
   \ ys zs. let rc = append ys zs in 
      case xs [xs_eq] of 

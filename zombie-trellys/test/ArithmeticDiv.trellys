@@ -16,8 +16,7 @@ rec div n = \m.
     Succ pred -> Succ (div (minus pred m) m)
 
 -- m*(n+1) / n = m
-log div_mult : (m : Nat) -> (n : Nat) ->
-    (div (mult m (Succ n)) n = m)
+log div_mult : (m n: Nat) -> (div (mult m (Succ n)) n = m)
 ind div_mult m = \n .
   case m [m_eq] of
     Zero -> (join : div (mult Zero (Succ n)) n = Zero)

@@ -13,28 +13,28 @@ data List (a : Type) : Type where
   Nil
   Cons of (x : a) (xs : List a)
 
-map : [a : Type] => [b : Type  0] => (f : (x:a) -> b) -> 
+map : [a b : Type] => (f : (x:a) -> b) -> 
       (xs : List a) -> List b
 map = \ [a] [b] f . ind map xs = 
   case xs [xs_eq] of
     Nil -> Nil 
     Cons x xs -> Cons (f x) (map xs [ord xs_eq])
 
-fold : [a: Type] => [b:Type] => (x : b) -> (f : a -> b -> b) -> List a -> b
+fold : [a b: Type] => (x : b) -> (f : a -> b -> b) -> List a -> b
 fold = \[a] [b] n f . ind foldrec xs =  
   case xs [xs_eq] of 
     Nil -> n
     Cons x xs -> f x (foldrec xs [ord xs_eq]) 
 
 {-
-test : [a: Type] => [b:Type] => [c:Type] => 
+test : [a b c: Type] =>
         (f : a -> b -> b) -> (e : b) -> (x:a) -> (xs': List a) ->
           f x (fold e f xs') = x
 test [a] [b] [c] f e x xs' = join
 -}
 
 -- From Algebra of Programming in Agda, Shin-Cheng Mu, Hsiang-Shang Ko, and Patrik Jansson
-foldrfusion : [a: Type] => [b:Type] => [c:Type] => 
+foldrfusion : [a b c: Type] => 
   (h : b -> c) -> (f : a -> b -> b) => (g : a -> c -> c) => (e : b) =>
   ((x:a) -> (y:b) -> h (f x y) = g x (h y)) ->
   (xs: List a) -> h (fold e f xs) = fold (h e) g xs

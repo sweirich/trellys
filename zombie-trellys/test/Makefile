@@ -14,7 +14,7 @@ SHELL=/bin/bash
 
 # PASS are tests that *should* always pass.
 PASS=Prelude TypeTest CongruenceTests InjectivityTests  UpToCongruence \
-     Arithmetic ArithmeticDiv Vectors Product List Fin LetRebind Trees Append2 \
+     Arithmetic ArithmeticDiv Vectors Product List Fin Assoc LetRebind Trees Append2 \
      NatElimination \
      ErasedConvInfer Test_Q_Cons StrongNat LessThanNat \
      LessThanNat_LT LessThanNat_lt_eq_True ProgrammaticCdiv \
