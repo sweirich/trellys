@@ -65,7 +65,7 @@ fin_eq =
       _ , _ -> False
 
 -- correctness of fin_eq
-fin_eq_True : [n: Nat] -> (i : Fin n) -> (j : Fin n) -> (fin_eq [n] i j = True) -> i = j
+fin_eq_True : [n: Nat] -> (i j : Fin n) -> (fin_eq [n] i j = True) -> i = j
 ind fin_eq_True [n] = \i j h.
   case i , j of
       FZ [m1][m1_eq], FZ [_][_] -> _

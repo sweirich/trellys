@@ -633,22 +633,33 @@ letExpr =
      body <- expr
      return $ (Let th ep (bind (x,y, embed boundExp) body))
 
--- impProd - implicit dependent products
--- These have the syntax [x:a]->b or [a]->b .
-impProd :: LParser Term
-impProd =
-  do (x,tyA) <- brackets (try ((,) <$> variableOrWild <*> (colon >> expr))
-                          <|> ((,) <$> (fresh (string2Name "_")) <*> expr))
-     ex <- (try (reservedOp "->" >> return Explicit) 
-            <|> (reservedOp "=>" >> return Inferred))
-     tyB <- compound
-     return $ Arrow ex Erased  (bind (x,embed tyA) tyB)
+{- Many different things start with parentheses:
 
---FIXME: add wildcard
+   Parethesised expressions, e.g.
+     (42)
+     (vec 42)
+     (vec x)
 
--- Product types have the syntax '(x:A) -> B'.  This production deals
--- with the ambiguity caused because explicit producs, annotations and
--- regular old parens all start with parens.
+   Type ascriptions, e.g.
+     (42 : Int)
+     (vec 42 : Type)
+     (vec x : Type)
+
+   Pi types and multiple-bindings Pi types, e.g.
+     (x : Int) -> T
+     (x : Int) => T
+     (x y : Int) -> T
+     (vec x : Type) -> T    --Oops.
+
+   As the last example hints, there is an ambiguity: (x:A)->B and
+   (x y:A)->B could could be parsed both as Pi types or a simple types where
+   the domain is an expression involving type ascription. In these cases
+   we parse it as a Pi type.
+
+   Algorithmically, first parse everything as either (exp) or (exp:exp').
+   If the latter, we check if the next token is a thin or fat 
+   arrow, and whether exp is a bunch of variables.
+-}
 expProdOrAnnotOrParens :: LParser Term
 expProdOrAnnotOrParens =
   let
@@ -662,7 +673,10 @@ expProdOrAnnotOrParens =
 
     -- before binder parses an expression in parens
     -- If it doesn't involve a colon, you get (Right tm)
-    -- If it does, you get (Left tm1 tm2).  tm1 might be a variable,
+    -- If it does, you get (Left tms tm2).  Tms might be:
+    --    
+    --       a variable or a list of variables (this is a pi type)
+   --       
     --    in which case you might be looking at an explicit pi type.
     beforeBinder :: LParser (Either (Term,Term) Term)
     beforeBinder = parens $
@@ -673,12 +687,41 @@ expProdOrAnnotOrParens =
   in
     do bd <- beforeBinder
        case bd of
-         Left (Var x,a) ->
-           option (Ann (Var x) a)
-                  (do (ex,b) <- afterBinder
-                      return $ Arrow ex Runtime (bind (x,embed a) b))
-         Left (a,b) -> return $ Ann a b
+         Left (a,b) -> (do
+                          xs <- looksLikeVariableList a
+                          (ex, c) <- afterBinder
+                          return $ arrows ex Runtime xs b c)
+                        <|> (return (Ann a b))
          Right a    -> return $ Paren a
+
+
+-- impProd - erased dependent products
+-- These have the syntax [x:a]->b or [a]->b or [x:a]=>b or [a]=>b
+impProd :: LParser Term
+impProd =
+  do (xs,tyA) <- brackets (try ((,) <$> many1 variableOrWild <*> (colon >> expr))
+                           <|> ((,) <$> ((:[]) <$> fresh (string2Name "_")) <*> expr))
+     ex <- (try (reservedOp "->" >> return Explicit) 
+            <|> (reservedOp "=>" >> return Inferred))
+     tyB <- compound
+     return $ arrows ex Erased xs tyA tyB
+--FIXME: add wildcard
+
+-- Takes an expression, check if it is a left-associated series of
+-- applications of variabls (x y z ...) and return as a list,
+-- otherwise fail.
+looksLikeVariableList :: Term -> LParser [TName]
+looksLikeVariableList (Var x) = return [x]
+looksLikeVariableList (App Runtime t (Var x)) = do
+  xs <- looksLikeVariableList t
+  return $ xs ++ [x]
+looksLikeVariableList _ = fail "expected variable"
+
+-- given a list of variable names [x,y,z] and types A, B,
+-- build the arrow type (x:A)->(y:A)->(z:A)->B.
+arrows :: Explicitness -> Epsilon -> [TName] -> Term -> Term -> Term
+arrows _ _ [] _ s = s
+arrows ex ep (x:xs) t s = Arrow ex ep (bind (x,embed t) (arrows ex ep xs t s))
 
 pattern :: LParser Pattern 
 -- Note that 'dconstrutor' and 'variable' overlaps, annoyingly.

@@ -4,11 +4,11 @@ import Prelude
 import List
 import Logic  --non-dependent pairs and union.
 
-data Maybe (a : Type 0) : Type 0 where
+data Maybe (a : Type) : Type where
   Nothing
   Just of (a@log)
 
-encodeFrom : [a:Type 0] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a
+encodeFrom : [a:Type] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a
              -> Nat -> (a@log) ->  List (And Nat a)
 encodeFrom = \[a] eq . ind encodeFrom xs = \ n current .
   case xs [xsq] of
@@ -18,13 +18,13 @@ encodeFrom = \[a] eq . ind encodeFrom xs = \ n current .
         Just q -> encodeFrom xs [ord xsq] (Succ n) current
         Nothing -> Cons (Conj n current) (encodeFrom xs [ord xsq] 1 x)
 
-encode : [a:Type 0] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a -> List (And Nat a)
+encode : [a:Type] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a -> List (And Nat a)
 encode = \[a] eq xs .
   case xs [_] of 
     Nil -> Nil 
     Cons x xs -> encodeFrom eq xs 1 x
 
-decode : [a:Type 0] => List (And Nat a) -> List a
+decode : [a:Type] => List (And Nat a) -> List a
 decode = \[a]. ind decode xs =
  case xs [xsq] of 
    Nil -> Nil 
@@ -53,7 +53,7 @@ append (replicate (Succ (Succ m)) x) ys
   By definition of replicate:
 = append (replicate (Succ m) x) (Cons x ys)
 -}
-append_replicate_Succ : [a:Type 0] -> (n:Nat) -> (x:a@log) -> (ys: List a) 
+append_replicate_Succ : [a:Type] -> (n:Nat) -> (x:a@log) -> (ys: List a) 
                  -> append (replicate (Succ n) x) ys = append (replicate n x) (Cons x ys)
 append_replicate_Succ = \[a]. ind append_replicate_Succ n = \x ys.
   case n [n_eq] of
@@ -70,7 +70,7 @@ append_replicate_Succ = \[a]. ind append_replicate_Succ n = \x ys.
       let _  = (pjoin : (Cons x (replicate m x) : List a) = replicate (Succ m) x) in
       _
 
-encodeFrom_spec : [a:Type 0] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
+encodeFrom_spec : [a:Type] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
                   -> (xs:List a)
                   -> (n:Nat) -> (x0 : a@log) 
                   -> decode (encodeFrom eq xs n x0) = append (replicate n x0) xs
@@ -127,7 +127,7 @@ encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
            
            _
 
-encode_spec : [a:Type 0] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
+encode_spec : [a:Type] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
                   -> (xs:List a)
                   -> decode (encode eq xs) =  xs
 encode_spec = \[a] eq xs .

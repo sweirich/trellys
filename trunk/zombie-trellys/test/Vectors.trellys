@@ -4,12 +4,12 @@ import Fin
 
 -- Definition of the vector type and proofs of properties about it.
 
-data Vector (A : Type 0) (n : Nat) : Type 0 where
+data Vector (A : Type) (n : Nat) : Type where
    VNil  of [n = 0] 
    VCons of [size : Nat] [n = Succ size]  (x:A@log) (xs : Vector A size)
 
 -- terminating recursor for the vector type
-recvec : [a : Type 0] -> [c : ([n : Nat] -> (v:Vector a n) -> Type 0)@log] ->
+recvec : [a : Type] -> [c : ([n : Nat] -> (v:Vector a n) -> Type)@log] ->
          (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [n_eq]))@log) ->
          (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] ->
             (x:a@log) -> (xs : Vector a n'@log) -> (ih : c [n'] xs @log) ->
@@ -22,7 +22,7 @@ recvec = \ [a] . \ [c] . \ base . \ step .
                VCons [n'] [n_eq] x xs -> step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
 
 
-vmap : [a : Type 0] => [b : Type  0] => ((x:a@log) -> b @log) ->
+vmap : [a b : Type]  => ((x:a@log) -> b @log) ->
        [n : Nat] -> (xs : Vector a n) -> Vector b n
 vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
         case xs [xs_eq] of
@@ -30,17 +30,17 @@ vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
           VCons [n'] [n_eq] x xs -> VCons [n'] [n_eq] (f x) (vmap [n'] [ord n_eq] xs) 
 
 
-log head : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> A
+log head : [A : Type] => [n:Nat] => Vector A (Succ n) -> A
 head = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t -> f
 
-log tail : [A : Type 0] => [n:Nat] => Vector A (Succ n) -> Vector A n
+log tail : [A : Type] => [n:Nat] => Vector A (Succ n) -> Vector A n
 tail = \ [A][n] v . case v [v_eq] of 
   VNil  [n_eq] -> contra (_ : 0 = Succ n)
   VCons [m][m_eq] f t -> t
 
-log lookup : [A: Type 0] => [n:Nat] => Fin n -> Vector A n -> A
+log lookup : [A: Type] => [n:Nat] => Fin n -> Vector A n -> A
 lookup = \ [A] . 
   ind recFin [n] = \ f v . 
     case f [f_eq] of
@@ -49,14 +49,14 @@ lookup = \ [A] .
 
 
 -- create a vector with n copies of its argument
-log repeat : [A:Type 0] => (A @ log) -> (n:Nat) -> Vector A n
+log repeat : [A:Type] => (A @ log) -> (n:Nat) -> Vector A n
 repeat = \ [A] a . 
   ind rep n = 
     case n [n_eq] of 
       Zero -> VNil [_]
       Succ m -> VCons [m][_] a (rep m [ord n_eq])
 
-log zap : [A:Type 0] => [B:Type 0] => [n:Nat] => 
+log zap : [A B: Type] => [n:Nat] => 
           Vector ((A @ log) -> B) n -> Vector A n -> Vector B n
 zap = \[A][B].
   ind zap [n] = \ v1 v2 . 
@@ -68,7 +68,7 @@ zap = \[A][B].
             VCons [n'][p] (f x) (!zap [n'] [ord p] fs xs)
 
 -- update the mth component of the vector to be 'a'
-log set : [A:Type 0] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
+log set : [A:Type] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
 set = \ [A] . 
   ind set [n] = \ m a v.
        case m [n_eq] of 
@@ -76,7 +76,7 @@ set = \ [A] .
          FS [p][p_eq] fm -> VCons [p][_] (head v) (!set [p][ord p_eq] fm a (tail v))
 
 
-log lookup_set : [A:Type 0] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
+log lookup_set : [A:Type] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
                  -> lookup i (set i a v) = a
 lookup_set = \[A]. ind ih [n] = \ i a v .
   case i [_], v [_] of
@@ -99,7 +99,7 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
           _
        
 
-log lookup_set2 : [A:Type 0] => [n:Nat] => (i:Fin n) -> (j:Fin n) -> (a:A @log) -> (v : Vector A n)
+log lookup_set2 : [A:Type] => [n:Nat] => (i j: Fin n) -> (a:A @log) -> (v : Vector A n)
                   -> fin_eq [n] i j = False
                   -> lookup i (set j a v) = lookup i v
 lookup_set2 = \[A]. ind ih [n] = \ i j a v h .

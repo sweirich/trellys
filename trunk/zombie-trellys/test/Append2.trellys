@@ -4,7 +4,7 @@ import Prelude
 import Vectors
 import Arithmetic
 
-append : [a: Type 0] => [n:Nat] => [m:Nat] => (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
+append : [a: Type] => [n m:Nat] => (xs:Vector a n) -> (ys:Vector a m) -> Vector a (plus n m)
 append = \[a] . ind app [n] = \[m] . \xs ys .
   case xs [p] of
     VNil [neq] ->
@@ -15,7 +15,7 @@ append = \[a] . ind app [n] = \[m] . \xs ys .
       VCons [_] [_] x (!app [n'] [ord neq] [m] xs' ys)
 
 
-appendAssociates : [a: Type 0] -> [i:Nat] -> [j:Nat] -> [k:Nat]
+appendAssociates : [a: Type] -> [i j k:Nat]
                    -> (xs:Vector a i) -> (ys:Vector a j) -> (zs:Vector a k)
                    -> append (append xs ys) zs
                     = append xs (append ys zs)
