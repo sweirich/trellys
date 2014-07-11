@@ -20,8 +20,6 @@ module Language.Trellys.CongruenceClosure(
   lookupeq, reprs, uses,
   findExplain, findExplains,
   
-
-
 ) where
 
 {- This module mostly follows two papers. The congruence closure part is based on
@@ -44,8 +42,8 @@ module Language.Trellys.CongruenceClosure(
 import Prelude hiding (pi)
 import Control.Monad 
 import Control.Applicative
-import Data.Map (Map)
-import qualified Data.Map as M
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as M
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 import Data.Set (Set)
@@ -53,6 +51,8 @@ import qualified Data.Set as S
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.List (intercalate)
+import Data.FingerTree.PSQueue (PSQ, Binding(..), minView)
+import qualified Data.FingerTree.PSQueue as PQ
 import Control.Monad.Trans
 import Control.Monad.State.Class
 import Control.Monad.Trans.State.Strict (StateT(..))
@@ -62,13 +62,11 @@ import Control.Monad.Trans.List
 import Language.Trellys.PrettyPrint
 import Text.PrettyPrint.HughesPJ ( render)
 -- We need to know a little bit about the ATerm datatype in order to do the occurs check.
-import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), uniVars, injectiveLabelPositions, isEqualityLabel)
+import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), proofSize, uniVars, injectiveLabelPositions, isEqualityLabel)
 
 --Stuff used for debugging.
-{-
 import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
 import Debug.Trace
--}
 
 type Constant = Int
 
@@ -149,6 +147,9 @@ data ProblemState = ProblemState {
   --   pi : bi = ai
   --   q  : bs = b.
   lookupeq :: Map (Label,[Constant]) ([Proof], Proof, EqBranchConst),
+
+  -- This keeps track of all known proofs of equations between constants.
+  edges :: Map Constant [(Proof, Constant)],
 
   unboundVars :: Map AName Constant,  --The variables that can still be assigned, 
                                       -- with their (constantified) types.
@@ -246,6 +247,7 @@ newState =
                fineReprs = IM.empty,
                uses = M.empty,
                lookupeq = M.empty,
+               edges = M.empty,
                unboundVars = M.empty,
                bindings = M.empty,
                proofs = M.empty,
@@ -269,13 +271,11 @@ giveBinding x val = modify (\st -> st{ bindings = M.insert x val (bindings st),
 giveProof :: WantedEquation -> Proof -> UniM ()
 giveProof e p = modify (\st -> st{ proofs  = M.insert e p (proofs st) })
 
--- Returns the representative of x. (this function not currently used, see findExplain instead)
-{-
+-- Returns the representative of x.
 find :: Monad m => Constant -> StateT ProblemState m Constant
 find x  = do
   (p, x') <- findExplain x
   return x'
--}
 
 -- Returns (p,x'), where p proves (x = x')
 findExplain :: Monad m =>Constant -> StateT ProblemState m (Proof,Constant)
@@ -307,17 +307,23 @@ findExplainInfo x = do
 -- each "fine" equivalence class.
 classMembersExplain :: Monad m => Constant -> StateT ProblemState m [(Constant, Proof)]
 classMembersExplain x = do
-  (p, x', xinfo) <- findExplainInfo x
+  (_p, _x', xinfo) <- findExplainInfo x
   runListT $ do
     y <- ListT . return . S.toList $ classMembers xinfo
-    (q, y') <- lift $ findExplain y
+    y' <- lift $ find y
     y'' <- lift $ fineFind y   
     guard (y == y'')   --filter out duplicates from the same fine class.
-    return $ (y, RawTrans p (RawSymm q))
+    pf <- lift $ proveEqual x y
+    return $ (y, pf)
 
 -- Returns the old representative of the smaller class.
 union :: Monad m => Constant -> Constant -> Proof -> StateT ProblemState m Constant
 union x y p = do
+  -- First, register the new edge
+  modify (\st -> st{ edges = M.insertWith (++) x [(p, y)] (edges st) })
+  modify (\st -> st{ edges = M.insertWith (++) y [(RawSymm p, x)] (edges st) })
+
+  -- Then, update the union-find structure
   (q, x', xinfo) <- findExplainInfo x 
   (r, y', yinfo) <- findExplainInfo y
   if (classSize xinfo) < (classSize yinfo)
@@ -329,6 +335,58 @@ union x y p = do
            setRepr y' (Left ((RawTrans (RawSymm r) (RawTrans (RawSymm p) q)), x'))
            setRepr x' (Right $ (xinfo `combineInfo` yinfo))
            return y'
+
+
+
+type Cost = Int
+
+data BestPath =
+    Path Cost [Proof]   --NB, the list is built in reverse order...
+  | NoPath
+ deriving (Eq, Show)
+
+-- Ord compares cost. NoPath is infinitely costly.
+instance Ord BestPath where
+  compare NoPath NoPath = EQ
+  compare NoPath _ = GT
+  compare _ NoPath = LT
+  compare (Path c1 _) (Path c2 _) = compare c1 c2
+
+extend :: Cost -> Proof -> BestPath -> BestPath
+extend k p (Path k' ps) = Path (k+k') (p:ps)
+extend _ _ NoPath = NoPath
+
+
+-- Returns a proof that x and y are equal. 
+-- Precondition: they must be in the same union-find class.
+proveEqual :: Monad m => Constant -> Constant -> StateT ProblemState m Proof
+proveEqual x y | x==y = return RawRefl
+proveEqual x y = do
+  (p, x') <- findExplain x
+  (q, y') <- findExplain y
+  unless (x' == y') $
+    error "internal error: proveEqual called on unequal constants"
+  theGraph <- gets edges
+
+{-  trace (render . disp $ [ DS "We wish to find a path between", DD x, DS "and", DD y,
+                           DS ("The complete graph is " ++ show theGraph) ]) 
+        (return()) -}
+
+  let dijkstra :: Constant -> PSQ Constant BestPath  -> BestPath
+      dijkstra goal (minView -> Nothing) = NoPath
+      dijkstra goal (minView -> Just((n :-> path), _)) | n==goal = path
+      dijkstra goal (minView -> Just((n :-> path), rest)) =  dijkstra goal (visit rest)
+       where visit :: PSQ Constant BestPath -> PSQ Constant BestPath
+             visit unvisited = foldr (\(p', n') uv -> PQ.adjust (min (extend (proofSize p') p' path)) n' uv)
+                                     unvisited
+                                     (M.findWithDefault [] n theGraph)
+  -- Unvisited starts out with the source node having cost 0, and all the rest cost Infinity:
+  let initialUnvisited =   PQ.fromList [(n :-> path) | n <- (M.keys theGraph),
+                                                       let path = if (n==x) then (Path 0 []) else NoPath]                      
+  case dijkstra y initialUnvisited of 
+    NoPath -> error "Internal error: proveEqual found no path"
+    Path _ ps -> return $ foldr RawTrans RawRefl (reverse ps)
+        --return $ RawTrans p (RawSymm q) --TODO
 
 -- Add an application term to the equivalence class of a constant
 recordApplication :: (Monad m) => Constant -> (Label, [Constant]) 
@@ -354,10 +412,11 @@ possiblyInjectivity (Just (p, l1, as, a)) (Just (q, l2, bs, b)) | l1/=l2 = do
   -- todo: register that we found a contradiction
   return []
 possiblyInjectivity (Just (p, l, as, a)) (Just (q, l2, bs, b)) | l==l2 = do
-  (p1, _a') <- findExplain a
-  (q1, _b') <- findExplain b
-  -- By the precondition to the function, we know that _a' == _b', so this proof is valid.
-  let pf = (RawTrans (RawTrans p p1) (RawSymm (RawTrans q q1))) {- : l(as) = l(bs)  -}
+  r <- proveEqual a b
+  --(p1, _a') <- findExplain a
+  --(q1, _b') <- findExplain b
+  --let pf = (RawTrans (RawTrans p p1) (RawSymm (RawTrans q q1))) {- : l(as) = l(bs)  -}
+  let pf = RawTrans p (RawTrans r (RawSymm q))
   return $ zipWith3 (\ i lhs rhs -> (RawInj i pf, Left (EqConstConst lhs rhs)))
                     (injectiveLabelPositions l)
                     as
@@ -376,9 +435,10 @@ possiblyNewAssumptions  Nothing _ = return []
 possiblyNewAssumptions  (Just (c1Inhabitant,c1)) qs =  mapM possiblyNewAssumption $ S.elems qs
  where possiblyNewAssumption (c2,a,b) = do
          names <- gets naming
-         (pc1,_) <- findExplain c1
+         {- (pc1,_) <- findExplain c1
          (pc2,_) <- findExplain c2
-         let p = (RawTrans pc1 (RawSymm pc2))  -- ; c1 = c2
+         let p = (RawTrans pc1 (RawSymm pc2))  -- ; c1 = c2 -}
+         p <- proveEqual c1 c2
          return (RawAssumption (names BM.!> c1Inhabitant, p), 
                  Left (EqConstConst a b))
 
@@ -414,13 +474,19 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
     Just (qs, q, eq_b@(EqBranchConst _ bs b)) ->  do
       (_,_,ia) <- findExplainInfo a
       (_,_,ib) <- findExplainInfo b
-      injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
-      propagate ((r, Left (EqConstConst a b)):injections++eqs)
-       where r = RawTrans (RawSymm p) 
+      -- Todo: do we need this injections? We can't call possiblyInjectivity here, because we
+      --   have not yet done the union. But we will do the union very soon.
+      --   Similarly, if we have a possiblyInjectivity we presumably need a possiblyAssumptions too?
+      --injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
+
+      rs <- zipWithM proveEqual as bs
+      let r = RawTrans (RawSymm p) 
                        --(Branch l (map Leaf as))
-                       (RawTrans (RawCong l (zipWith3 (\pi ai' qi -> RawTrans pi (RawSymm qi)) ps as' qs))
+                       (RawTrans (RawCong l rs)
                               --(Branch l (map Leaf bs))
                               q)
+
+      propagate ((r, Left (EqConstConst a b)):eqs)
     Nothing -> do
       modify (\st ->
                  st{ lookupeq = M.insert (l,as') (ps, p, eq_a) (lookupeq st),
@@ -460,10 +526,11 @@ tracing msg eq = id
 -- If a wanted equation is already in the congruence closure we can discard it.
 unifyDelete :: WantedEquation -> UniM ()
 unifyDelete (WantedEquation a b) = do
-  (p, a', ia) <- findExplainInfo a
-  (q, b', ib) <- findExplainInfo b
+  a' <- find a
+  b' <- find b
   guard (a' == b')
-  giveProof (WantedEquation a b) (RawTrans p (RawSymm q))
+  r <- proveEqual a b
+  giveProof (WantedEquation a b) r
   tracing "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
@@ -586,3 +653,12 @@ fineUnion :: Monad m => Constant -> Constant -> StateT ProblemState m ()
 fineUnion x y = do
   y' <- fineFind y
   modify (\st -> st{ fineReprs = IM.insert x y' (fineReprs st) })
+
+
+---------------------------------------------------------------
+-- Finding shortests paths in the graph of equality proofs.
+--
+-- This is just Dijkstra's algorithm.
+
+
+

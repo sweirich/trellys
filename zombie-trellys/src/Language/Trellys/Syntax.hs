@@ -386,10 +386,9 @@ getLastDef decs1 = gld decs1 Nothing
         _          -> gld decs acc
 
 
--- The size of a term
+-- Computing the size of terms 
 atermSize :: ATerm -> Int
 atermSize = gsize
-
 
 -------------
 -- Annotated Telescopes
@@ -724,6 +723,10 @@ data Proof =
 
 
 $(derive [''Proof])
+
+-- Computing the size of proofs.
+proofSize :: Proof -> Int
+proofSize = gsize
 
 ---------------------------------------------------------------
 -- Erasing core terms (non monadically). 

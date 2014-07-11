@@ -79,15 +79,15 @@ instance Canonical ATerm where
 -- This is important because such ineffecient proofs are
 -- often introduced by the union-find datastructure.
 
-associateProof :: Proof -> Proof
-associateProof (RawAssumption h) = RawAssumption h
-associateProof RawRefl = RawRefl
-associateProof (RawSymm p) = case associateProof p of
-                               RawRefl -> RawRefl
-                               p'      -> RawSymm p'
-associateProof (RawTrans p q) = rawTrans (associateProof p) (associateProof q)
-associateProof (RawCong l ps) = RawCong l (map associateProof ps)
-associateProof (RawInj i p) = RawInj i (associateProof p)
+associateProof :: Orientation -> Proof -> Proof
+associateProof NotSwapped (RawAssumption h) = RawAssumption h
+associateProof Swapped  (RawAssumption h) = RawSymm (RawAssumption h)
+associateProof _o RawRefl = RawRefl
+associateProof o (RawSymm p) =  associateProof (swap o) p
+associateProof NotSwapped (RawTrans p q) = rawTrans (associateProof NotSwapped p) (associateProof NotSwapped q)
+associateProof Swapped (RawTrans p q) = rawTrans (associateProof Swapped q) (associateProof Swapped p)
+associateProof o (RawCong l ps) = RawCong l (map (associateProof o) ps)
+associateProof o (RawInj i p) = RawInj i (associateProof o p)
 
 -- This is a smart constructor for RawTrans
 rawTrans :: Proof -> Proof -> Proof
@@ -108,6 +108,12 @@ maybeCancel p q = RawTrans p q
 
 data Orientation = Swapped | NotSwapped
   deriving (Show,Eq)
+
+swap :: Orientation -> Orientation 
+swap Swapped = NotSwapped
+swap NotSwapped = Swapped
+
+
 data Raw1Proof =
    Raw1Assumption Orientation (ATerm, Raw1Proof)
  | Raw1Refl
@@ -706,7 +712,7 @@ prove (lhs, rhs) = do
                          <=< chainProof' zlhs zrhs
                          <=< fuseProof 
                          . symmetrizeProof 
-                         . associateProof 
+                         . associateProof NotSwapped
                          . zonkWithBindings bndgs) pf
                 return $ Just tm
 
@@ -1028,7 +1034,7 @@ classMembers a predi = do
                          <=< chainProof' a a'
                          <=< fuseProof 
                          . symmetrizeProof 
-                         . associateProof                         
+                         . associateProof NotSwapped                        
                         ) p
            return (a',pf))
        cs
