@@ -1,0 +1,49 @@
+module Vec2 where
+
+import Prelude
+import Arithmetic
+
+usually log
+
+data Vec (A : Type) (n : Nat) : Type where
+   Nil  of [n = 0] 
+   Cons of [size : Nat] [n = Succ size]  (x:A) (xs : Vec A size)
+
+log app : [A : Type] -> [n m : Nat] -> Vec A n -> Vec A m -> Vec A (plus n m)
+ind app [A] [n] [m] v1 = \v2 .
+  case v1 [v1_eq] of
+    Nil [_]           -> 
+        let [_] = (join : m = plus 0 m) in 
+        v2
+    Cons [n'] [_] x xs -> 
+        let [_] = (join : Succ (plus n' m) = plus (Succ n') m) in
+        Cons [_] [_] x (app [_] [_] [_] xs [ord v1_eq] v2)
+
+log app_assoc : [A : Type] -> [n m k : Nat]
+              -> (v1 : Vec A n) -> (v2 : Vec A m) -> (v3 : Vec A k)
+              ->   (app [_] [_] [_] v1 (app [_] [_] [_] v2 v3))
+                 = (app [_] [_] [_] (app [_] [_] [_] v1 v2) v3)
+ind app_assoc [A] [n] [m] [k] v1 = \v2 . \v3 .
+   case v1 [v1_eq] of
+     Nil  [_] -> 
+        let [v23] = app [_] [_] [_] v2 v3 in
+        let [_] = (join : (app [_] [_] [_] (Nil [_]) v23)
+                        = v23)
+         in
+        let [_] = (join : (app [_] [_] [_] (app [_] [_] [_] (Nil [_]) v2) v3)
+                        = app [_] [_] [_] v2 v3)
+         in _
+     Cons [n'] [_] v v1' -> 
+       let [v23] = app [_] [_] [_] v2 v3 in
+       let [v1'2] = app [_] [_] [_] v1' v2 in
+       let [_] = (join : (app [_] [_] [_] (Cons [_] [_] v v1') v23)
+                        = Cons [_] [_] v (app [_] [_] [_] v1' v23))
+         in
+       let [_] = (join : (app [_] [_] [_] (app [_] [_] [_] (Cons [_] [_] v v1') v2) v3)
+                        = app [_] [_] [_] (Cons [_] [_] v (app [_] [_] [_] v1' v2)) v3)
+         in
+       let [_] = (join : (Cons [_] [_] v (app [_] [_] [_] v1'2 v3))
+                        = app [_] [_] [_] (Cons [_] [_] v v1'2) v3)
+         in
+       let [_] = app_assoc [_] [_] [_] [_] v1' [ord v1_eq] v2 v3 in
+       _
