@@ -1,0 +1,64 @@
+module Sort where
+
+import Prelude
+import Arithmetic
+
+
+usually log
+
+
+data List (A:Type) : Type where
+  Nil
+  Cons of (x:A) (xs:List A)
+
+data Prod (A:Type) (B:Type) : Type where
+  Pair of (x:A) (y:B)
+
+-- split : (A:Type) -> List A -> Prod (List A) (List A)
+-- ind split _ xs =
+--   case xs [xs_eq] of
+--     Nil       -> Pair Nil Nil
+--     Cons x ys ->
+--       case ys [ys_eq] of
+--         Nil -> Pair (Cons x Nil) Nil
+--         Cons y ys' -> 
+--           case (split _ ys' [ordtrans (ord ys_eq : ys' < ys) (ord xs_eq : ys < xs)]) [_] of
+--             Pair ys1 ys2 -> Pair (Cons x ys1) (Cons y ys2)
+
+prog split : (A : Type) -> List A -> Prod (List A) (List A)
+rec  split _ xs = 
+  case xs of
+    Nil -> Pair Nil Nil
+    Cons x1 Nil -> Pair (Cons x1 Nil) Nil
+    Cons x1 (Cons x2 xs') ->
+      case (split _ xs') of
+        Pair xs1 xs2 -> Pair (Cons x1 xs1) (Cons x2 xs2)
+
+prog merge : (A:Type) -> (lt : A -> A -> Bool) -> List A -> List A -> List A
+rec merge _ lt xs ys =
+   case xs , ys of
+     Nil , ys -> ys
+     xs , Nil -> xs
+     Cons x xs', Cons y ys' ->
+       if (lt x y) then Cons x (merge _ lt xs' ys) 
+                   else Cons y (merge _ lt xs ys')
+
+prog sort : (A : Type) -> (A -> A -> Bool) -> List A -> List A
+rec sort _ lt xs =
+  case xs of
+    Nil -> Nil
+    Cons x Nil -> Cons x Nil
+    _ -> 
+      case (split _ xs) of
+        Pair xs1 xs2 -> merge _ lt (sort _ lt xs1) (sort _ lt xs2)
+
+data Sorted (A : Type) (lt : A -> A -> Bool) : (List A) -> Type where
+  
+
+
+--log lt' : (Nat@log) -> (Nat@log) -> Bool
+--lt' a b = lt a b
+--
+--prog foo : List Nat
+--foo = sort Nat lt' (Cons 3 (Cons 0 (Cons 2 (Cons 4 Nil))))
+--
