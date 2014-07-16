@@ -39,7 +39,8 @@ executable trellys
                  HUnit,
                  QuickCheck,
                  bimap == 0.2.4,
-                 ansi-terminal >= 0.6 && <0.7
+                 ansi-terminal >= 0.6 && <0.7,
+                 fingertree-psqueue >= 0.3 && <0.4
 
   Ghc-Options:  -main-is Trellys -Wall -rtsopts
 

@@ -14,11 +14,6 @@ module Language.Trellys.CongruenceClosure(
   fineUnion,
   inSameClass, 
   unify, -- main function, runState is run for UniM monad  
-
--- The following ones should not be used by the main program, but as exposed for
--- the benefit of CongruenceClosureTests.hs
-  lookupeq, reprs, uses,
-  findExplain, findExplains,
   
 ) where
 
@@ -65,7 +60,7 @@ import Text.PrettyPrint.HughesPJ ( render)
 import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), proofSize, uniVars, injectiveLabelPositions, isEqualityLabel)
 
 --Stuff used for debugging.
-import Text.PrettyPrint.HughesPJ ( (<>), (<+>),hsep,text, parens, brackets, nest, render)
+import Text.PrettyPrint.HughesPJ
 import Debug.Trace
 
 type Constant = Int
@@ -120,7 +115,7 @@ orElse (Just a) _ = Just a
 orElse Nothing mb = mb
 
 -- Union-Find representatives.
-type Reprs = IntMap (Either (Proof, Constant) ClassInfo)
+type Reprs = IntMap (Either Constant ClassInfo)
                                         -- (p:i=i', i')
 type ExplainedEquation = (Proof, Equation)
 
@@ -168,7 +163,7 @@ dumpState st =
   liftIO $ mapM_ printClass (IM.toList (reprs st))
   where showConst :: Constant -> String
         showConst c = render (disp (naming st BM.!> c))
-        printClass :: (Constant, (Either (Proof, Constant) ClassInfo)) -> IO ()
+        printClass :: (Constant, (Either Constant ClassInfo)) -> IO ()
         printClass (c, Left _) = 
           putStrLn $ "The constant " ++ showConst c ++ " is also somewhere in the map"
         printClass (_, Right info) = 
@@ -182,6 +177,16 @@ dumpState st =
                      ++ "and contains the equations:\n {"
                      ++ intercalate ", " (map (\(c,a,b) -> showConst c)  (S.toList $ classEquations info))
                      ++ "}"
+
+-- for debugging.
+dispEdges :: Monad m => StateT ProblemState m Doc
+dispEdges = do
+  names <- gets naming
+  graph <- gets edges
+  return $
+   nest 2 $ vcat  [ disp (names BM.!> a) <+> text "--->" <+> disp (names BM.!> b) $$ text " by" <+> disp p
+                    | (a, outedges) <- M.toList graph, (p, b) <- outedges ]
+     
 
 -- | Allocate a constant which is not mentioned in 'reprs'.
 freshConstant :: (Monad m) => StateT ProblemState m Constant
@@ -215,7 +220,7 @@ recordName a = do
 -- | Record that c is a unification variable, with name x and type cTy.
 recordUniVar :: (Monad m) => Constant -> AName -> Constant -> StateT ProblemState m ()
 recordUniVar c x cTy = do
-  (_, c', inf) <- findExplainInfo c
+  (c', inf) <- findInfo c
   setRepr c' (Right inf{ classUniVars = S.insert (x,c) (classUniVars inf) })
   modify (\st -> st{ unboundVars = M.insert x cTy (unboundVars st)})
 
@@ -224,19 +229,24 @@ recordUniVar c x cTy = do
 --  given equations too)
 recordInhabitant :: (Monad m) => Constant -> Constant -> StateT ProblemState m ()
 recordInhabitant c cTy = do
-  --This line is a bug. We know c inhabits cTy, we record that it inhabits cTy', and we throw away the proof they are equal..
-  (_, cTy', inf) <- findExplainInfo cTy    
+  (cTy', inf) <- findInfo cTy    
   setRepr cTy' (Right inf{ classInhabitants = (c,cTy) `S.insert` classInhabitants inf})
-  when (S.null (classInhabitants inf)) $
-    propagate =<< (possiblyNewAssumptions (Just (c,cTy)) (classEquations inf))
+
+  -- TODO: Actually, it can be worth adding it anyway, to get an additional edge in the graph.
+  --when (S.null (classInhabitants inf)) $
+  newAssumptions <- possiblyNewAssumptions (Just (c,cTy)) (classEquations inf)
+  --mapM_ (\(p, (Left (EqConstConst a b))) -> recordEdge a b p)
+  --      newAssumptions 
+  propagate newAssumptions
 
 -- | Record that c is an equation between a and b
 -- (If the equivalence class of c is inhabited, this yields a new given equation too).
 recordEquation :: (Monad m) => Constant -> (Constant,Constant) -> StateT ProblemState m ()
 recordEquation  c (a,b) = do
-  (_, c', inf) <- findExplainInfo c
+  (c', inf) <- findInfo c
   setRepr c' (Right inf{ classEquations = (c,a,b) `S.insert` classEquations inf})
-  propagate =<< (possiblyNewAssumptions (someElem $ classInhabitants inf) (S.singleton (c,a,b)))
+  newAssumptions <- possiblyNewAssumptions (someElem $ classInhabitants inf) (S.singleton (c,a,b))
+  propagate newAssumptions
 
 -- The list contains all the constants in the state, together with
 --   * if the contant itself represents a variable, the name of the variable.
@@ -261,7 +271,7 @@ newState =
 type UniM a = StateT ProblemState [] a
 
 -- Sets the union-find representative
-setRepr :: (Monad m) => Constant -> (Either (Proof, Constant) ClassInfo) -> StateT ProblemState m ()
+setRepr :: (Monad m) => Constant -> (Either Constant ClassInfo) -> StateT ProblemState m ()
 setRepr c val = modify (\st -> st{ reprs = IM.insert c val (reprs st) })
 
 giveBinding :: (Monad m) => AName -> Constant -> StateT ProblemState m ()
@@ -274,32 +284,22 @@ giveProof e p = modify (\st -> st{ proofs  = M.insert e p (proofs st) })
 -- Returns the representative of x.
 find :: Monad m => Constant -> StateT ProblemState m Constant
 find x  = do
-  (p, x') <- findExplain x
+  (x', _) <- findInfo x
   return x'
 
--- Returns (p,x'), where p proves (x = x')
-findExplain :: Monad m =>Constant -> StateT ProblemState m (Proof,Constant)
-findExplain x = do
-  (p, x', size) <- findExplainInfo x
-  return (p, x')
-
-findExplains :: Monad m =>  [Constant] -> StateT ProblemState m ([Proof], [Constant])
-findExplains ids = liftM unzip $ mapM findExplain ids
-
-findExplainInfo :: Monad m => Constant -> StateT ProblemState m (Proof,Constant,ClassInfo)
-findExplainInfo x = do
+findInfo :: Monad m => Constant -> StateT ProblemState m (Constant,ClassInfo)
+findInfo x = do
   content <- return (IM.!) `ap` (gets reprs) `ap` return x
   case content of
-    Left (p, x') -> do
-       (q,x'',info) <- findExplainInfo x'
+    Left x' -> do
+       (x'',info) <- findInfo x'
        if x'' /= x' 
          then do
-           let r = (RawTrans p q)
-           setRepr x (Left (r, x'')) --path compression.
-           return (r, x'', info)
+           setRepr x (Left x'') --path compression.
+           return (x'', info)
          else 
-           return (p,x',info)
-    Right info  -> return (RawRefl, x, info)
+           return (x',info)
+    Right info  -> return (x, info)
 
 -- Given a constant, return all the constants in its equivalence class,
 --  and a proof that they are equal.
@@ -307,7 +307,7 @@ findExplainInfo x = do
 -- each "fine" equivalence class.
 classMembersExplain :: Monad m => Constant -> StateT ProblemState m [(Constant, Proof)]
 classMembersExplain x = do
-  (_p, _x', xinfo) <- findExplainInfo x
+  (_x', xinfo) <- findInfo x
   runListT $ do
     y <- ListT . return . S.toList $ classMembers xinfo
     y' <- lift $ find y
@@ -316,30 +316,31 @@ classMembersExplain x = do
     pf <- lift $ proveEqual x y
     return $ (y, pf)
 
--- Returns the old representative of the smaller class.
-union :: Monad m => Constant -> Constant -> Proof -> StateT ProblemState m Constant
-union x y p = do
-  -- First, register the new edge
+
+recordEdge :: Monad m => Constant -> Constant -> Proof -> StateT ProblemState m ()
+recordEdge x y p = do
   modify (\st -> st{ edges = M.insertWith (++) x [(p, y)] (edges st) })
   modify (\st -> st{ edges = M.insertWith (++) y [(RawSymm p, x)] (edges st) })
 
-  -- Then, update the union-find structure
-  (q, x', xinfo) <- findExplainInfo x 
-  (r, y', yinfo) <- findExplainInfo y
+-- Returns the old representative of the smaller class.
+-- Note: any time you call union you must all so call recordEdge. 
+-- (But it is fine to add more edges between constants that already in the same union-find class)
+union :: Monad m => Constant -> Constant -> Proof -> StateT ProblemState m Constant
+union x y p = do
+  (x', xinfo) <- findInfo x 
+  (y', yinfo) <- findInfo y
   if (classSize xinfo) < (classSize yinfo)
     then do
-           setRepr x' (Left ((RawTrans (RawSymm q) (RawTrans p r)), y'))
+           setRepr x' (Left y')
            setRepr y' (Right $ (xinfo `combineInfo` yinfo))
            return x'
     else do
-           setRepr y' (Left ((RawTrans (RawSymm r) (RawTrans (RawSymm p) q)), x'))
+           setRepr y' (Left x')
            setRepr x' (Right $ (xinfo `combineInfo` yinfo))
            return y'
 
-
-
+-- A path is a list of equality proofs (to be chained by transitivity).
 type Cost = Int
-
 data BestPath =
     Path Cost [Proof]   --NB, the list is built in reverse order...
   | NoPath
@@ -359,19 +360,11 @@ extend _ _ NoPath = NoPath
 
 -- Returns a proof that x and y are equal. 
 -- Precondition: they must be in the same union-find class.
+-- We search for the shortest path in the 'edges' graph.
 proveEqual :: Monad m => Constant -> Constant -> StateT ProblemState m Proof
 proveEqual x y | x==y = return RawRefl
 proveEqual x y = do
-  (p, x') <- findExplain x
-  (q, y') <- findExplain y
-  unless (x' == y') $
-    error "internal error: proveEqual called on unequal constants"
   theGraph <- gets edges
-
-{-  trace (render . disp $ [ DS "We wish to find a path between", DD x, DS "and", DD y,
-                           DS ("The complete graph is " ++ show theGraph) ]) 
-        (return()) -}
-
   let dijkstra :: Constant -> PSQ Constant BestPath  -> BestPath
       dijkstra goal (minView -> Nothing) = NoPath
       dijkstra goal (minView -> Just((n :-> path), _)) | n==goal = path
@@ -386,20 +379,19 @@ proveEqual x y = do
   case dijkstra y initialUnvisited of 
     NoPath -> error "Internal error: proveEqual found no path"
     Path _ ps -> return $ foldr RawTrans RawRefl (reverse ps)
-        --return $ RawTrans p (RawSymm q) --TODO
 
 -- Add an application term to the equivalence class of a constant
 recordApplication :: (Monad m) => Constant -> (Label, [Constant]) 
                      -> StateT ProblemState m ()
 recordApplication a app = do
-  (_,a',ia) <- findExplainInfo a
+  (a',ia) <- findInfo a
   setRepr a' (Right $ ia{ classApps = S.insert app (classApps ia)})
 
 -- Add an application term to the injTerm field of an equivalence class of a constant
 recordInjTerm :: (Monad m) =>  Constant -> (Proof, Label, [Constant], Constant) 
                      -> StateT ProblemState m ()
 recordInjTerm a app = do
-  (_,a',ia) <- findExplainInfo a
+  (a',ia) <- findInfo a
   setRepr a' (Right $ ia{ classInjTerm = (classInjTerm ia) `orElse` (Just app) })
 
 -- Called when we have just unified two equivalence classes. If both classes contained
@@ -413,10 +405,7 @@ possiblyInjectivity (Just (p, l1, as, a)) (Just (q, l2, bs, b)) | l1/=l2 = do
   return []
 possiblyInjectivity (Just (p, l, as, a)) (Just (q, l2, bs, b)) | l==l2 = do
   r <- proveEqual a b
-  --(p1, _a') <- findExplain a
-  --(q1, _b') <- findExplain b
-  --let pf = (RawTrans (RawTrans p p1) (RawSymm (RawTrans q q1))) {- : l(as) = l(bs)  -}
-  let pf = RawTrans p (RawTrans r (RawSymm q))
+  let pf = RawTrans p (RawTrans r (RawSymm q)) {- : l(as) = l(bs) -}
   return $ zipWith3 (\ i lhs rhs -> (RawInj i pf, Left (EqConstConst lhs rhs)))
                     (injectiveLabelPositions l)
                     as
@@ -435,9 +424,6 @@ possiblyNewAssumptions  Nothing _ = return []
 possiblyNewAssumptions  (Just (c1Inhabitant,c1)) qs =  mapM possiblyNewAssumption $ S.elems qs
  where possiblyNewAssumption (c2,a,b) = do
          names <- gets naming
-         {- (pc1,_) <- findExplain c1
-         (pc2,_) <- findExplain c2
-         let p = (RawTrans pc1 (RawSymm pc2))  -- ; c1 = c2 -}
          p <- proveEqual c1 c2
          return (RawAssumption (names BM.!> c1Inhabitant, p), 
                  Left (EqConstConst a b))
@@ -446,14 +432,24 @@ someElem :: Set a -> Maybe a
 someElem s | S.null s = Nothing
            | otherwise = Just (S.findMin s)
 
+isAssumption :: Proof -> Bool
+isAssumption (RawAssumption _) = True
+isAssumption _ = False 
+
 -- propagate takes a list of given equations, and constructs the congruence
 -- closure of those equations.
 propagate :: Monad m => [ExplainedEquation] -> StateT ProblemState m ()
 propagate ((p, Left (EqConstConst a b)):eqs) = do
-  (_, ar, ia) <- findExplainInfo a
-  (_, br, ib) <- findExplainInfo b
-  if ar /= br  --if not already equal
+  (ar, ia) <- findInfo a
+  (br, ib) <- findInfo b
+
+  {- We should be able to get shorter proofs by not throwing away assumptions?
+     But it slows everything down a lot.
+  when (ar==br && a/=b && isAssumption p) $ do    
+    recordEdge a b p -}
+  if ar /= br  --if not already in the same union-find class
     then do
+      recordEdge a b p
       a' <- union a b p
       a_uses <- M.findWithDefault [] a' `liftM` (gets uses)
       injections <- possiblyInjectivity (classInjTerm ia) (classInjTerm ib)
@@ -468,12 +464,12 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
     recordInjTerm a (p,l,as,a)  
   when (isEqualityLabel l) $
     recordEquation a ((as!!0), (as!!1))
-  (ps, as') <- findExplains as
+  as' <- mapM find as
   lookupeqs <- gets lookupeq
   case M.lookup (l, as') lookupeqs of
     Just (qs, q, eq_b@(EqBranchConst _ bs b)) ->  do
-      (_,_,ia) <- findExplainInfo a
-      (_,_,ib) <- findExplainInfo b
+      (_,ia) <- findInfo a
+      (_,ib) <- findInfo b
       -- Todo: do we need this injections? We can't call possiblyInjectivity here, because we
       --   have not yet done the union. But we will do the union very soon.
       --   Similarly, if we have a possiblyInjectivity we presumably need a possiblyAssumptions too?
@@ -488,6 +484,7 @@ propagate ((p, Right eq_a@(EqBranchConst l as a)):eqs) = do
 
       propagate ((r, Left (EqConstConst a b)):eqs)
     Nothing -> do
+      ps <- zipWithM proveEqual as as'
       modify (\st ->
                  st{ lookupeq = M.insert (l,as') (ps, p, eq_a) (lookupeq st),
                      uses = M.unionWith (++) (M.fromList (map (\a' -> (a',[(p,eq_a)])) as')) (uses st)
@@ -520,6 +517,7 @@ tracing msg (WantedEquation c1 c2) a = do
         a
 -}
 
+
 tracing :: String -> WantedEquation -> UniM a -> UniM a
 tracing msg eq = id
 
@@ -531,13 +529,19 @@ unifyDelete (WantedEquation a b) = do
   guard (a' == b')
   r <- proveEqual a b
   giveProof (WantedEquation a b) r
+ 
+  {- 
+  graph <- dispEdges
+  trace (render (text "The graph is:" $$ graph)) (return ()) 
+  -}
+
   tracing "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.
 unifyBind :: WantedEquation -> UniM  ()
 unifyBind  (WantedEquation a b) = do
-  (_, _, ia) <- findExplainInfo a
-  (_, _, ib) <- findExplainInfo b
+  (_, ia) <- findInfo a
+  (_, ib) <- findInfo b
   unbounds <- gets unboundVars
   names <- gets naming
   (x,c) <- lift (S.toList $ classUniVars ia)
@@ -568,8 +572,8 @@ unifyBind  (WantedEquation a b) = do
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
 unifyDecompose :: Set WantedEquation -> WantedEquation -> UniM ()
 unifyDecompose visited (WantedEquation a b) = do
-  (p, _, ia) <- findExplainInfo a
-  (q, _, ib) <- findExplainInfo b
+  (_, ia) <- findInfo a
+  (_, ib) <- findInfo b
   (fa, as) <- lift $ S.toList $ classApps ia
   (fb, bs) <- lift $ S.toList $ classApps ib
   guard (fa == fb)
@@ -587,6 +591,8 @@ unifyDecompose visited (WantedEquation a b) = do
 unify ::  Set WantedEquation -> [WantedEquation] -> UniM ()
 unify visited [] = return ()
 unify  visited (WantedEquation a b : wanted) = do
+  tracing "Considering" (WantedEquation a b) (return ())
+
   guard (not (S.member (WantedEquation a b) visited))
   unifyDelete (WantedEquation a b)
    `mplusCut`
@@ -599,8 +605,8 @@ unify  visited (WantedEquation a b : wanted) = do
 
 inSameClass :: (Monad m) => Constant -> Constant -> StateT ProblemState m Bool
 inSameClass c1 c2 = do
-  (_,c1') <- findExplain c1
-  (_,c2') <- findExplain c2
+  c1' <- find c1
+  c2' <- find c2
   return (c1' == c2')
 
 -- | Take all remaining unbound variables, and just fill them in with any random
@@ -614,7 +620,7 @@ guessVars = do
   unbounds <- gets unboundVars
   forM_ (M.toList unbounds)
         (\(x, xTy) -> do
-           (p, _, inf) <- findExplainInfo xTy
+           (_, inf) <- findInfo xTy
            -- liftIO $ putStrLn $ "Trying to decide what to pick for " ++ show x
            -- liftIO $ putStrLn $ "The set of inhabitants is: "
            --                      ++ intercalate ", "  (map (render . disp . (names BM.!>))
@@ -655,10 +661,6 @@ fineUnion x y = do
   modify (\st -> st{ fineReprs = IM.insert x y' (fineReprs st) })
 
 
----------------------------------------------------------------
--- Finding shortests paths in the graph of equality proofs.
---
--- This is just Dijkstra's algorithm.
 
 
 
