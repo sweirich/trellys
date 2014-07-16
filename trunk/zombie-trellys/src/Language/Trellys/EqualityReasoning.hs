@@ -1125,7 +1125,11 @@ intoTCon = intoFoo isTCon
 outofTyEq :: ATerm
             -> (ATerm -> StateT ProblemState TcMonad ATerm) -> TcMonad ATerm
             -> StateT ProblemState TcMonad ATerm
-outofTyEq  typ ifDo elseDo = do
+outofTyEq typ ifDo _elseDo | isTyEq typ = ifDo typ
+outofTyEq typ ifDo _elseDo | isTyEq (eraseToHead typ) = do
+  a <- ifDo (eraseToHead typ)
+  return $ AConv a (ACong [] (bind [] (eraseToHead typ)) (ATyEq (eraseToHead typ) typ))
+outofTyEq typ ifDo elseDo = do
   _ <- genEqs typ
   cs <- classMembers typ (isTyEq.eraseToHead)
   case cs of
