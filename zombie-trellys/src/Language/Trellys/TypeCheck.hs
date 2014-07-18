@@ -500,7 +500,7 @@ ta (Rec bnd) ty = do
 ta (Unfold str n a b) tyB = do
    (ea,_)  <- ts a
    availableEqs <- getAvailableEqs
-   ((), moreEqs) <- runUnfoldT availableEqs $ do
+   (_, moreEqs) <- runUnfoldT availableEqs $ do
                       setFuel n
                       unfold ("plain",str) ea
    taUnderUnfolds moreEqs b tyB
@@ -515,15 +515,18 @@ ta (Join strategy Smart s1 s2) (ATyEq a b) = do
   za <- zonkTerm a
   zb <- zonkTerm b
 
-  (mpf, moreEqs) <- runUnfoldT availableEqs $ do
-                       setFuel s1
-                       unfold ("lhs",strategy) za
-                       setFuel s2
-                       unfold ("rhs",strategy) zb
-                       underUnfoldsCC $ prove (za,zb)
+  ((mpf, za', zb'), moreEqs) <- runUnfoldT availableEqs $ do
+                                   setFuel s1
+                                   za' <- unfold ("lhs",strategy) za
+                                   setFuel s2
+                                   zb' <- unfold ("rhs",strategy) zb
+                                   mpf <- underUnfoldsCC $ prove (za,zb)
+                                   return (mpf, za', zb')
   case mpf of
     Nothing -> err [DS "The terms", DD za, DS "and", DD zb,
-                    DS "are not joinable, even using smart reduction"]
+                    DS "are not joinable, even using smart reduction.",
+                    DD za, DS "steps to", DD za', DS "and",
+                    DD zb, DS "steps to", DD zb']
     Just pf -> return $ pfWithBindings moreEqs
        where pfWithBindings [] = pf
              pfWithBindings ((x,x_eq,ty,term):rest) = 
@@ -1296,7 +1299,8 @@ extendCtxSolve d m =
 --
 --            scrutinee  equation-name    branches          branch-type
 buildCase :: [(ATerm,    TName)]       -> [ComplexMatch] -> ATerm        -> TcMonad ATerm
-buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
+buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive.",
+                         DS "(Or maybe you wrote the wrong constructor name, this check is not very reliable, sorry.)"]
 buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
   ta body tyAlt
