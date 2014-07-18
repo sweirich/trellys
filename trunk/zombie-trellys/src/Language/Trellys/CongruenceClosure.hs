@@ -231,13 +231,12 @@ recordInhabitant :: (Monad m) => Constant -> Constant -> StateT ProblemState m (
 recordInhabitant c cTy = do
   (cTy', inf) <- findInfo cTy    
   setRepr cTy' (Right inf{ classInhabitants = (c,cTy) `S.insert` classInhabitants inf})
-
   -- TODO: Actually, it can be worth adding it anyway, to get an additional edge in the graph.
-  --when (S.null (classInhabitants inf)) $
-  newAssumptions <- possiblyNewAssumptions (Just (c,cTy)) (classEquations inf)
-  --mapM_ (\(p, (Left (EqConstConst a b))) -> recordEdge a b p)
-  --      newAssumptions 
-  propagate newAssumptions
+  when (S.null (classInhabitants inf)) $ do
+    newAssumptions <- possiblyNewAssumptions (Just (c,cTy)) (classEquations inf)
+    --mapM_ (\(p, (Left (EqConstConst a b))) -> recordEdge a b p)
+    --      newAssumptions 
+    propagate newAssumptions
 
 -- | Record that c is an equation between a and b
 -- (If the equivalence class of c is inhabited, this yields a new given equation too).
@@ -517,7 +516,6 @@ tracing msg (WantedEquation c1 c2) a = do
         a
 -}
 
-
 tracing :: String -> WantedEquation -> UniM a -> UniM a
 tracing msg eq = id
 
@@ -529,12 +527,10 @@ unifyDelete (WantedEquation a b) = do
   guard (a' == b')
   r <- proveEqual a b
   giveProof (WantedEquation a b) r
- 
   {- 
   graph <- dispEdges
   trace (render (text "The graph is:" $$ graph)) (return ()) 
   -}
-
   tracing "Deleted" (WantedEquation a b) (return ())
 
 -- If the lhs of a wanted equation is an evar, instantiate it with the rhs.

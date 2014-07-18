@@ -832,21 +832,21 @@ activate str (ACumul a lvl) = ACumul <$> activate str a <*> pure lvl
 activate str (ADCon c th params args) 
   -- TODO: Insert casts, this will require some thinking.
   = ADCon c th params <$> mapM (\(a,ep) -> do 
-                                  lift $ unfold str a
+                                  _ <- lift $ unfold str a
                                   (aTh,aTy) <- lift $ underUnfolds (getType a)
                                   (a', _) <- ListT $ classMembersWithTy a aTy aTh AnyValue
                                   return (a',ep))
                                args
 activate str (AApp Erased a b ty)  = do
-  lift $ unfold str a
+  _ <- lift $ unfold str a
   (aTh,aTy) <- lift $ underUnfolds (getType a)
   (a', _) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
   return $ AApp Erased a' b ty
 activate str (AApp Runtime a b ty) = do
-  lift $ unfold str a
+  _ <- lift $ unfold str a
   (aTh, aTy@(eraseToHead -> AArrow _ _ _ bnd)) <- lift $ underUnfolds (getType a)   --We know a must have an arrow type.
   (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh FunctionValue
-  lift $ unfold str b
+  _ <-lift $ unfold str b
   (bTh,bTy) <- lift $ underUnfolds (getType b)
   (b', bPfThunk) <- ListT $ classMembersWithTy b bTy bTh AnyValue
   ((x,unembed->aDom), aRng) <- unbind bnd
@@ -860,13 +860,13 @@ activate str (AApp Runtime a b ty) = do
                      (ACong [ASymEq bPf] (bind [x] aRng) (ATyEq ty' ty))
 activate str (ALet Runtime bnd ty) = do
  ((x,xeq,unembed->a), b) <- unbind bnd
- lift $ unfold str a
+ _ <- lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPf) <- ListT $ classMembersWithTy a aTy aTh AnyValue
  -- TODO: fix the type of xeq
  return $ ALet Runtime (bind (x,xeq, embed a') b) ty
 activate str (ACase a bnd ty) = do
- lift $ unfold str a
+ _ <- lift $ unfold str a
  (aTh,aTy) <- lift $ underUnfolds (getType a)
  (a', aPfThunk) <- ListT $ classMembersWithTy a aTy aTh ConstructorValue
  (y_eq, mtchs) <- unbind bnd
@@ -943,45 +943,54 @@ headedByConstructor :: ATerm -> Bool
 headedByConstructor (eraseToHead -> ADCon _ _ _ _) = True
 headedByConstructor _ = False
 
-unfold :: (String,EvaluationStrategy) -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ()
+-- Returns the final term it unfolded to.
+unfold :: (String,EvaluationStrategy) -> ATerm -> StateT UnfoldState (StateT ProblemState TcMonad) ATerm
 unfold str@(namePrefix, actualStr) a = do
   fuel <- gets fuelLeft
   visited <- gets alreadyUnfolded
-  when (fuel > 0 && not (a `S.member` visited)) $ do
-    modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
-                        alreadyUnfolded = S.insert a (alreadyUnfolded st)})
-    --liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
-    --                                      DS ("with "++ show fuel ++ " units of fuel left")] 
-    _ <-  lift $ genEqs a
-    -- Gor every combination of values in the active positions, see if the term steps.
-    activeVariants <- runListT (activate str a)
-    --liftIO $ putStrLn.render.disp $ [DS ("There are " ++ show (length activeVariants) ++ " active variants, namely"), DD activeVariants ]
-    -- Let's greedily commit to just one variant, and see if that helps.
-    forM_ (take 1 activeVariants) $ \term -> do
-                                 --liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
-                                 -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
-                                 -- TODO, eventually this will be fixed in activate.
+  if (fuel <= 0 || (a `S.member` visited))
+    then return a
+    else do
+      modify (\st -> st { fuelLeft = (fuelLeft st)-1, 
+                          alreadyUnfolded = S.insert a (alreadyUnfolded st)})
+      --liftIO $ putStrLn . render . disp $ [ DS "unfolding", DD a , 
+      --                                      DS ("with "++ show fuel ++ " units of fuel left")] 
+      _ <-  lift $ genEqs a
+      -- Gor every combination of values in the active positions, see if the term steps.
+      activeVariants <- runListT (activate str a)
+      --liftIO $ putStrLn.render.disp $ [DS ("There are " ++ show (length activeVariants) ++ " active variants, namely"), DD activeVariants ]
+      case activeVariants of
+         [] -> return a
+         -- Let's greedily commit to just one variant, and see if that helps.
+         term : _ -> do
+                                   --liftIO $ putStrLn . render . disp $ [ DS "Selected the active variant", DD term] 
+                                   -- Changing subexpressions within the term may cause it to no longer typecheck, we need to catch that...
+                                   -- TODO, eventually this will be fixed in activate.
 
-                                 --liftIO $ putStrLn "Checking term."
-                                 welltyped <- (do _ <- underUnfolds (aTs term); return True) --`catchError` (\ _ -> return False)
-                                 unless welltyped $
-                                    warn [DS "rejecting illtyped variant", DD term,
-                                          DS "which is a variant of", DD a]
-                                 when welltyped $ do
-                                   term' <- case actualStr of
-                                              CBV -> fromMaybe term <$> (underUnfolds $ astep term)
-                                              PAR_CBV -> underUnfolds $ aParStep False term
-                                   when (not (term `aeq` term')) $ do
-                                      y <- fresh $ string2Name (namePrefix++"unfolds")
-                                      y_eq <- fresh $ string2Name (namePrefix++"unfolds_eq")
+                                   --liftIO $ putStrLn "Checking term."
+                                   welltyped <- (do _ <- underUnfolds (aTs term); return True) --`catchError` (\ _ -> return False)
+                                   if (not welltyped) 
+                                      then do
+                                         warn [DS "rejecting illtyped variant", DD term,
+                                              DS "which is a variant of", DD a]
+                                         return a
+                                     else do
+                                       term' <- case actualStr of
+                                                  CBV -> fromMaybe term <$> (underUnfolds $ astep term)
+                                                  PAR_CBV -> underUnfolds $ aParStep False term
+                                       if (term `aeq` term')
+                                        then return a
+                                        else do
+                                          y <- fresh $ string2Name (namePrefix++"unfolds")
+                                          y_eq <- fresh $ string2Name (namePrefix++"unfolds_eq")
 
-                                      isEq <- aeq <$> erase term <*> erase term'
-                                      let proof = if isEq 
-                                                    then  AJoin term 0 term' 0 actualStr
-                                                    else  AJoin term 1 term' 0 actualStr
-                                      modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
-                                      lift $ addEquation term term' proof True
-                                      unfold str term'
+                                          isEq <- aeq <$> erase term <*> erase term'
+                                          let proof = if isEq 
+                                                        then  AJoin term 0 term' 0 actualStr
+                                                        else  AJoin term 1 term' 0 actualStr
+                                          modify (\st -> st{unfoldEquations = ((y, y_eq, ATyEq term term', proof):unfoldEquations st)})
+                                          lift $ addEquation term term' proof True
+                                          unfold str term'
 
 
 -- Disp instances, used for debugging.
