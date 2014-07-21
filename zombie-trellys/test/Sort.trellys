@@ -2,9 +2,11 @@ module Sort where
 
 import Prelude
 import Arithmetic
-
+import StrongNat
 
 usually log
+
+
 
 
 data List (A:Type) : Type where
@@ -14,7 +16,7 @@ data List (A:Type) : Type where
 data Prod (A:Type) (B:Type) : Type where
   Pair of (x:A) (y:B)
 
--- split : (A:Type) -> List A -> Prod (List A) (List A)
+-- split : (A:Type) => List A -> Prod (List A) (List A)
 -- ind split _ xs =
 --   case xs [xs_eq] of
 --     Nil       -> Pair Nil Nil
@@ -25,40 +27,100 @@ data Prod (A:Type) (B:Type) : Type where
 --           case (split _ ys' [ordtrans (ord ys_eq : ys' < ys) (ord xs_eq : ys < xs)]) [_] of
 --             Pair ys1 ys2 -> Pair (Cons x ys1) (Cons y ys2)
 
-prog split : (A : Type) -> List A -> Prod (List A) (List A)
-rec  split _ xs = 
+prog split : (A : Type) => List A -> Prod (List A) (List A)
+rec  split A xs = 
   case xs of
     Nil -> Pair Nil Nil
     Cons x1 Nil -> Pair (Cons x1 Nil) Nil
     Cons x1 (Cons x2 xs') ->
-      case (split _ xs') of
+      case (split xs') of
         Pair xs1 xs2 -> Pair (Cons x1 xs1) (Cons x2 xs2)
 
 prog merge : (A:Type) -> (lt : A -> A -> Bool) -> List A -> List A -> List A
 rec merge _ lt xs ys =
-   case xs , ys of
-     Nil , ys -> ys
-     xs , Nil -> xs
-     Cons x xs', Cons y ys' ->
-       if (lt x y) then Cons x (merge _ lt xs' ys) 
-                   else Cons y (merge _ lt xs ys')
+   case xs of
+     Nil -> ys
+     Cons x xs' ->
+       case ys of
+         Nil -> xs
+         Cons y ys' ->
+           case (lt x y) of
+             True -> Cons x (merge _ lt xs' ys) 
+             False -> Cons y (merge _ lt xs ys')
 
-prog sort : (A : Type) -> (A -> A -> Bool) -> List A -> List A
+prog sort : (A : Type) => (A -> A -> Bool) -> List A -> List A
 rec sort _ lt xs =
   case xs of
     Nil -> Nil
     Cons x Nil -> Cons x Nil
     _ -> 
-      case (split _ xs) of
-        Pair xs1 xs2 -> merge _ lt (sort _ lt xs1) (sort _ lt xs2)
+      case (split xs) of
+        Pair xs1 xs2 -> merge _ lt (sort lt xs1) (sort lt xs2)
 
-data Sorted (A : Type) (lt : A -> A -> Bool) : (List A) -> Type where
-  
+-- cov : [p:Nat -> Type 0 @log]
+--    -> ((n:Nat) -> ((m:Nat) -> [ltT n m @log] -> p m @log) -> p n @log)
+--    -> (n:Nat) -> p n
+
+data Exists (a : Type 0) (p : ((x:a@log) -> Type 0)@log) : Type 0 where
+  Ex of (x : a@log) (pf : p x @log)
 
 
---log lt' : (Nat@log) -> (Nat@log) -> Bool
---lt' a b = lt a b
---
---prog foo : List Nat
---foo = sort Nat lt' (Cons 3 (Cons 0 (Cons 2 (Cons 4 Nil))))
---
+log merge_terminates :  (A:Type) => (lt : A -> A -> Bool)
+                     -> (xs1 xs2 : List A)
+                     -> Exists (List A) (\ys . ys = merge _ lt xs1 xs2)
+ind merge_terminates A lt xs1 =
+  ind mt' xs2 = 
+    case xs1 [xs1_eq], xs2 [xs2_eq] of
+      Nil , Nil -> TRUSTME
+      Nil , Cons x2 xs2' -> TRUSTME
+      Cons x1 xs1' , Nil -> TRUSTME
+      Cons x1 xs1' , Cons x2 xs2' ->
+        let [_] = (join : merge _ lt (Cons x1 xs1') (Cons x2 xs2') = 
+                          ((case (lt x1 x2) of
+                              True -> Cons x1 (merge _ lt xs1' (Cons x2 xs2')) 
+                              False -> Cons x2 (merge _ lt (Cons x1 xs1') xs2'))
+                           : List A)) in
+        TRUSTME
+
+
+--log merge_terminates :  (A:Type) => (lt : A -> A -> Bool)
+--                     -> (xs1 xs2 : List A)
+--                     -> Exists (List A) (\ys . ys = merge _ lt xs1 xs2)
+--ind merge_terminates A lt xs1 =
+--  ind mt' xs2 = 
+--    case xs1 [xs1_eq], xs2 [xs2_eq] of
+--      Nil , Nil ->
+--        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+--                xs2) in
+--        let [_] = (join : Nil = merge _ lt Nil Nil) in
+--        Ex Nil _
+--      Nil , Cons x2 xs2' ->
+--        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+--                xs2) in
+--        let [_] = (join : Cons x2 xs2' = merge _ lt Nil (Cons x2 xs2')) in
+--        Ex xs2 _
+--      Cons x1 xs1' , Nil ->
+--        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+--                xs1) in
+--        let [_] = (join : Cons x1 xs1' = merge _ lt (Cons x1 xs1') Nil) in
+--        Ex xs1 _
+--      Cons x1 xs1' , Cons x2 xs2' ->
+--        case (lt x1 x2) [lt_eq] of
+--          True ->
+--            let ih = merge_terminates lt xs1' [ord xs1_eq] xs2 in
+--            case ih of
+--              Ex ys ys_eq ->
+--                let [_] = (join : ((if True then Cons x1 (merge _ lt xs1' xs2) 
+--                                            else Cons x2 (merge _ lt xs1 xs2'))
+--                                : List A)
+--                                = Cons x1 (merge _ lt xs1' xs2)) in
+--                unfold (merge _ lt (Cons x1 xs1') (Cons x2 xs2')) in
+--                let [_] = (join : merge _ lt (Cons x1 xs1') (Cons x2 xs2') = 
+--                                  ((case (lt x1 x2) of
+--                                      True -> Cons x1 (merge _ lt xs1' (Cons x2 xs2')) 
+--                                      False -> Cons x2 (merge _ lt (Cons x1 xs1') xs2'))
+--                                   : List A)) in
+--                Ex (Cons x1 ys)
+--                   (_ : Cons x1 ys = merge _ lt xs1 xs2)
+--          False -> TRUSTME
+ 
