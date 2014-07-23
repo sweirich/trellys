@@ -6,9 +6,6 @@ import StrongNat
 
 usually log
 
-
-
-
 data List (A:Type) : Type where
   Nil
   Cons of (x:A) (xs:List A)
