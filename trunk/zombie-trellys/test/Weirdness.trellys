@@ -1,0 +1,15 @@
+module Weirdness where
+
+data Nat : Type 0 where
+  Zero
+  Succ of (x : Nat)
+
+data Exists (a : Type 0) (p : ((x:a@log) -> Type 0)@log) : Type 0 where
+  Ex of (x : a@log) (pf : p x @log)
+
+log foo : (xs : Nat)
+      -> Exists Nat (\ys1.
+           Exists Nat (\ys2. Nat))
+ind foo xs =
+  unfold (((\ys1. Exists Nat (\ys2. Nat)) : Nat -> Type) Zero) in
+  Ex Zero (Ex Zero TRUSTME)
