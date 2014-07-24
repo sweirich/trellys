@@ -33,4 +33,9 @@ Crec A p = rec f n =
               Zero -> Zero
               Succ m -> f m
 
-
+-- The case rule
+prog Icase : (A:Type) -> (x : A) -> (p : A = Nat) -> Bool
+Icase A x p = 
+  case x of
+    Zero -> True
+    Succ y -> True

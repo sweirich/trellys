@@ -78,8 +78,8 @@ initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
               useTerminalHighlighting = unsafePerformIO (queryTerminal stdOutput),
---              verbose = False,
-              verbose = True,
+              verbose = False,
+--              verbose = True,
               dispAvoid = S.empty                    
          }
 

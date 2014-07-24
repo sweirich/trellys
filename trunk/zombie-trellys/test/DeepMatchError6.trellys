@@ -1,0 +1,16 @@
+{- Constructors in the patterns should actually belong to the right datatype. -}
+
+
+module DeepMatchError6 where
+import Prelude
+
+
+data Foo : Type  where
+  mkFoo of (x : Nat)
+
+
+example : Foo -> Nat
+example f = 
+  case f of
+     (mkFoo True) -> 0
+     (mkFoo False) -> 1
