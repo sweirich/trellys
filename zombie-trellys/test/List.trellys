@@ -67,28 +67,29 @@ all = \ [a] f . ind all xs =
 
 log all_Cons : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
                         -> (Pr x = True) -> (all Pr xs = True) -> (all Pr (Cons x xs) = True)
-all_Cons [a] Pr x xs h1 h2 =
-  -- This reasoning is extra annoying because (P x) is in prog. 
-  -- Revisit when we have a more powerful reduction-modulo tactic.
-  let _ = (pjoin : all Pr (Cons x xs)
-                 = ((\b1 b2 . case b1 of 
-                               True -> b2
-                               False -> False) : Bool -> Bool -> Bool)
-                     (Pr x)
-                     (all Pr xs)) in --Note, even with nondeterminism, would probably need to explictly unfold this subexpression.
-  let _ = (join : ((\b1 b2 . case b1 of 
-                               True -> b2
-                               False -> False) : Bool -> Bool -> Bool)
-                     True
-                     True
-                   = True) in
-    _
+all_Cons [a] Pr x xs h1 h2 = smartjoin
+
+log all_Cons_head_False : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (Pr x = False) -> (all Pr (Cons x xs) = False)
+all_Cons_head_False [a] Pr x xs h = smartjoin
+
+log all_Cons_tail_False : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (all Pr xs = False) -> (all Pr (Cons x xs) = False)
+all_Cons_tail_False [a] Pr x xs h =
+  case (Pr x) of
+    True -> smartjoin
+    False -> smartjoin
 
 any : [a : Type] => (a -> Bool) -> (List a @ log) -> Bool
 any = \ [a] f . ind any xs = 
   case xs [xs_eq] of 
     Nil -> False
     Cons x xs -> or (f x) (any xs [ord xs_eq])
+
+log any_Cons : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (Pr x = False) -> (any Pr xs = False) -> (any Pr (Cons x xs) = False)
+any_Cons [a] Pr x xs h1 h2 = smartjoin
+
 
 filter : [a : Type] => (a -> Bool) -> (List a @ log) -> List a
 filter = \ [a] f . ind filter xs = 

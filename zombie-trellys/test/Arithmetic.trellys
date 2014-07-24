@@ -70,6 +70,10 @@ lemma_minus_zero_id =
     Zero -> (join : minus 0 0 = 0)
     Succ n' -> (join 10 : minus (Succ n') 0 = Succ n')
 
+-- 0 + n = n
+log lemma_zero_plus_id : (n : Nat) -> (plus 0 n = n)
+lemma_zero_plus_id n = join
+
 -- n + 0 = n
 log lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
 ind lemma_plus_zero_id n =

@@ -534,9 +534,12 @@ ta (Join strategy Smart s1 s2) (ATyEq a b) = do
 
 ta (TerminationCase s binding) ty = err [DS "termination-case is currently unimplemented"]
 
-ta (DCon c args) (ATCon tname eparams) = do
+ta (DCon c args) ty@(ATCon tname eparams) = do
   -- could overload data constructors here
-  (_, delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
+  (tname', delta, AConstructorDef _ deltai) <- lookupDCon (translate c)
+  unless (tname == tname') $
+    err [DS "Constructor", DD c, DS "was ascribed the type", DD ty,
+         DS "but it actually belongs to the datatype", DD tname']
   unless (length args == aTeleLength deltai) $
            err [DS "Constructor", DD c,
                 DS $ "should have " ++ show (aTeleLength deltai)
@@ -1299,8 +1302,7 @@ extendCtxSolve d m =
 --
 --            scrutinee  equation-name    branches          branch-type
 buildCase :: [(ATerm,    TName)]       -> [ComplexMatch] -> ATerm        -> TcMonad ATerm
-buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive.",
-                         DS "(Or maybe you wrote the wrong constructor name, this check is not very reliable, sorry.)"]
+buildCase [] [] _ = err [DS "Patterns in case-expression not exhaustive."]
 buildCase [] ((ComplexMatch bnd):_) tyAlt = do
   ([], body) <- unbind bnd  --no more patterns to match.
   ta body tyAlt
@@ -1326,10 +1328,18 @@ buildCase ((s,y):scruts) alts tyAlt | not (null alts) && all isVarMatch alts = (
   buildCase scruts alts' tyAlt)
 
 -- normal pattern matching case. First pattern is not a variable.
-buildCase ((s_unadjusted,y):scruts) alts tyAlt = (do
-  (th_unadjusted, sTy_unadjusted) <- getType s_unadjusted
-  (aTh,s,sTy) <- adjustTheta th_unadjusted s_unadjusted sTy_unadjusted
+buildCase ((s_uncoerced_unadjusted,y):scruts) alts tyAlt = (do
+  (th_unadjusted, sTy_uncoerced_unadjusted) <- getType s_uncoerced_unadjusted
+  (aTh,s_uncoerced,sTy_uncoerced) <- adjustTheta th_unadjusted s_uncoerced_unadjusted sTy_uncoerced_unadjusted
+  hyps <- getAvailableEqs
+  (s,sTy) <- fromJustOrBust [DS "the scrutinee", DD s_uncoerced_unadjusted, DS "should have a data type",
+                             DS "but has type", DD sTy_uncoerced_unadjusted]
+               =<< (underHypotheses hyps (intoTCon s_uncoerced sTy_uncoerced))
   (d, bbar, delta, cons) <- lookupDType s sTy
+
+  forM_ alts $
+    (patShouldHaveType sTy <=< (return.fst) <=< matchPat)
+
   when (null alts && not (null cons)) $
     err $[DS "Patterns in case-expression not exhaustive."]
   let buildMatch :: AConstructorDef -> TcMonad (AMatch, Theta)
@@ -1365,6 +1375,19 @@ buildCase ((s_unadjusted,y):scruts) alts tyAlt = (do
   ztyAlt <- zonkTerm tyAlt
   let th = maximum (aTh : ths) 
   return $ ACase s ematchs (th,ztyAlt))
+
+
+-- Check that a contructor pattern belongs to the right datatype.
+-- This is to get more informative error messages if the programmer accidentally writes the wrong pattern.
+patShouldHaveType :: ATerm -> Pattern ->TcMonad ()
+patShouldHaveType _ (PatVar _)  = return ()
+patShouldHaveType ty@(ATCon dty _)  p@(PatCon ((translate.unembed)->d) _) = do
+  (dty', _,_) <- lookupDCon d
+  if dty == dty'
+    then return ()
+    else err [ DS "the pattern", DD p, DS "should have type", DD ty,
+               DS "put the constructor", DD d, DS "actually belongs to the datatype", DD dty']
+patShouldHaveType ty (PatCon _ _)  = err [DS "internal error: patShouldHaveType encountered non-datatype", DD ty]
 
 -- Given a list of Patterns (which should all be for the same datatype),
 -- see if there is any commonality in the name of the pattern variables, and if so
@@ -1446,3 +1469,9 @@ matchPat (ComplexMatch bnd) = do
   ((pat:pats), body) <- unbind bnd
   return (pat, ComplexMatch $ bind pats body)
 
+
+-- Coerce from Maybe, and print an error message if that fails
+fromJustOrBust :: (MonadReader Env m, MonadError Err m, Disp msg) =>
+                  msg -> Maybe a -> m a 
+fromJustOrBust msg (Just x) = return x
+fromJustOrBust msg Nothing = err msg

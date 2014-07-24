@@ -483,7 +483,8 @@ freshATele _  AEmpty = error "wrong number of strings given to freshATele--too m
 substATele :: Subst ATerm a => ATelescope -> [ATerm] -> a -> a
 substATele AEmpty [] a = a
 substATele (ACons (unrebind->((x,_ty,_ep),tele))) (b:bs) a = substATele tele bs (simplSubst x b a)
-substATele _ _ _ = error "internal error: substATele called with unequal-length arguments"
+substATele tele bs _ = error $ "internal error: substATele called with unequal-length arguments"
+                                 ++ " (Arguments were " ++ show tele ++ " and " ++ show bs ++ ")"
 
 ------------------------
 ------------------------
