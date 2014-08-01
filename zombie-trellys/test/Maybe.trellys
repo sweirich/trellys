@@ -35,3 +35,10 @@ maybe_eq = \ [A] eqA p1 p2 .
    Just x1 , Just x2 -> eqA x1 x2
    Nothing , Nothing -> True
    _ , _ -> False
+
+
+-- A variant where the argument is erased
+-- (so at runtime it is just a bool).
+data ErasedMaybe (a : Type) : Type 0 where
+  ErasedJust    of [ _ : a @ log ]
+  ErasedNothing 
