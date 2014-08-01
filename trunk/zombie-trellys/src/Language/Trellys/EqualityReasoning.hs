@@ -25,6 +25,9 @@ import Language.Trellys.TypeCheckCore (getType, aTs)
 import Language.Trellys.CongruenceClosure
 import Language.Trellys.Options
 
+import Language.Trellys.Environment(UniVarBindings)
+
+
 import Language.Trellys.GenericBind hiding (avoid)
 
 import Control.Arrow (second)
@@ -42,6 +45,8 @@ import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.Function (on)
 import Data.List
+
+
 
 --Stuff used for debugging.
 import Text.PrettyPrint.HughesPJ (render)
@@ -692,7 +697,41 @@ processHyp (th,n,t) = do
 -- "Given the congruene context from the ProblemState, 
 --  please prove that these terms are equal".
 prove ::  (ATerm, ATerm) -> StateT ProblemState TcMonad (Maybe ATerm)
-prove (lhs, rhs) = do
+prove wanted = do
+  isCheap <- getFlag CheapUnification
+  if isCheap
+   then cheapProve wanted
+   else fancyProve wanted
+
+-- Two passes: first syntactically unify, then see if they are CC-equal.    
+cheapProve ::  (ATerm, ATerm) -> StateT ProblemState TcMonad (Maybe ATerm)
+cheapProve (lhs, rhs) = do
+  prezlhs <- lift (zonkTerm lhs)
+  prezrhs <- lift (zonkTerm rhs)
+  lift $ syntacticUnify lhs rhs
+  zlhs <- lift (zonkTerm lhs)
+  zrhs <- lift (zonkTerm rhs)
+  c1 <- genEqs zlhs
+  c2 <- genEqs zrhs
+  mpf <- inSameClassExplain c1 c2  
+  case mpf of
+    Nothing -> do       
+      warn [DS "Tried to unify", DD prezlhs, DS "and", DD prezrhs,
+            DS "which yeilded", DD zlhs, DS "and", DD zrhs]
+      return Nothing
+    Just pf -> do 
+                  bnds <- lift getUniVars
+                  Just <$> lift ((genProofTerm 
+                                 <=< return . simplProof
+                                 <=< chainProof' zlhs zrhs
+                                 <=< fuseProof 
+                                 . symmetrizeProof 
+                                 . associateProof NotSwapped
+                                 . zonkWithBindings bnds) pf)
+
+-- Backtracking search taking CC-equivalence into account
+fancyProve ::  (ATerm, ATerm) -> StateT ProblemState TcMonad (Maybe ATerm)
+fancyProve (lhs, rhs) = do
   c1 <- genEqs =<< (lift (zonkTerm lhs))
   c2 <- genEqs =<< (lift (zonkTerm rhs))
   st1 <- get
@@ -716,7 +755,6 @@ prove (lhs, rhs) = do
                          . zonkWithBindings bndgs) pf
                 return $ Just tm
 
-
 -- "Given the context, fill in any remaining evars"
 solveConstraints :: [(Theta,ATerm,ATerm)] -> TcMonad ()
 solveConstraints hyps = do
@@ -733,6 +771,43 @@ solveConstraints hyps = do
      oldBndgs <- gets snd
      setUniVars bndgs
      clearConstraints
+
+-------------------------------------------------------
+
+-- Here is a cheap and simple alternative to the fancy
+-- unification-modulo congruence closure: just do syntactic
+-- unification directly on the abstract syntax trees.
+--
+-- If they don't unify that's fine too. We compute
+--  a best-effort unifier, and hope that the congruence 
+--  closure will take care of the rest. 
+
+syntacticUnify :: ATerm -> ATerm -> TcMonad ()
+syntacticUnify a b = do
+  za <- zonkTerm a
+  zb <- zonkTerm b
+  case (za, zb) of
+    (AUniVar x _ , _zb) | x `S.member` uniVars zb ->
+       return () -- occurs check failure
+                        | otherwise -> do
+       --liftIO $ putStrLn.render.disp $
+       --  [ DS "Assigning", DD x, DS ":=", DD zb ]
+       setUniVar x b
+    (_, AUniVar _ _) -> syntacticUnify zb za
+    _ -> do
+      (la, as) <- runWriterT (decompose False S.empty za)
+      (lb, bs) <- runWriterT (decompose False S.empty zb)
+
+      {-liftIO $ putStrLn.render.disp $
+        [ DS "Trying to unify", DD a , DS "and", DD b,
+          DS "lhs decomposes to:", DD la, DS "+", DD (map snd as),
+          DS "rhs decomposes to:", DD lb, DS "+", DD (map snd bs)] -}
+
+
+      when (bind (map fst as) la `aeq` bind (map fst bs) lb) $
+        zipWithM_ syntacticUnify (map snd as) (map snd bs)
+
+
 
 -------------------------------------------------------
 
