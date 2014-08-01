@@ -89,41 +89,41 @@ sat_lit = \[n] p lit .
 -- is this literal known to be false?
 log unsat_lit : [n : Nat] => (p : Vector (Maybe Bool) n)
                 -> (lit : (Times (Fin n) Bool) @ log) 
-                -> Maybe ((phi : Vector Bool n)
-                          -> Extends p phi
-                          -> interp_lit phi lit = False)
+                -> ErasedMaybe ((phi : Vector Bool n)
+                                  -> Extends p phi
+                                  -> interp_lit phi lit = False)
 unsat_lit [n] p lit = 
   case lit of
     (Prod x b) ->
       case (lookup x p) of
-        Nothing -> Nothing
+        Nothing -> ErasedNothing
         Just b' -> 
           case (bool_eq b b') of
-            True -> Nothing
+            True -> ErasedNothing
             False -> 
-              Just (\ phi hExtends .
-                       unfold (Extends p phi) in
-                       let _ = (hExtends x b' _) in
-                         smartjoin)
+              ErasedJust [\ phi hExtends .
+                            unfold (Extends p phi) in
+                            let _ = (hExtends x b' _) in
+                              smartjoin]
 
 -- a clause is known to be false if all literals are assigned false.
 prog unsat_clause : [n:Nat] => (p : Vector (Maybe Bool) n) 
                       -> (clause : List (Times (Fin n) Bool) @ log) 
-                      -> Maybe ((phi : Vector Bool n)
-                                   -> Extends p phi
-                                   -> interp_clause phi clause = False)
+                      -> ErasedMaybe ((phi : Vector Bool n)
+                                       -> Extends p phi
+                                       -> interp_clause phi clause = False)
 unsat_clause [n] p = rec loop c = 
   case c of
-    Nil -> Just  (\phi hExtends . smartjoin)
+    Nil -> ErasedJust  [\phi hExtends . smartjoin]
     Cons l ls ->
       case (unsat_lit p l), (loop ls) of
-        Just h1, Just h2 ->
-           Just (\ phi hExtends .
-                    let _ = (join : interp_clause phi ls = any (interp_lit phi) ls) in
-                    let _ = (join : interp_clause phi (Cons l ls) = any (interp_lit phi) (Cons l ls)) in
-                    any_Cons (interp_lit phi) l ls (h1 phi hExtends) (h2 phi hExtends))
-        Nothing , _ -> Nothing
-        _ , Nothing -> Nothing
+        ErasedJust [h1], ErasedJust [h2] ->
+           ErasedJust [\ phi hExtends .
+                        let _ = (join : interp_clause phi ls = any (interp_lit phi) ls) in
+                        let _ = (join : interp_clause phi (Cons l ls) = any (interp_lit phi) (Cons l ls)) in
+                        any_Cons (interp_lit phi) l ls (h1 phi hExtends) (h2 phi hExtends)]
+        ErasedNothing , _ -> ErasedNothing
+        _ , ErasedNothing -> ErasedNothing
 
 -- Precondition: f is known to not be satified already.
 -- Returns either an unassigned variable or a proof that f is unsatisfiable.
@@ -140,20 +140,20 @@ partial_interp_unsat [n] p =
         case (find (unassigned_lit p) c) of
           Just i -> InR (pi1 i)
           Nothing -> case (unsat_clause p c) of
-            Just h -> InL (UNSAT [\phi hExtends. 
-                               let _ = (pjoin : (interp phi f) = (all (any (interp_lit phi)) f)) in
-                               let _ = (join  : (interp_clause phi c) = (any (interp_lit phi) c)) in
-                                 all_Cons_head_False (any (interp_lit phi)) c cs (h phi hExtends)])
-            Nothing -> case (loop cs) of
-                         InR x -> InR x
-                         InL (UNSAT [h])
-                             -> InL (UNSAT
-                                         [\phi hExtends. 
-                                           let _ = (pjoin : (interp phi (Cons c cs)) 
-                                                          = (all (any (interp_lit phi)) (Cons c cs))) in
-                                           let _ = (pjoin : (interp phi cs)
-                                                          = (all (any (interp_lit phi)) cs)) in
-                                             all_Cons_tail_False (any (interp_lit phi)) c cs (h phi hExtends)])
+            ErasedJust [h] -> InL (UNSAT [\phi hExtends. 
+                                            let _ = (pjoin : (interp phi f) = (all (any (interp_lit phi)) f)) in
+                                            let _ = (join  : (interp_clause phi c) = (any (interp_lit phi) c)) in
+                                              all_Cons_head_False (any (interp_lit phi)) c cs (h phi hExtends)])
+            ErasedNothing -> case (loop cs) of
+                               InR x -> InR x
+                               InL (UNSAT [h])
+                                   -> InL (UNSAT
+                                               [\phi hExtends. 
+                                                 let _ = (pjoin : (interp phi (Cons c cs)) 
+                                                                = (all (any (interp_lit phi)) (Cons c cs))) in
+                                                 let _ = (pjoin : (interp phi cs)
+                                                                = (all (any (interp_lit phi)) cs)) in
+                                                   all_Cons_tail_False (any (interp_lit phi)) c cs (h phi hExtends)])
 
 
 -- a formula is known to be true if all clauses are known to be true
