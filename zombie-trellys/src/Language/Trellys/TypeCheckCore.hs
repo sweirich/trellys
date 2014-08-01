@@ -250,6 +250,9 @@ coreErr msg = do
         
 -- Given an environment and a theta, we synthesize a type and a theta or fail.
 --  Since the synthesized type is "very annotated", this is a bit like regularity.
+--
+-- In order to print more helpful error messages there are two mutually recursive
+-- functions, aTs (which stores a breadcrumb trail of where we are)  and aTsPos (which does the real work).
 
 aTs :: ATerm -> TcMonad (Theta, ATerm)
 aTs a = extendSourceLocation Nothing a $ aTsPos a

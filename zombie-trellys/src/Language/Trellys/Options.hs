@@ -11,7 +11,8 @@ options = [Option "r" ["reduce"] (NoArg Reduce) "reduce the last term in the mod
            Option ""  ["no-tc-core"] (NoArg NoTypeCheckCore) "suppress type checking the core language", 
            Option "" ["typeclassy"] (NoArg Typeclassy) "enable some ad hoc typeclass hackery",
            Option "e" ["extraction"] (NoArg DoExtraction) "extract to OCaml code",
-           Option "" ["no-injrng"] (NoArg NoInjrngCheck) "disable the injrng check"
+           Option "" ["no-injrng"] (NoArg NoInjrngCheck) "disable the injrng check",
+           Option "" ["cheap-unification"] (NoArg CheapUnification) "use a cheaper version of unificatoin"
           ]
 
 data Flag = NoTypeCheckCore
@@ -21,5 +22,6 @@ data Flag = NoTypeCheckCore
           | DoExtraction
           | Typeclassy
           | NoInjrngCheck
+          | CheapUnification
           | SecondPass   --used internally, when we re-check the elaborated core term. 
   deriving (Eq,Show,Read)

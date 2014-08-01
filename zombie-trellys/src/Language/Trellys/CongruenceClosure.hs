@@ -12,7 +12,7 @@ module Language.Trellys.CongruenceClosure(
   guessVars, classMembersExplain,
   dumpState,
   fineUnion,
-  inSameClass, 
+  inSameClass, inSameClassExplain,
   unify, -- main function, runState is run for UniM monad  
   
 ) where
@@ -604,6 +604,14 @@ inSameClass c1 c2 = do
   c1' <- find c1
   c2' <- find c2
   return (c1' == c2')
+
+inSameClassExplain :: (Monad m, Applicative m) => Constant -> Constant -> StateT ProblemState m (Maybe Proof)
+inSameClassExplain c1 c2 = do
+  c1' <- find c1
+  c2' <- find c2
+  if (c1' == c2')
+     then Just <$> proveEqual c1 c2
+     else return Nothing
 
 -- | Take all remaining unbound variables, and just fill them in with any random
 --   term from the context.

@@ -9,7 +9,7 @@ module Language.Trellys.Environment
    getFlag,
    emptyEnv,
    lookupTy, lookupTyMaybe, lookupDef, lookupHint, lookupTCon, lookupDCon, getTys,
-   lookupUniVar, setUniVar, setUniVars,
+   lookupUniVar, setUniVar, setUniVars, getUniVars,
    addConstraint, getConstraints, clearConstraints,
    getDefaultTheta, withDefaultTheta, 
    getCtx, getLocalCtx, extendCtx, extendCtxs, extendCtxTele, extendCtxsGlobal,
@@ -106,6 +106,9 @@ setUniVars :: (MonadState (a,UniVarBindings) m, MonadError Err m, MonadReader En
              UniVarBindings -> m ()
 setUniVars bnds =
   mapM_ (uncurry setUniVar) (M.toList bnds)
+
+getUniVars ::  (MonadState (a,UniVarBindings) m) => m UniVarBindings
+getUniVars = gets snd
 
 addConstraint ::  MonadState (Constraints,a) m => Constraint -> m ()
 addConstraint c = modify (first (c:))
