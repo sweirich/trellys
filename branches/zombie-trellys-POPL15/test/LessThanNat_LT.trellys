@@ -1,0 +1,69 @@
+-- Datatype based LessThanNat implementation.  See LessThanNat.trellys
+-- general discussion.
+module LessThanNat_LT where
+
+import Prelude
+import Arithmetic
+
+-- less-than relation
+data LT (m:Nat) (n:Nat) : Type 0 where
+  LZ of [m = Zero]  (n':Nat) [n = Succ n']
+
+  LS of (m':Nat) [m = Succ m']
+        (n':Nat) [n = Succ n']
+        (LT m' n')
+
+ltT : Nat -> Nat -> Type 0
+ltT = \m n . LT m n
+
+-- generic to specific
+gs : (m:Nat) -> (n:Nat) -> (ltT m n = LT m n)
+gs = \m n . join
+
+-- specific to generic
+sg : (m:Nat) -> (n:Nat) -> (LT m n = ltT m n)
+sg = \m n . join
+
+-- The first two lemmas give an abstract version of LT
+
+z_lt_Sn_LT : (n : Nat) -> LT Zero (Succ n)
+z_lt_Sn_LT = \n .  LZ [join] n [join]
+
+m_lt_n__Sm_lt_Sn_LT : (m : Nat) -> (n : Nat) -> LT m n -> LT (Succ m) (Succ n)
+m_lt_n__Sm_lt_Sn_LT = \m n m_lt_n . LS m [join] n [join] m_lt_n
+
+-- not (m < 0)
+--
+-- No number is less than zero
+lt_0__contra_LT : (m:Nat) -> (n:Nat) -> [n = Zero] -> LT m n -> (0 = 1)
+lt_0__contra_LT = \m n [n_eq] m_lt_n . case (m_lt_n : LT m Zero) [_] of
+  -- both cases have (Zero = Succ _)
+  LZ [_] _ [q]     -> contra q
+  LS _ [_] _ [q] _ -> contra q
+
+-- m + 1 < n + 1 -> m < n
+--
+-- This can be made generic given an LT fold, but that fold is
+-- relatively complex for Arithmetic.lt.  See this lemma in
+-- LessThan_lt for details.
+sm_lt_Sn__m_lt_n_LT : (m:Nat) -> (n:Nat) -> LT (Succ m) (Succ n) -> LT m n
+sm_lt_Sn__m_lt_n_LT = \m n sm_lt_Sn . case sm_lt_Sn [_] of
+  LZ [m_eq] _ [_] -> contra m_eq
+  -- The need for conversion here surprised me.
+  LS m' [m_eq] n' [n_eq] lt -> 
+    let [m_eq_m'] [_] = (sm_eq_Sn__m_eq_n m m' m_eq) in
+    let [n_eq_n'] [_] = (sm_eq_Sn__m_eq_n n n' n_eq) in
+      lt  
+
+-- m < n -> m < n+1
+--
+-- THIS IS NOT USED: but it's a little simpler than the generic
+-- version in LessThan so I'm keeping it around for comparison.
+m_lt_n__m_lt_Sn_LT : (m:Nat) -> (n:Nat) -> LT m n -> LT m (Succ n)
+ind m_lt_n__m_lt_Sn_LT m = \n lt_p . case lt_p [_] of
+  LZ [z_eq_m] _ [_]                       ->
+    LZ [z_eq_m] n [join]
+  LS m' [m_eq_Sm'] n' [n_eq_Sn'] m'_lt_n' ->
+    let m'_lt_Sn' [_] = m_lt_n__m_lt_Sn_LT m' [ord m_eq_Sm'] n' m'_lt_n' in
+    LS m' [m_eq_Sm'] n [join] m'_lt_Sn'
+

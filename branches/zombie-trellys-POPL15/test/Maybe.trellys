@@ -1,0 +1,44 @@
+module Maybe where
+
+import Prelude
+
+usually log
+
+data Maybe (a : Type) : Type 0 where
+  Just    of ( _ : a @ log)
+  Nothing 
+
+log maybe : [a : Type] => a -> (Maybe a @ log) -> a 
+maybe = \[a] default m . case m [_] of 
+   Just y -> y
+   Nothing -> default
+
+log maybe_app : [a : Type] => [b : Type 0] => 
+	 Maybe ((a @ log) -> b) -> (Maybe a @ log) -> Maybe b
+maybe_app = \ [a] [b] m n . 
+  case m [_] , n [_] of
+    Just f , Just x -> Just (f x) 
+    _ , _  -> Nothing 
+
+log maybe_map : [a b : Type] =>
+	 ((a @ log) -> b) -> (Maybe a @ log) -> Maybe b
+maybe_map = \ [a] [b] f n . 
+  case  n [_] of
+    Just x -> Just (f x) 
+    _      -> Nothing 
+
+
+log maybe_eq : [A : Type] => (A -> A -> Bool) ->
+    (Maybe A @ log) -> (Maybe A @ log) -> Bool
+maybe_eq = \ [A] eqA p1 p2 . 
+ case p1 [_], p2 [_] of 
+   Just x1 , Just x2 -> eqA x1 x2
+   Nothing , Nothing -> True
+   _ , _ -> False
+
+
+-- A variant where the argument is erased
+-- (so at runtime it is just a bool).
+data ErasedMaybe (a : Type) : Type 0 where
+  ErasedJust    of [ _ : a @ log ]
+  ErasedNothing 

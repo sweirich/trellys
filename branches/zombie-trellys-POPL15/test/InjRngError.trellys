@@ -1,0 +1,12 @@
+module InjRngError where
+
+import Prelude 
+
+usually log
+
+axiom A : Type
+axiom B  : A -> Type
+axiom B1 : A -> Type
+
+test : (x : A) -> (f : (x:A) -> B x) -> (p : ((x:A)->B x) = ((x:A)->B1 x)) -> (B x)
+test x f p = f x

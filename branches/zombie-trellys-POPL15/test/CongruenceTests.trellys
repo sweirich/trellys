@@ -1,0 +1,176 @@
+module CongruenceTests where
+
+{- This file tests that the automatic congruence closure really is a congruence for all
+   syntactic forms. This mainly stress-tests the 'decompose' and 'match' functions in 
+   EqualityReasoning.hs -}
+
+import Prelude
+
+axiom log atype : Type 0
+axiom a  : atype
+axiom a1 : atype
+
+axiom btype : Type 0
+axiom b  : btype
+axiom b1 : btype
+
+
+--Todo, look more carefully at the elaborated term, this doesn't seem to test the right thing?
+log decompose_cumul : (atype = btype) -> ((atype : Type 4) = (btype : Type 4))
+decompose_cumul = \ p . _
+
+data T (a : Type 0) : Type 0 where
+  mkT of
+
+log decompose_tcon : (atype = btype) -> (T atype = T btype)
+decompose_tcon = \ p . _
+
+log decompose_dcon_param : (atype = btype) -> ((mkT : T atype) = (mkT : T btype))
+decompose_dcon_param = \ p . _
+
+data T1 (a : Type 0) : Type 0 where
+  mkT1 of (x : a @log) [y : a @log]
+
+log decompose_dcon_arg : (a = a1) -> ((mkT1 a [a] : T1 atype) = (mkT1 a1 [a] : T1 atype))
+decompose_dcon_arg = \p . _
+
+log decompose_dcon_erased_arg : (mkT1 a [a] : T1 atype) = (mkT1 a [a1] : T1 atype)
+decompose_dcon_erased_arg = _
+
+--this one tests the use of "canonical" in decompose
+prog progZero : Unit -> Nat
+rec progZero _ = Zero
+log decompose_decon_th : Succ Zero = Succ (progZero U)
+decompose_decon_th = unfold (Succ (progZero U)) in _
+
+log decompose_arrow_rng : (atype = btype) -> ((Nat -> atype) = (Nat -> btype))
+decompose_arrow_rng = \p . _
+
+log decompose_arrow_dom : (atype = btype) -> (((atype@log) -> Nat) = ((btype@log) -> Nat))
+decompose_arrow_dom = \p. _
+
+axiom F  : Nat -> Type 0
+axiom F1 : Nat -> Type 0
+axiom n  : Nat
+axiom n1 : Nat
+
+log decompose_arrow_rng_binding : (F = F1) -> (((x:Nat) -> F x) = ((x:Nat) -> F1 x))
+decompose_arrow_rng_binding = \p. _
+
+log decompose_arrow_explicitness : (Nat -> atype) = (Nat => atype)
+decompose_arrow_explicitness = _
+
+log decompose_lam_body : (a=a1) -> ((\x.a) : Nat->atype) = ((\x.a1) : Nat->atype)
+decompose_lam_body = \p. _
+
+axiom f  : Nat -> atype
+axiom f1 : Nat -> atype
+
+log decompose_lam_body_binding : (f=f1) -> ((\x.f x) : Nat->atype) = ((\x.f1 x) : Nat->atype)
+decompose_lam_body_binding = \p. _
+
+log decompose_lam_typ  : (atype=btype) -> (a=b) -> ((\x.a) : Nat->atype) = ((\x.b) : Nat->btype)
+decompose_lam_typ = \p q. _
+
+log decompose_at  : (atype = btype) -> (atype@prog) = (btype@prog)
+decompose_at = \p . _
+
+log decompose_unbox : (x : (Nat@log)) -> (y : (Nat@log)) -> (x=y) -> f x = f y
+decompose_unbox = \ x y p . _
+
+-- Todo: boxLL boxLV boxP
+
+log decompose_abort : (abort : atype) = (abort : btype)
+decompose_abort = _
+
+log decompose_tyeq_lhs : (a = a1) -> ((a = b) = (a1 = b))
+decompose_tyeq_lhs = \p. _
+
+log decompose_tyeq_rhs : (a = a1) -> ((b = a) = (b = a1))
+decompose_tyeq_rhs = \p. _
+
+log decompose_join : (join : a = a) = (join : a1 = a1)
+decompose_join = _
+
+-- These two exercise the use of "canonical" in decompose.
+log decompose_join_stepcount : (join 1 1 : (a = a)) = (join 2 2 : (a = a))
+decompose_join_stepcount = _
+
+log decompose_join_strategy : (join : (a = a)) = (pjoin : (a = a))
+decompose_join_strategy = _
+
+log decompose_contra_proof : (p: 1=0) -> (q: 1=0) -> (contra p : atype) = (contra q : atype)
+decompose_contra_proof = \p q. _
+
+log decompose_contra_ty : (p: 1=0) -> (contra p : atype) = (contra p : btype)
+decompose_contra_ty = \p. _
+
+log decompose_smaller_lhs : (a=a1) -> (a<b) = (a1<b)
+decompose_smaller_lhs = \p. _
+
+log decompose_smaller_rhs : (a=a1) -> (b<a) = (b<a1)
+decompose_smaller_rhs = \p. _
+
+-- Todo: ordAx, ordTrans
+
+log decompose_ind_body : (a=a1) -> ((ind f x = a) : Nat->atype) = ((ind f x = a1) : Nat->atype)
+decompose_ind_body = \p. _
+
+log decompose_ind_body_binding : (f=f1) -> ((ind g x = f x) : Nat->atype) = ((ind g x = f1 x) : Nat->atype)
+decompose_ind_body_binding = \p. _
+
+log decompose_ind_typ : (atype=btype) -> (a=b) -> ((ind f x = a) : Nat->atype) = ((ind f x = b) : Nat->btype)
+decompose_ind_typ = \p q. _
+
+log decompose_rec_body : (a=a1) -> ((rec f x = a) : Nat->atype) = ((rec f x = a1) : Nat->atype)
+decompose_rec_body = \p. _
+
+log decompose_rec_body_binding : (f=f1) -> ((rec g x = f x) : Nat->atype) = ((rec g x = f1 x) : Nat->atype)
+decompose_rec_body_binding = \p. _
+
+log decompose_rec_typ : (atype=btype) -> (a=b) -> ((rec f x = a) : Nat->atype) = ((rec f x = b) : Nat->btype)
+decompose_rec_typ = \p q. _
+
+log decompose_let_val : (a=a1) -> ((let x=a in U) : Unit) = ((let x=a1 in U) : Unit)
+decompose_let_val = \p. _
+
+log decompose_let_body : (a=a1) -> (let x=U in a) = (let x=U in a1)
+decompose_let_body = \p. _
+
+log decompose_let_body_binding : (f=f1) -> (let x=0 in f x) = (let x=0 in f1 x)
+decompose_let_body_binding = \p. _
+
+log decompose_case_scrutinee : (n=n1) ->   (case n  [_] of { Zero -> U ; Succ n' -> U} : Unit)
+                                         = (case n1 [_] of { Zero -> U ; Succ n' -> U} : Unit)
+decompose_case_scrutinee = \p. _
+
+log decompose_case_branch : (a=a1) ->  (case n [_] of { Zero -> a  ; Succ n' -> a} : atype)
+                                     = (case n [_] of { Zero -> a1 ; Succ n' -> a} : atype)
+decompose_case_branch = \p. _
+
+log decompose_case_branch_binding : (f=f1) ->  (case n [_] of { Zero -> a ; Succ n' -> f n'} : atype)
+                                             = (case n [_] of { Zero -> a ; Succ n' -> f1 n'} : atype)
+decompose_case_branch_binding = \p. _
+
+
+----------------------------------------
+-- Test the assumption-up-to-CC code.
+
+
+-- this requires the check for new given equations in recordInhabitant.
+--  (note that p will be processed before q, because of the way contexts are stored).
+log assumCC1 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (q : Q@log) -> (p : Q = (m=n)) -> m=n
+assumCC1 n m Q q p = _
+
+
+  -- (The same thing, except p is symmetric)
+log assumCC2 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (q : Q@log) -> (p : (m=n) = Q) -> m=n
+assumCC2 n m Q q p = _
+
+-- This one requires the check for new given equations when merging two equivalence classes.
+log assumCC3 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : Q = (m=n)) -> (q : Q@log) -> m=n
+assumCC3 n m Q p q = _
+
+--  (the same thing, except p is symmetric)
+log assumCC4 : (n : Nat) -> (m : Nat) -> (Q : Type) -> (p : (m=n) = Q) -> (q : Q@log) -> m=n
+assumCC4 n m Q p q = _

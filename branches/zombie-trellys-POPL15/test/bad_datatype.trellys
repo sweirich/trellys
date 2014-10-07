@@ -1,0 +1,59 @@
+module Bad where
+
+import Prelude
+
+-- Examples supplied by Chris.
+
+data Corner1 : Type 0 where
+  C of (((let x [x_eq] = Corner1 in x)@log) -> Nat @log)
+
+-- Corner case 2 involves mutual recursion, which we don't support.
+
+data Corner3 (a : Type 0) : Type 0 where
+   C of (a = Corner3 Nat)
+
+ignoreType  : Type 0 ->  Type 0
+ignoreType = \ _ . Nat
+
+-- This one results in an error, and shouldn't.
+-- data Corner4 -> Type 0 where
+-- 		 C : (ignoreType Corner4 -> Nat) -> Corner4
+
+
+axiom log idType : Type 0 -> Type 0
+
+data Corner5 : Type 0 where
+  C of (idType Corner5 @log)
+
+-- Tim's Examples
+data False : Type 0 where
+     {}
+
+data Id (a : Type 0) : Type 0 where
+  IdC of (x : a @log)
+
+data BadId : Type 0 where
+  NBad of (f : Id ((b : BadId) -> False) @ log)
+
+data Bad : Type 0 where
+  CBad of (f:((b:Bad) -> False) @ log)
+
+not_bad : (b : Bad) -> False
+
+not_bad = \ b . case b [beq] of CBad f -> f b
+
+inconsistent : False
+
+inconsistent = not_bad (CBad not_bad)
+
+data Ok : Type 0 where
+  COk of (f: ((b:Ok@prog) -> False)@prog)
+
+prog still_ok : (b : Ok @prog) -> False
+
+still_ok = \ b . case b [beq] of COk f -> f b
+
+prog loop : False
+loop = still_ok (COk still_ok)
+
+

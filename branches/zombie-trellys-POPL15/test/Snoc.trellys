@@ -1,0 +1,42 @@
+-- The tricky Agda challenge, solved (quite straightforwardly) in Zombie with only pattern matching
+
+module Snoc where
+
+import List
+usually log
+
+snoc : [A : Type] => List A -> A -> List A
+snoc [A] xs x = (append xs (Cons x Nil))
+
+snoc_inv : [A : Type] -> (xs ys : List A) -> (z : A) 
+         -> (snoc xs z) = (snoc ys z) -> xs = ys
+ind snoc_inv [A] xs = \ ys z pf.
+     case xs [xeq], ys of 
+        Cons x xs' , Cons y ys' -> 
+           let _ = (smartjoin : (snoc xs z) = Cons x (snoc xs' z)) in
+           let _ = (smartjoin : (snoc ys z) = Cons y (snoc ys' z)) in
+           let [_] = snoc_inv [A] xs' [ord xeq] ys' z _ in
+             _
+        Nil , Nil -> 
+           unfold (snoc xs z) in 
+           unfold (snoc ys z) in _
+        Nil , Cons y Nil -> 
+           unfold (snoc xs z) in 
+           unfold (snoc ys z) in 
+             contra (_ : Nil = Cons z Nil) 
+        Nil , Cons y0 (Cons y1 ys') -> 
+           unfold (snoc xs z) in 
+           unfold (snoc ys z) in 
+           unfold (snoc ys' z) in
+           let w = snoc ys' z in -- needed because our Tcontra rule only applies to syntactic values.
+             contra (_ : Nil = Cons y1 w)                         
+        Cons x Nil, Nil -> 
+           unfold (snoc xs z) in 
+           unfold (snoc ys z) in 
+             contra (_ : Cons z Nil = Nil)
+        Cons x0 (Cons x1 xs'), Nil -> 
+           unfold (snoc xs z) in 
+           unfold (snoc ys z) in 
+           unfold (snoc xs' z) in
+           let w = snoc xs' z in
+             contra (_ : Cons x1 w = Nil)

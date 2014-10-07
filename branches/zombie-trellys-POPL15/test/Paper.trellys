@@ -1,0 +1,389 @@
+module Paper where
+
+-- wish list for the implementation
+{-
+
+	* join -> refl ?
+	* join/all unfold/all
+	* infix operators
+	* automatic unfolding for logical terms
+	* TUnboxP and TUnboxL
+   * automatic inference of [ord]
+-}
+
+---------------------------------------------------------
+-- Prelude for examples in the paper
+---------------------------------------------------------
+
+data Bool : Type where
+  True 
+  False
+
+data Nat : Type where
+  Zero 
+  Succ of (_ : Nat)
+
+
+plus : Nat -> Nat -> Nat
+ind plus n = \ m. 
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [ord cw] m)
+
+minus : Nat -> Nat -> Nat
+ind minus n = \m .
+   case n [cn] of
+     Zero -> Zero
+     Succ pred -> case m [cm] of
+                    Zero -> n
+                    Succ mpred -> minus pred [ord cn] mpred
+
+-- 'x > y'
+gt : Nat -> Nat -> Bool
+ind gt x = \y.
+   case x [xpf] of
+        Zero    -> False
+        Succ x' -> case y of
+                   Zero -> True
+                   Succ y' -> gt x' [ord xpf] y' 
+-- 'x < y'
+lt : Nat -> Nat -> Bool
+lt x y = gt y x
+
+-- 'x <= y'
+le : Nat -> Nat -> Bool
+ind le x = \ y.
+  case x [xpf], y of
+    Zero , _ -> True
+    Succ _ , Zero -> False
+    Succ x' , Succ y' -> le x' [ord xpf] y'
+
+eq : Nat -> Nat -> Bool
+ind eq x = \y . 
+  case x [xpf], y [_] of 
+     Zero, Zero -> True
+     Succ x', Succ y' -> eq x' [ord xpf] y'
+     _ , _ -> False
+
+log void : Type
+void = True = False
+
+---------------------------------------------------------
+
+-- Theorems about lt, eq, etc.
+
+log lt_neq : (x : Nat) -> (y : Nat) 
+              -> (lt x y = True) -> (eq x y = False)
+ind lt_neq x = \ y h.
+  case x [x_eq], y [y_eq] of 
+    _ , Zero -> 
+      unfold lt x Zero in contra (_ : True = False)
+    Zero , Succ _ ->  
+      unfold eq Zero y in _
+    Succ x' , Succ y' -> 
+      let _ = (pjoin : lt (Succ x') (Succ y') 
+                     = lt x' y') in
+      let _ = (pjoin : eq (Succ x') (Succ y') 
+                     = eq x' y') in
+      let _ = (lt_neq x' [ord x_eq] y' _) in
+        _
+
+log lt_neq_Zero : (x : Nat) -> (y : Nat) 
+                   -> (lt x y = True) -> (eq y Zero = False)
+ind lt_neq_Zero x = \y h.
+  case y of 
+    Zero -> 
+      unfold lt x Zero in contra (_ : True = False)
+    Succ y' ->  
+      unfold (eq  (Succ y') Zero) in _
+
+log le_refl : (x : Nat) -> le x x = True
+ind le_refl x = 
+  case x [x_eq] of
+    Zero -> let _ = (pjoin : le 0 0 = True) in _
+    Succ x' ->
+      let _  = (pjoin : le (Succ x') (Succ x') = le x' x') in 
+      let ih = (le_refl x' [ord x_eq] : le x' x' = True) in
+        _
+
+log le_Succ : (x : Nat) -> (y : Nat) 
+              -> le x y = True -> le x (Succ y) = True
+ind le_Succ x = \y h. 
+  case x [x_eq] , y of
+    Zero , y -> 
+      let _ = (join : le Zero y = True) in
+      let _ = (join : le Zero (Succ y) = True) in
+        _
+    Succ x , Zero -> 
+      let _ = (join : le (Succ x) Zero = False) in
+        contra (_ : True = False)
+    Succ x' , Succ y' ->
+      let _  = (pjoin : le (Succ x') (Succ y') = le x' y') in
+      let ih = (le_Succ x' [ord x_eq] y' h
+                  : le x' (Succ y') = True) in
+      let _  = (pjoin : le (Succ x') (Succ y) = le x' y) in
+        _
+
+log le_Succ_cong : (x : Nat) -> (y : Nat) 
+              -> le x y = True -> le (Succ x) (Succ y) = True
+le_Succ_cong x y h =
+  let _ = (pjoin : le (Succ x) (Succ y) = le x y) in
+    h
+
+log le_trans : (x : Nat) -> (y : Nat) -> (z : Nat)
+             -> (le x y = True) -> (le y z = True) -> (le x z = True)
+ind le_trans x =
+  case x [x_eq] of 
+    Zero -> \ y z h1 h2 . (join : le Zero z = True)
+    Succ x' -> \  y z h1 h2 .
+         case y , z of
+ 	   Zero , _       -> let _ = (join : le (Succ x') Zero = False) in
+	                       contra (_ : True = False)
+	   Succ y' , Zero -> let _ = (join : le (Succ y') Zero = False) in
+	                       contra (_ : True = False)
+	   Succ y' , Succ z' ->
+	     let _  = (pjoin : le (Succ x') (Succ y') = le x' y') in
+	     let _  = (pjoin : le (Succ y') (Succ z') = le y' z') in
+	     let ih = (le_trans x' [ord x_eq] y' z' h1 h2) in
+  	       le_Succ_cong x'  z' ih
+
+log succ_minus_one : (x:Nat) -> minus (Succ x) 1 = x
+ind succ_minus_one x =
+  case x [x_eq] of
+    Zero -> (join : minus 1 1 = 0)
+    Succ x' -> (pjoin : minus (Succ (Succ x')) 1 = (Succ x'))
+
+-- minus creates smaller terms (in the sense of the termination order).
+log minus_smaller : 
+  (x:Nat) -> (y:Nat) -> (eq x Zero = False) -> (eq y Zero = False)
+  -> (minus x y < x)
+ind minus_smaller x = \y h1 h2.
+  case x [x_eq] , y of
+    Zero , _ -> 
+       let _ = (join : eq Zero Zero = True) in contra (_ : True = False)
+    _ , Zero ->
+       let _ = (join : eq Zero Zero = True) in contra (_ : True = False) 
+    Succ Zero , Succ y' ->
+       let _ = (pjoin : minus 1 (Succ y') = Zero) in
+         ord (_ : x = Succ (minus x y))
+    Succ x' , Succ Zero ->
+       let _ = (succ_minus_one x' : minus (Succ x') 1 = x') in
+         ord (_ : x = Succ (minus x y))
+    Succ (Succ x') , Succ (Succ y') ->
+         let h1' = (join : eq (Succ x') Zero = False) in
+         let h2' = (join : eq (Succ y') Zero = False) in
+	 let _  = (pjoin : minus (Succ (Succ x')) (Succ (Succ y')) = minus (Succ x') (Succ y')) in
+           ordtrans (minus_smaller (Succ x') [ord (_ : x = (Succ (Succ x')))] (Succ y') h1' h2') 
+	   	    (ord (_ : x = (Succ (Succ x')))  : (Succ x') < x)       
+
+-- minus creates smaller terms (in the sense of le).
+log minus_le : 
+  (x:Nat) -> (y:Nat) -> (eq x Zero = False) -> (eq y Zero = False)
+  -> le (Succ (minus x y)) x = True
+ind minus_le x = \ y h1 h2 .
+  case x [x_eq] , y of
+    Zero , _ -> 
+       let _ = (join : eq Zero Zero = True) in contra (_ : True = False)
+    _ , Zero ->
+       let _ = (join : eq Zero Zero = True) in contra (_ : True = False) 
+    Succ Zero , Succ y' ->
+       let _ = (pjoin : minus 1 (Succ y') = Zero) in
+       let _ = (pjoin : le (Succ Zero) (Succ Zero) = True) in
+         _
+    Succ x' , Succ Zero ->
+       let _ = (succ_minus_one x' : minus (Succ x') 1 = x') in
+       let _ = (le_refl (Succ x') : le (Succ x') (Succ x') = True) in
+         _
+    Succ (Succ x') , Succ (Succ y') ->
+         let h1' = (join : eq (Succ x') Zero = False) in
+         let h2' = (join : eq (Succ y') Zero = False) in
+	 let _   = (pjoin : minus (Succ (Succ x')) (Succ (Succ y')) = minus (Succ x') (Succ y')) in
+	 let ih  = (minus_le (Succ x') [ord (_ : x = (Succ (Succ x')))] (Succ y') h1' h2') in	   
+           (le_Succ (Succ (minus (Succ x') (Succ y'))) (Succ x') ih)
+
+---------------------------------
+
+log not : Bool -> Bool
+not b = if b then False else True
+
+prog div : Nat -> Nat -> Nat
+rec div n = \m. if (lt n m) then 0
+    else (plus 1 (div (minus n m) m))
+
+prog gyre : Bool -> Bool
+rec  gyre x = gyre x
+
+prog is_brillig : Bool -> Bool
+is_brillig x = not (gyre x) 
+
+log div63 : div 6 3 = 2
+div63 = join   
+
+-- This one doesn't work (the TRUSTME hole can't be filled in).
+{-
+log div_le_bad : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
+ind div_le_bad n m hm = 
+  case (lt n m) [lt_pf] of
+    True -> 
+      unfold (div n m) in
+      unfold (le Zero n) in _
+    False ->
+      case n [n_eq] of
+        Zero -> case m of
+	          Zero ->
+		    let _ = (join : eq Zero Zero = True) in
+		      contra (_ : True = False)
+		  Succ m' -> let _ = (join : lt Zero (Succ m') = True) in
+		    contra (_ : True = False)
+        Succ n' ->
+	  let _  = (pjoin : (div n m) = (if (lt n m) 
+					   then 0
+					   else (plus 1 (div (minus n m) m)) : Nat)) in
+	  let _  = (pjoin : (if False 
+			      then 0
+			      else (plus 1 (div (minus n m) m)) : Nat) 
+			  = (plus 1 (div (minus n m) m))) in
+          let hn = (join : eq (Succ n') Zero = False) in
+	  let ih = (div_le_bad (minus n m) 
+	                   [minus_smaller n m hn hm]
+			   m
+			   hm
+                      : le (div (minus n m) m) (minus n m) = True) in
+          let _ = (minus_le n m hn hm
+	            : le (Succ (minus n m)) n = True) in
+-- At this point, we'd like to apply le_Succ_cong and le_trans. 
+-- But alas, we can't, because (div (minus n m) m) is programmatic.
+--          let _ = (le_Succ_cong (div (minus n m) m) (minus n m) ih) in
+	    TRUSTME
+-}
+
+-- But, undeterred we plow on!
+
+data Div_le_Answer (n : Nat) (m : Nat) : Type where
+  Answer of (k : Nat)
+            (pf1 : div n m = k)
+            (pf2 : le k n = True)
+
+log div_le_helper : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> Div_le_Answer n m
+ind div_le_helper n = \m hm .
+  case (lt n m) [lt_pf] of
+    True -> 
+      unfold (div n m) in
+      unfold (le Zero n) in 
+        Answer Zero _ _ 
+    False ->
+      case n [n_eq] of
+        Zero -> case m of
+	          Zero ->
+		    let _ = (join : eq Zero Zero = True) in
+		      contra (_ : True = False)
+		  Succ m' -> let _ = (join : lt Zero (Succ m') = True) in
+		    contra (_ : True = False)
+        Succ n' ->
+	  let _  = (pjoin : (div n m) = (if (lt n m) 
+					   then 0
+					   else (plus 1 (div (minus n m) m)) : Nat)) in
+	  let _  = (pjoin : (if False 
+			      then 0
+			      else (plus 1 (div (minus n m) m)) : Nat) 
+			  = (plus 1 (div (minus n m) m))) in
+          let hn = (join : eq (Succ n') Zero = False) in
+	  let ih = (div_le_helper (minus n m) 
+	                   [minus_smaller n m hn hm]
+			   m
+			   hm) in
+          case ih of
+	    Answer k ih1 ih2 ->
+              let _ = (minus_le n m hn hm
+   	                : le (Succ (minus n m)) n = True) in
+              let _ = (le_Succ_cong k (minus n m) ih2) in
+	      let _ = (join : plus 1 k = Succ k) in
+	        Answer (Succ k)
+		       _
+ 	               (le_trans (Succ k) (Succ (minus n m)) n _ _)
+   	        
+log div_le : (n:Nat) -> (m:Nat) -> (eq m Zero = False) -> (le (div n m) n = True)
+div_le n m hm =
+  case (div_le_helper n m hm) of
+    Answer _ _ pf -> pf 
+
+-----------------------------------
+
+-- this function diverges at 0, is an identity function everywhere else
+prog silly : Nat -> Nat
+rec silly x = case x of 
+  Zero -> silly x
+  Succ Zero -> x
+  Succ (Succ n) -> Succ (silly (Succ n))
+
+log lemma_silly : (n : Nat) -> (((n = 0) -> void) @ log) -> (silly n = n)
+ind lemma_silly n = \pf. 
+  case n [n_eq] of 
+    Zero -> unfold void in 
+            contra (pf n_eq : True = False)
+    Succ m -> case m [m_eq] of
+        Zero -> unfold (silly (Succ Zero)) in _
+        (Succ n') -> 
+		   let not_zero = ((\pf . contra (_ : (Succ n') = 0)) : (m = 0) -> void) in
+         let ih = lemma_silly m [ord n_eq] not_zero in
+			let _  = (join : (silly (Succ (Succ n'))) = Succ (silly (Succ n'))) in
+         _
+
+log diverge : (f : Nat -> Nat @ prog) -> (x : Nat) -> Type
+diverge f x = (y : Nat) -> (f x = y) -> void 
+
+-- can't prove this
+-- log silly_diverge : diverge silly 0
+
+-- also can't prove this one. Infinite loops give us no information.
+-- log lemma_silly' : (k : Nat) -> (n : Nat) -> (silly n = k) -> (k = n)
+
+data Maybe (a : Type) : Type where
+  Just    of ( _ : a @ prog)
+  Nothing 
+
+log md3 : Maybe (Nat -> Nat)
+md3 = Just (\x. div 3 x)
+
+log foo : Maybe (Nat -> Nat) -> (Nat -> Nat @ prog)
+foo x = case x of 
+  Just y -> y
+  Nothing -> \ x . x
+
+prog bar : Maybe (Nat -> Nat) -> Nat -> Maybe Nat
+bar x y = case x of 
+      Just f  -> Just (f y)
+      Nothing -> Nothing
+
+prog boom : Maybe Nat
+boom = bar md3 0
+
+
+prog maybe_map : [a : Type 0] => [b : Type 0] => 
+	 ((a @ log) -> b @ prog) -> (Maybe a @ prog) -> Maybe b
+maybe_map [a] [b] f n =
+  case  n [_] of
+    Just x -> Just (f x) 
+    _      -> Nothing 
+
+log lemma_maybe : (f : (Nat @ log) -> Nat @ prog) -> (x:Nat) -> maybe_map f (Just x) = (Just (f x) : Maybe Nat)
+lemma_maybe f x = unfold (maybe_map f (Just x)) in _
+
+
+log mplus : [A : Type] => Maybe A -> Maybe A -> Maybe A 
+mplus [A] x y = case x of 
+            Just z  -> x
+            Nothing -> y
+
+
+log idl : [A : Type] => (y:Maybe A) -> mplus Nothing y = y
+idl [A] y = join
+
+-- need to remove the parameter from Nothing. It's interfering with 
+-- the unfolding!
+
+log idr : [A : Type] => (x:Maybe A) -> mplus x Nothing = x 
+idr [A] x = case x of 
+        Just x1 -> unfold (mplus (Just x1) Nothing) in _
+        Nothing -> unfold (mplus (Nothing : Maybe A) Nothing) in _
+

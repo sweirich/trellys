@@ -1,0 +1,291 @@
+-- The Sat-solver example, extended to also track proofs of unsatisfiability.
+
+-- This file could also prove that partial_interp = Just True 
+-- implies that interp = True
+
+module Unsat where
+
+import Prelude
+import Logic
+import List
+import Product
+import Fin
+import Vectors
+import Maybe
+
+usually log
+
+-----------------------------------------------------
+-- Definitions
+-- These are used in the specification.
+-----------------------------------------------------
+
+
+-- Literals are natural numbers paired with booleans
+-- clauses are lists of literals
+-- formulae are lists of clauses
+
+log Formula : (n:Nat) -> Type 
+Formula = \n. List (List (Times (Fin n) Bool))
+
+-- an environment is a mapping from variables to truth values
+log Env : (n:Nat) -> Type 
+Env = \ n . Vector Bool n
+
+log interp_lit : [n:Nat] => Vector Bool n -> (Times (Fin n) Bool @ log) -> Bool
+interp_lit [n] env lit = case lit of 
+                           Prod fn b -> bool_eq b (lookup fn env)
+     
+log interp_clause : [n:Nat] => Vector Bool n -> (List (Times (Fin n) Bool) @log)-> Bool
+interp_clause [n] env clause = any (interp_lit env) clause
+
+log interp : [n:Nat] => Vector Bool n -> Formula n -> Bool
+interp = \ [n] env formula . 
+  unfold (Formula n) in
+  all (interp_clause env) formula
+
+-- convert a partial assignment to an environment
+-- (unassigned variables are just true)
+log extend : [n:Nat] => Vector (Maybe Bool) n -> Vector Bool n
+extend = \[n] xs . vmap (maybe True) [n] xs
+
+log Extends : (n:Nat) => Vector (Maybe Bool) n -> Vector Bool n -> Type
+Extends n psi phi = 
+  (i : Fin n) -> (b:Bool) 
+   -> (lookup i psi = (Just b)) 
+   -> (lookup i phi = b)
+
+data Sat (n:Nat) (formula : Formula n) : Type where
+  SAT    of (partial : Vector (Maybe Bool) n) 
+            [_ : interp (extend partial) formula = True ]
+
+data Unsat (n:Nat) (formula : Formula n) (phi : Vector (Maybe Bool) n) : Type where
+  UNSAT  of [_ : (phi' : Vector Bool n) -> Extends phi phi' -> (interp phi' formula = False )]
+
+---------------------------------------------------
+-- Implementation stuff
+---------------------------------------------------
+
+log partial_interp_lit : [n:Nat] => (partial : Vector (Maybe Bool) n) 
+              -> (lit : (Times (Fin n) Bool) @ log) -> Maybe Bool
+partial_interp_lit = \[n] p lit .
+   case lit of 
+     Prod fn b -> case (lookup fn p) of 
+         Just v  -> Just (bool_eq b v)
+         Nothing -> Nothing
+
+-- is this literal unassigned by the map?
+log unassigned_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
+       (c : (Times (Fin n) Bool) @ log) -> Bool
+unassigned_lit = \[n] p lit . 
+  (maybe_eq bool_eq) (partial_interp_lit p lit) Nothing
+
+-- is this literal known to be true?
+log sat_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
+       (c : (Times (Fin n) Bool) @ log) -> Bool
+sat_lit = \[n] p lit . 
+  (maybe_eq bool_eq) (partial_interp_lit p lit) (Just True)
+
+-- is this literal known to be false?
+log unsat_lit : [n : Nat] => (p : Vector (Maybe Bool) n)
+                -> (lit : (Times (Fin n) Bool) @ log) 
+                -> ErasedMaybe ((phi : Vector Bool n)
+                                  -> Extends p phi
+                                  -> interp_lit phi lit = False)
+unsat_lit [n] p lit = 
+  case lit of
+    (Prod x b) ->
+      case (lookup x p) of
+        Nothing -> ErasedNothing
+        Just b' -> 
+          case (bool_eq b b') of
+            True -> ErasedNothing
+            False -> 
+              ErasedJust [\ phi hExtends .
+                            unfold (Extends p phi) in
+                            let _ = (hExtends x b' _) in
+                              smartjoin]
+
+-- a clause is known to be false if all literals are assigned false.
+prog unsat_clause : [n:Nat] => (p : Vector (Maybe Bool) n) 
+                      -> (clause : List (Times (Fin n) Bool) @ log) 
+                      -> ErasedMaybe ((phi : Vector Bool n)
+                                       -> Extends p phi
+                                       -> interp_clause phi clause = False)
+unsat_clause [n] p = rec loop c = 
+  case c of
+    Nil -> ErasedJust  [\phi hExtends . smartjoin]
+    Cons l ls ->
+      case (unsat_lit p l), (loop ls) of
+        ErasedJust [h1], ErasedJust [h2] ->
+           ErasedJust [\ phi hExtends .
+                        let _ = (join : interp_clause phi ls = any (interp_lit phi) ls) in
+                        let _ = (join : interp_clause phi (Cons l ls) = any (interp_lit phi) (Cons l ls)) in
+                        any_Cons (interp_lit phi) l ls (h1 phi hExtends) (h2 phi hExtends)]
+        ErasedNothing , _ -> ErasedNothing
+        _ , ErasedNothing -> ErasedNothing
+
+-- Precondition: f is known to not be satified already.
+-- Returns either an unassigned variable or a proof that f is unsatisfiable.
+prog partial_interp_unsat : [n:Nat] => (p : Vector (Maybe Bool) n) 
+                      -> (f : Formula n) 
+                      -> Or (Unsat n f p)
+                            (Fin n)
+partial_interp_unsat [n] p = 
+  unfold (Formula n) in
+  rec loop f = 
+    case f [f_eq] of 
+      Nil -> abort  --By the precondition, this should not happen.
+      (Cons c cs) ->           
+        case (find (unassigned_lit p) c) of
+          Just i -> InR (pi1 i)
+          Nothing -> case (unsat_clause p c) of
+            ErasedJust [h] -> InL (UNSAT [\phi hExtends. 
+                                            let _ = (pjoin : (interp phi f) = (all (any (interp_lit phi)) f)) in
+                                            let _ = (join  : (interp_clause phi c) = (any (interp_lit phi) c)) in
+                                              all_Cons_head_False (any (interp_lit phi)) c cs (h phi hExtends)])
+            ErasedNothing -> case (loop cs) of
+                               InR x -> InR x
+                               InL (UNSAT [h])
+                                   -> InL (UNSAT
+                                               [\phi hExtends. 
+                                                 let _ = (pjoin : (interp phi (Cons c cs)) 
+                                                                = (all (any (interp_lit phi)) (Cons c cs))) in
+                                                 let _ = (pjoin : (interp phi cs)
+                                                                = (all (any (interp_lit phi)) cs)) in
+                                                   all_Cons_tail_False (any (interp_lit phi)) c cs (h phi hExtends)])
+
+
+-- a formula is known to be true if all clauses are known to be true
+-- and known to be false if any clauses are known to be false.
+--
+-- If the truth value depends on some unassigned variable we return
+-- that variable.  In order for the algorithm to terminate, the
+-- variable we return has better really be unassigned. But that's not
+-- required for the soundness proof, so we don't state it in the type.
+prog partial_interp : [n:Nat] 
+              => (partial : Vector (Maybe Bool) n) 
+              -> (f : Formula n)
+              -> Or (Sat n f) 
+                    (Or (Unsat n f partial)
+                        (Fin n))
+partial_interp [n] partial f =
+  unfold (Formula n) in
+    case (interp (extend partial) f) of
+      True -> InL (SAT partial [_])
+      False -> let prog retval = partial_interp_unsat partial f  --there is some awkwardness with @-types here.
+                in InR retval
+
+-- unit propagation
+-- Find a clause with only one unassigned literal and no other true
+-- literals. That one must be true.
+log unit_lit_clause : [n : Nat] => (p : Vector (Maybe Bool) n) ->
+       (c : List (Times (Fin n) Bool) @ log) -> List (Times (Fin n) Bool)
+unit_lit_clause = \ [n] p c . 
+   let unassigned_lits = filter (unassigned_lit p) c in
+	let sat_lits = filter (sat_lit p) c in
+	if (and (nat_eq (length unassigned_lits) 1)
+	          (nat_eq (length sat_lits)       0)) 
+	  then c 
+	  else Nil
+
+log unit_lits : [n : Nat] => (p : Vector (Maybe Bool) n) ->
+       (formula : Formula n) -> List (Times (Fin n) Bool)
+unit_lits = \ [n] p f . 
+   unfold (Formula n) in
+	concatMap (unit_lit_clause p) (f :  List (List (Times (Fin n) Bool)))
+
+-- future work: pure literal assignment
+-- If a propositional variable occurs with only one polarity in the
+-- formula, it is called pure. Pure literals can always be assigned in
+-- a way that makes all clauses containing them true. Thus, these
+-- clauses do not constrain the search anymore and can be deleted. 
+
+-- update the partial map validating the literals in the list
+log set_lits : [n:Nat] => List (Times (Fin n) Bool) -> 
+                  Vector (Maybe Bool) n -> Vector (Maybe Bool) n
+set_lits = \[n] . ind set_lits l = \v.
+  case l [l_eq] of 
+    Nil -> v
+    Cons x xs -> 
+	    let v' = set_lits xs [ord l_eq] v in
+		 set (pi1 x) (Just (pi2 x) : Maybe Bool) v'
+
+
+-- find the index of the first unassigned variable in the partial map
+log next_var : [n:Nat] -> Vector (Maybe Bool) n -> Maybe (Fin n)    
+ind next_var [n] = \ v . 
+  case v of 
+    VNil [pf]  -> Nothing
+    VCons [m][m_eq] x xs -> case x of 
+       Just b  -> maybe_map (fin_succ [m][m_eq]) (next_var [m][ord m_eq] xs)
+       Nothing -> Just (FZ [m][m_eq])
+
+log extends_same :  [n:Nat] => (i : Fin n)
+                   -> (psi : Vector (Maybe Bool) n) 
+                   -> (phi : Vector Bool n)
+                   -> Extends psi phi
+                   -> Extends (set i (Just (lookup i phi) : Maybe Bool) psi) phi
+extends_same [n] i psi phi extends =
+  let psi' = (set i (Just (lookup i phi)) psi) in
+  unfold (Extends psi phi) in 
+  unfold (Extends psi' phi) in
+    (\ j b h . 
+       case (fin_eq [n] j i) [_] of
+         True  -> let _ = (fin_eq_True [n] j i _) in
+                  let b' = lookup j phi in
+                  let _ = (lookup_set i (Just (lookup i phi)) psi 
+                            : lookup i psi' = Just b') in 
+                    _
+         False -> let _ = (lookup_set2 j i (Just (lookup i phi)) psi _) in
+                  let _ = extends j b _ in
+                    _ )
+--                    ^^^^
+-- Here is a case where the expressive lam-rule is useful. Without it we would
+-- have to explicitly annotate that the \ has type
+--  : (j:Fin n) -> (b:Bool) -> (lookup j psi' = (Just b))  -> (lookup j phi = b))
+
+
+-- The key lemma for verified unsat:
+log unsat_branch : [n:Nat] => (i : Fin n) -> (f : Formula n)
+                   -> (phi : Vector (Maybe Bool) n) 
+                   -> Unsat n f (set i (Just True) phi) 
+                   -> Unsat n f (set i (Just False) phi)
+                   -> Unsat n f phi
+unsat_branch [n] i f phi unsat1 unsat2 = 
+  case unsat1 [_], unsat2 [_] of
+    UNSAT [h1] , UNSAT [h2] ->
+      UNSAT [ \ psi extends .
+                 case (lookup i psi) [_] of
+                   True  -> h1 psi (extends_same i phi psi extends)
+                   False -> h2 psi (extends_same i phi psi extends) ]
+
+-- the simplest version goes through the literals one by one, trying assignments
+-- until it finds a satisfying state for the given formula
+-- prunes the search space when it is discovered to be UNSAT
+-- looks for unit literals to propagate
+
+prog dpll : [n:Nat]
+             => (formula : Formula n) 
+             -> (partial : Vector (Maybe Bool) n)
+             -> (Or (Sat n formula) (Unsat n formula partial))
+rec dpll [n] = \ formula partial .
+ case (partial_interp partial formula) [s_eq] of 
+   InL sat  -> InL sat
+   InR (InL unsat) -> InR unsat
+   InR (InR i) -> 
+          case (dpll formula
+                  (set i (Just True) partial)) [_] of 
+            InL sat -> InL sat
+            InR unsat1   ->
+               case (dpll formula 
+                      (set i (Just False) partial)) [_] of
+                 InL sat -> InL sat
+                 InR unsat2 -> InR (unsat_branch i formula partial unsat1 unsat2)
+
+-- The termination of this algorithm decreases with the number of unassigned 
+-- literals in the partial map. Perhaps not TOO difficult to show...
+
+-- Would also be good to get some experience using HOFs in the programmatic 
+-- fragment.
+

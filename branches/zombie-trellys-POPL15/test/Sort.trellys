@@ -1,0 +1,480 @@
+module Sort where
+
+import Prelude
+
+usually log
+
+-----------------------
+-- Some preliminaries
+data Prod (A:Type) (B:Type) : Type where
+  Pair of (x:A) (y:B)
+
+data Exists (a : Type 0) (p : ((x:a@log) -> Type 0)@log) : Type 0 where
+  Ex of (x : a@log) (pf : p x @log)
+
+
+data List (A:Type) : Type where
+  Nil
+  Cons of (x:A) (xs:List A)
+
+log length : (A : Type) => List A -> Nat
+ind length A xs =
+  case xs [xs_eq] of
+    Nil -> Zero
+    Cons _ xs' -> Succ (length xs' [ord xs_eq])
+
+log length_0 : (A : Type) => (xs : List A) -> [length xs = 0] -> xs = (Nil : List A)
+length_0 A xs [xs_len_eq] =
+  case xs [xs_eq] of
+    Nil -> _
+    Cons x xs' -> 
+        let [_] = (join : length (Cons x xs') = Succ (length xs')) in
+        let lxs' = length xs' in
+        contra (_ : Succ lxs' = Zero)
+
+log length_1 : (A : Type) => (xs : List A) -> [length xs = 1]
+            -> Exists A (\a . xs = Cons a Nil)
+length_1 A xs [xs_len_eq] =
+  case xs [xs_eq] of
+    Nil -> 
+      let [_] = (join : length Nil = 0) in
+      contra (_ : Zero = 1)
+    Cons a xs' ->
+      case xs' [xs'_eq] of
+        Nil -> 
+          unfold (((\a . xs = Cons a Nil) : A -> Type) a) in
+          Ex a _
+        Cons a' xs'' ->
+          let [_] = (join : length (Cons a (Cons a' xs''))
+                          = Succ (Succ (length xs''))) in
+          let [_] = (_ : pred (Succ (Succ (length xs''))) = pred 1) in
+          unfold (pred (Succ (Succ (length xs'')))) in
+          unfold (pred 1) in
+          let lxs'' = length xs'' in
+          contra (_ : Succ lxs'' = 0)
+
+data LT (n : Nat) (m : Nat) : Type 0 where
+  LSucc of (m = Succ n)
+  LStep of (m':Nat) (m = Succ m') (LT n m')
+
+log LT_SS : (n m : Nat) -> LT n m -> LT (Succ n) (Succ m)
+ind LT_SS n m lt_n_m =
+  case lt_n_m [lt_n_m_eq] of
+    LSucc m_eq_Sn -> LSucc _
+    LStep m' m_eq_Sm' lt_n_m' ->
+      let lt_Sn_Sm' = LT_SS _ _ lt_n_m' [ord lt_n_m_eq]  in
+      LStep _ _ lt_Sn_Sm'
+
+log LT_1_SSm : (m : Nat) -> LT 1 (Succ (Succ m))
+ind LT_1_SSm m =
+  case m [m_eq] of
+    Zero -> 
+      LSucc (join : Succ (Succ Zero) = Succ (Succ Zero))
+    Succ m' -> 
+      let ih = (LT_1_SSm m' [ord m_eq] : LT 1 (Succ (Succ m'))) in
+      LStep (Succ (Succ m')) _ ih
+
+log lt_1_0_contra : (A : Type) -> LT (Succ Zero) Zero -> A
+lt_1_0_contra A lt10 =
+  case lt10 of
+    LSucc eq02 -> contra eq02
+    LStep _ eq0Sm' _ -> contra eq0Sm'
+
+log m_eq_Sm__contra : (A : Type) => (m : Nat) -> m = Succ m -> A
+ind m_eq_Sm__contra A m = \ m_eq_Sm .
+  case m [m_eq] of
+    Zero -> 
+      contra (_ : Zero = Succ Zero)
+    Succ m' ->
+      let [_] = (_ : pred (Succ m') = pred (Succ (Succ m'))) in
+      unfold (pred (Succ m')) in
+      unfold (pred (Succ (Succ m'))) in
+      m_eq_Sm__contra m' [ord m_eq] _
+
+log lt_1_1_contra : (A : Type) -> LT 1 1 -> A
+lt_1_1_contra A lt11 =
+  case lt11 [lt11_eq] of
+    LSucc eq_1_S1 -> m_eq_Sm__contra _ eq_1_S1
+    LStep m' eq_1_Sm' lt_1_m' ->
+      let [_] = (_ : pred (Succ Zero) = pred (Succ m')) in
+      unfold (pred (Succ Zero)) in
+      unfold (pred (Succ m')) in
+      lt_1_0_contra A lt_1_m'
+
+
+log m_lt_n__n_eq_SPn : (m n : Nat) -> LT m n -> n = Succ (pred n)
+m_lt_n__n_eq_SPn m n lt_m_n =
+  case n [n_eq] of
+    Zero ->
+      case lt_m_n of
+        LSucc eq_0_Sn -> contra (eq_0_Sn : 0 = Succ m)
+        LStep n' eq_n_Sn' lt_m_n' -> contra (eq_n_Sn' : 0 = Succ n')
+    Succ n' -> (join : Succ n' = Succ (pred (Succ n')))
+
+log lt_trans_pred : (n m k : Nat) -> LT n m -> LT m k -> LT n (pred k)
+ind lt_trans_pred n m k lt_n_m lt_m_k =
+  case lt_m_k [lt_m_k_eq] of
+    LSucc eq_k_Sm ->
+      let _ = (join : pred (Succ m) = m) in
+      lt_n_m
+    LStep k' eq_k_Sk' lt_m_k' ->
+      let ih = (lt_trans_pred n m k' lt_n_m lt_m_k' [ord lt_m_k_eq]
+                : LT n (pred k')) in
+      let _ = (join : pred (Succ k') = k') in
+      LStep (pred k') (m_lt_n__n_eq_SPn _ _ lt_m_k') ih
+
+cov : (p:Nat -> Type 0)
+   -> ((n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n)
+   -> (n:Nat) -> p n
+cov p f = 
+  let g [_] = 
+   ((ind g [i] = \n [n_lt_i] m [m_lt_n] .
+       let [i_eq] [_]    = m_lt_n__n_eq_SPn n i n_lt_i in       -- i = S (pred i)
+       let [m_lt_i'] [_] = lt_trans_pred m n i m_lt_n n_lt_i in -- m < pred i
+       f m (g [pred i] [ord i_eq] m [m_lt_i'])
+             ): [i:Nat] -> (n:Nat) -> [LT n i] -> ((m:Nat) -> [LT m n] -> p m))
+  in \n . f n (g [Succ n] n [LSucc _])
+
+------------------------
+------------------------
+-- Merge sort proper
+
+prog split : (A : Type) -> List A -> Prod (List A) (List A)
+rec  split A = \xs. 
+  case xs of
+    Nil -> Pair Nil Nil
+    Cons x1 Nil -> Pair (Cons x1 Nil) Nil
+    Cons x1 (Cons x2 xs') ->
+      case (split A xs') of
+        Pair xs1 xs2 -> Pair (Cons x1 xs1) (Cons x2 xs2)
+
+prog merge : (A:Type) -> (lt : A -> A -> Bool) -> List A -> List A -> List A
+rec merge _ = \ lt xs ys .
+   case xs , ys of
+     Nil , _ -> ys
+     _ , Nil -> xs
+     Cons x xs' , Cons y ys' ->
+       if (lt x y) then Cons x (merge _ lt xs' ys) 
+                   else Cons y (merge _ lt xs ys')
+
+prog sort : (A : Type) => (A -> A -> Bool) -> List A -> List A
+rec sort _ = \lt xs .
+  case xs of
+    Nil -> Nil
+    Cons x Nil -> Cons x Nil
+    _ -> 
+      case (split _ xs) of
+        Pair xs1 xs2 -> merge _ lt (sort lt xs1) (sort lt xs2)
+
+
+
+log merge_terminates :  (A:Type) => (lt : A -> A -> Bool)
+                     -> (xs1 xs2 : List A)
+                     -> Exists (List A) (\ys . ys = merge _ lt xs1 xs2)
+ind merge_terminates A lt xs1 =
+  ind mt' xs2 = 
+    case xs1 [xs1_eq], xs2 [xs2_eq] of
+      Nil , Nil ->
+        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+                xs2) in
+        let [_] = (join : Nil = merge _ lt Nil Nil) in
+        Ex Nil _
+      Nil , Cons x2 xs2' ->
+        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+                xs2) in
+        let [_] = (join : Cons x2 xs2' = merge _ lt Nil (Cons x2 xs2')) in
+        Ex xs2 _
+      Cons x1 xs1' , Nil ->
+        unfold (((\ys . ys = merge _ lt xs1 xs2) : List A -> Type)
+                xs1) in
+        let [_] = (join : Cons x1 xs1' = merge _ lt (Cons x1 xs1') Nil) in
+        Ex xs1 _
+      Cons x1 xs1' , Cons x2 xs2' ->
+        case (lt x1 x2) [lt_eq] of
+          True ->
+            let ih = merge_terminates lt xs1' [ord xs1_eq] xs2 in
+            case ih of
+              Ex ys ys_eq ->
+                let [_] = (join : ((if True then Cons x1 (merge _ lt xs1' xs2) 
+                                            else Cons x2 (merge _ lt xs1 xs2'))
+                                : List A)
+                                = Cons x1 (merge _ lt xs1' xs2)) in
+                let [_] = (pjoin : merge _ lt (Cons x1 xs1') (Cons x2 xs2') = 
+                                   ((if (lt x1 x2) then (Cons x1 (merge _ lt xs1' (Cons x2 xs2')))
+                                                   else (Cons x2 (merge _ lt (Cons x1 xs1') xs2')))
+                                    : List A)) in
+                let [_] = (_ : merge _ lt (Cons x1 xs1') (Cons x2 xs2')
+                             = Cons x1 (merge _ lt xs1' xs2)) in
+                unfold (((\ys. ys = merge A lt xs1' xs2) : List A -> Type) ys) in 
+                unfold (((\ys. ys = merge A lt xs1 xs2) : List A -> Type) (Cons x1 ys)) in 
+                Ex (Cons x1 ys) _
+          False ->
+            let ih = mt' xs2' [ord xs2_eq] in
+            case ih of
+              Ex ys ys_eq ->
+                let [_] = (join : ((if False then Cons x1 (merge _ lt xs1' xs2) 
+                                             else Cons x2 (merge _ lt xs1 xs2'))
+                                : List A)
+                                = Cons x2 (merge _ lt xs1 xs2')) in
+                let [_] = (pjoin : merge _ lt (Cons x1 xs1') (Cons x2 xs2') =
+                                   ((if (lt x1 x2) then (Cons x1 (merge _ lt xs1' (Cons x2 xs2')))
+                                                   else (Cons x2 (merge _ lt (Cons x1 xs1') xs2')))
+                                    : List A)) in
+                let [_] = (_ : merge _ lt (Cons x1 xs1') (Cons x2 xs2')
+                             = Cons x2 (merge _ lt xs1 xs2')) in
+                unfold (((\ys. ys = merge A lt xs1 xs2') : List A -> Type) ys) in 
+                unfold (((\ys. ys = merge A lt xs1 xs2) : List A -> Type) (Cons x2 ys)) in 
+                Ex (Cons x2 ys) _
+
+
+log split_terminates : (A : Type) => (xs : List A)
+      -> Exists (List A) (\ys1.
+           Exists (List A) (\ys2.
+             Prod (split A xs = Pair ys1 ys2)
+                  (LT 1 (length xs)
+                     -> Prod (LT (length ys1) (length xs))
+                             (LT (length ys2) (length xs)))))
+ind split_terminates A xs =
+  case xs [xs_eq] of
+    Nil ->
+      unfold (((\ys1.
+           Exists (List A) (\ys2.
+             Prod (split A xs = Pair ys1 ys2)
+                  (LT 1 (length xs)
+                     -> Prod (LT (length ys1) (length xs))
+                             (LT (length ys2) (length xs))))) : (List A @log) -> Type)
+           (Nil : List A)) in
+      let [_] = (join :
+         (((\ys2.
+               Prod (split A xs = Pair Nil ys2)
+                  (LT 1 (length xs)
+                     -> Prod (LT (length Nil) (length xs))
+                             (LT (length ys2) (length xs)))) : (List A @log) -> Type)
+           (Nil : List A))
+         =  Prod (split A xs = Pair Nil Nil)
+                 (LT 1 (length xs)
+                     -> Prod (LT (length Nil) (length xs))
+                             (LT (length Nil) (length xs)))) in
+      Ex Nil
+       ((Ex Nil 
+          ((Pair (join : split A Nil = Pair Nil Nil)
+                 (\lt_1_0 . let _ = (join : length Nil = Zero) in
+                            lt_1_0_contra _ lt_1_0))
+           : Prod (split A xs = (Pair Nil Nil : Prod (List A) (List A)))
+                  (LT 1 (length xs)
+                     -> Prod (LT (length Nil) (length xs))
+                             (LT (length (Nil : List A)) (length xs)))))
+        : Exists (List A) ((\ys2.
+            Prod (split A xs = (Pair Nil ys2 : Prod (List A) (List A)))
+                 (LT 1 (length xs)
+                    -> Prod (LT (length Nil) (length xs))
+                            (LT (length ys2) (length xs)))) : (List A @log) -> Type))
+    Cons a xs' ->
+      case xs' [xs'_eq] of
+        Nil ->
+          unfold (((\ys1.
+               Exists (List A) (\ys2.
+                 Prod (split A xs = Pair ys1 ys2)
+                      (LT 1 (length xs)
+                         -> Prod (LT (length ys1) (length xs))
+                                 (LT (length ys2) (length xs))))) : (List A @log) -> Type)
+               (Cons a Nil : List A)) in
+          let [_] = (join :
+             (((\ys2.
+                   Prod (split A xs = Pair (Cons a Nil) ys2)
+                      (LT 1 (length xs)
+                         -> Prod (LT (length (Cons a Nil)) (length xs))
+                                 (LT (length ys2) (length xs)))) : (List A @log) -> Type)
+               (Nil : List A))
+             =  Prod (split A xs = Pair (Cons a Nil) Nil)
+                     (LT 1 (length xs)
+                         -> Prod (LT (length (Cons a Nil)) (length xs))
+                                 (LT (length Nil) (length xs)))) in
+          Ex (Cons a Nil)
+           ((Ex Nil 
+              ((Pair (join : split A (Cons a Nil) = Pair (Cons a Nil) Nil)
+                     (\lt_1_1 . let _ = (join : length (Cons a Nil) = 1) in
+                                lt_1_1_contra _ lt_1_1))
+               : Prod (split A xs = (Pair (Cons a Nil) Nil : Prod (List A) (List A)))
+                      (LT 1 (length xs)
+                         -> Prod (LT (length (Cons a Nil)) (length xs))
+                                 (LT (length (Nil : List A)) (length xs)))))
+            : Exists (List A) ((\ys2.
+                Prod (split A xs = (Pair (Cons a Nil) ys2 : Prod (List A) (List A)))
+                     (LT 1 (length xs)
+                        -> Prod (LT (length (Cons a Nil)) (length xs))
+                                (LT (length ys2) (length xs)))) : (List A @log) -> Type))
+        Cons a' xs'' -> 
+          let ih = split_terminates xs'' [ordtrans (ord xs'_eq : xs'' < xs') 
+                                                   (ord xs_eq : xs' < xs)] in
+          case ih of
+            Ex ys1 ih' ->
+              unfold (((\ys1.
+                Exists (List A) (\ys2.
+                  Prod (split A xs'' = Pair ys1 ys2)
+                       (LT 1 (length xs'')
+                          -> Prod (LT (length ys1) (length xs''))
+                                  (LT (length ys2) (length xs''))))) : List A -> Type) ys1) in
+              case (ih' :
+                Exists (List A) (\ys2.
+                  Prod (split A xs'' = Pair ys1 ys2)
+                       (LT 1 (length xs'')
+                          -> Prod (LT (length ys1) (length xs''))
+                                  (LT (length ys2) (length xs''))))) of
+                Ex ys2 ih'' ->
+                  unfold (((\ys2.
+                     Prod (split A xs'' = Pair ys1 ys2)
+                       (LT 1 (length xs'')
+                          -> Prod (LT (length ys1) (length xs''))
+                                  (LT (length ys2) (length xs'')))) : List A -> Type) ys2) in
+                  case (ih'' : Prod (split A xs'' = Pair ys1 ys2)
+                                 (LT 1 (length xs'')
+                                    -> Prod (LT (length ys1) (length xs''))
+                                            (LT (length ys2) (length xs'')))) of
+                    Pair split_eq flen ->
+                      unfold (((\ys1.
+                        Exists (List A) (\ys2.
+                          Prod (split A xs = Pair ys1 ys2)
+                               (LT 1 (length xs)
+                                  -> Prod (LT (length ys1) (length xs))
+                                          (LT (length ys2) (length xs))))) : List A -> Type) (Cons a ys1)) in
+                      unfold (((\ys2.
+                          Prod (split A xs = Pair (Cons a ys1) ys2)
+                               (LT 1 (length xs)
+                                  -> Prod (LT (length (Cons a ys1)) (length xs))
+                                          (LT (length ys2) (length xs)))) : List A -> Type) (Cons a' ys2)) in
+                      unfold (split A (Cons (a:A) (Cons a' xs''))) in
+                      Ex (Cons a ys1) 
+                        ((Ex (Cons a' ys2)
+                           ((Pair _ (\lt_2__len_xs.
+                               case (length xs'') [lxs''_eq] of
+                                 Zero -> 
+                                   let _ = (length_0 xs'' [lxs''_eq] : xs'' = (Nil : List A)) in
+                                   let _ = (join : split A (Cons a (Cons a' Nil)) 
+                                                 = Pair (Cons a Nil) (Cons a' Nil)) in
+                                   let _ = (join : length (Cons a Nil) = 1) in
+                                   let _ = (join : length (Cons a' Nil) = 1) in
+                                   let _ = (join : length (Cons a (Cons a' Nil)) = 2) in
+                                   Pair (LSucc _) (LSucc _)
+                                 Succ n ->
+                                   case n [lxs''_tail_eq] of
+                                     Zero ->
+                                       let xs''_eq_ex= (length_1 xs'' [lxs''_eq]
+                                                : Exists A (\a . xs'' = Cons a Nil)) in 
+                                       case xs''_eq_ex of
+                                         Ex a'' xs''_eq ->
+                                           let _ = (join : (((\a.xs'' = Cons a Nil) : A -> Type) a'')
+                                                         = (xs'' = Cons a'' Nil)) in
+                                           let _ = (join : length (Cons a (Cons a' (Cons a'' Nil)))
+                                                         = 3) in
+                                           let _ = (join : length (Cons a (Cons a'' Nil)) = 2) in
+                                           let _ = (join : length (Cons a' Nil) = 1) in
+                                           let _ = (join : split A (Cons a (Cons a' (Cons a'' Nil)))
+                                                         = Pair (Cons a (Cons a'' Nil)) (Cons a' Nil)) in
+                                           Pair (LSucc _) (LStep _ _ (LSucc _))
+                                     Succ n' ->
+                                       let lt_1_lxs'' = (LT_1_SSm n' : LT 1 (length xs'')) in
+                                       case (flen lt_1_lxs'') of
+                                         Pair lt__lys1_lxs'' lt__lys2_lxs'' ->
+                                           let _ = (join : length (Cons a ys1) = Succ (length ys1)) in
+                                           let _ = (join : length (Cons a' ys2) = Succ (length ys2)) in
+                                           let _ = (join : length (Cons a (Cons a' xs''))
+                                                         = Succ (Succ (length xs''))) in
+                                           let _ = (join  : length (Cons a' xs'')
+                                                          = Succ (length xs'')) in
+                                           Pair (LStep (length (Cons a' xs'')) _
+                                                    (LT_SS _ _ lt__lys1_lxs''))
+                                                (LStep (length (Cons a' xs'')) _
+                                                    (LT_SS _ _ lt__lys2_lxs''))
+                             ))
+                            : Prod (split A xs = (Pair (Cons a ys1) (Cons a' ys2) : Prod (List A) (List A)))
+                                   (LT 1 (length xs)
+                                      -> Prod (LT (length (Cons a ys1)) (length xs))
+                                              (LT (length (Cons a' ys2)) (length xs)))))
+                           : Exists (List A) ((\ys2.
+                               Prod (split A xs = (Pair (Cons a ys1) ys2 : Prod (List A) (List A)))
+                                   (LT 1 (length xs)
+                                      -> Prod (LT (length (Cons a ys1)) (length xs))
+                                              (LT (length ys2) (length xs)))) : (List A @log) -> Type))
+
+log sort_terminates : (A:Type) => (lt : A -> A -> Bool)
+       -> (xs : List A) 
+       -> Exists (List A) (\ys . ys = sort lt xs)
+sort_terminates A lt ys =
+  let ly = length ys in
+  let p = 
+   (\n . (xs:List A) -> (n = length xs)
+              -> Exists (List A) (\ys.ys = sort lt xs)
+    : Nat -> Type) in
+  unfold p (length ys) in
+  let st_def = 
+    ((\n st_rec . unfold p n in \xs xs_len_eq .
+        case xs [xs_eq] of
+          Nil ->
+           unfold (((\ys.ys = sort lt xs) : List A -> Type) Nil) in
+           let _ = (join : sort lt Nil = Nil) in
+               Ex Nil _
+          Cons a xs' ->
+           case xs' of
+             Nil -> 
+               unfold (((\ys.ys = sort lt xs) : List A -> Type) (Cons a Nil)) in
+               let _ = (join : sort lt (Cons a Nil) = (Cons a Nil)) in
+                   Ex (Cons a Nil) _
+             Cons a' xs'' ->
+               let split_term = split_terminates xs in
+               case split_term of
+                 Ex ys1 ex' ->
+                   unfold (((\ys1. Exists (List A) (\ys2.
+                               Prod (split _ xs = Pair ys1 ys2)
+                                 (LT 1 (length xs)
+                                      -> Prod (LT (length ys1) (length xs))
+                                              (LT (length ys2) (length xs)))))
+                            : List A -> Type) ys1) in
+                   case (ex' : Exists (List A) (\ys2.
+                                 Prod (split _ xs = Pair ys1 ys2)
+                                   (LT 1 (length xs)
+                                        -> Prod (LT (length ys1) (length xs))
+                                                (LT (length ys2) (length xs))))) of
+                     Ex ys2 ex'' ->
+                       unfold (((\ys2.
+                                   Prod (split _ xs = Pair ys1 ys2)
+                                     (LT 1 (length xs)
+                                          -> Prod (LT (length ys1) (length xs))
+                                                  (LT (length ys2) (length xs))))
+                                : List A -> Type) ys2) in
+                       case (ex'' : Prod (split _ xs = Pair ys1 ys2)
+                                     (LT 1 (length xs)
+                                          -> Prod (LT (length ys1) (length xs))
+                                                  (LT (length ys2) (length xs)))) of
+                         Pair ys_eq ys_length ->
+                           let _ = (join : length (Cons a (Cons a' xs''))
+                                         = Succ (Succ (length xs''))) in
+                           let len_LT = (LT_1_SSm (length xs'') : LT 1 (length xs)) in
+                           case (ys_length len_LT) of
+                             Pair ys1_length ys2_length ->
+                               unfold (p (length ys1)) in
+                               unfold (p (length ys2)) in
+                               let ih1 = (st_rec (length ys1) [ys1_length] 
+                                                 ys1 (join : length ys1 = length ys1)
+                                    : Exists (List A) (\ys.ys = sort lt ys1)) in
+                               let ih2 = (st_rec (length ys2) [ys2_length] 
+                                                 ys2 (join : length ys2 = length ys2)
+                                    : Exists (List A) (\ys.ys = sort lt ys2)) in
+                               case ih1 [ih1_eq] , ih2 [ih2_eq] of
+                                 Ex ys1' ys1'_eq , Ex ys2' ys2'_eq ->
+                                   unfold (((\ys.ys = sort lt ys1) : List A -> Type) ys1') in
+                                   unfold (((\ys.ys = sort lt ys2) : List A -> Type) ys2') in
+                                   let _ = (pjoin : sort lt (Cons a (Cons a' xs''))
+                                                 = ((case (split _ (Cons a (Cons a' xs''))) of
+                                                      Pair xs1 xs2 -> merge _ lt (sort lt xs1) (sort lt xs2))
+                                                    : List A))  in
+                                   let _ = (join : ((case (Pair ys1 ys2) of
+                                                      Pair xs1 xs2 -> merge _ lt (sort lt xs1) (sort lt xs2))
+                                                    : List A)
+                                                 = merge _ lt (sort lt ys1) (sort lt ys2)) in
+                                   (merge_terminates lt ys1' ys2'))
+     : (n:Nat) -> ((m:Nat) -> [LT m n] -> p m) -> p n) in
+  let st = (cov p st_def (length ys) 
+      : (xs : List A) -> (length ys = length xs)
+                      -> Exists (List A) (\ys.ys = sort lt xs)) in
+  st ys (join : length ys = length ys)

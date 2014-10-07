@@ -1,0 +1,123 @@
+module Vectors where
+import Prelude
+import Fin
+
+-- Definition of the vector type and proofs of properties about it.
+
+data Vector (A : Type) (n : Nat) : Type where
+   VNil  of [n = 0] 
+   VCons of [size : Nat] [n = Succ size]  (x:A@log) (xs : Vector A size)
+
+-- terminating recursor for the vector type
+recvec : [a : Type] -> [c : ([n : Nat] -> (v:Vector a n) -> Type)@log] ->
+         (base : [n:Nat] -> [n_eq:n = 0] -> (c [n] (VNil [n_eq]))@log) ->
+         (step : [n:Nat] -> [n':Nat] -> [n_eq:n = Succ n'] ->
+            (x:a@log) -> (xs : Vector a n'@log) -> (ih : c [n'] xs @log) ->
+            c [n] (VCons [n'] [n_eq] x xs)@log) ->
+         [n:Nat] -> (v:Vector a n @log) -> (c [n] v)
+recvec = \ [a] . \ [c] . \ base . \ step .
+           ind recvec [n] = \ v .
+             case v [v_eq] of
+               VNil [n_eq] -> base [n] [n_eq]
+               VCons [n'] [n_eq] x xs -> step [n] [n'] [n_eq] x xs (recvec [n'] [ord n_eq] xs)
+
+
+vmap : [a b : Type]  => ((x:a@log) -> b @log) ->
+       [n : Nat] -> (xs : Vector a n) -> Vector b n
+vmap = \ [a] . \ [b] . \ f . ind vmap [n] = \ xs .
+        case xs [xs_eq] of
+          VNil [n_eq] -> VNil [n_eq]
+          VCons [n'] [n_eq] x xs -> VCons [n'] [n_eq] (f x) (vmap [n'] [ord n_eq] xs) 
+
+
+log head : [A : Type] => [n:Nat] => Vector A (Succ n) -> A
+head = \ [A][n] v . case v [v_eq] of 
+  VNil  [n_eq] -> contra (_ : 0 = Succ n)
+  VCons [m][m_eq] f t -> f
+
+log tail : [A : Type] => [n:Nat] => Vector A (Succ n) -> Vector A n
+tail = \ [A][n] v . case v [v_eq] of 
+  VNil  [n_eq] -> contra (_ : 0 = Succ n)
+  VCons [m][m_eq] f t -> t
+
+log lookup : [A: Type] => [n:Nat] => Fin n -> Vector A n -> A
+lookup = \ [A] . 
+  ind recFin [n] = \ f v . 
+    case f [f_eq] of
+      FZ [m][m_eq] -> head v
+      FS [m][m_eq] fm -> !recFin [m] [ord m_eq] fm (tail v)
+
+
+-- create a vector with n copies of its argument
+log repeat : [A:Type] => (A @ log) -> (n:Nat) -> Vector A n
+repeat = \ [A] a . 
+  ind rep n = 
+    case n [n_eq] of 
+      Zero -> VNil [_]
+      Succ m -> VCons [m][_] a (rep m [ord n_eq])
+
+log zap : [A B: Type] => [n:Nat] => 
+          Vector ((A @ log) -> B) n -> Vector A n -> Vector B n
+zap = \[A][B].
+  ind zap [n] = \ v1 v2 . 
+     case v1 [v1_eq]   , v2 [v2_eq] of
+        VNil  [p]      ,  VNil [q] -> VNil [p]
+        VCons [n'][p] _ _ ,  VNil [q] -> contra (_ : 0 = (Succ n'))
+        VNil [p] , VCons [n'][p'] _ _ -> contra (_ : 0 = (Succ n'))
+        VCons [n'][p] f fs , VCons [n''][p''] x xs -> 
+            VCons [n'][p] (f x) (!zap [n'] [ord p] fs xs)
+
+-- update the mth component of the vector to be 'a'
+log set : [A:Type] => [n:Nat] => (m:Fin n) ->  (a:A @ log) -> Vector A n -> Vector A n
+set = \ [A] . 
+  ind set [n] = \ m a v.
+       case m [n_eq] of 
+         FZ [p][p_eq]    -> VCons [p][_] a (tail v)
+         FS [p][p_eq] fm -> VCons [p][_] (head v) (!set [p][ord p_eq] fm a (tail v))
+
+
+log lookup_set : [A:Type] => [n:Nat] => (i:Fin n) -> (a:A @log) -> (v : Vector A n)
+                 -> lookup i (set i a v) = a
+lookup_set = \[A]. ind ih [n] = \ i a v .
+  case i [_], v [_] of
+    FZ [p][_]   , VNil [_] -> contra (_ : 0 = (Succ p))
+    FS [p][_] _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FZ [p][_]   , VCons [m][_] x xs ->
+       -- This "works", but the generated proof term is gigantic and takes minutes
+       -- to write/typecheck :(
+       --unfold (set [n] (FZ [p][_]) a (VCons [m][_] x xs)) in  
+       --unfold  (lookup [n] (FZ [p][_]) (VCons [_][_] a xs)) in
+       let _ = (join : set (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+       let _ = (join : lookup (FZ [p][_]) (VCons [m][_] a xs) = a) in
+         _ 
+    FS [p][p_eq] j , VCons [m][m_eq] x xs -> 
+       let _ = (pjoin : (!set [A] [n] (FS [p][_] j) a (VCons [m][m_eq] x xs) : Vector A n)
+                     = (VCons [m][m_eq] x (set j a xs) : Vector A n)) in
+       let xs' = set j a xs in
+       let _ = (join : !lookup [A] [n] (FS [p][_] j) (VCons [m][m_eq] x xs') = lookup j xs') in
+       let _ = (!ih [p] [ord p_eq] j a xs) in
+          _
+       
+
+log lookup_set2 : [A:Type] => [n:Nat] => (i j: Fin n) -> (a:A @log) -> (v : Vector A n)
+                  -> fin_eq [n] i j = False
+                  -> lookup i (set j a v) = lookup i v
+lookup_set2 = \[A]. ind ih [n] = \ i j a v h .
+  case i [_], j [_], v [_] of
+    FZ [p][_]   , _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FS [p][_] _ , _ , VNil [_] -> contra (_ : 0 = (Succ p))
+    FZ [p][_]   , FZ [q][_] , _ -> 
+      unfold (fin_eq [n] (FZ [p][_]) (FZ [q][_])) in
+        contra (_ : True = False)       
+    FS [p][p_eq] i' , FS [q][q_eq] j' , VCons [m][m_eq] x xs -> 
+      let _ = (pjoin : (!set [A] [n] (FS [p][_] j') a (VCons [m][m_eq] x xs) : Vector A n)
+                    = (VCons [m][m_eq] x (set j' a xs) : Vector A n)) in
+      let xs' = set j' a xs in
+      let _ = (join : !lookup [A] [n] (FS [p][_] i') (VCons [m][m_eq] x xs') = lookup i' xs') in
+      let _ = (join : !lookup [A] [n] (FS [q][_] i') (VCons [m][m_eq] x xs)  = lookup i' xs) in
+      let _ = (join : fin_eq [n] (FS [p][_] i') (FS [q][_] j') = fin_eq [p] i' j') in
+      let _ = (!ih [p] [ord p_eq] i' j' a xs _) in
+        _     
+    FS [p][p_eq] i' , FZ [q][_] , VCons [m][m_eq] x xs ->  TRUSTME
+    FZ [p][p_eq] , FS [q][_] j', VCons [m][m_eq] x xs ->  TRUSTME
+

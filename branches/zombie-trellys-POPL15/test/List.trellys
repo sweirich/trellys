@@ -1,0 +1,159 @@
+-- The standard list data type.
+
+module List where
+import Prelude
+import Maybe
+import Arithmetic
+import LessThanNat_lt_eq_True
+
+-- We fix @log throughout this file.
+usually log
+
+data List (a : Type) : Type where
+  Nil
+  Cons of (x : a) (xs : List a)
+
+map : [a b : Type] => (f : (x:a) -> b) -> 
+      (xs : List a) -> List b
+map = \ [a] [b] f . ind map xs = 
+  case xs [xs_eq] of
+    Nil -> Nil 
+    Cons x xs -> Cons (f x) (map xs [ord xs_eq])
+
+fold : [a b: Type] => (x : b) -> (f : a -> b -> b) -> List a -> b
+fold = \[a] [b] n f . ind foldrec xs =  
+  case xs [xs_eq] of 
+    Nil -> n
+    Cons x xs -> f x (foldrec xs [ord xs_eq]) 
+
+{-
+test : [a b c: Type] =>
+        (f : a -> b -> b) -> (e : b) -> (x:a) -> (xs': List a) ->
+          f x (fold e f xs') = x
+test [a] [b] [c] f e x xs' = join
+-}
+
+-- From Algebra of Programming in Agda, Shin-Cheng Mu, Hsiang-Shang Ko, and Patrik Jansson
+foldrfusion : [a b c: Type] => 
+  (h : b -> c) -> (f : a -> b -> b) => (g : a -> c -> c) => (e : b) =>
+  ((x:a) -> (y:b) -> h (f x y) = g x (h y)) ->
+  (xs: List a) -> h (fold e f xs) = fold (h e) g xs
+foldrfusion = \[a][b][c] h f g e cond . ind ff xs = 
+  let m = h e in  -- CBV definition
+  case xs [xs_eq] of 
+    Nil -> unfold (fold e f Nil) in 
+	        unfold (fold m g Nil) in
+			  _
+    Cons x xs' -> 
+	        let _ = (pjoin : fold e f (Cons x xs') = f x (fold e f xs')) in -- I think this is a bug!
+			  let _ = (pjoin : fold m g (Cons x xs') = g x (fold m g xs')) in
+			  let _ = cond x (fold e f xs') in  -- extra-special app rule here!
+			  let _ = ff xs' [ord xs_eq] in
+			   _
+       
+
+null : [a : Type] => (List a @ log) -> Bool
+null = \ [a] xs . case xs [_] of 
+  Nil -> True
+  Cons _ _ -> False
+
+-- added @ log so that we can use in partial application
+-- see Sat.trellys
+all : [a : Type] => (a -> Bool) -> (List a @ log) -> Bool
+all = \ [a] f . ind all xs = 
+  case xs [xs_eq] of 
+    Nil -> True
+    Cons x xs -> and (f x) (all xs [ord xs_eq])
+
+log all_Cons : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (Pr x = True) -> (all Pr xs = True) -> (all Pr (Cons x xs) = True)
+all_Cons [a] Pr x xs h1 h2 = smartjoin
+
+log all_Cons_head_False : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (Pr x = False) -> (all Pr (Cons x xs) = False)
+all_Cons_head_False [a] Pr x xs h = smartjoin
+
+log all_Cons_tail_False : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (all Pr xs = False) -> (all Pr (Cons x xs) = False)
+all_Cons_tail_False [a] Pr x xs h =
+  case (Pr x) of
+    True -> smartjoin
+    False -> smartjoin
+
+any : [a : Type] => (a -> Bool) -> (List a @ log) -> Bool
+any = \ [a] f . ind any xs = 
+  case xs [xs_eq] of 
+    Nil -> False
+    Cons x xs -> or (f x) (any xs [ord xs_eq])
+
+log any_Cons : [a:Type] => (Pr : a -> Bool) -> (x : a@log) -> (xs : List a @log)
+                        -> (Pr x = False) -> (any Pr xs = False) -> (any Pr (Cons x xs) = False)
+any_Cons [a] Pr x xs h1 h2 = smartjoin
+
+
+filter : [a : Type] => (a -> Bool) -> (List a @ log) -> List a
+filter = \ [a] f . ind filter xs = 
+  case xs [xs_eq] of 
+     Nil -> Nil
+     Cons x xs -> case (f x) [_] of 
+        True -> Cons x (filter xs [ord xs_eq])
+        False -> filter xs [ord xs_eq]
+
+find : [a : Type] => (a -> Bool) -> (List a) -> Maybe a
+find [a] pred = ind loop xs = 
+  case xs [xs_eq] of 
+    Nil -> Nothing
+    Cons x xs' -> if pred x then Just x else loop xs' [ord xs_eq]
+
+elem : [a : Type] => (eq : a -> a -> Bool) -> a -> List a -> Bool
+elem = \ [a] eqa x . ind elem xs = 
+  case xs [xs_eq] of 
+    Nil -> False
+    Cons y ys -> or (eqa x y) (elem ys [ord xs_eq])
+
+
+append : [a:Type] => (List a) -> (List a) -> List a
+append = \[a]. ind append xs = \ys.
+  case xs [xs_eq] of
+    Nil -> ys
+    Cons x xs -> Cons x (append xs [ord xs_eq] ys) 
+
+concat : [a:Type] -> List (List a) -> List a 
+concat = \ [a] . ind concat xss =
+  case xss [xss_eq] of
+    Nil -> Nil 
+    Cons xs xss -> append xs (concat xss [ord xss_eq])
+
+concatMap : [a : Type] => [b : Type  0] => (f : (x:a) -> List b) ->
+      (xs : List a) -> List b
+concatMap = \[a] [b] f xs . concat [b] (map f xs)
+
+replicate : [a : Type] => Nat -> a -> List a
+replicate = \[a] . ind replicate n = \ x .
+  case n [neq] of 
+    Zero -> Nil 
+    Succ n -> Cons x (replicate n [ord neq] x)
+
+length : [a:Type] => (List a) -> Nat
+length = \[a]. ind length xs =
+  case xs [xs_eq] of
+    Nil -> Zero
+    Cons x xs -> Succ (length xs [ord xs_eq])
+
+nth : [a : Type] => Nat -> (List a) -> (default : a) -> a
+nth = \[a]. ind nth n = \xs default.
+ case xs [_] of
+   Nil -> default
+   Cons x xs' -> case n [n_eq] of 
+                   Zero -> x
+                   Succ n' -> nth n' [ord n_eq] xs' default
+
+nth_safe : [a : Type] => (n : Nat) -> (xs : List a) -> [safe : lt n (length xs) = True] -> a
+nth_safe = \[a]. ind nth_safe n = \xs [safe].
+  case xs [_] of 
+   Nil -> let _ = (join : lt n (length (Nil : List a)) = False) in
+            contra (_ : True = False)
+   Cons x xs' -> case n [n_eq] of 
+                  Zero -> x
+                  Succ n' ->  let _ = (join : length (Cons x xs')  = Succ (length  xs')) 
+                              in nth_safe n' [ord n_eq] xs' [sm_lt_Sn__m_lt_n_LT n' (length xs') safe]

@@ -1,0 +1,102 @@
+-- Programmatic ceiling Nat division (cdivP)
+--
+-- Includes a proof that cdivP terminates when dividing by non-zero:
+--
+--   cdivP_t : (m:Nat) -> (n:Nat) -> Exists Nat (\v . cdivP m (Succ n) = v)
+--
+-- NB: this proof is compatible with the PP value restriction and may
+-- allow the bound proofs to go through with the PP value restriction
+-- in place (which I thought was impossible) ...
+--
+-- ... does indeed allow my simplified thm to be proven.  See
+-- TerminationAsValueRestrictionWorkaround.
+module ProgrammaticCdiv where
+import Prelude
+import Arithmetic
+import StrongNat
+import LessThanNat
+import LessThanNat_lt_eq_True
+
+prog div : Nat -> Nat -> Nat
+rec div m = \n . case m [m_eq] of
+  Zero -> Zero
+  Succ m' -> Succ (div (minus m n) n)
+
+--Why the @log ? To match the definition of Exists
+divHalts : Nat -> Nat -> (Nat@log) -> Type
+divHalts m n v =  (div m (Succ n) = v)
+
+divHalts_red : (m:Nat) -> (n:Nat) -> (v:Nat) -> (divHalts m n v = (div m (Succ n) = v))
+divHalts_red m n v = join
+divHalts_red' : (m:Nat) -> (n:Nat) -> (v:Nat) -> ((div m (Succ n) = v) = divHalts m n v)
+divHalts_red' m n v = join
+
+P : Nat -> Type 0
+P m = (n:Nat) -> Exists Nat (divHalts m n)
+
+P_red : (m:Nat) -> (P m = (n:Nat) -> Exists Nat (divHalts m n))
+P_red = \m . join
+P_red' : (m:Nat) -> (((n:Nat) -> Exists Nat (divHalts m n)) = P m)
+P_red' = \m . join
+
+div_t_f_base : (m:Nat) -> [m = Zero] -> (n:Nat) -> Exists Nat (divHalts m n)
+div_t_f_base = \m [m_eq] n .
+  let    _ = (join: div Zero (Succ n) = Zero)
+  in let _ = (join: divHalts m n m = (div m (Succ n) = m))
+  in Ex [m] _
+-- Here is a place where the more expressive Crec rule is useful, 
+-- the underscore searches the congruence closure for an equation.
+-- Without the search we would have to write
+--   Ex [m] (_ : div m (Succ n) = m)
+
+div_t_f_step : (m:Nat) -> (m':Nat) -> [m = Succ m']
+              -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (divHalts k n) @log)
+              -> (n:Nat) -> Exists Nat (divHalts m n)
+div_t_f_step = \m m' [m_eq] gm n .
+  let            _ = (join: div (Succ m') (Succ n)
+                        =   Succ (div (minus (Succ m') (Succ n)) (Succ n)))
+  in let lt_Sn [_] = s_minus_s__lt m' n
+  in let ih [_]    = gm (minus m (Succ n)) [lt_Sn] n
+  in case ih [_] of
+       Ex [v] v_eq -> let    [_] = (divHalts_red (minus m (Succ n)) n v
+                                   : divHalts (minus m (Succ n)) n v 
+                                   = (div (minus m (Succ n)) (Succ n) = v))
+                      -- Look: here is a case where "assumption up to congruence" is actually useful!
+--                      in let v_eq' = (v_eq : div (minus m (Succ n)) (Succ n) = v)
+                      in let [_] = (divHalts_red' m n (Succ v)
+                                   : (div m (Succ n) = Succ v)
+                                   = divHalts m n (Succ v))
+                      in let h   = (_ : div m (Succ n) = Succ v)
+                      in Ex [Succ v] h
+
+div_t_f' : (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (divHalts k n) @log)
+         -> (n:Nat) -> Exists Nat (divHalts m n)
+div_t_f' = \m gm n . case m [m_eq] of
+  Zero    -> div_t_f_base m [m_eq] n
+  Succ m' -> div_t_f_step m m' [m_eq] gm n
+
+div_t_f :  (m:Nat) -> ((k:Nat) -> [ltT k m @log] -> P k @log) -> P m
+div_t_f = \m gm .
+  let gm' [_] = ((\k [k_lt_m] .
+                 unfold (P k) in
+                   (gm k [k_lt_m]))
+                  : (k:Nat) -> [ltT k m @log] -> (n:Nat) -> Exists Nat (divHalts k n))
+  in unfold (P m)
+  in (div_t_f' m gm')
+
+-- It's tricky to state these equalities so that trellys can infer the
+-- type of the (Nat@log) -> Type 0 lambda
+--
+-- (Why @log? Because of the definition of the Exists datatype).
+--
+divHalts_red2 : (m:Nat) -> (n:Nat) -> Exists Nat (divHalts m n)
+                                    = Exists Nat (\v . div m (Succ n) = v)
+divHalts_red2 = \m n . 
+  let lemma = (join : divHalts m n = (\v. div m (Succ n) = v : (Nat@log) -> Type 0))
+  in _
+
+div_t : (m:Nat) -> (n:Nat) -> Exists Nat (divHalts m n)
+div_t m n = 
+   unfold (P m) in 
+    -- Here is an example where the expressive application rule from the ICFP paper is useful:
+    cov [P] div_t_f m n

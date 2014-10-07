@@ -1,0 +1,97 @@
+-- Smith's paradox, assuming a "magic" inversion principle.
+-- This doesn't currently work, due to subtleties with UnboxVal.
+
+module Admiss2 where
+
+import Prelude
+
+prog UNBOX : (Nat -> Nat @prog) -> Nat -> Nat
+UNBOX = \f . f
+
+data Defined (h : Nat->Nat @prog) (x : Nat) : Type 0 where
+  hasValue of (y : Nat) (_ : UNBOX h x = y)
+
+{- 
+Total h := (x : Nat) -> Defined h x
+T := { h : Nat->Nat@prog | Total h -> False }
+-}
+
+data T : Type 0 where
+  mkT of (h : Nat->Nat @prog) (notTotal : ((x:Nat) -> Defined h x @log) -> Void @log)
+
+log fst : T -> (Nat -> Nat @prog)
+fst = \t . case t [_] of
+             mkT h _ -> h
+
+log snd : (t:T) -> ((x:Nat) -> Defined (fst t) x @log) -> Void
+snd = \t . case t [t_eq] of
+             mkT h notTotal -> 
+               unfold (fst t) in notTotal
+
+data DefinedT (f : Unit->T @prog) : Type 0 where
+  hasValueT of (t : T) (_ : f U = t)
+
+--log magic : (f : Unit -> T @prog) -> Defined (fst (f U)) Zero -> DefinedT f
+log magic : (f : Unit -> T @prog) -> (y:Nat) -> (UNBOX (fst (f U)) Zero = y) -> DefinedT f
+magic = TRUSTME
+
+prog f : Unit -> T
+rec f _ = 
+  mkT (\x . case x [_] of 
+              Zero -> Zero
+              Succ x' -> UNBOX (fst (f U)) x')
+      (\total .
+         case (total 1) [_] of
+           hasValue y p -> 
+             unfold 5 (UNBOX ((\x. case x [_] of
+                                     Zero -> Zero
+                                     Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1) in
+               case (magic f y p) [_] of
+                 hasValueT t q -> 
+                      snd t
+                          (\x1 . case (total (Succ x1)) [_] of
+                                  hasValue z r ->                                     
+                                    unfold 5 (UNBOX ((\x. case x [_] of
+                                                            Zero -> Zero
+                                                            Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
+                                    hasValue z _))
+
+-- This is just the body of f, copy-pasted.
+log t : T
+t =
+  mkT (\x . case x [_] of 
+              Zero -> Zero
+              Succ x' -> UNBOX (fst (f U)) x')
+      (\total .
+         case (total 1) [_] of
+           hasValue y p -> 
+             unfold 5 (UNBOX ((\x. case x [_] of
+                                     Zero -> Zero
+                                     Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1) in
+               case (magic f y p) [_] of
+                 hasValueT t q -> 
+                      snd t
+                          (\x1 . case (total (Succ x1)) [_] of
+                                  hasValue z r ->                                     
+                                    unfold 5 (UNBOX ((\x. case x [_] of
+                                                            Zero -> Zero
+                                                            Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
+                                    hasValue z _))
+
+log t_spec : t = f U
+t_spec = pjoin 
+
+log t_total : (x:Nat) -> Defined (fst t) x
+t_total = ind ih x = 
+  case x [eq_x] of
+    Zero -> 
+      unfold (UNBOX (fst t) Zero) in
+        hasValue Zero _
+    Succ x' ->
+      unfold 9 (UNBOX (fst t) (Succ x')) in
+      case (ih x' [ord eq_x] ) [_] of
+        hasValue y p ->
+          hasValue y _
+
+log paradox : Void
+paradox = snd t t_total

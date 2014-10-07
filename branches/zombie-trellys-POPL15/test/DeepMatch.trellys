@@ -1,0 +1,134 @@
+module DeepMatch where
+
+import Prelude
+
+-- Two simple examples: min and fib.
+
+prog min : Nat -> Nat -> Nat
+rec min m = \n . 
+  case m [_], n [_] of
+    Zero, _ -> Zero
+    _ , Zero -> Zero
+    Succ m', Succ n' -> Succ (min m' n')
+
+min_example1 : (min 0 0) = 0
+min_example1 = join 
+
+min_example2 : (min 1 0) = 0
+min_example2 = join
+
+min_example3 : (min 0 1) = 0
+min_example3 = join 
+
+min_example4 : (min 2 3) = 2
+min_example4 = join
+
+plus : Nat -> Nat -> Nat
+ind plus n = \m .
+  case n [cw] of
+    Zero -> m
+    Succ pred -> Succ (plus pred [ord cw] m)
+
+prog fib : Nat -> Nat
+rec fib n =
+  case n [_] of 
+    Zero -> Zero
+    (Succ Zero) -> 1 
+    (Succ (Succ m)) -> plus (fib m) (fib (Succ m))
+
+fib_example : (fib 4) = 3
+fib_example = join
+
+-- An example involving a few different datatypes.
+-- This also illustrates that the branches may need to be reordered to
+--  follow the branching of the elaborated code, and that the right branch
+--  must be chosen when more than one could match.
+
+data A : Type 0 where
+  A1 
+  A2 of (x : A) (y : A)
+
+data B : Type 0 where
+  B1 of (x : A) 
+  B2 of (x : B) (y : B)
+
+log ab : B -> Nat
+ab = \ x.
+  case x [_] of
+    B2 (B1 (A2 _ A1)) (B1 _) -> 0
+    B1 (A2 _ A1) -> 1
+    B1 (A2 A1 _) -> 2
+    B1 (A2 (A2 _ _)  _)  -> 3
+    B2 (B1 _) (B1 A1) -> 4
+    B1 _ -> 5
+    B2 (B1 (A2 _ _)) (B1 _) -> 6
+    B2 _ _ -> 7
+
+log ab_example0 : ab (B2 (B1 (A2 A1 A1)) (B1 (A2 A1 A1))) = 0
+ab_example0 = join
+
+
+log ab_example1 : ab (B1 (A2 A1 A1)) = 1
+ab_example1 = join
+
+log ab_example2 : ab (B1 (A2 A1 (A2 A1 A1))) = 2
+ab_example2 = join
+
+log ab_example3 : ab (B1 (A2 (A2 A1 A1) (A2 A1 A1))) = 3 
+ab_example3 = join
+
+log ab_example4 : ab (B2 (B1 A1) (B1 A1)) = 4
+ab_example4 = join
+
+log ab_example5 : ab (B1 A1) = 5
+ab_example5 = join
+
+log ab_example6 : ab (B2 (B1 (A2 A1 (A2 A1 A1))) (B1 (A2 A1 A1))) = 6
+ab_example6 = join
+
+log ab_example7 : ab (B2 (B1 (A2 A1 (A2 A1 A1))) (B2 (B1 A1) (B1 A1))) = 7
+ab_example7 = join
+
+
+-- Pattern matching an expression against a variable introduces a let-expression.
+
+let_example : Succ (case (abort : Nat) [q] of 
+                      Succ x -> x
+                      y -> Succ y)
+              = Succ (case (abort : Nat) [q] of 
+                        Zero -> let prog y [_] = (abort : Nat) in Succ y
+                        Succ x -> x)
+let_example = join
+
+-- It is ok to match a variable against a non-datatype.
+
+data C : Type 0 where
+  MkC of (f : Nat -> Nat @log)
+
+log match_c : C -> Nat 
+match_c = \ x .
+  case x [_] of
+    MkC f -> f 3
+
+log match_c_example: (match_c (MkC (plus 2))) = 5
+match_c_example = join
+
+-- If one of the arguments of a constructor has an @-type, we need to
+-- apply unboxing before matching subpatters.
+
+data D : Type 0 where
+  D1 of (A@prog)
+
+prog match_d : D -> Nat
+match_d = \ x .
+  case x [_] of
+    D1 A1 -> 1
+    D1 (A2 _ _) -> 2
+
+log match_d_example : (match_d (D1 (A2 A1 A1))) = 2
+match_d_example = join
+
+
+{- We want tests covering:
+   - failures from non-exhaustive matches.
+-}

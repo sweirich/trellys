@@ -1,0 +1,15 @@
+{- Compare this file with InjRngError.trellys.
+   This one typechecks successfully, because the type is non-dependent. -}
+
+module InjRngSuccess where
+
+import Prelude 
+
+usually log
+
+axiom A : Type
+axiom B  : Type
+axiom B1 : Type
+
+test : (x : A) -> (f : A -> B) -> (p : (A->B) = (A->B1)) -> B
+test x f p = f x

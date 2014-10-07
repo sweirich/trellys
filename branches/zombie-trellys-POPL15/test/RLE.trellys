@@ -1,0 +1,112 @@
+module RLE where
+
+import Prelude
+import List
+import Logic  --non-dependent pairs and union.
+
+data Maybe (a : Type) : Type where
+  Nothing
+  Just of (a@log)
+
+encodeFrom : [a:Type] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a
+             -> Nat -> (a@log) ->  List (And Nat a)
+encodeFrom = \[a] eq . ind encodeFrom xs = \ n current .
+  case xs [xsq] of
+    Nil -> (Cons (Conj n current) (Nil ))
+    Cons x xs ->
+      case (eq x current) [_] of
+        Just q -> encodeFrom xs [ord xsq] (Succ n) current
+        Nothing -> Cons (Conj n current) (encodeFrom xs [ord xsq] 1 x)
+
+encode : [a:Type] => (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) -> List a -> List (And Nat a)
+encode = \[a] eq xs .
+  case xs [_] of 
+    Nil -> Nil 
+    Cons x xs -> encodeFrom eq xs 1 x
+
+decode : [a:Type] => List (And Nat a) -> List a
+decode = \[a]. ind decode xs =
+ case xs [xsq] of 
+   Nil -> Nil 
+   Cons (Conj n x) xs -> append (replicate n x) (decode xs [ord xsq])
+
+
+----- Proof of correctness: ------------------
+
+{-
+The proof of the inductive case goes like this:
+
+append (replicate (Succ (Succ m)) x) ys 
+
+  By definition of replicate:
+= append (Cons x (replicate (Succ m) x)) ys
+
+  By definition of append:
+= Cons x (append (replicate (Succ m) x) ys)
+
+  By IH
+= Cons x (append (replicate m x) (Cons x ys))
+
+  By definition of append:
+= append (Cons x (replicate m x)) (Cons x ys)
+
+  By definition of replicate:
+= append (replicate (Succ m) x) (Cons x ys)
+-}
+append_replicate_Succ : [a:Type] -> (n:Nat) -> (x:a@log) -> (ys: List a) 
+                 -> append (replicate (Succ n) x) ys = append (replicate n x) (Cons x ys)
+append_replicate_Succ = \[a]. ind append_replicate_Succ n = \x ys.
+  case n [n_eq] of
+    Zero -> (pjoin : append (replicate (Succ 0) x) ys = append (replicate 0 x) (Cons x ys))
+    Succ m -> 
+      let _  = (pjoin : replicate (Succ (Succ m)) x = 
+		             (Cons x (replicate (Succ m) x) : List a)) in
+		let rep_Sm  = (replicate (Succ m) x) in
+      let _  = (pjoin : append (Cons x rep_Sm) ys = (Cons x (append rep_Sm ys) : List a)) in
+      let IH = append_replicate_Succ m [ord n_eq] x ys in
+      let [x_ys] = (Cons x ys : List a ) in
+		let rep_m_x = (replicate m x) in
+      let _  = (pjoin : (Cons x (append rep_m_x x_ys) : List a) = append (Cons x rep_m_x) x_ys) in
+      let _  = (pjoin : (Cons x (replicate m x) : List a) = replicate (Succ m) x) in
+      _
+
+encodeFrom_spec : [a:Type] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
+                  -> (xs:List a)
+                  -> (n:Nat) -> (x0 : a@log) 
+                  -> decode (encodeFrom eq xs n x0) = append (replicate n x0) xs
+encodeFrom_spec = \[a] eq . ind encodeFrom_spec xs = \ n x0 .
+  case xs [xsq] of 
+    Nil -> smartjoin
+    Cons x ys ->
+     case (eq x x0) [_] of
+         Just q ->
+          unfold (decode (encodeFrom eq xs n x0)) in
+          let IH = (encodeFrom_spec ys [ord xsq] (Succ n) x0 
+                     : decode (encodeFrom eq ys (Succ n) x0)
+                     = append (replicate (Succ n) x0) ys) in
+
+          let _ = (append_replicate_Succ [a] n x0 ys
+                     : decode (encodeFrom eq ys (Succ n) x0)
+                     = append (replicate n x0) (Cons x ys)) in
+           
+             _
+         Nothing -> 
+          unfold (decode (encodeFrom eq xs n x0)) in
+          let IH = (encodeFrom_spec ys [ord xsq] 1 x 
+                     : decode (encodeFrom eq ys 1 x)
+                     = append (replicate 1 x) ys) in
+          let _ = (pjoin : (append (replicate 1 x) ys : List a)  = (Cons x ys : List a)) in
+           
+           _
+
+encode_spec : [a:Type] -> (eq : (x:a@log) -> (y:a@log) -> Maybe (x=y) @log) 
+                  -> (xs:List a)
+                  -> decode (encode eq xs) =  xs
+encode_spec = \[a] eq xs .
+  case xs [_] of
+    Nil -> (pjoin : decode (encode  eq (Nil)) = (Nil : List a))
+    Cons x ys ->
+      let _ = (pjoin : encode eq (Cons x ys) = encodeFrom eq ys 1 x) in
+      let _ = encodeFrom_spec [_] eq ys 1 x in
+      let _ = (pjoin : append (replicate 1 x) ys = (Cons x ys : List a)) in
+      _

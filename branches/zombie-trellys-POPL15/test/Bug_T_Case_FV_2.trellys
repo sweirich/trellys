@@ -1,0 +1,13 @@
+-- Test T_Case FV check
+module Bug where
+
+data Nat : Type 0 where
+    Zero
+    Succ of (x : Nat)
+
+f : (n:Nat) -> (n=Zero)
+f = \n . case n [e] of
+           -- this branch should fail the FV check in the 6th premise
+           -- of T_Case because e is free.
+           Zero -> e
+	   Succ _ -> TRUSTME           

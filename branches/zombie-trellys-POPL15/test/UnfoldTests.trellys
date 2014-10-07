@@ -1,0 +1,154 @@
+module UnfoldTests where
+
+{- Note: this file requires the -no-injrng flag to check.
+   (It would be inconvenient to add the extra equations to make it pass the injrng test,
+    these tests are hairy enough as it is...) -}
+
+import Prelude
+
+-----------------------------------------------------------------
+-- Stepping rules for annotated things (including cast-shuffling)
+-----------------------------------------------------------------
+
+-- Ordinary stepping rules (without any conv-related complications)
+
+step_lam : ((\n . n) : Nat->Nat) Zero = Zero
+step_lam = 
+  unfold ((\n . n : Nat->Nat) Zero) in
+    _
+
+idnat_ind : Nat -> Nat
+ind idnat_ind n = 
+  case n [n_eq] of 
+    Zero -> Zero
+    Succ n' -> Succ (idnat_ind n' [ord n_eq])
+
+step_ind : (idnat_ind 2 = 2)
+step_ind = 
+  unfold (idnat_ind 2) in
+     _
+
+prog idnat_rec : Nat -> Nat
+rec idnat_rec n =
+  case n of
+    Zero -> Zero
+    Succ n' -> Succ (idnat_rec n')
+
+step_rec : (idnat_rec 2 = 2)
+step_rec = 
+  unfold (idnat_rec 2) in
+    _
+
+-- Stepping rules for when a conv interfers with a beta redex.
+
+-- Stepping a function with a conv applied to it.
+converted_lam : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
+converted_lam p b = 
+  unfold ((((\n . n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((\n . n) : Nat->Nat) : Bool->Bool) b)
+             = b) in 
+    U
+
+
+-- Same thing, but with a rec
+converted_rec : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
+converted_rec p b = 
+  unfold ((((rec f n = n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((rec f n = n) : Nat->Nat) : Bool->Bool) b)
+             = b) in
+    U
+
+-- Same thing, but with an ind
+converted_ind : (p : ((n:Nat)->Nat)=((b:Bool)->Bool)) -> (b : Bool) -> Unit
+converted_ind p b = 
+  unfold ((((ind f n = n) : Nat->Nat) : Bool->Bool) b) in
+  let _ = (_ : ((((ind f n = n) : Nat->Nat) : Bool->Bool) b)
+             = b) in
+    U
+
+-- Stepping a function with a conv applied to it, when the function has a 
+-- dependent type.
+
+data T1 (n:Nat) : Type where
+  mkT1 of (m:Nat) (_ : n = m)
+
+data T2 (b:Bool) : Type where
+  mkT2
+
+converted_lam_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
+		     -> (q : Bool = Nat)   --This is just used to be able to state what it should reduce to
+		     -> Unit
+converted_lam_dep p b q = 
+  unfold ((((\n . mkT1 n _) : (n:Nat)->T1 n) : ((b:Bool)->T2 b)) b) in
+  let _ = (_ : ((((\n . mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
+    U
+
+
+-- The same thing with a rec instead of a lam
+converted_rec_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
+		     -> (q : Bool = Nat)
+		     -> Unit
+converted_rec_dep p b q = 
+  unfold ((((rec f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b) in
+  let _ = (_ : ((((rec f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
+    U
+
+
+-- The same thing, with a rec that actually makes a recursive call.
+-- FIXME
+{-
+converted_reallyrec_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
+		        -> (q : Nat = Bool)
+		        -> Unit
+converted_reallyrec_dep p b q = 
+  unfold 5 (((((rec f n = f n) : (n:Nat)->T1 n)) : (b:Bool)-> T2 b) True) in
+--  let _ = (_ : ((conv ((rec f n = mkT1 n _) : (n:Nat)->T1 n) by p at x.x) b)
+--         = (mkT1 (conv b by q at x.x) _ : T1 (conv b by q at x.x))) in
+   blerg
+-}
+
+-- The same thing with an ind instead of a lam
+converted_ind_dep :  (p : ((n:Nat)->T1 n)= ((b:Bool)->T2 b)) -> (b:Bool) 
+		     -> (q : Bool = Nat)
+		     -> Unit
+converted_ind_dep p b q = 
+  unfold ((((ind f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b) in
+  let _ = (_ : ((((ind f n = mkT1 n _) : (n:Nat)->T1 n) : (b:Bool)->T2 b) b)
+         = (mkT1 (b : Nat) _ : T1 (b : Nat))) in
+    U
+
+-- Stepping an ind with a dependent type.
+-- (tricky points: right type annotation on the
+--   introduced lambda).
+-- Stepping a case-expression
+-- (tricky points: substitute the right thing for xq).
+ind_refl : (x:Nat) -> (x=x)
+ind_refl = ind ih x =
+  case x [xq] of
+   Zero -> join
+   Succ x' -> let _ = ih x' [ord xq] in _
+
+
+ind_step : (ind_refl 1) = (join : 1 = 1)
+ind_step = 
+  unfold (ind_refl 1) in
+    _
+
+{- Todo: tests for the case_conv stepping rule. -}
+
+-----------------------------------------------------------------
+-- Stepping things which are stuck, by using equational reasoning
+-----------------------------------------------------------------
+
+log f : Nat -> Nat
+f = \x.x
+
+-- This is stuck on a non-value, but we can work 
+-- around that since (pred n) is logical.
+log foo : (n:Nat) -> f (pred n) = (pred n)
+foo = \n.
+  unfold 2 (f (pred n)) in 
+    _
+

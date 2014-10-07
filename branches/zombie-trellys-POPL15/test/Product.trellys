@@ -1,0 +1,52 @@
+module Product where
+
+import Prelude 
+
+--Everything is @log
+usually log
+
+data Times (A:Type 0)(B : Type 0) : Type 0 where
+  Prod of (_ : A) (_ : B)
+
+log pi1 : [A B : Type 0] => Times A B -> A
+pi1 = \[A][B] p. 
+  case p [_] of 
+    Prod x y -> x
+
+log pi2 : [A B : Type] => Times A B -> B
+pi2 = \[A][B] p. 
+  case p [_] of 
+    Prod x y -> y
+
+log pair_eq : [A B : Type]  => (A -> A -> Bool) 
+    -> (B -> B -> Bool) -> (Times A B @ log) -> (Times A B @ log) -> Bool
+pair_eq = \ [A][B] eqA eqB p1 p2 . 
+ case p1 [_], p2 [_] of 
+   Prod x1 y1, Prod x2 y2 -> and (eqA x1 x2) (eqB y1 y2)
+
+
+data Sigma (A:Type) (b:A -> Type) : Type where
+  Pair of (x:A) (_ : b x)
+
+log fst : [A:Type] => [b:A -> Type] => Sigma A b -> A
+fst [A] [b] p =  
+  case p of 
+    Pair x y -> x
+
+log snd : [A:Type] => [b:A -> Type] => (p:Sigma A b) 
+	     -> b (fst p)
+snd [A] [b] p =
+  case p of 
+    Pair x y -> unfold (fst p) in y
+
+
+{-
+log map : [A : Type 0] -> [p : A -> Type 0] -> 
+	   [B : Type 0] -> [q : B -> Type 0] -> 
+		(f : A -> B) ->
+		(g : (x: A) -> (p x) -> q (f x)) ->
+		Sigma A p -> Sigma B q
+map = \ [A][p][B][q] f g x. 
+  case x [_] of 
+    Pair x y -> Pair (f x) (g x y)
+ -}

@@ -1,0 +1,233 @@
+module TypeTest where
+
+import Prelude
+
+x = 1
+
+y = 1
+
+-- -- Explicit product, termiNating.
+lam_term : (a : Nat) -> Nat
+lam_term = \ x . x
+
+
+x2 = lam_term x
+
+-- -- Explicit product, general
+prog lam_general : (a : Nat@prog) -> Nat
+lam_general = \ x . x
+
+
+-- Implicit product.
+ilam_gen : [a : Type 0@log] -> (x:a@prog) -> Nat
+ilam_gen = \ [a] . \ x . 1
+
+-- -- Implicit product.
+ilam_term : [x : Nat] -> Nat
+ilam_term = \ [x] . 1
+
+app_pi_term = lam_term 1
+
+-- In the P fragment we get impredicative types too.
+prog impred_prog_pi_type : Type 0
+impred_prog_pu_type = (a : Type 1) -> (a@prog) -> Nat
+
+add : (x : Nat) -> (y:Nat) -> Nat
+ind add x = \y .
+   case x [z] of
+   	 Zero -> y
+   	 Succ m -> Succ (add m [ord z] y)
+
+mult : (x : Nat) -> (y:Nat) -> Nat
+ind mult x = \y .
+   case x [z] of
+   	 Zero -> Zero
+   	 Succ m -> add y (mult m [ord z] y)
+
+data Id (a : Type 0@log) : Type 0 where
+  IdC
+
+unId : (a : Type 0@log) -> (x : Id a@log) -> Type 0
+unId = \a v .
+   case v [z] of
+    IdC -> a
+
+id : [aTy : Type 0@log] -> (a : aTy@log) -> aTy
+id = \ [aTy] a . a
+
+
+z = id [Nat] Zero
+
+v2 = pred 0 -- (VNil [Nat])
+
+
+join_test : (pred (Succ Zero)) = Zero
+join_test = join 20
+
+-- this one fails, but it should succeed:
+-- val join_test_bug = add Zero Zero ^ Zero
+
+
+data Vector (a : Type 0) (n : Nat) : Type 0 where
+   VNil  of [pf : n = 0] 
+   VCons of [size : Nat]  [pf : Succ size = n] 
+            (x:a@log)  (xs : Vector a size)
+
+
+head : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> a
+head = \ n [a] dis .
+		 case dis [y] of
+       VNil [pf] -> contra pf
+       VCons [sz] [pf] x xs -> x
+
+
+tail : (n : Nat) -> [a : Type 0] -> (v: Vector a (Succ n)) -> Vector a n
+tail = \ n [a] dis .
+  case dis [diseq] of
+    VNil [neq] -> contra neq
+    VCons [sz] [neq] x xs -> 
+	  xs
+
+v1 : Vector Bool (Succ Zero)
+v1 = VCons [0] [join 1] True (VNil [join 1])
+
+-- MiniAgda-style "sized nats"
+
+-- Type 0 of nats smaller than n.
+data SNat (n : Nat) : Type 0 where
+    SZero of [i : Nat] [pf : n = Succ i] 
+    SSucc of [i : Nat] [pf : n = Succ i] (s : SNat i) 
+
+minus : [i : Nat] -> (x : SNat i) -> [j : Nat] -> (y : SNat j) -> SNat i
+minus =
+  \ [i] x . ind minus [j]  = \ y .
+                case x [z1] of
+                  SZero [i'] [pf] -> x
+                  SSucc [i'] [pf] x' ->
+                    case y [z2] of
+                      SZero [j'] [pf'] -> x
+                      SSucc [j'] [pf'] y' -> (minus [j'] [ord pf'] y')
+
+-- compute y/x
+divBy : [j:Nat] -> (y: SNat j) -> [i: Nat] -> (x: SNat i) -> SNat i
+divBy =
+ \ [j] y . case y [eq_y] of 
+             SZero [j'] [eq_j'] -> \[i].\x.x   -- division undefined, just return x.
+	     SSucc [j'] [eq_j'] y' ->
+               ind f [i] = \ x .
+                 case x [eq_x] of
+		   SZero [i'] [eq_i'] -> x
+		   SSucc [i'] [eq_i'] x'-> SSucc [i'] [eq_i'] (f [i'] [ord eq_i'] (minus [i'] x' [j'] y'))
+                                            -- Note: (minus x' y') == (minus x y)
+
+div : [i:Nat] -> (x: SNat i) -> [j: Nat] -> (y: SNat j) -> SNat i
+div = \[i] x [j] y. divBy [j] y [i] x
+
+plusZero : (a : Nat) -> add a 0 = a
+ind plusZero a =
+   case a [aeq] of
+     Zero -> (join : add 0 0 = 0)
+     Succ x ->
+       let _ = plusZero x [ord aeq] in
+        (join : (add (Succ x) 0) = Succ (add x 0))
+
+-- The old-style code with explicit conversions:
+{-
+plusZero : (a : Nat) -> add a 0 = a
+ind plusZero a =
+   case a [aeq] of
+     Zero -> conv join 5 
+               by sym Nat Nat a 0 aeq 
+               at h.add h 0 = h
+     Succ x ->
+       conv
+         conv
+           conv (join 0 : Succ x = Succ x)
+             by sym Nat Nat (add x 0) x (plusZero x [ord aeq])
+             at h.Succ h = Succ x
+           by (join 100 : Succ (add x 0) = add (Succ x) 0)
+           at h.h = Succ x
+         by sym Nat Nat a (Succ x) aeq
+         at h.add h 0 = h
+
+plusZero1 : (a : Nat) -> add a 0 = a
+ind plusZero1 a =
+   case a [aeq] of
+     Zero -> conv join 5 
+               by sym Nat Nat a 0 aeq 
+               at h.add h 0 = h
+     Succ x ->
+        -- pf1 : Succ (add x 0) = Succ x
+       let pf1 [eq1] = conv (join 0 : Succ x = Succ x)
+                         by sym Nat Nat (add x 0) x (plusZero1 x [ord aeq])
+                         at h.Succ h = Succ x
+        in 
+        -- pf2 : add (Succ x) 0 = Succ x
+       let pf2 [eq] = conv pf1
+                         by (join 100 : Succ (add x 0) = add (Succ x) 0)
+                         at h.h = Succ x
+        in conv pf2 
+             by sym Nat Nat a (Succ x) aeq
+             at h.add h 0 = h
+
+plusZero2 : (a : Nat) -> add a 0 = a
+ind plusZero2 a =
+  case a [aeq] of
+    Zero -> conv join 4 
+              by sym Nat Nat a 0 aeq
+              at h.add h 0 = h
+    Succ x ->
+      trans [Nat] [Nat] [Nat]
+            [add a 0] [add (Succ x) 0] [a]
+        [conv join 0
+           by aeq 
+           at h.add a 0 = add h 0]
+        [trans [Nat] [Nat] [Nat]
+               [add (Succ x) 0] [Succ x] [a]
+           [conv join 10
+              by plusZero2 x [ord aeq]
+              at h.add (Succ x) 0 = Succ h]
+           [sym Nat Nat a (Succ x) aeq]]
+
+add' : (x : Nat) -> (y:Nat) -> Nat
+ind add' x = \y .
+   case x [z] of
+   	 Zero -> y
+   	 Succ m -> let r [req] = add' m [ord z] y in Succ r
+
+plusZero' : (a : Nat) -> add' a 0 = a
+ind plusZero' a =
+   case a [aeq] of
+     Zero -> conv (join 5 : add' 0 0 = 0)
+               by sym Nat Nat a 0 aeq 
+               at h.add' h 0 = h
+     Succ x -> 
+       conv
+         conv
+          conv
+             conv
+               conv 
+                 conv (join 0 : add' a 0 = add' a 0) 
+                   by aeq
+                   at h.add' a 0 = add' h 0
+               by (join 8 : ((add' (Succ x) 0) = let y[yeq] = (add' x 0) in Succ y))
+               at h.add' a 0 = h
+             by (join 5 : (let y[yeq] = (add' x 0) in Succ y) = (let y[yeq] = add' x 0 in Succ y))
+             at h.add' a 0 = h
+           by (plusZero' x [ord aeq])
+           at h.add' a 0 = let y [yeq] = h in Succ y
+         by (join 5 : (let  y [yeq] = x in Succ y) = (Succ x))
+         at h.add' a 0 = h
+      by conv (join 0) by aeq at h.h = a
+      at h.add' a 0 = h
+
+-}
+
+axiom f : (x:Nat@prog) -> Nat
+
+prog foo : (x:Nat) -> Nat
+foo = \ x . let prog y[yeq] = x in f y
+
+--------- Demonstrating the wonders of TRUSTME
+magic : Vector Nat 2 -> Vector Nat 4
+magic = \v. let _ = (TRUSTME: 2 = 4) in v
