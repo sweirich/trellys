@@ -359,6 +359,8 @@ prog boom : Maybe Nat
 boom = bar md3 0
 
 
+{- 
+  -- This was not mentioned in the paper, and indeed it does not make any sense.
 prog maybe_map : [a : Type 0] => [b : Type 0] => 
 	 ((a @ log) -> b @ prog) -> (Maybe a @ prog) -> Maybe b
 maybe_map [a] [b] f n =
@@ -369,6 +371,7 @@ maybe_map [a] [b] f n =
 log lemma_maybe : (f : (Nat @ log) -> Nat @ prog) -> (x:Nat) -> maybe_map f (Just x) = (Just (f x) : Maybe Nat)
 lemma_maybe f x = unfold (maybe_map f (Just x)) in _
 
+-}
 
 log mplus : [A : Type] => Maybe A -> Maybe A -> Maybe A 
 mplus [A] x y = case x of 

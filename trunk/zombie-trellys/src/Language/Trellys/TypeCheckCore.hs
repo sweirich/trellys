@@ -105,7 +105,7 @@ getType (ABox a th') = do
   isVal <- isEValue <$> erase a
   case th of 
     Logic                  -> return (Logic, AAt aTy th')
-    Program | isVal        -> return (Logic, AAt aTy th')
+    Program | isVal && th'==Program  -> return (Logic, AAt aTy th')
     Program | th'==Program -> return (Program, AAt aTy th')
     _ -> coreErr [DS "getType: In ABox,", DD a, DS "should check at L but checks at P"]
   

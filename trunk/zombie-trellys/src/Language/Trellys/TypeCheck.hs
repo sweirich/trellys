@@ -248,9 +248,9 @@ ta a (AAt tyA th') | unCheckable a = do
     Nothing -> do
       withBox <- coerce ea tyA' tyA
       case (withBox, eaTh) of
-        (Just eaCoerced, Logic)                   -> return $ ABox eaCoerced th'
-        (Just eaCoerced, Program) | isVal         -> return $ ABox eaCoerced th'
-        (Just eaCoerced, Program) | th'==Program  -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Logic)                        -> return $ ABox eaCoerced th'
+--        (Just eaCoerced, Program) | isVal && eaTh<=th' -> return $ ABox eaCoerced th'
+        (Just eaCoerced, Program) | th'==Program       -> return $ ABox eaCoerced th'
         (Just _,_)   -> err [DD a, DS "should check at L but checks at P"]
         (Nothing,_) -> do
                          tyA_diffed <- diff tyA tyA'
