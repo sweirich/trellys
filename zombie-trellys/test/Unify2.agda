@@ -1,5 +1,13 @@
 module Unify2 where
 
+{- Agda version of unification example from POPL 2015 paper. 
+
+This file actually defines unification several times. The first definition
+uses a function for the occurs check, the second uses a more relational
+version. The function described in the paper is at the end of the file.
+
+-}
+
 open import Function using (_∘_)
 open import Data.Bool hiding (_≟_)
 open import Data.Nat
@@ -14,41 +22,16 @@ open ≡-Reasoning
 ≡-cong : {A B : Set}{x y : A} -> (f : A -> B) -> (x ≡ y) -> f x ≡ f y
 ≡-cong f refl = refl
 
-contrapositive : ∀ {P Q : Set} -> (P -> Q) -> ¬ Q -> ¬ P
-contrapositive f nq = λ x -> ⊥-elim (nq (f x))
 
+-- Common definitions to both versions 
 
-plus_assoc : (i j k : ℕ) -> ((i + j) + k ≡ i + (j + k))
-plus_assoc zero j k = refl
-plus_assoc (suc i') j k = ≡-cong suc (plus_assoc i' j k)
-
-
-isNo : ∀ {a} {P : Set a} → Dec P → Bool
-isNo (yes _) = false
-isNo (no _) =  true
- 
 data Term : Set where
   leaf   : Term
   branch : Term → Term → Term
   var    : ℕ → Term
 
-injvar : ∀ {x y} -> var x ≡ var y -> x ≡ y
-injvar refl = refl
 
-injbr1  : ∀ {s1 s2 t1 t2} -> branch s1 t1 ≡ branch s2 t2 -> s1 ≡ s2
-injbr1 refl = refl 
-
-injbr2  : ∀ {s1 s2 t1 t2} -> branch s1 t1 ≡ branch s2 t2 -> t1 ≡ t2
-injbr2 refl = refl 
-
-
--- returns true when x is not free in t
-_∉FV_ : ℕ → Term → Bool
-x ∉FV leaf = false
-x ∉FV (branch t1 t2) = (x ∉FV t1) ∧ (x ∉FV t2)
-x ∉FV (var y) with (x ≟ y)
-...             | yes _ = false
-...             | no _  = true
+-- Substitutions 
 
 Substitution : Set 
 Substitution = ℕ → Maybe Term
@@ -69,11 +52,14 @@ ap s (var x) with s x
 ...         | (just t) =  t
 ...         | (nothing) = var x
 
--- Composing subsitutions
+-- Composing substitutions
 compose : Substitution → Substitution → Substitution
 compose s1 s2 x with s2 x
 ...           | just t = just (ap s1 t)
 ...           | nothing = s1 x
+
+
+-- reasoning about substitutions
 
 apCompose : ∀ {s s'} → (t : Term) → ap (compose s s') t  ≡ ap s (ap s' t)
 apCompose leaf = refl
@@ -87,10 +73,30 @@ varSingleton x t with x ≟ x
 varSingleton x t | yes p =  refl
 varSingleton x t | no ¬p = ⊥-elim (¬p refl)
 
+-- result of unification
+data Unify : (t1 t2 : Term) → Set where
+  nomatch  : ∀{t1 t2} → Unify t1 t2
+  match : ∀{t1 t2} (s : Substitution) → ap s t1 ≡ ap s t2 → Unify t1 t2   
+
+-----------------------------------------------
+-- version one, occurs check as a function 
+
+-- returns true when x is not free in t
+_∉FV_ : ℕ → Term → Bool
+x ∉FV leaf = false
+x ∉FV (branch t1 t2) = (x ∉FV t1) ∧ (x ∉FV t2)
+x ∉FV (var y) with (x ≟ y)
+...             | yes _ = false
+...             | no _  = true
+
+xisy : ∀ {x y} -> (x ∉FV (var y)) ≡ false -> x ≡ y 
+xisy {x}{y} q with (x ≟ y) 
+...  | (yes p) = p
+...  | (no ¬p) with q 
+...               | ()
 
 
--- interaction between singleton and fv
-
+-- interaction between singleton and ∉FV
 singleton-∉FV : ∀ t x s → (x ∉FV t) ≡ true → ap (singleton x s) t ≡ t
 singleton-∉FV leaf x s = λ _ →  refl
 singleton-∉FV (branch t1 t2) x s with (x ∉FV t1) | inspect (_∉FV_ x) t1 | (x ∉FV t2) | inspect (_∉FV_ x) t2
@@ -102,23 +108,8 @@ singleton-∉FV (var y) x s with (x ≟ y)
 ...  | (yes p)  = λ ()
 ...  | (no ¬p)   = λ _ → refl
 
-neq : ∀ {x y} -> ¬(x ≡ y) ->  (x ∉FV (var y)) ≡ true 
-neq {x} {y} q with (x ≟ y) 
-...  | (yes p) = ⊥-elim (q p)
-...  | (no ¬p) = refl 
-
-varNotSingleton : ∀ x y t → ¬(x ≡ y) → (var y) ≡ ap (singleton x t) (var y)
-varNotSingleton x y t q = sym (singleton-∉FV (var y) x t (neq q))
-{-
-varNotSingleton x y t q with x ≟ y 
-varNotSingleton x y t q | yes p = ⊥-elim (q p)
-varNotSingleton x y t q | no ¬p = refl 
--}
 
 
-data Unify : (t1 t2 : Term) → Set where
-  nomatch  : ∀{t1 t2} → Unify t1 t2
-  match : ∀{t1 t2} (s : Substitution) → ap s t1 ≡ ap s t2 → Unify t1 t2   
 
 {-# NO_TERMINATION_CHECK #-}
 unify : (t1 t2 : Term) → Unify t1 t2
@@ -145,30 +136,23 @@ unify (branch t11 t12) (branch t21 t22)
           ≡⟨ sym (apCompose (branch t21 t22)) ⟩
             ap (compose s' s) (branch t21 t22)
           ∎)
-unify (var x) (var y) with (x ≟ y)
-...             | yes p = match empty (≡-cong var p)
-...             | no  q  = match (singleton x (var y))
-  (begin
-    ap (singleton x (var y)) (var x)
-    ≡⟨ sym (varSingleton x (var y)) ⟩
-      var y
-    ≡⟨ sym (singleton-∉FV (var y) x (var y) (neq q)) ⟩
-    ap (singleton x (var y)) (var y)
-   ∎)
-unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
+unify t1 (var x) with x ∉FV t1 | inspect (_∉FV_ x) t1
 ...               | true | [ q ] 
-  =  match (singleton x t) 
-        (trans (singleton-∉FV t x t q) 
-                (varSingleton x t))
-...              | false | _ =  nomatch
-unify (var x) t with unify t (var x) 
+  =  match (singleton x t1) 
+        (trans (singleton-∉FV t1 x t1 q) 
+                (varSingleton x t1))
+...              | false | [ p ] with t1
+...                               | var y = match empty (≡-cong var (sym (xisy p)))
+...                               | _     = nomatch
+unify (var x) t2 with unify t2 (var x) 
 ...              | nomatch = nomatch
 ...              | match s p = match s (sym p)
 
 
-
+-----------------------------------------------
 {- Another agda version that returns a proof when checking whether 
    a variable is free in the term.  -}
+
 data _∈_ : ℕ → Term → Set where 
   invar   : ∀{x} → x ∈ (var x)
   inleft  : ∀ {x t1 t2} → x ∈ t1 -> x ∈ (branch t1 t2)
@@ -177,12 +161,6 @@ data _∈_ : ℕ → Term → Set where
 invvar : ∀ {x y} -> x ∈ (var y) -> x ≡ y
 invvar invar = refl
 
-
-{-
-invbranch : ∀ {x t1 t2} -> x ∈ (branch t1 t2) -> (x ∈ t1) ⊎ (x ∈ t2)
-invbranch (inleft x) = inj₁ x
-invbranch (inright x) = inj₂ x
--}
 
 lemma : ∀ {x t1 t2} -> ¬ (x ∈ t1) -> ¬ (x ∈ t2) -> ¬ (x ∈ (branch t1 t2))
 lemma ¬p ¬q (inleft x) = ¬p x
@@ -198,6 +176,7 @@ x is∈ (var y) with (x ≟ y)
 .x is∈ (var x) | yes refl = yes invar
 ...            | no ¬p    = no (¬p ∘ invvar)
 
+-- interaction between singleton and ∈ 
 
 singleton-∉ : ∀ t x s → ¬ (x ∈ t) → ap (singleton x s) t ≡ t
 singleton-∉ leaf x s = λ _ →  refl
@@ -225,13 +204,13 @@ unify' (branch t11 t12) (branch t21 t22)
          (begin
             ap (compose s' s) (branch t11 t12)
           ≡⟨ apCompose (branch t11 t12)  ⟩
---            ap s' (ap s (branch t11 t12))
---          ≡⟨ refl ⟩
+            ap s' (ap s (branch t11 t12))
+          ≡⟨ refl ⟩
             branch (ap s' (ap s t11)) (ap s' (ap s t12))
           ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
             branch (ap s' (ap s t21)) (ap s' (ap s t22))
---          ≡⟨ refl ⟩
---            ap s' (ap s (branch t21 t22))
+          ≡⟨ refl ⟩
+             ap s' (ap s (branch t21 t22))
           ≡⟨ sym (apCompose (branch t21 t22)) ⟩
             ap (compose s' s) (branch t21 t22)
           ∎)
@@ -245,11 +224,14 @@ unify' t (var x) with (x is∈ t)
           ≡⟨ varSingleton x t  ⟩
             ap (singleton x t) (var x)
           ∎)
-...              | yes _ =  nomatch
+...              | yes p with t 
+...                      | var y = match empty (≡-cong var (sym (invvar p)))
+...                      | _     = nomatch
 unify' (var x) t with unify' t (var x) 
 ...              | nomatch = nomatch
 ...              | match s p = match s (sym p)
 
+-- version actually in the paper. Compresses the equation chains above
 
 {-# NO_TERMINATION_CHECK #-}
 unify'' : (t1 t2 : Term) → Unify t1 t2
@@ -266,43 +248,14 @@ unify'' (branch t11 t12) (branch t21 t22)
            (trans (apCompose (branch t11 t12))
            (trans (cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q)
                   (sym (apCompose (branch t21 t22)))))
- {-        (begin
-            ap (compose s' s) (branch t11 t12)
-          ≡⟨ apCompose (branch t11 t12)  ⟩
---            ap s' (ap s (branch t11 t12))
---          ≡⟨ refl ⟩
-            branch (ap s' (ap s t11)) (ap s' (ap s t12))
-          ≡⟨ cong₂ (λ t1 t2 → branch (ap s' t1) t2) p q ⟩
-            branch (ap s' (ap s t21)) (ap s' (ap s t22))
---          ≡⟨ refl ⟩
---            ap s' (ap s (branch t21 t22))
-          ≡⟨ sym (apCompose (branch t21 t22)) ⟩
-            ap (compose s' s) (branch t21 t22)
-          ∎) -}
-unify'' (var x) (var y) with (x ≟ y)
-... | no q  = match (singleton x (var y))
-  (begin
-    ap (singleton x (var y)) (var x)
-    ≡⟨ sym (varSingleton x (var y)) ⟩
-      var y
-    ≡⟨ sym (singleton-∉ (var y) x (var y) ((contrapositive invvar) q)) ⟩
-    ap (singleton x (var y)) (var y)
-   ∎)
-            
-... | yes p = match empty (≡-cong var p) 
-unify'' t (var x) with (x is∈ t)
+unify'' t1 (var x) with (x is∈ t1)
 ...               | no q  -- proof that ¬ (x ∈ t)
-  =  match (singleton x t) 
-           (trans (singleton-∉ t x t q) 
-                  (varSingleton x t))
-{-         (begin
-            ap (singleton x t) t
-          ≡⟨ singleton-∉ t x t q  ⟩
-            t
-          ≡⟨ varSingleton x t  ⟩
-            ap (singleton x t) (var x)
-          ∎) -}
-...              | yes _ =  nomatch
-unify'' (var x) t with unify'' t (var x) 
+  =  match (singleton x t1) 
+           (trans (singleton-∉ t1 x t1 q) 
+                  (varSingleton x t1))
+...              | yes p with t1 
+...                      | var y = match empty (≡-cong var (sym (invvar p)))
+...                      | _      = nomatch
+unify'' (var x) t2 with unify'' t2 (var x) 
 ...              | nomatch = nomatch
 ...              | match s p = match s (sym p)
