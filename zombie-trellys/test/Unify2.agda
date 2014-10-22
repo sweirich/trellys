@@ -14,6 +14,10 @@ open ≡-Reasoning
 ≡-cong : {A B : Set}{x y : A} -> (f : A -> B) -> (x ≡ y) -> f x ≡ f y
 ≡-cong f refl = refl
 
+contrapositive : ∀ {P Q : Set} -> (P -> Q) -> ¬ Q -> ¬ P
+contrapositive f nq = λ x -> ⊥-elim (nq (f x))
+
+
 plus_assoc : (i j k : ℕ) -> ((i + j) + k ≡ i + (j + k))
 plus_assoc zero j k = refl
 plus_assoc (suc i') j k = ≡-cong suc (plus_assoc i' j k)
@@ -83,6 +87,8 @@ varSingleton x t with x ≟ x
 varSingleton x t | yes p =  refl
 varSingleton x t | no ¬p = ⊥-elim (¬p refl)
 
+
+
 -- interaction between singleton and fv
 
 singleton-∉FV : ∀ t x s → (x ∉FV t) ≡ true → ap (singleton x s) t ≡ t
@@ -95,6 +101,20 @@ singleton-∉FV (branch t1 t2) x s with (x ∉FV t1) | inspect (_∉FV_ x) t1 | 
 singleton-∉FV (var y) x s with (x ≟ y) 
 ...  | (yes p)  = λ ()
 ...  | (no ¬p)   = λ _ → refl
+
+neq : ∀ {x y} -> ¬(x ≡ y) ->  (x ∉FV (var y)) ≡ true 
+neq {x} {y} q with (x ≟ y) 
+...  | (yes p) = ⊥-elim (q p)
+...  | (no ¬p) = refl 
+
+varNotSingleton : ∀ x y t → ¬(x ≡ y) → (var y) ≡ ap (singleton x t) (var y)
+varNotSingleton x y t q = sym (singleton-∉FV (var y) x t (neq q))
+{-
+varNotSingleton x y t q with x ≟ y 
+varNotSingleton x y t q | yes p = ⊥-elim (q p)
+varNotSingleton x y t q | no ¬p = refl 
+-}
+
 
 data Unify : (t1 t2 : Term) → Set where
   nomatch  : ∀{t1 t2} → Unify t1 t2
@@ -125,6 +145,16 @@ unify (branch t11 t12) (branch t21 t22)
           ≡⟨ sym (apCompose (branch t21 t22)) ⟩
             ap (compose s' s) (branch t21 t22)
           ∎)
+unify (var x) (var y) with (x ≟ y)
+...             | yes p = match empty (≡-cong var p)
+...             | no  q  = match (singleton x (var y))
+  (begin
+    ap (singleton x (var y)) (var x)
+    ≡⟨ sym (varSingleton x (var y)) ⟩
+      var y
+    ≡⟨ sym (singleton-∉FV (var y) x (var y) (neq q)) ⟩
+    ap (singleton x (var y)) (var y)
+   ∎)
 unify t (var x) with x ∉FV t | inspect (_∉FV_ x) t
 ...               | true | [ q ] 
   =  match (singleton x t) 
@@ -147,6 +177,7 @@ data _∈_ : ℕ → Term → Set where
 invvar : ∀ {x y} -> x ∈ (var y) -> x ≡ y
 invvar invar = refl
 
+
 {-
 invbranch : ∀ {x t1 t2} -> x ∈ (branch t1 t2) -> (x ∈ t1) ⊎ (x ∈ t2)
 invbranch (inleft x) = inj₁ x
@@ -166,6 +197,7 @@ x is∈ (branch t1 t2) with (x is∈ t1) | (x is∈ t2)
 x is∈ (var y) with (x ≟ y) 
 .x is∈ (var x) | yes refl = yes invar
 ...            | no ¬p    = no (¬p ∘ invvar)
+
 
 singleton-∉ : ∀ t x s → ¬ (x ∈ t) → ap (singleton x s) t ≡ t
 singleton-∉ leaf x s = λ _ →  refl
@@ -247,6 +279,17 @@ unify'' (branch t11 t12) (branch t21 t22)
           ≡⟨ sym (apCompose (branch t21 t22)) ⟩
             ap (compose s' s) (branch t21 t22)
           ∎) -}
+unify'' (var x) (var y) with (x ≟ y)
+... | no q  = match (singleton x (var y))
+  (begin
+    ap (singleton x (var y)) (var x)
+    ≡⟨ sym (varSingleton x (var y)) ⟩
+      var y
+    ≡⟨ sym (singleton-∉ (var y) x (var y) ((contrapositive invvar) q)) ⟩
+    ap (singleton x (var y)) (var y)
+   ∎)
+            
+... | yes p = match empty (≡-cong var p) 
 unify'' t (var x) with (x is∈ t)
 ...               | no q  -- proof that ¬ (x ∈ t)
   =  match (singleton x t) 
