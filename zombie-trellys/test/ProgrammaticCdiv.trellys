@@ -98,5 +98,5 @@ divHalts_red2 = \m n .
 div_t : (m:Nat) -> (n:Nat) -> Exists Nat (divHalts m n)
 div_t m n = 
    unfold (P m) in 
-    -- Here is an example where the expressive application rule from the ICFP paper is useful:
+    -- Here is an example where the expressive application rule from the POPL'15 paper is useful:
     cov [P] div_t_f m n

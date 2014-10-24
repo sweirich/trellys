@@ -64,52 +64,52 @@ ind minus_same_zero n =
           minus_same_zero pred [ord n_eq]
 
 -- n - 0 = n
-lemma_minus_zero_id : (n : Nat) -> (minus n 0 = n)
-lemma_minus_zero_id =
+minus_zero_id : (n : Nat) -> (minus n 0 = n)
+minus_zero_id =
   \n . case n [eq_n] of 
     Zero -> (join : minus 0 0 = 0)
     Succ n' -> (join 10 : minus (Succ n') 0 = Succ n')
 
 -- 0 + n = n
-log lemma_zero_plus_id : (n : Nat) -> (plus 0 n = n)
-lemma_zero_plus_id n = join
+log zero_plus_id : (n : Nat) -> (plus 0 n = n)
+zero_plus_id n = join
 
 -- n + 0 = n
-log lemma_plus_zero_id : (n : Nat) -> (plus n 0 = n)
-ind lemma_plus_zero_id n =
+log plus_zero_id : (n : Nat) -> (plus n 0 = n)
+ind plus_zero_id n =
  case n [eq_n] of 
     Zero -> smartjoin  --or: (join : plus 0 0 = 0)
-    Succ n' -> let [_] = lemma_plus_zero_id n' [ord eq_n] in
+    Succ n' -> let [_] = plus_zero_id n' [ord eq_n] in
                  smartjoin --or: (join : plus (Succ n') 0 = Succ (plus n' 0))
 
-lemma_plus_succ : (m : Nat) -> (n : Nat) -> (plus m (Succ n)) = (Succ (plus m n))
-ind lemma_plus_succ m = \n .
+plus_succ : (m : Nat) -> (n : Nat) -> (plus m (Succ n)) = (Succ (plus m n))
+ind plus_succ m = \n .
   case m [m_eq] of 
     Zero -> smartjoin
-    Succ m' -> let IH = (lemma_plus_succ m' [ord m_eq] n) in
+    Succ m' -> let IH = (plus_succ m' [ord m_eq] n) in
                  smartjoin
 
 
 -- (m + n) - m = n
-lemma_minus_plus_id : (m n : Nat) -> ((minus (plus m n) m) = n)
-ind lemma_minus_plus_id m = \n .
+minus_plus_id : (m n : Nat) -> ((minus (plus m n) m) = n)
+ind minus_plus_id m = \n .
   case m [m_eq] of
      Zero -> let _ = (join : n = plus 0 n) in
-              lemma_minus_zero_id n
+              minus_zero_id n
      Succ m' ->  let _ = (join : (plus (Succ m') n) = Succ (plus m' n)) in
                  let [plus_m'_n] = plus m' n in
                  let _ = (join : minus (Succ plus_m'_n) (Succ m')
                                 = minus plus_m'_n m') in
-                 (lemma_minus_plus_id m' [ord m_eq] n)
+                 (minus_plus_id m' [ord m_eq] n)
 
 -- version of plus assoc without using reduction modulo
 plus_commutes : (m n : Nat) -> (plus m n) = (plus n m)
 ind plus_commutes m = \n .
   case m [m_eq] of
-     Zero -> let _ = (lemma_plus_zero_id n) in
+     Zero -> let _ = (plus_zero_id n) in
              unfold (plus m n) in
               _ 
-     Succ m' -> let _  = (lemma_plus_succ n m') in
+     Succ m' -> let _  = (plus_succ n m') in
                 let IH = (plus_commutes m' [ord m_eq] n) in
                 unfold (plus m n) in
                 unfold (plus n m') in

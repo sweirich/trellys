@@ -1,0 +1,26 @@
+-- Here is a tricky version.  The idea is that there are two possible things to 
+-- pick for T, but only one of them gives a wellformed type when 
+-- substituting in (plus n n). The injRng check in the POPL'15 paper conservatively
+-- rejects both.
+
+module UpToCongruence_badkinded1 where
+
+import Prelude
+
+usually log
+
+prog plus : Nat -> Nat -> Nat
+rec plus n = \ m. 
+ case n of 
+   Zero -> m
+   Succ n' -> Succ (plus n' m)
+
+
+prog Iapp_wf1  : (T: Type) -> (n:Nat) -> (f:T) -> Nat
+Iapp_wf1 T n f = 
+ let _ = (TRUSTME : T 
+          = ((x : Nat) ->  (join : ((\y.0) : Nat->Nat) x = 0) = (join : 0 = 0))) in
+ let _ = (TRUSTME : T
+          = (Nat -> (join: 0=0) = (join: 0=0))) in
+ let prog _ = f (plus n n) in
+   0 

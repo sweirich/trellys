@@ -1,4 +1,4 @@
-{- a few tests of the elaboration system from the ICFP paper, where we
+{- a few tests of the elaboration system from the POPL'15 paper, where we
    do a search for arrow types when checking app, lam, dcon or case. -}
 
 module UpToCongruence where
@@ -39,3 +39,5 @@ Icase A x p =
   case x of
     Zero -> True
     Succ y -> True
+
+

@@ -1043,7 +1043,7 @@ unfold str@(namePrefix, actualStr) a = do
                                    -- TODO, eventually this will be fixed in activate.
 
                                    --liftIO $ putStrLn "Checking term."
-                                   welltyped <- (do _ <- underUnfolds (aTs term); return True) --`catchError` (\ _ -> return False)
+                                   welltyped <- (do _ <- underUnfolds (aTs term); return True) `catchError` (\ _ -> return False)
                                    if (not welltyped) 
                                       then do
                                          warn [DS "rejecting illtyped variant", DD term,
@@ -1192,6 +1192,13 @@ isTyEq :: ATerm -> Bool
 isTyEq (ATyEq _ _) = True
 isTyEq _ = False
 
+isWellkindedType :: ATerm -> TcMonad Bool
+isWellkindedType a =
+   (do (_, aTy) <- aTs a
+       case (eraseToHead aTy) of
+         AType _ -> return True
+         _       -> return False)
+     `catchError` (\ _ -> return False)
 
 
 -- like intoArrow, but tries to find a datatype.
@@ -1265,13 +1272,18 @@ injRngFor (eraseToHead -> arr@(AArrow _ _ _ bnd)) c = do
     _ <- genEqs c
     ((x, unembed->a), b) <- lift $ unbind bnd
     cs <- classMembers arr (isArrow.eraseToHead)
+--    liftIO $ putStrLn.render.disp $ [ DS "Ok, so in the process of messing with the arrow type", DD arr, DS "We uncountered the following candidates:", DD (map fst cs)]
     forM_ cs $
       (\(eraseToHead -> arr'@(AArrow _ _ _ bnd'), pfThunk) -> do
           ((x', unembed->a'), b') <- lift $ unbind bnd'
           pf <- lift pfThunk
           pf_a <-  symEq a' a (ADomEq pf)  -- pf_c : a = a'
-          let ca  = subst x c b
-          let ca' = subst x' (AConv c pf_a) b'
+          let ca  = simplSubst x c b
+          let ca' = simplSubst x' (AConv c pf_a) b'
+          ca'_wellkinded <- lift $ isWellkindedType ca'
+          unless ca'_wellkinded $
+            err [DS "Injectitivity condition failed. The arrow type", DD arr',
+                 DS "leads to the ill-kinded return type", DD ca']
           nca   <- genEqs ca
           nca'  <- genEqs ca'
           -- So here is another question: ought we call unify at this point?

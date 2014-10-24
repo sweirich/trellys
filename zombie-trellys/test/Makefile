@@ -82,6 +82,8 @@ fail:
 	@./expect_error InjRngError "Injectivity condition failed"
 	@./expect_error InjRngError2 "Injectivity condition failed"
 	@./expect_error InjRngError3 "Injectivity condition failed"
+	@./expect_error  UpToCongruence_badkinded1 "leads to the ill-kinded return type"
+	@./expect_error  UpToCongruence_badkinded2 "ill-typed core term"
 
 
 extraction: $(foreach p,$(PASS),$(p).extraction) 

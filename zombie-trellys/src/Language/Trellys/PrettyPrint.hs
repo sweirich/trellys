@@ -78,8 +78,8 @@ initDI :: DispInfo
 --initDI = DI False S.empty
 initDI = DI {
               useTerminalHighlighting = unsafePerformIO (queryTerminal stdOutput),
-              verbose = False,
---              verbose = True,
+--              verbose = False,
+              verbose = True,
               dispAvoid = S.empty                    
          }
 
@@ -473,9 +473,12 @@ instance Display ATerm where
                      <+> text ".",
                     nest 2 dbody]
   display (AApp ep a b ty) = do 
+    isVerbose <- asks verbose
     da <- display a 
     db <- display b
+    dty <- display ty
     return $ aWrapf a da <+> aWraparg ep b db
+--              <+> (if isVerbose then colon <+> dty else empty)
   display (AAt a th) = do
     da <- display a
     return $ da <+> text "@" <+> disp th

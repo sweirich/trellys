@@ -29,6 +29,6 @@ ind div_mult m = \n .
                in let [plus_n__mult_m'_Sn] = plus n mult_m'_Sn
                in let _ = (join: div (Succ plus_n__mult_m'_Sn) n
                                  = Succ (div (minus plus_n__mult_m'_Sn n) n))
-               in let _ = lemma_minus_plus_id n (mult m' (Succ n))
+               in let _ = minus_plus_id n (mult m' (Succ n))
                in let IH = div_mult m' [ord m_eq] n
                in (_ : (div (mult m (Succ n)) n = m))

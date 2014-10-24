@@ -445,10 +445,10 @@ fdiv_ub_f_base = \m n [m_lt_Sn] .
 --                   S n' + (S m' - S n')
 --                      = S (n' + (m' - n'))   (by join)
 --                   rewrite the first equality in the second.
-minus_plus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plus n (minus m n))
-ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
+plus_minus_id : (n:Nat) -> (m:Nat) -> [lt m n = False] -> m = (plus n (minus m n))
+ind plus_minus_id n = \m [m_lt_n] . case n [n_eq] of
   Zero    -> let m' [m'_eq] = minus m Zero in
-             let _ = (lemma_minus_zero_id m : minus m Zero = m) in
+             let _ = (minus_zero_id m : minus m Zero = m) in
 	     let _ = (join : plus 0 m = m) in
                _ 
   Succ n' -> case m [m_eq] of
@@ -456,7 +456,7 @@ ind minus_plus_id n = \m [m_lt_n] . case n [n_eq] of
                  contra (_ : True = False)
     Succ m' -> 
       let _  = (join : lt (Succ m') (Succ n') = lt m' n') in
-      let ih = minus_plus_id n' [ord n_eq] m' [_] in
+      let ih = plus_minus_id n' [ord n_eq] m' [_] in
       let v1 = minus m' n' in
       let _  = (join : minus (Succ m') (Succ n') = minus m' n') in
       let _  = (join : Succ (plus n' v1) = plus (Succ n') v1) in
@@ -580,7 +580,7 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
   in let e2 [_] = (TRUSTME : 
        le (mult (fdiv m (Succ n)) (Succ n)) m
      = le (plus (Succ n) (mult (fdiv (minus m (Succ n)) (Succ n)) (Succ n))) m)
-  in let    _   = (minus_plus_id (Succ n) m [m_lt_Sn])
+  in let    _   = (plus_minus_id (Succ n) m [m_lt_Sn])
 
   {-
   -- (L P) value restriction here ... maybe I can specialize the lemma?
@@ -604,7 +604,7 @@ fdiv_ub_f_step = \m n [m_lt_Sn] gm .
                                              (minus m (Succ n)) = True))
 
 -}
--- Here is an example where the more expressive app rule from the ICFP paper is useful:
+-- Here is an example where the more expressive app rule from the POPL'15 paper is useful:
 {-
   in let ih [_] = (ih1 : ((k:Nat) -> le (mult (fdiv (minus m (Succ n)) (Succ k)) (Succ k))
                                              (minus m (Succ n)) = True))

@@ -309,7 +309,7 @@ ind s_minus_s__lt m = \n. case m [m_eq] of
                z_lt_Sn m
   Succ m' -> case n [n_eq] of
     Zero    -> let e1 [_] = (join : minus m Zero = (minus (Succ m) (Succ Zero))) in
-               let _ = lemma_minus_zero_id m in
+               let _ = minus_zero_id m in
                   m_lt_Sm m
     Succ n' -> let e1 [_] = s_minus_s__lt m' [ord m_eq] n' in
                let e2 [_] = (join : minus m n = minus (Succ m) (Succ n)) in
