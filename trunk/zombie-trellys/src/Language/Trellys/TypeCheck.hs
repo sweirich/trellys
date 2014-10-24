@@ -858,16 +858,18 @@ ts tm@(App ep a b) =
                  ebTh <- lift $ aGetTh eb
                  unless (ebTh==Logic) $
                    err [DS "Erased arguments must terminate, but", DD b, DS "checks at P."]
-
+               
                zea <- lift $ zonkTerm ea
                ztyB <- lift $ zonkTerm tyB
-
-               -- check that the injRng condition holds
-               injRngFor tyArr eb
 
                -- check that the result kind is well-formed
                let b_for_x_in_B = simplSubst x eb ztyB
                lift $ aKc b_for_x_in_B
+
+               -- check that the injRng condition holds
+               ztyArr <- lift $ zonkTerm tyArr
+               zeb <- lift $ zonkTerm eb
+               injRngFor ztyArr zeb
 
                return (AApp ep zea eb b_for_x_in_B, b_for_x_in_B)
              _ -> error "internal error. intoArrow somehow produced a non-arrow type"
