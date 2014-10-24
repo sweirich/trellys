@@ -1,9 +1,9 @@
 -- A challenge for Agda pattern matching 
--- from Daniel Peebles
--- https://plus.google.com/106318233255980016498/posts/9MsYQAGEKSp  
--- This is a "private" google plus post, so reference as Personal Communication
+-- from Eric Mertens
+-- https://plus.google.com/105882209409368927186/posts/eHEV4tRLhiC
+----- actually public. The share of it I found first was private. 
 
--- Daniel writes: 
+-- Eric writes: 
 --    Ulf Norell went so far as to say “it’s quite fun”.  
 --    This problem is just a little trickier than it looks and might even teach you something about using “with”!
 
@@ -36,9 +36,13 @@ snoc xs x = xs ++ x ∷ []
 -- Your challenge is to implement the following using only pattern matching
 -- and with clauses.
 snoc-inv : ∀ xs ys z → (snoc xs z ≡ snoc ys z) → xs ≡ ys
-snoc-inv (x ∷ xs) (y ∷ ys) z pf with (snoc xs z) | (snoc ys z) | inspect (snoc xs) z | inspect (snoc ys) z
-snoc-inv (.y ∷ xs) (y ∷ ys) z refl | .s2 | s2 | [ p ] | [ q ] with (snoc-inv xs ys z (trans p (sym q))) 
-snoc-inv (.y ∷ .ys) (y ∷ ys) z refl | .s2 | s2 | [ p ] | [ q ] | refl = refl
+snoc-inv (x ∷ xs') (y ∷ ys') z pf with (snoc-inv xs' ys' z (::inv2 pf)) 
+... | refl = {! !}
+{-
+snoc-inv (x ∷ xs') (y ∷ ys') z pf with (snoc xs' z) | (snoc ys' z) | inspect (snoc xs') z | inspect (snoc ys') z
+snoc-inv (.y ∷ xs') (y ∷ ys') z refl | .s2 | s2 | [ p ] | [ q ] with (snoc-inv xs' ys' z (trans p (sym q))) 
+snoc-inv (.y ∷ .ys') (y ∷ ys') z refl | .s2 | s2 | [ p ] | [ q ] | refl = refl
+-}
 snoc-inv (x ∷ x₁ ∷ xs) [] z () 
 snoc-inv (x ∷ []) [] z ()
 snoc-inv [] (x ∷ x₁ ∷ ys) z () 
