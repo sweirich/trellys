@@ -3,20 +3,24 @@
 module Snoc where
 
 import List
+
 usually log
 
-snoc : [A : Type] => List A -> A -> List A
-snoc [A] xs x = (append xs (Cons x Nil))
+log snoc : [A : Type] => List A -> A -> List A
+snoc = \ [A] xs x . (append xs (Cons x Nil))
 
-snoc_inv : [A : Type] -> (xs ys : List A) -> (z : A) 
+log snoc_inv : [A : Type] -> (xs : List A) -> (ys: List A) -> (z : A) 
          -> (snoc xs z) = (snoc ys z) -> xs = ys
-ind snoc_inv [A] xs = \ ys z pf.
+ind snoc_inv [A] xs = \ ys z pf .
      case xs [xeq], ys of 
         Cons x xs' , Cons y ys' -> 
-           let _ = (smartjoin : (snoc xs z) = Cons x (snoc xs' z)) in
-           let _ = (smartjoin : (snoc ys z) = Cons y (snoc ys' z)) in
-           let [_] = snoc_inv [A] xs' [ord xeq] ys' z _ in
-             _
+		     -- the difficult case for Agda!
+           unfold (snoc xs z) in 
+			  unfold (snoc xs' z) in 
+           unfold (snoc ys z) in 
+			  unfold (snoc ys' z) in
+			  let [_] = snoc_inv [A] xs' [ord xeq] ys' z _ in
+			  _
         Nil , Nil -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in _

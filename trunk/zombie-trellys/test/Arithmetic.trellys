@@ -102,7 +102,7 @@ ind lemma_minus_plus_id m = \n .
                                 = minus plus_m'_n m') in
                  (lemma_minus_plus_id m' [ord m_eq] n)
 
-
+-- version of plus assoc without using reduction modulo
 plus_commutes : (m n : Nat) -> (plus m n) = (plus n m)
 ind plus_commutes m = \n .
   case m [m_eq] of
@@ -119,21 +119,17 @@ plus_associates : (i j k: Nat) -> plus (plus i j) k = plus i (plus j k)
 plus_associates = ind pa i = \j k .
   case i [ieq] of
             -- `join` away `Zero`s on the left of `(+)`: (0+j)+k = j+k = 0+(j+k)
-    Zero -> let _ = (join : plus (plus Zero j) k = plus j k ) in
-            -- We name the subexpression (plus j k) in order to make it a value.
-            let [plus_j_k] = plus j k in
-            let _ = (join : plus Zero (plus_j_k) = plus_j_k) in 
-              _ 
-    Succ i' -> let ih = pa i' [ord ieq] j k
-               -- move the `Succ` inside on the left: S ((i+j)+k) = ((S i)+j)+k
+    Zero -> TRUSTME -- (join : plus (plus Zero j) k = plus Zero (plus j k)) 
+    Succ i' -> let ih = pa i' [ord ieq] j k -- (i' + j) + k = i' + (j + k)
+               -- move the `Succ` inside on the left: S ((i'+j)+k) = ((S i')+j)+k
                in let _  = (join : plus (Succ i') j = Succ (plus i' j))
-               in let [plus_i'_j] = plus i' j
+               in let plus_i'_j = plus i' j
                in let _  = (join : plus (Succ plus_i'_j) k = Succ (plus plus_i'_j k))
                -- move the `Succ` inside on the right: S (i+(j+k)) = (S i)+(j+k)
-               in let [plus_j_k] = plus j k
+               in let plus_j_k = plus j k
                in let _ = (join : plus (Succ i') plus_j_k = Succ (plus i' plus_j_k))
                -- move the `Succ` inside both sides
-               in (_ : (plus (plus i j) k) = (plus i (plus j k)))
+               in _ --  : (plus (plus i j) k) = (plus i (plus j k)))
 
 
 -- The same function as plus_associates, but using the smartjoin tactic to avoid

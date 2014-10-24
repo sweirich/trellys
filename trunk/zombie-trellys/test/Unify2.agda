@@ -254,7 +254,7 @@ unify'' t1 (var x) with (x is∈ t1)
            (trans (singleton-∉ t1 x t1 q) 
                   (varSingleton x t1))
 ...              | yes p with t1 
-...                      | var y = match empty (≡-cong var (sym (invvar p)))
+...                      | var y = match empty (cong var (sym (invvar p)))
 ...                      | _      = nomatch
 unify'' (var x) t2 with unify'' t2 (var x) 
 ...              | nomatch = nomatch

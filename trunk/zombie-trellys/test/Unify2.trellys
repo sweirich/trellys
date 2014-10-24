@@ -124,7 +124,7 @@ singletonNotFree = ind IH t = \ x s p .
                                             let _ = IH t2 [ord eqt] x s _ in
                                             _
 
-
+{-
 
 prog unify : (t1 t2 : Term) -> Unify t1 t2
 rec unify t1 = \ t2 . 
@@ -138,24 +138,24 @@ rec unify t1 = \ t2 .
         match s p -> 
           case (unify (ap s t12) (ap s t22)) of
             nomatch -> nomatch
-	    match s' p' ->
+       match s' p' ->
               let [_] = apCompose s' s t1 in
               unfold (ap s' (ap s t1)) in
               unfold (ap s' (ap s t2)) in 
               let [_] = apCompose s' s t2 in
                  match (compose s' s) _
-    (var x) , (var y) -> 
-	   case (dec_eq x y) of 
-		  yes  -> match empty _
-		  no _ -> 
-		     let [_] = varSingleton x (var y) in
+    var x, var y -> 
+      case (dec_eq x y) of 
+        yes  -> match empty _
+        no _ -> 
+           let [_] = varSingleton x (var y) in
            let [_] = singletonNotFree (var y) x (var y) _ in
-			     match (singleton x (var y)) _ 
+              match (singleton x (var y)) _ 
     t , (var x) -> 
       case (notFreeIn x t) of
         False -> case t of 
-		            (var y) -> match empty _    -- ????
-						_       -> nomatch 
+                  (var y) -> match empty _    -- ????
+                  _       -> nomatch 
         True  -> 
            let [_] = varSingleton x t in
            let [_] = singletonNotFree t x t _ in
@@ -164,7 +164,7 @@ rec unify t1 = \ t2 .
       case (unify t (var x)) of
         nomatch -> nomatch
         match s p -> match s _ 
-
+-}
 
           
 -- Proposition that variable x appears in term t          
@@ -300,9 +300,10 @@ rec unify' t1 = \ t2 .
            let [_] = varSingleton x t1 in
            let [_] = singletonNotIn t1 x t1 q in
              match (singleton x t1) _  
-        yes _ -> case t1 of 
-           (var y) -> match empty _   -- ???
-           _       -> nomatch
+        yes p -> case t1 of 
+           var y -> let [_] = invvar x y p in 
+                    match empty _    
+           _     -> nomatch
     var x, _ -> 
       case (unify' t2 t1) of
         nomatch -> nomatch
