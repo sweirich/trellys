@@ -1,5 +1,4 @@
 -- Smith's paradox, assuming a "magic" inversion principle.
--- This doesn't currently work, due to subtleties with UnboxVal.
 
 module Admiss2 where
 
@@ -43,20 +42,23 @@ rec f _ =
       (\total .
          case (total 1) [_] of
            hasValue y p -> 
-             unfold 5 (UNBOX ((\x. case x [_] of
-                                     Zero -> Zero
-                                     Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1) in
+             let _ =(pjoin: (UNBOX ((\x. case x [_] of
+                                           Zero -> Zero
+                                           Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1)
+                         = (UNBOX (fst (f U)) 0)) in 
                case (magic f y p) [_] of
                  hasValueT t q -> 
                       snd t
                           (\x1 . case (total (Succ x1)) [_] of
                                   hasValue z r ->                                     
-                                    unfold 5 (UNBOX ((\x. case x [_] of
-                                                            Zero -> Zero
-                                                            Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
+                                    let _ = (pjoin:  (UNBOX ((\x. case x [_] of
+                                                                  Zero -> Zero
+                                                                  Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1))
+                                                   = (UNBOX (fst (f U)) x1)) in
                                     hasValue z _))
 
 -- This is just the body of f, copy-pasted.
+-- We need to expand it one step in order to typecheck it in log instead of prog.
 log t : T
 t =
   mkT (\x . case x [_] of 
@@ -65,19 +67,23 @@ t =
       (\total .
          case (total 1) [_] of
            hasValue y p -> 
-             unfold 5 (UNBOX ((\x. case x [_] of
-                                     Zero -> Zero
-                                     Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1) in
+             let _ =(pjoin: (UNBOX ((\x. case x [_] of
+                                           Zero -> Zero
+                                           Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) 1)
+                         = (UNBOX (fst (f U)) 0)) in 
                case (magic f y p) [_] of
                  hasValueT t q -> 
                       snd t
                           (\x1 . case (total (Succ x1)) [_] of
-                                  hasValue z r ->                                     
-                                    unfold 5 (UNBOX ((\x. case x [_] of
-                                                            Zero -> Zero
-                                                            Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1)) in
+                                  hasValue z r ->                                                                        let _ = (pjoin:  (UNBOX ((\x. case x [_] of
+                                                                  Zero -> Zero
+                                                                  Succ x' -> UNBOX (fst (f U)) x') : Nat->Nat@prog) (Succ x1))
+                                                   = (UNBOX (fst (f U)) x1)) in
+
                                     hasValue z _))
 
+-- t is indeed just the unfolding of f. 
+-- (We don't need this fact in order to derive the contradiction).
 log t_spec : t = f U
 t_spec = pjoin 
 
@@ -85,10 +91,12 @@ log t_total : (x:Nat) -> Defined (fst t) x
 t_total = ind ih x = 
   case x [eq_x] of
     Zero -> 
-      unfold (UNBOX (fst t) Zero) in
+      let _ = (pjoin: UNBOX (fst t) 0 
+                    = 0) in
         hasValue Zero _
     Succ x' ->
-      unfold 9 (UNBOX (fst t) (Succ x')) in
+      let _ = (pjoin: UNBOX (fst t) (Succ x')
+                    = UNBOX (fst t) x') in
       case (ih x' [ord eq_x] ) [_] of
         hasValue y p ->
           hasValue y _

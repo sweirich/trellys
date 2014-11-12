@@ -39,6 +39,19 @@ step_rec =
   unfold (idnat_rec 2) in
     _
 
+-- n-ary rec :
+prog plus : Nat -> Nat -> Nat
+rec plus n m =
+ case n of
+   Zero -> m 
+   Succ n' -> Succ (plus n' m)
+
+{-
+step_plus : (plus 2 2 = 4)
+step_plus = 
+  unfold (plus 2 2) in _
+-}
+
 -- Stepping rules for when a conv interfers with a beta redex.
 
 -- Stepping a function with a conv applied to it.

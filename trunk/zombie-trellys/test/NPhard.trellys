@@ -1,0 +1,20 @@
+module NPhard where
+
+import Prelude
+
+-- The usual example showing that rigid E-unification is NP-hard: we can
+-- reduce boolean satisfiability to it.
+
+log example : Nat
+example =
+  let _ = (join : and True True = True) in
+  let _ = (join : and True False = False) in
+  let _ = (join : and False True = False) in
+  let _ = (join : and False False = False) in
+  let _ = (join : not True = False) in
+  let _ = (join : not False = True) in
+  let x = (_ : Bool) in
+  let y = (_ : Bool) in
+  let _ = (_ : True = and (and x (not y)) (not (and x y))) in
+  
+ 3

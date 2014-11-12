@@ -62,6 +62,8 @@ import Language.Trellys.Syntax (ATerm, AName, Label, Proof(..), proofSize, uniVa
 --Stuff used for debugging.
 import Text.PrettyPrint.HughesPJ
 import Debug.Trace
+import Language.Trellys.GenericBind
+import Language.Trellys.Syntax (ATerm(ATyEq))
 
 type Constant = Int
 
@@ -565,11 +567,31 @@ unifyBind  (WantedEquation a b) = do
   unifyDelete (WantedEquation a b)
   tracing "Bound" (WantedEquation a b) (return ())
 
+-- This function is only used for debugging purposes, so the
+-- use of unsafeUnbind is probably excusable.
+unlabel :: Label -> [ATerm] -> ATerm
+unlabel l as = 
+  let (xs,a) = unsafeUnbind l in
+    substs (zip xs as) a
+
 -- If both sides of the equation are applications headed by the same label, try to unify the args.
 unifyDecompose :: Set WantedEquation -> WantedEquation -> UniM ()
 unifyDecompose visited (WantedEquation a b) = do
   (_, ia) <- findInfo a
   (_, ib) <- findInfo b
+{-
+  names <- gets naming
+  let possibilities = [ (a, b) | (fa, as) <- S.toList (classApps ia),
+                                  let a = unlabel fa (map (names BM.!>) as),
+                                  (fb, bs) <- S.toList (classApps ib), 
+                                  let b = unlabel fb (map (names BM.!>) bs),
+                                  fa == fb ]
+  when (length possibilities > 1) $ do
+    trace (render . disp $
+             ([DS "multiple ways to decompose:"] 
+              ++ map (\(a,b) -> DD (ATyEq a b)) possibilities))
+          (return ())         
+-}
   (fa, as) <- lift $ S.toList $ classApps ia
   (fb, bs) <- lift $ S.toList $ classApps ib
   guard (fa == fb)
