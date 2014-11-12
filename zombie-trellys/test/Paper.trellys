@@ -390,3 +390,8 @@ idr [A] x = case x of
         Just x1 -> unfold (mplus (Just x1) Nothing) in _
         Nothing -> unfold (mplus (Nothing : Maybe A) Nothing) in _
 
+
+
+-- A logical compose function for programmatic functions
+log composeP : [A B C : Type] => ((B@prog) -> C @ prog) -> ((A@prog) -> B @ prog) -> ((A@prog) -> C @prog)
+composeP [A] [B] [C] f g = (\ x . f (g x))

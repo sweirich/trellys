@@ -1,0 +1,26 @@
+module TiwariExample where
+
+{-
+  This example is from:
+  Ashish Tiwari, Leo Bachmair, and Harald Ruess. Rigid e-unification revisited.
+  In Automated Deduction - CADE-17, 2000.
+
+  Unify gfffgffX and fffX, given the equations gX = X and X = a. 
+  Picking X := fa is a solution, but it is hard to find.
+ -}
+
+import Prelude
+
+axiom f : Nat -> Nat
+axiom g : Nat -> Nat
+axiom a : Nat
+
+log example : Nat
+example =
+--  let x = (f a : Nat) in   -- This works, but...
+  let x = (_ : Nat) in       -- ...leaving it as a unification variable doesn't.
+  let _ = (TRUSTME : g x = x) in
+  let _ = (TRUSTME : x = a) in
+  let _ = (_ : g(f(f(f(g(f(f x)))))) = f(f(f x))) in
+    2
+  
