@@ -1,5 +1,8 @@
 module Assoc where
 
+{- A proof that append on lists is associative. See also
+   Assoc2.trellys, which proves associativity for append on _vectors_. -}
+
 usually log
 
 data A : Type where

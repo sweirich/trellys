@@ -27,20 +27,20 @@ ind snoc_inv [A] xs = \ ys z pf .
         Nil , Cons y Nil -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in 
-             contra (_ : Nil = Cons z Nil) 
+             contra (_ : (Nil : List A) = Cons z Nil) 
         Nil , Cons y0 (Cons y1 ys') -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in 
            unfold (snoc ys' z) in
            let w = snoc ys' z in -- needed because our Tcontra rule only applies to syntactic values.
-             contra (_ : Nil = Cons y1 w)                         
+             contra (_ : (Nil : List A) = Cons y1 w)                         
         Cons x Nil, Nil -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in 
-             contra (_ : Cons z Nil = Nil)
+             contra (_ : Cons z Nil = (Nil : List A))
         Cons x0 (Cons x1 xs'), Nil -> 
            unfold (snoc xs z) in 
            unfold (snoc ys z) in 
            unfold (snoc xs' z) in
            let w = snoc xs' z in
-             contra (_ : Cons x1 w = Nil)
+             contra (_ : Cons x1 w = (Nil : List A))
