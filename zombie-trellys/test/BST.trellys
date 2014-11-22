@@ -127,9 +127,9 @@ member = \[a] order x. ind member t =
                                        False -> True
 
 -- Now we prove the correctness of 'member' with respect to 'InTree'.
-log member_In1 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+log member_In2 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
                   -> IsBST a t order ->  (InTree a x t) -> member x t = True
-member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
+member_In2 = \a order x. ind member_In2 t = \ isBST in_t.
   case in_t [_] of 
     InHere t1 t2 t_eq -> 
       let _ = (ordLtIrrefl [a] order x) in
@@ -160,7 +160,7 @@ member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
                                      False -> True) : Bool)
                     = member x t1) in
       let lt_x_y  = isBstInLeft a t1 y t2 order isBST x in_t1 in
-      let IH = member_In1 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
+      let IH = member_In2 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
         _
     InRight t1 y t2 in_t2 t_eq -> 
       let _ = (pjoin : member  x (BranchTree t1 y t2)
@@ -177,12 +177,12 @@ member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
                     = member x t2) in
       let lt_y_x = isBstInRight a t1 y t2 order isBST x in_t2 in
       let not_lt_x_y = ordLtIrrefl1 [a] order x y lt_y_x in
-      let IH = member_In1 t2 [ord t_eq] (isBstRight a t1 y t2 order isBST) in_t2 in       
+      let IH = member_In2 t2 [ord t_eq] (isBstRight a t1 y t2 order isBST) in_t2 in       
         _
 
-log member_In2 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+log member_In1 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
                   -> member x t = True  ->  InTree a x t
-member_In2 = \a order x. ind member_In2 t = \ isMember.
+member_In1 = \a order x. ind member_In1 t = \ isMember.
   case t [t_eq] of
     EmptyTree -> 
       let _ = (pjoin : member x EmptyTree  = False) in
@@ -202,7 +202,7 @@ member_In2 = \a order x. ind member_In2 t = \ isMember.
                                           True -> member x t2
                                           False -> True) : Bool)
                           = member x t1) in
-           let IH = (member_In2 t1 [ord t_eq] _) in
+           let IH = (member_In1 t1 [ord t_eq] _) in
                InLeft t1 y t2 IH _
          False ->
            case (ordLt y x) [_] of
@@ -213,7 +213,7 @@ member_In2 = \a order x. ind member_In2 t = \ isMember.
                                                True -> member x t2
                                                False -> True) : Bool)
                                = member x t2) in
-               let IH = (member_In2 t2 [ord t_eq] _) in
+               let IH = (member_In1 t2 [ord t_eq] _) in
                  InRight t1 y t2 IH _
              False -> 
                let _ = ordLtAntiSymm [a] order x y _ _ in
@@ -232,9 +232,9 @@ insert = \[a] order x . ind insert t =
                     False -> t
 
 -- Correctness of insert with respect to InTree.
-log insert_In1 : [a:Type] -> (order:Ord a) -> (x : a) -> (t : Tree a)
+log insert_In2 : [a:Type] -> (order:Ord a) -> (x : a) -> (t : Tree a)
                  -> InTree a x (insert x t)
-insert_In1 = \ [a] order x . ind insert_In1 t =
+insert_In2 = \ [a] order x . ind insert_In2 t =
   let _ = (pjoin : insert x t
                 = (case t [t_eq] of 
                      EmptyTree -> BranchTree EmptyTree x EmptyTree
@@ -278,7 +278,7 @@ insert_In1 = \ [a] order x . ind insert_In1 t =
                                        True -> BranchTree t1 y (insert x t2)
                                        False -> t : Tree a)
                         = BranchTree (insert x t1) y t2) in
-         let ih = insert_In1 t1 [ord t_eq] in
+         let ih = insert_In2 t1 [ord t_eq] in
             InLeft (insert x t1) y t2 ih _
         False -> 
          let _ = (pjoin : (case False [_] of
@@ -295,7 +295,7 @@ insert_In1 = \ [a] order x . ind insert_In1 t =
                                   True -> BranchTree t1 y (insert x t2)
                                   False -> t : Tree a)
                              = BranchTree t1 y (insert x t2)) in
-              let ih = insert_In1 t2 [ord t_eq] in
+              let ih = insert_In2 t2 [ord t_eq] in
                 InRight t1 y (insert x t2) ih _ 
             False -> let _ = (pjoin : (case False [_] of
                                         True -> BranchTree t1 y (insert x t2)
