@@ -1,9 +1,13 @@
--- Finite sets, implemented by binary search trees.
--- This is the same as BST.trellys, but the functions are in prog instead of log.
+{- NB: this file must be checked with the --typeclassy option. -}
+
+-- Finite sets, implemented by binary search trees.  This is the same
+-- as BST.trellys, but the functions are in prog instead of log.
 
 module BSTprog where
 import Prelude
 import Logic 
+import Maybe
+import Arithmetic
 
 usually log
 
@@ -15,13 +19,13 @@ data Ord (a:Type) : Type where
 
 -- Convenient (well, sort of) projection for the first component
 log ordLt : [a:Type] => (Ord a) => (a) -> (a) -> Bool
-ordLt = \[a]. \order. case order [_] of
+ordLt = \[a]. \order. case order of
                      OrdDict lt [_] [_] [_] -> lt
 
 -- Restatements of the Ord laws in terms of the projection function
 ordLtIrrefl : [a:Type] -> (order: Ord a) -> (x: a) -> ordLt x x = False
 ordLtIrrefl = \[a].\order.\x.
-  case order [_] of
+  case order  of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
       let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) x x = lt x x) in
       let [_] = irrefl x in
@@ -30,7 +34,7 @@ ordLtIrrefl = \[a].\order.\x.
 ordLtAntiSymm : [a:Type] -> (order: Ord a) -> (x y: a) -> 
                   ordLt x y = False -> ordLt y x = False -> x = y
 ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
-  case order [_] of
+  case order of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
       let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = antisymm x y h1 h2 in
@@ -39,7 +43,7 @@ ordLtAntiSymm = \[a].\order.\x.\y.\h1.\h2.
 ordLtTrans : [a:Type] -> (order: Ord a) -> (x y z: a) ->
                   ordLt x y = True -> ordLt y z = True -> ordLt x z = True
 ordLtTrans = \[a].\order.\x.\y.\z.\h1.\h2.
-  case order [_] of
+  case order of
     OrdDict lt [irrefl] [antisymm] [trans] -> 
       let _ = (pjoin : !ordLt [_] (OrdDict lt [irrefl] [antisymm] [trans]) = lt) in
       let [_] = trans x y z h1 h2 in
@@ -117,122 +121,207 @@ isBstInRight = \ a t1 x t2 order isBST y intree .
         Hright y intree
 
 -- The lookup function.
-
 prog member : [a:Type] => Ord a => (x : a) -> (t : Tree a) -> Bool
 member = \[a] order x. rec member t = 
-  case t [t_eq] of 
+  case t of 
     EmptyTree -> False
-    BranchTree t1 y t2 -> case (ordLt x y) [_] of
+    BranchTree t1 y t2 -> case (ordLt x y) of
                             True -> member t1 
-                            False -> case (ordLt  y x) [_] of
+                            False -> case (ordLt  y x)  of
                                        True -> member t2
                                        False -> True
 
 -- Now we prove the correctness of 'member' with respect to 'InTree'.
-log member_In1 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
-                  -> IsBST a t order ->  (InTree a x t) -> member x t = True
-member_In1 = \a order x. ind member_In1 t = \ isBST in_t.
-  case in_t [_] of 
-    InHere t1 t2 t_eq -> 
-      let _ = (ordLtIrrefl [a] order x) in
-      let _ = (pjoin : member x (BranchTree t1 x t2)
-                    = ((case (ordLt x x) [_] of
-                          True -> member x t1
-                          False -> case (ordLt x x) [_] of
-                                     True -> member  x t2
-                                     False -> True) : Bool)) in
-      let _ = (pjoin : ((case False [_] of
-                          True -> member x t1
-                          False -> case False [_] of
-                                     True -> member x t2
-                                     False -> True) : Bool)
-                     = True) in
-          _
-    InLeft  t1 y t2 in_t1 t_eq -> 
-      let _ = (pjoin : member x (BranchTree t1 y t2)
-                    = ((case (ordLt x y) [_] of
-                          True -> member x t1
-                          False -> case (ordLt y x) [_] of
-                                     True -> member x t2
-                                     False -> True) : Bool)) in
-      let _ = (pjoin : ((case True [_] of
-                          True -> member x t1
-                          False -> case (ordLt y x) [_] of
-                                     True -> member  x t2
-                                     False -> True) : Bool)
-                    = member x t1) in
-      let lt_x_y  = isBstInLeft a t1 y t2 order isBST x in_t1 in
-      let IH = member_In1 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
-        _
-    InRight t1 y t2 in_t2 t_eq -> 
-      let _ = (pjoin : member  x (BranchTree t1 y t2)
-                    = ((case (ordLt x y) [_] of
-                          True -> member x t1
-                          False -> case (ordLt y x) [_] of
-                                     True -> member x t2
-                                     False -> True) : Bool)) in
-      let _ = (pjoin : ((case False [_] of
-                          True -> member x t1
-                          False -> case True [_] of
-                                     True -> member x t2
-                                     False -> True) : Bool)
-                    = member x t2) in
-      let lt_y_x = isBstInRight a t1 y t2 order isBST x in_t2 in
-      let not_lt_x_y = ordLtIrrefl1 [a] order x y lt_y_x in
-      let IH = member_In1 t2 [ord t_eq] (isBstRight a t1 y t2 order isBST) in_t2 in       
-        _
 
-log member_In2 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+
+log member_In1 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
                   -> member x t = True  ->  InTree a x t
-member_In2 = \a order x. ind member_In2 t = \ isMember.
+member_In1 = \a order x. ind member_In1 t = \ isMember.
+  case t [t_eq] of
+    EmptyTree -> unfold (member x t) in 
+                   contra (_ : True = False)
+    BranchTree t1 y t2 -> 
+      case (ordLt x y)  of
+         True -> 
+           let _ = (smartjoin : member x t = member x t1) in
+           let IH = (member_In1 t1 [ord t_eq] _) in
+               InLeft t1 y t2 IH _
+         False ->
+           case (ordLt y x) of
+             True -> 
+               let _ = (smartjoin : member x t = member x t2) in
+               let IH = (member_In1 t2 [ord t_eq] _) in
+                 InRight t1 y t2 IH _
+             False -> 
+               let _ = ordLtAntiSymm [a] order x y _ _ in
+                 InHere t1 t2  _
+
+
+-- the same, without using smartjoin.
+log member_In1' : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+                   -> member x t = True  ->  InTree a x t
+member_In1' = \a order x. ind member_In1 t = \ isMember.
   case t [t_eq] of
     EmptyTree -> 
       let _ = (pjoin : member x EmptyTree  = False) in
         contra (_ : True = False)
     BranchTree t1 y t2 -> 
       let _ = (pjoin : member x (BranchTree t1 y t2)
-                    = ((case (ordLt x y) [_] of
+                    = ((case (ordLt x y)  of
                           True -> member x t1
-                          False -> case (ordLt y x) [_] of
+                          False -> case (ordLt y x)  of
                                      True -> member x t2
                                      False -> True) : Bool)) in
-      case (ordLt x y) [_] of
+      case (ordLt x y)  of
          True -> 
-           let _ = (pjoin  : ((case True [_] of
+           let _ = (pjoin  : ((case True of
                                True -> member x t1
-                               False -> case (ordLt y x) [_] of
+                               False -> case (ordLt y x) of
                                           True -> member x t2
                                           False -> True) : Bool)
                           = member x t1) in
-           let IH = (member_In2 t1 [ord t_eq] _) in
+           let IH = (member_In1 t1 [ord t_eq] _) in
                InLeft t1 y t2 IH _
          False ->
-           case (ordLt y x) [_] of
+           case (ordLt y x) of
              True -> 
-               let _ = (pjoin  : ((case False [_] of
+               let _ = (pjoin  : ((case False  of
                                     True -> member x t1
-                                    False -> case True [_] of
+                                    False -> case True of
                                                True -> member x t2
                                                False -> True) : Bool)
                                = member x t2) in
-               let IH = (member_In2 t2 [ord t_eq] _) in
+               let IH = (member_In1 t2 [ord t_eq] _) in
                  InRight t1 y t2 IH _
              False -> 
                let _ = ordLtAntiSymm [a] order x y _ _ in
                  InHere t1 t2  _
 
--- The insert function
 
+log member_In2 : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+                  -> IsBST a t order ->  (InTree a x t) -> member x t = True
+member_In2 = \a order x. ind member_In2 t = \ isBST in_t.
+  case in_t  of 
+    InHere t1 t2 t_eq -> 
+      let _ = (ordLtIrrefl [a] order x) in
+      let _ = (smartjoin : member x t = True) in
+          _
+    InLeft  t1 y t2 in_t1 t_eq -> 
+      let lt_x_y  = isBstInLeft a t1 y t2 order isBST x in_t1 in
+      let _ = (smartjoin : member x t = member x t1) in
+      let IH = member_In2 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
+        _
+    InRight t1 y t2 in_t2 t_eq -> 
+      let lt_y_x = isBstInRight a t1 y t2 order isBST x in_t2 in
+      let not_lt_x_y = ordLtIrrefl1 [a] order x y lt_y_x in
+      let _ = (smartjoin : member x t = member x t2) in
+      let IH = member_In2 t2 [ord t_eq] (isBstRight a t1 y t2 order isBST) in_t2 in
+        _
+
+
+-- The same, without using smartjoin.
+log member_In2' : (a:Type) -> (order : Ord a) -> (x : a) -> (t : Tree a)
+                  -> IsBST a t order ->  (InTree a x t) -> member x t = True
+member_In2' = \a order x. ind member_In2 t = \ isBST in_t.
+  case in_t  of 
+    InHere t1 t2 t_eq -> 
+      let _ = (ordLtIrrefl [a] order x) in
+      let _ = (pjoin : member x (BranchTree t1 x t2)
+                    = ((case (ordLt x x) of
+                          True -> member x t1
+                          False -> case (ordLt x x)  of
+                                     True -> member  x t2
+                                     False -> True) : Bool)) in
+      let _ = (pjoin : ((case False  of
+                          True -> member x t1
+                          False -> case False of
+                                     True -> member x t2
+                                     False -> True) : Bool)
+                     = True) in
+          _
+    InLeft  t1 y t2 in_t1 t_eq -> 
+      let _ = (pjoin : member x (BranchTree t1 y t2)
+                    = ((case (ordLt x y)  of
+                          True -> member x t1
+                          False -> case (ordLt y x) of
+                                     True -> member x t2
+                                     False -> True) : Bool)) in
+      let _ = (pjoin : ((case True  of
+                          True -> member x t1
+                          False -> case (ordLt y x)  of
+                                     True -> member  x t2
+                                     False -> True) : Bool)
+                    = member x t1) in
+      let lt_x_y  = isBstInLeft a t1 y t2 order isBST x in_t1 in
+      let IH = member_In2 t1 [ord t_eq] (isBstLeft a t1 y t2 order isBST) in_t1 in
+        _
+    InRight t1 y t2 in_t2 t_eq -> 
+      let _ = (pjoin : member  x (BranchTree t1 y t2)
+                    = ((case (ordLt x y)  of
+                          True -> member x t1
+                          False -> case (ordLt y x)  of
+                                     True -> member x t2
+                                     False -> True) : Bool)) in
+      let _ = (pjoin : ((case False  of
+                          True -> member x t1
+                          False -> case True of
+                                     True -> member x t2
+                                     False -> True) : Bool)
+                    = member x t2) in
+      let lt_y_x = isBstInRight a t1 y t2 order isBST x in_t2 in
+      let not_lt_x_y = ordLtIrrefl1 [a] order x y lt_y_x in
+      let IH = member_In2 t2 [ord t_eq] (isBstRight a t1 y t2 order isBST) in_t2 in       
+        _
+
+
+
+-- An example of using member.
+log lt' : (Nat@log) -> (Nat@log) -> Bool
+lt' x y = lt x y
+
+log ordNat : Ord Nat 
+ordNat = OrdDict lt' [TRUSTME] [TRUSTME] [TRUSTME] --todo, actually do these
+
+log example :
+   !member [Nat] ordNat 5 
+           (BranchTree (BranchTree EmptyTree 2 EmptyTree)
+                        4
+                        (BranchTree (BranchTree EmptyTree 5 EmptyTree)                                              7
+                                    EmptyTree))
+              = True
+example = join
+
+-- An "internally verified" version of member.
+prog memberS : [a:Type] => Ord a => (x : a) -> (t : Tree a) 
+                -> Maybe (InTree a x t)
+memberS = \[a] order x. rec memberS t = 
+  case t of 
+    EmptyTree -> Nothing
+    BranchTree t1 y t2 -> 
+      case (ordLt x y) of
+         True -> case (memberS t1) of
+                   Just p  -> Just (InLeft t1 y t2 p _)
+                   Nothing -> Nothing
+         False -> case (ordLt  y x) of
+                    True -> case (memberS t2) of
+                              Just p  -> Just (InRight t1 y t2 p _)
+                              Nothing -> Nothing
+                    False -> 
+                      let _ = ordLtAntiSymm [a] order x y _ _ in
+                        Just (InHere t1 t2 _)
+
+-- The insert function
 prog insert : [a:Type] -> Ord a -> (x : a) -> Tree a -> Tree a
 insert = \[a] order x . rec insert t =
   case t [t_eq] of 
     EmptyTree -> BranchTree EmptyTree x EmptyTree
     BranchTree t1 y t2 ->
-       case (ordLt x y) [_] of
+       case (ordLt x y) of
          True -> BranchTree (insert t1) x t2
-         False -> case (ordLt y x) [_] of
+         False -> case (ordLt y x) of
                     True -> BranchTree t1 x (insert t2)
                     False -> t
+
 
 -- Correctness of insert with respect to InTree.
 -- Note that here is one drawback of puttting insert in prog instead of log;
@@ -240,6 +329,6 @@ insert = \[a] order x . rec insert t =
 -- we have to introduce an extra variable t'.
 
 {-
-log insert_In1 : [a:Type] -> (order:Ord a) -> (x : a) -> (t t' : Tree a)
+log insert_In2 : [a:Type] -> (order:Ord a) -> (x : a) -> (t t' : Tree a)
                  -> t' = (insert [a] order x t)
                  -> InTree a x t' -}

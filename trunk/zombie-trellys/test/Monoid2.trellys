@@ -21,13 +21,13 @@ denote S unit op = ind den e =
 
 
 prog simplify :  (S : Type) -> MonoidExpr S -> MonoidExpr S
-rec simplify S e = 
+simplify  = \ S . rec simplify  e = 
   case e of
     ExprConst _ -> e
     ExprUnit -> e
     ExprOp e1 e2 -> 
-      case (simplify S e1), (simplify S e2) of
-         (ExprOp e11 e12), e2' -> simplify S (ExprOp e11 (ExprOp e12 e2'))
+      case (simplify e1), (simplify e2) of
+         (ExprOp e11 e12), e2' -> simplify (ExprOp e11 (ExprOp e12 e2'))
          e1', ExprUnit -> e1' 
          ExprUnit, e2' -> e2'
          e1',  e2' -> (ExprOp e1' e2')
@@ -62,6 +62,8 @@ simplifySound S unit op left_id right_id assoc = rec sound e =
              let _ = (pjoin : denote S unit op (ExprOp e11 (ExprOp e12 e2'))
                               = op (denote S unit op e11) (op (denote S unit op e12) (denote S unit op e2'))) in
              let [_] = assoc (denote S unit op e11) (denote S unit op e12) (denote S unit op e2') in
+             let _ = (smartjoin : simplify S e 
+                                = simplify S (ExprOp e11 (ExprOp e12 e2'))) in
 
           TRUSTME
           {-
