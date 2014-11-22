@@ -500,9 +500,16 @@ ta (Rec bnd) ty = do
 ta (Unfold str n a b) tyB = do
    (ea,_)  <- ts a
    availableEqs <- getAvailableEqs
+
+   -- Although we aren't changing the context, the operational semantics
+   -- will not work well with uninstantiated evars, so we insert a solve here...
+   -- (TODO: maybe refine this to only solve for vars that actually occur in a?)
+   solveConstraints availableEqs
+   zea <- zonkTerm ea
+
    (_, moreEqs) <- runUnfoldT availableEqs $ do
                       setFuel n
-                      unfold ("plain",str) ea
+                      unfold ("",str) zea
    taUnderUnfolds moreEqs b tyB
 
 ta (Join strategy Smart s1 s2) (ATyEq a b) = do
