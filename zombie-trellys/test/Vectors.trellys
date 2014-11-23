@@ -98,7 +98,6 @@ lookup_set = \[A]. ind ih [n] = \ i a v .
        let _ = (!ih [p] [ord p_eq] j a xs) in
           _
        
-
 log lookup_set2 : [A:Type] => [n:Nat] => (i j: Fin n) -> (a:A @log) -> (v : Vector A n)
                   -> fin_eq [n] i j = False
                   -> lookup i (set j a v) = lookup i v
@@ -118,6 +117,16 @@ lookup_set2 = \[A]. ind ih [n] = \ i j a v h .
       let _ = (join : fin_eq [n] (FS [p][_] i') (FS [q][_] j') = fin_eq [p] i' j') in
       let _ = (!ih [p] [ord p_eq] i' j' a xs _) in
         _     
-    FS [p][p_eq] i' , FZ [q][_] , VCons [m][m_eq] x xs ->  TRUSTME
-    FZ [p][p_eq] , FS [q][_] j', VCons [m][m_eq] x xs ->  TRUSTME
+    FS [p][p_eq] i' , FZ [q][_] , VCons [m][m_eq] x xs ->  
+      let _ = (join : set (FZ [p][_]) a (VCons [m][_] x xs) = (VCons [m][_] a xs : Vector A n)) in
+      let _ = (join : !lookup [A] [n] (FS [q][_] i') (VCons [m][m_eq] x xs)  = lookup i' xs) in
+      let _ = (join : !lookup [A] [n] (FS [q][_] i') (VCons [m][m_eq] a xs)  = lookup i' xs) in
+        _
+    FZ [p][p_eq] , FS [q][_] j', VCons [m][m_eq] x xs ->  
+      let _ = (pjoin : (!set [A] [n] (FS [p][_] j') a (VCons [m][m_eq] x xs) : Vector A n)
+                    = (VCons [m][m_eq] x (set j' a xs) : Vector A n)) in
+      let xs' = set j' a xs in
+      let _ = (join : !lookup [A] [n] (FZ [p][_]) (VCons [m][m_eq] x xs)  = x) in
+      let _ = (join : !lookup [A] [n] (FZ [p][_]) (VCons [m][m_eq] x xs')  = x) in
+        _
 

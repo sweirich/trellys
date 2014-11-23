@@ -52,7 +52,7 @@ all: clean pass fail
 clean:
 	-rm *.trellys-elaborated *.trellys-bin
 
-pass: plain_pass BST.passtypeclassy UnfoldTests.passnoinjrng
+pass: plain_pass BST.passtypeclassy BSTprog.passtypeclassy UnfoldTests.passnoinjrng
 
 plain_pass: $(foreach p,$(PASS),$(p).pass) 
 
