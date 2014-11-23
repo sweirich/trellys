@@ -72,27 +72,63 @@ unbind2M :: (MonadPlus m, Fresh m, Alpha p1, Alpha p2, Alpha t1, Alpha t2)
 unbind2M bnd bnd' = maybe mzero return =<< unbind2 bnd bnd'
 
 
+-- For debugging purposes during development, 
+-- we wrap aRealParStep in this checking function. 
+astep :: ATerm -> TcMonad (Maybe ATerm)
+astep a = do
+  aE <- erase a
+  maE' <- runMaybeT $ cbvStep aE
+  ma' <- aRealStep a
+  case (maE', ma') of
+    (Just aE', Just a') -> do 
+       a'E <- erase a'
+       unless ((aE' `aeq` a'E) || (a'E `aeq` aE))  $
+         warn [DS "Internal error: reduction mismatch for the expression", DD a,
+               DS "which erases to", DD aE,
+               DS "cbvStep steps to", DD aE',
+               DS "astep steps to", DD a',
+               DS "which erases to", DD a'E ]
+    _ -> return ()
+  return ma'
+
+
 -- If eps == Erased, don't bother stepping.
 
-astep :: ATerm -> TcMonad (Maybe ATerm)
-astep (AVar x) = lookupDef x
-astep (AUniVar _ _) = return Nothing
-astep (ACumul a i) = fmap (flip ACumul i) <$> astep a
-astep (AType _) = return Nothing
-astep (ATCon _ _) = return Nothing
-astep (ADCon c th annots argsOrig) = stepArgs [] argsOrig
+aRealStep :: ATerm -> TcMonad (Maybe ATerm)
+aRealStep (AVar x) = lookupDef x
+aRealStep (AUniVar _ _) = return Nothing
+aRealStep (ACumul a i) = fmap (flip ACumul i) <$> aRealStep a
+aRealStep (AType _) = return Nothing
+aRealStep (ATCon _ _) = return Nothing
+aRealStep (ADCon c th annots argsOrig) = stepArgs [] argsOrig
   where stepArgs  _     []               = return Nothing
         stepArgs prefix ((arg,eps):args) = do
-          stepArg <- astep arg
+          stepArg <- aRealStep arg
           case stepArg of
             Nothing         -> stepArgs ((arg,eps):prefix) args
             Just (AAbort t) -> return . Just $ AAbort t
             Just arg'       -> return . Just . ADCon c th annots $
                                  reverse prefix ++ (arg',eps) : args
-astep (AArrow _ _ _ _) = return Nothing
-astep (ALam _ _ _ _) = return Nothing
-astep (AApp eps a b ty) = do
-  stepA <- astep a
+aRealStep (AArrow _ _ _ _) = return Nothing
+aRealStep (ALam _ _ _ _) = return Nothing
+{-
+aRealStep (AApp eps a b ty) = do
+  aval <- isConvAValue a
+  if aval
+   then do
+     stepB <- aRealStep b
+     case stepB of
+       Just b'         -> return . Just $ AApp eps a b' ty
+       Nothing         -> runMaybeT $ stepFun False a b ty 
+   else do
+     stepA <- aRealStep a
+     case stepA of
+       Just (AAbort t) -> return . Just $ AAbort t
+       Just a'         -> return . Just $ AApp eps a' b ty
+       Nothing         -> return Nothing
+-}
+aRealStep (AApp eps a b ty) = do
+  stepA <- aRealStep a
   case stepA of
     Just (AAbort t) -> return . Just $ AAbort t
     Just a'         -> return . Just $ AApp eps a' b ty
@@ -102,37 +138,38 @@ astep (AApp eps a b ty) = do
         then do 
           return Nothing
         else do
-          stepB <- astep b
-          case stepB of
-            Just b'         -> return . Just $ AApp eps a b' ty
-            Nothing         -> runMaybeT $ stepFun False a b ty 
-astep (AAt _ _) = return Nothing
-astep (AUnbox a) = do
-  stepA <- astep a
+          bval <- isConvAValue b
+          stepB <- aRealStep b
+          case (bval, stepB) of
+            (False, Just b') -> return . Just $ AApp eps a b' ty
+            _                -> runMaybeT $ stepFun False a b ty 
+aRealStep (AAt _ _) = return Nothing
+aRealStep (AUnbox a) = do
+  stepA <- aRealStep a
   case stepA of
     Just a'         -> return . Just $ AUnbox a'
     Nothing         -> runMaybeT $ stepUnbox a
-astep (ABox a th) = fmap (flip ABox th) <$> astep a
-astep (AAbort t) = return Nothing
-astep (ATyEq _ _) = return Nothing
-astep (AJoin _ _ _ _ _) = return Nothing
-astep (ACong _ _ _) = return Nothing
-astep (AConv a p) = do
-  stepA <- astep a
+aRealStep (ABox a th) = fmap (flip ABox th) <$> aRealStep a
+aRealStep (AAbort t) = return Nothing
+aRealStep (ATyEq _ _) = return Nothing
+aRealStep (AJoin _ _ _ _ _) = return Nothing
+aRealStep (ACong _ _ _) = return Nothing
+aRealStep (AConv a p) = do
+  stepA <- aRealStep a
   case stepA of
     Just a'         -> return . Just $ AConv a' p
     Nothing         -> do
       runMaybeT $ stepConv a p
-astep (AInjDCon _ _) = return Nothing
-astep (AContra _ _) = return Nothing
-astep (ASmaller _ _) = return Nothing
-astep (AOrdAx _ _) = return Nothing
-astep (AOrdTrans _ _) = return Nothing
-astep (AInd _ _) = return Nothing
-astep (ARec _ _) = return Nothing
-astep (ALet eps bnd annot) = do
+aRealStep (AInjDCon _ _) = return Nothing
+aRealStep (AContra _ _) = return Nothing
+aRealStep (ASmaller _ _) = return Nothing
+aRealStep (AOrdAx _ _) = return Nothing
+aRealStep (AOrdTrans _ _) = return Nothing
+aRealStep (AInd _ _) = return Nothing
+aRealStep (ARec _ _) = return Nothing
+aRealStep (ALet eps bnd annot) = do
   ((x, xeq, unembed -> a), b) <- unbind bnd
-  stepA <- astep a
+  stepA <- aRealStep a
   case stepA of
     Just (AAbort t) -> return . Just $ AAbort t
     Just a'         -> return . Just $ ALet eps (bind (x, xeq, embed a') b) annot
@@ -141,23 +178,23 @@ astep (ALet eps bnd annot) = do
       if not aval
         then return Nothing
         else return . Just $ subst x a b
-astep (ACase a bnd (th,ty)) = do
-  stepA <- astep a
+aRealStep (ACase a bnd (th,ty)) = do
+  stepA <- aRealStep a
   case stepA of
     Just a'         -> return . Just $ ACase a' bnd (th,ty)
     Nothing         -> runMaybeT $ do
       (eqname, matches) <- unbind bnd
       stepCase a eqname matches ty
-astep (ADomEq _) = return Nothing
-astep (ARanEq p a a') = return Nothing
-astep (AAtEq  _) = return Nothing
-astep (ANthEq _ _) = return Nothing
-astep (ATrustMe _) = return Nothing
-astep (AHighlight a) = astep a
-astep (AReflEq _) = return Nothing
-astep (ASymEq _) = return Nothing
-astep (ATransEq _ _) = return Nothing
-astep (AEraseEq _) = return Nothing
+aRealStep (ADomEq _) = return Nothing
+aRealStep (ARanEq p a a') = return Nothing
+aRealStep (AAtEq  _) = return Nothing
+aRealStep (ANthEq _ _) = return Nothing
+aRealStep (ATrustMe _) = return Nothing
+aRealStep (AHighlight a) = aRealStep a
+aRealStep (AReflEq _) = return Nothing
+aRealStep (ASymEq _) = return Nothing
+aRealStep (ATransEq _ _) = return Nothing
+aRealStep (AEraseEq _) = return Nothing
 
 -- Beta-reduce an application of a lam, rec, or ind, possibly under a bunch of conversions.
 -- The last ATerm is the type of the entire application.
@@ -304,7 +341,7 @@ stepBareCase _ _ _ _ = mzero
 asteps :: Int -> ATerm -> TcMonad ATerm
 asteps 0 a = return a
 asteps n a = do
-  ma' <- astep a
+  ma' <- aRealStep a
   case ma' of
     Nothing -> return a
     Just a' -> asteps (n-1) a'

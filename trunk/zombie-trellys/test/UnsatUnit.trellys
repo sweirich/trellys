@@ -1,9 +1,6 @@
 -- The Sat-solver example, extended to also track proofs of unsatisfiability.
 
--- This file could also prove that partial_interp = Just True 
--- implies that interp = True
-
-module Unsat where
+module UnsatUnit where
 
 import Prelude
 import Logic
@@ -20,12 +17,17 @@ usually log
 -- These are used in the specification.
 -----------------------------------------------------
 
+
 -- Literals are natural numbers paired with booleans
 -- clauses are lists of literals
 -- formulae are lists of clauses
 
 log Formula : (n:Nat) -> Type 
 Formula = \n. List (List (Times (Fin n) Bool))
+
+-- an environment is a mapping from variables to truth values
+log Env : (n:Nat) -> Type 
+Env = \ n . Vector Bool n
 
 log interp_lit : [n:Nat] => Vector Bool n -> (Times (Fin n) Bool @ log) -> Bool
 interp_lit [n] env lit = case lit of 
@@ -35,9 +37,9 @@ log interp_clause : [n:Nat] => Vector Bool n -> (List (Times (Fin n) Bool) @log)
 interp_clause [n] env clause = any (interp_lit env) clause
 
 log interp : [n:Nat] => Vector Bool n -> Formula n -> Bool
-interp = \ [n] env formula . 
+interp = \ [n] env  . 
   unfold (Formula n) in
-  all (interp_clause env) formula
+  all (interp_clause env)
 
 -- convert a partial assignment to an environment
 -- (unassigned variables are just true)
@@ -75,11 +77,13 @@ log unassigned_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
 unassigned_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) Nothing
 
+
 -- is this literal known to be true?
 log sat_lit : [n : Nat] => (p : Vector (Maybe Bool) n) ->
        (c : (Times (Fin n) Bool) @ log) -> Bool
 sat_lit = \[n] p lit . 
   (maybe_eq bool_eq) (partial_interp_lit p lit) (Just True)
+
 
 -- is this literal known to be false?
 log unsat_lit : [n : Nat] => (p : Vector (Maybe Bool) n)
@@ -102,16 +106,16 @@ unsat_lit [n] p lit =
                               smartjoin]
 
 -- a clause is known to be false if all literals are assigned false.
-prog unsat_clause : [n:Nat] => (p : Vector (Maybe Bool) n) 
+log unsat_clause : [n:Nat] => (p : Vector (Maybe Bool) n) 
                       -> (clause : List (Times (Fin n) Bool) @ log) 
                       -> ErasedMaybe ((phi : Vector Bool n)
                                        -> Extends p phi
                                        -> interp_clause phi clause = False)
-unsat_clause [n] p = rec loop c = 
-  case c of
+unsat_clause [n] p = ind loop c = 
+  case c [c_eq] of
     Nil -> ErasedJust  [\phi hExtends . smartjoin]
     Cons l ls ->
-      case (unsat_lit p l), (loop ls) of
+      case (unsat_lit p l), (loop ls [ord c_eq]) of
         ErasedJust [h1], ErasedJust [h2] ->
            ErasedJust [\ phi hExtends .
                         let _ = (join : interp_clause phi ls = any (interp_lit phi) ls) in
@@ -119,6 +123,7 @@ unsat_clause [n] p = rec loop c =
                         any_Cons (interp_lit phi) l ls (h1 phi hExtends) (h2 phi hExtends)]
         ErasedNothing , _ -> ErasedNothing
         _ , ErasedNothing -> ErasedNothing
+
 
 -- Precondition: f is known to not be satified already.
 -- Returns either an unassigned variable or a proof that f is unsatisfiable.
@@ -150,7 +155,6 @@ partial_interp_unsat [n] p =
                                                                 = (all (any (interp_lit phi)) cs)) in
                                                    all_Cons_tail_False (any (interp_lit phi)) c cs (h phi hExtends)])
 
-
 -- a formula is known to be true if all clauses are known to be true
 -- and known to be false if any clauses are known to be false.
 --
@@ -170,41 +174,6 @@ partial_interp [n] partial f =
       True -> InL (SAT partial [_])
       False -> let prog retval = partial_interp_unsat partial f  --there is some awkwardness with @-types here.
                 in InR retval
-
--- unit propagation
--- Find a clause with only one unassigned literal and no other true
--- literals. That one must be true.
-log unit_lit_clause : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (c : List (Times (Fin n) Bool) @ log) -> List (Times (Fin n) Bool)
-unit_lit_clause = \ [n] p c . 
-   let unassigned_lits = filter (unassigned_lit p) c in
-	let sat_lits = filter (sat_lit p) c in
-	if (and (nat_eq (length unassigned_lits) 1)
-	          (nat_eq (length sat_lits)       0)) 
-	  then c 
-	  else Nil
-
-log unit_lits : [n : Nat] => (p : Vector (Maybe Bool) n) ->
-       (formula : Formula n) -> List (Times (Fin n) Bool)
-unit_lits = \ [n] p f . 
-   unfold (Formula n) in
-	concatMap (unit_lit_clause p) (f :  List (List (Times (Fin n) Bool)))
-
--- future work: pure literal assignment
--- If a propositional variable occurs with only one polarity in the
--- formula, it is called pure. Pure literals can always be assigned in
--- a way that makes all clauses containing them true. Thus, these
--- clauses do not constrain the search anymore and can be deleted. 
-
--- update the partial map validating the literals in the list
-log set_lits : [n:Nat] => List (Times (Fin n) Bool) -> 
-                  Vector (Maybe Bool) n -> Vector (Maybe Bool) n
-set_lits = \[n] . ind set_lits l = \v.
-  case l [l_eq] of 
-    Nil -> v
-    Cons x xs -> 
-	    let v' = set_lits xs [ord l_eq] v in
-		 set (pi1 x) (Just (pi2 x) : Maybe Bool) v'
 
 
 -- find the index of the first unassigned variable in the partial map
@@ -255,6 +224,128 @@ unsat_branch [n] i f phi unsat1 unsat2 =
                    True  -> h1 psi (extends_same i phi psi extends)
                    False -> h2 psi (extends_same i phi psi extends) ]
 
+-- unit propagation
+-- Find a clause with only one unassigned literal and no other true
+-- literals. That one must be true.
+
+log setunit : [n:Nat] => (c : List (Times (Fin n) Bool))
+                   -> (p : Vector (Maybe Bool) n) 
+                   -> Vector (Maybe Bool) n
+setunit [n] = ind loop c = \p.
+  case c [eq_c] of
+    Nil -> p
+    Cons (Prod x b) ls ->
+      if (unassigned_lit p (Prod x b))
+       then case (unsat_clause p ls) of
+              ErasedNothing -> p
+              ErasedJust [_] -> (set x (Just b) p)
+       else case (unsat_lit p (Prod x b)) of
+              ErasedNothing -> p
+              ErasedJust [_] -> loop ls [ord eq_c] p
+
+log bool_eq_eq : (b1 b2 : Bool) -> (bool_eq b1 b2 = True) -> b1=b2
+bool_eq_eq b1 b2 h =
+  case b1 , b2 of
+    True , True -> _
+    False , False -> _
+    _ , _ -> unfold (bool_eq b1 b2) in
+               contra (_ : True = False) 
+
+log setunit_spec : [n:Nat] => (c : List (Times (Fin n) Bool))
+                   -> (p : Vector (Maybe Bool) n) 
+                   -> (phi : Vector Bool n)
+                   -> Extends p phi 
+                   -> Or (Extends (setunit c p) phi)
+                         (interp_clause phi c = False)
+setunit_spec [n] = ind loop c = \p.
+  case c [eq_c] of
+    Nil -> 
+      let _ = (join : setunit Nil p = p) in
+        \ phi h. InL h
+    Cons (Prod x b) ls ->
+      if (unassigned_lit p (Prod x b))
+       then case (unsat_clause p ls) of
+              ErasedNothing -> 
+                 let _ = (smartjoin : setunit c p = p) in
+                   \ phi h. InL h
+              ErasedJust [h1] -> 
+                 let _ = (smartjoin : setunit c p = set x (Just b) p) in
+                  \ phi h. 
+                     case (bool_eq b (lookup x phi)) of 
+                       True -> 
+                        InL 
+                         let _ = (bool_eq_eq b (lookup x phi) _) in 
+                           extends_same x p phi h
+                       False -> 
+                        InR
+                         let _ = (smartjoin : interp_lit phi (Prod x b) = False) in
+                         let _ = (pjoin: interp_clause phi (Cons (Prod x b) ls)
+                                       = or (interp_lit phi (Prod x b))
+                                            (interp_clause phi ls)) in
+                         let _ = (join : or False False = False) in
+                         let [_] = (h1 phi h) in 
+                          _ 
+       else case (unsat_lit p (Prod x b)) of
+              ErasedNothing -> 
+                let _ = (smartjoin : setunit c p = p) in
+                  \ phi h. InL h
+              ErasedJust [h1] -> 
+                let _ = (smartjoin : setunit c p = setunit ls p) in
+                  \ phi h. case (loop ls [ord eq_c] p phi h) of
+                             InL h2 -> InL h2
+                             InR h2 -> 
+                              InR
+                               let _ = (pjoin: interp_clause phi (Cons (Prod x b) ls)
+                                             = or (interp_lit phi (Prod x b))
+                                                  (interp_clause phi ls)) in
+                               let _ = (join : or False False = False) in
+                               let [_] = (h1 phi h) in 
+                                _
+
+
+log setunits : [n:Nat] => (f : Formula n)
+                   -> (p : Vector (Maybe Bool) n) 
+                   -> Vector (Maybe Bool) n
+setunits [n] = ind setunits f = \ p .
+  unfold (Formula n) in
+   case f [f_eq] of 
+     Nil -> p
+     Cons c cs -> setunit c (setunits cs [ord f_eq] p)
+
+log setunits_spec : [n:Nat] => (f : Formula n)
+                   -> (p : Vector (Maybe Bool) n) 
+                   -> (phi : Vector Bool n)
+                   -> Extends p phi 
+                   -> Or (Extends (setunits f p) phi)
+                         (interp phi f = False)
+setunits_spec [n] = ind ih f = \ p phi h .
+  unfold (Formula n) in
+  case f [f_eq] of
+    Nil -> 
+      let _ = (smartjoin : setunits f p = p) in
+        InL h
+    Cons c cs -> 
+      let _ = (pjoin : setunits (Cons c cs) p = setunit c (setunits cs p)) in
+      let _ = (pjoin : interp phi = all (interp_clause phi)) in
+      case (ih cs [ord f_eq] p phi h) of 
+        InL h1 -> case (setunit_spec c (setunits cs p) phi h1) of
+                    InL h2 -> InL h2
+                    InR h2 -> 
+                      InR (all_Cons_head_False (interp_clause phi) c cs h2)
+        InR h1 -> InR (all_Cons_tail_False (interp_clause phi) c cs h1)
+
+log unsat_units : [n:Nat] => (f : Formula n)
+                   -> (p : Vector (Maybe Bool) n) 
+                   -> Unsat n f (setunits f p)
+                   -> Unsat n f p
+unsat_units [n] f p unsat =
+  case unsat of
+    UNSAT [h] -> UNSAT [\phi h1.
+                          case (setunits_spec f p phi h1) of
+                            InL h2 -> h phi h2
+                            InR h2 -> h2]
+
+
 -- the simplest version goes through the literals one by one, trying assignments
 -- until it finds a satisfying state for the given formula
 -- prunes the search space when it is discovered to be UNSAT
@@ -265,22 +356,16 @@ prog dpll : [n:Nat]
              -> (partial : Vector (Maybe Bool) n)
              -> (Or (Sat n formula) (Unsat n formula partial))
 rec dpll [n] = \ formula partial .
- case (partial_interp partial formula) [s_eq] of 
-   InL sat  -> InL sat
-   InR (InL unsat) -> InR unsat
-   InR (InR i) -> 
-          case (dpll formula
-                  (set i (Just True) partial)) [_] of 
-            InL sat -> InL sat
-            InR unsat1   ->
-               case (dpll formula 
-                      (set i (Just False) partial)) [_] of
-                 InL sat -> InL sat
-                 InR unsat2 -> InR (unsat_branch i formula partial unsat1 unsat2)
-
--- The termination of this algorithm decreases with the number of unassigned 
--- literals in the partial map. Perhaps not TOO difficult to show...
-
--- Would also be good to get some experience using HOFs in the programmatic 
--- fragment.
-
+ let upartial = setunits formula partial in
+   case (partial_interp upartial formula) [s_eq] of 
+     InL sat  -> InL sat
+     InR (InL unsat) -> InR (unsat_units formula partial unsat)
+     InR (InR i) -> 
+            case (dpll formula
+                    (set i (Just True) upartial)) [_] of 
+              InL sat -> InL sat
+              InR unsat1   ->
+                 case (dpll formula 
+                        (set i (Just False) upartial)) [_] of
+                   InL sat -> InL sat
+                   InR unsat2 -> InR (unsat_units formula partial (unsat_branch i formula upartial unsat1 unsat2))

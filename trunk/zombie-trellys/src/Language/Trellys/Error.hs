@@ -29,8 +29,8 @@ instance Disp Err where
     (case pos of 
       Just p -> disp p
       Nothing -> text "unknown location:0:0") $$
-    nest 2 msg $$
-    nest 2 (disp traceBack)
+    nest 2 msg {- $$
+    nest 2 (disp traceBack) -} 
    where pos = msum $ map sourceLocationPos locs                    -- The first defined position
          traceBack = takeWhile1 (isNothing.sourceLocationPos) locs  -- Context until we find a position
 
