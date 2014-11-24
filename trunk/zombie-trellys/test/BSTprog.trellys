@@ -311,24 +311,98 @@ memberS = \[a] order x. rec memberS t =
                         Just (InHere t1 t2 _)
 
 -- The insert function
-prog insert : [a:Type] -> Ord a -> (x : a) -> Tree a -> Tree a
-insert = \[a] order x . rec insert t =
+log insert : [a:Type] => Ord a => (x : a) -> Tree a -> Tree a
+insert = \[a] order x . ind insert t =
   case t [t_eq] of 
     EmptyTree -> BranchTree EmptyTree x EmptyTree
     BranchTree t1 y t2 ->
-       case (ordLt x y) of
-         True -> BranchTree (insert t1) x t2
-         False -> case (ordLt y x) of
-                    True -> BranchTree t1 x (insert t2)
+       case (ordLt x y) [_] of
+         True -> BranchTree (insert t1 [ord t_eq]) y t2
+         False -> case (ordLt y x) [_] of
+                    True -> BranchTree t1 y (insert t2 [ord t_eq])
                     False -> t
 
-
 -- Correctness of insert with respect to InTree.
--- Note that here is one drawback of puttting insert in prog instead of log;
--- we cannnot write (InTree a x (insert [a] order x t)), so instead
--- we have to introduce an extra variable t'.
+log insert_In2 : [a:Type] -> (order:Ord a) -> (x : a) -> (t : Tree a)
+                 -> InTree a x (insert x t)
+insert_In2 = \ [a] order x . ind insert_In2 t =
+  let _ = (pjoin : insert x t
+                = (case t [t_eq] of 
+                     EmptyTree -> BranchTree EmptyTree x EmptyTree
+                     BranchTree t1 y t2 ->
+                       case (ordLt x y) [_] of
+                         True -> BranchTree (insert x t1) y t2
+                         False -> case (ordLt y x) [_] of
+                                   True -> BranchTree t1 y (insert x t2)
+                                   False -> t : Tree a)) in
+  case t [t_eq] of 
+    EmptyTree -> 
+      let _ = (pjoin : (case (EmptyTree : Tree a) [t_eq] of 
+                         EmptyTree -> BranchTree EmptyTree x EmptyTree
+                         BranchTree t1 y t2 ->
+                           case (ordLt x y) [_] of
+                             True -> BranchTree (insert x t1) y t2
+                             False -> case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)
+                    = (BranchTree EmptyTree x EmptyTree : Tree a)) in
+      InHere EmptyTree EmptyTree _
+    BranchTree t1 y t2 -> 
+      let _ = (pjoin : (case (BranchTree t1 y t2 : Tree a) [t_eq] of 
+                         EmptyTree -> BranchTree EmptyTree x EmptyTree 
+                         BranchTree t1 y t2 ->
+                           case (ordLt x y) [_] of
+                             True -> BranchTree (insert x t1) y t2
+                             False -> case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)
+                    = (case (ordLt x y) [_] of
+                             True -> BranchTree (insert x t1) y t2
+                             False -> case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)) in
+      case (ordLt x y) [_] of
+        True -> 
+         let _ = (pjoin : (case True [_] of
+                             True -> BranchTree (insert x t1) y t2
+                             False -> case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)
+                        = BranchTree (insert x t1) y t2) in
+         let ih = insert_In2 t1 [ord t_eq] in
+            InLeft (insert x t1) y t2 ih _
+        False -> 
+         let _ = (pjoin : (case False [_] of
+                             True -> BranchTree (insert x t1) y t2
+                             False -> case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)
+                        = (case (ordLt y x) [_] of
+                                       True -> BranchTree t1 y (insert x t2)
+                                       False -> t : Tree a)) in
+         case (ordLt y x) of
+            True -> 
+              let _ = (pjoin : (case True [_] of
+                                  True -> BranchTree t1 y (insert x t2)
+                                  False -> t : Tree a)
+                             = BranchTree t1 y (insert x t2)) in
+              let ih = insert_In2 t2 [ord t_eq] in
+                InRight t1 y (insert x t2) ih _ 
+            False -> let _ = (pjoin : (case False [_] of
+                                        True -> BranchTree t1 y (insert x t2)
+                                        False -> t : Tree a)
+                                    = t) in
+                      let _ = ordLtAntiSymm [a] order x y _ _ in
+                          InHere t1 t2 _ 
+
+
+
+-- Here is why I wrote insert in log instead of prog:
+-- we cannnot write (InTree a x (insert [a] order x t)), so if insert was
+-- in prog we would have to introduce an extra equation int the theorem statement:
 
 {-
 log insert_In2 : [a:Type] -> (order:Ord a) -> (x : a) -> (t t' : Tree a)
                  -> t' = (insert [a] order x t)
-                 -> InTree a x t' -}
+                 -> InTree a x t' 
+-}

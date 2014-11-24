@@ -29,20 +29,21 @@ snoc xs x = xs ++ x ∷ []
 
 -- this helper would make it SOOO much easier. But nope, not allowed.
 -- EDIT: maybe it wouldn't help that much.
+{-
 ::inv2 : ∀ {x y : A}{xs ys : List} -> (x ∷ xs) ≡ (y ∷ ys) -> xs ≡ ys 
 ::inv2 refl = refl
-
+-}
 
 -- Your challenge is to implement the following using only pattern matching
 -- and with clauses.
 snoc-inv : ∀ xs ys z → (snoc xs z ≡ snoc ys z) → xs ≡ ys
-snoc-inv (x ∷ xs') (y ∷ ys') z pf with (snoc-inv xs' ys' z (::inv2 pf)) 
-... | refl = {! !}
-{-
-snoc-inv (x ∷ xs') (y ∷ ys') z pf with (snoc xs' z) | (snoc ys' z) | inspect (snoc xs') z | inspect (snoc ys') z
-snoc-inv (.y ∷ xs') (y ∷ ys') z refl | .s2 | s2 | [ p ] | [ q ] with (snoc-inv xs' ys' z (trans p (sym q))) 
-snoc-inv (.y ∷ .ys') (y ∷ ys') z refl | .s2 | s2 | [ p ] | [ q ] | refl = refl
--}
+snoc-inv (x ∷ xs') (y ∷ ys') z pf 
+  with (snoc xs' z) | (snoc ys' z) 
+    | inspect (snoc xs') z | inspect (snoc ys') z
+snoc-inv (.y ∷ xs') (y ∷ ys') z refl 
+  | .s2 | s2 | [ p ] | [ q ] with (snoc-inv xs' ys' z (trans p (sym q))) 
+snoc-inv (.y ∷ .ys') (y ∷ ys') z refl 
+  | .s2 | s2 | [ p ] | [ q ] | refl = refl
 snoc-inv (x ∷ x₁ ∷ xs) [] z () 
 snoc-inv (x ∷ []) [] z ()
 snoc-inv [] (x ∷ x₁ ∷ ys) z () 
