@@ -1,4 +1,12 @@
 Various trellys languages.
 
-See zombie-trellys for an example directory layout with some
-documentation.
+The goal of Trellys is a functional programming language with full dependent types, general recursion, 
+and a sound logical fragment.
+
+This repository contains source code related to three different languages approximating this ideal:
+
+Zombie. 
+   If you use Emacs, you may also be interested in David Christiansen's zombie-trellys-mode.
+   See zombie-trellys for an example directory layout with some documentation.
+Sep3
+Nax
