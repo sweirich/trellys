@@ -1,5 +1,5 @@
 {-# Language TypeSynonymInstances,ExistentialQuantification,
-             FlexibleInstances, UndecidableInstances,
+             FlexibleInstances, UndecidableInstances, FlexibleContexts, OverlappingInstances,
              ViewPatterns
  #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches -fno-warn-name-shadowing #-}

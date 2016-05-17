@@ -18,7 +18,7 @@
 -- 
 -----------------------------------------------------------------------------
 
-{-# LANGUAGE PolymorphicComponents, NoMonomorphismRestriction  #-}
+{-# LANGUAGE PolymorphicComponents, NoMonomorphismRestriction, FlexibleContexts  #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing -fno-warn-unused-do-bind -fno-warn-unused-matches #-}
 
 module Language.Trellys.LayoutToken
