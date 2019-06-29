@@ -10,7 +10,8 @@ import qualified Data.Map as M
 import Control.Applicative
 import Control.Monad (liftM)
 import Control.Monad.RWS.Lazy
-import Control.Monad.Error(ErrorT(..))
+import Control.Monad.Fail
+import Control.Monad.Error(ErrorT(..), throwError, strMsg)
 
 -- The Monad that we will be using includes reader (for the
 -- environment), freshness state (for supporting locally-nameless
@@ -18,6 +19,9 @@ import Control.Monad.Error(ErrorT(..))
 -- bindings of unification variables) and IO (for e.g.  warning
 -- messages).
 type TcMonad = FreshMT (RWST Env () (Constraints,UniVarBindings) (ErrorT Err IO))
+
+instance MonadFail TcMonad where
+    fail = throwError . strMsg
 
 runTcMonad :: Env -> TcMonad a -> IO (Either Err a)
 runTcMonad env m = runErrorT $

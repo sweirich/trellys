@@ -1,4 +1,5 @@
-resolver: lts-9.0
-
-packages:
-  - location: .
+resolver: lts-13.24
+allow-newer: true
+extra-deps:
+- RepLib-0.5.4.1@sha256:f1d0765fbdc55c0905b3b70f1953a440cb8d04b65b3ccd6f067ee0f082f6fa0d
+- unbound-0.5.1.1@sha256:13bc46f324b63061db1189e45c00e0d332fa0371c95077c4e474d3b94b7dd01d

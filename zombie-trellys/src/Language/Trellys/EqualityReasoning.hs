@@ -32,6 +32,7 @@ import Language.Trellys.GenericBind hiding (avoid)
 
 import Control.Arrow (second)
 import Control.Applicative 
+import Control.Monad.Fail
 import Control.Monad.List (ListT(..), runListT)
 import Control.Monad.Writer.Lazy (WriterT, runWriterT, tell)
 import Control.Monad.State.Strict
@@ -566,7 +567,7 @@ decomposeMatch avoid (AMatch c bnd) = do
 -- (AJoin ...) and (ANthEq ...) to match (and we ensure that they do).
 -- Similarly, we make sure that (AConv a ...) and (a)
 -- match, and that (ABox a) and (a) match.
-match :: (Applicative m, Monad m, Fresh m) => 
+match :: (Applicative m, Monad m, Fresh m, MonadFail m) => 
          [AName] -> ATerm -> ATerm -> m (Map AName ATerm)
 match vars (AVar x) t | x `elem` vars = return $ M.singleton x (eraseToHead t)
                       | otherwise     = return M.empty
@@ -629,7 +630,7 @@ match vars a (AHighlight a') = match vars a a'
 match _ t t' = 
   error.render.disp $ [ DS "internal error: match called on non-matching terms", DD t, DS "and", DD t' ]
 
-matchMatch :: (Applicative m, Monad m, Fresh m) =>
+matchMatch :: (Applicative m, Monad m, Fresh m, MonadFail m) =>
               [AName] -> AMatch -> AMatch -> m (Map AName ATerm)
 matchMatch vars (AMatch _ bnd) (AMatch _ bnd') = do
   Just (_, t, _, t') <- unbind2 bnd bnd'

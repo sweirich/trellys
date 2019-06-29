@@ -13,6 +13,7 @@ import Language.Trellys.Error
 import Language.Trellys.OpSem (eraseToHead)
 import Language.Trellys.TypeCheckCore
 
+import Prelude hiding ((<>))  -- PP.<> has a more suitable precedence
 import Text.PrettyPrint.HughesPJ as PP
 import Control.Applicative ((<$>))
 

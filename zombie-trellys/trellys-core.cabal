@@ -10,6 +10,7 @@ tested-with: GHC == 7.2.1
            , GHC == 7.0.4
            , GHC == 7.6.1
            , GHC == 8.0.1
+           , GHC == 8.6.5
          --, GHC == 7.4.1
 
 library
@@ -40,8 +41,8 @@ executable trellys
                  HUnit,
                  QuickCheck,
                  bimap < 0.4,
-                 ansi-terminal >= 0.6 && <0.7,
-                 fingertree-psqueue >= 0.3 && <0.4
+                 ansi-terminal >= 0.6 && <0.9,
+                 psqueues >= 0.2 && <0.3
 
   Ghc-Options:  -main-is Trellys -Wall -rtsopts
 
