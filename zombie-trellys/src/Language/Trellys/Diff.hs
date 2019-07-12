@@ -5,6 +5,7 @@ module Language.Trellys.Diff where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Fail
 
 import Language.Trellys.GenericBind
 import Language.Trellys.OpSem
@@ -13,7 +14,7 @@ import Language.Trellys.Syntax
 -- (diff a1 a2) returns a copy of a1 where (AHighlight) has been added around
 -- every non-erased subexpression that differs from a2. This is used to print 
 -- more readable error messages.
-diff :: (Applicative m, Fresh m) => ATerm -> ATerm -> m ATerm 
+diff :: (Applicative m, Fresh m, MonadFail m) => ATerm -> ATerm -> m ATerm 
 
 --Erased head constructors:
 diff (ACumul a k) b = ACumul <$> diff a b <*> pure k
@@ -81,12 +82,12 @@ diff a b = do
    then return a
    else return (AHighlight a)
 
-diffFirst :: (Applicative m,Monad m, Fresh m) => 
+diffFirst :: (Applicative m, Monad m, Fresh m, MonadFail m) => 
              (ATerm,Epsilon) -> (ATerm,Epsilon) -> m (ATerm,Epsilon)
 diffFirst (a,ep) (b,ep') | ep==ep' = (,ep) <$> diff a b
 diffFirst _ _ = error "diffFirst call on pairs with unequal second component"
 
-diffMatch :: (Applicative m, Monad m, Fresh m) =>
+diffMatch :: (Applicative m, Monad m, Fresh m, MonadFail m) =>
              AMatch -> AMatch -> m AMatch
 diffMatch (AMatch d bnd) (AMatch d' bnd') | d==d' = do
   Just (xs, a, _, b) <- unbind2 bnd bnd'

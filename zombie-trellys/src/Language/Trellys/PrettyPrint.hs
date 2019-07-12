@@ -12,6 +12,7 @@ module Language.Trellys.PrettyPrint(Disp(..), D(..))  where
 import Language.Trellys.Syntax
 import Language.Trellys.GenericBind
 
+import Prelude hiding ((<>))  -- PP.<> has a more suitable precedence
 import Control.Monad.Reader
 import Text.PrettyPrint.HughesPJ as PP
 import Text.ParserCombinators.Parsec.Pos (SourcePos, sourceName, sourceLine, sourceColumn)

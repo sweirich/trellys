@@ -26,6 +26,7 @@ import Generics.RepLib.Lib(subtrees)
 import Text.PrettyPrint.HughesPJ hiding (first)
 
 import Control.Applicative ((<$>))
+import Control.Monad.Fail
 import Control.Monad.Reader hiding (join)
 import Control.Monad.Error  hiding (join)
 import Control.Arrow (first)
@@ -1473,7 +1474,7 @@ isEssentialVarMatch (ComplexMatch bnd) =
  
 
 -- Precondition: the match has at least one pattern.
-matchPat :: (Functor m, Fresh m) => ComplexMatch -> m (Pattern, ComplexMatch)
+matchPat :: (Functor m, Fresh m, MonadFail m) => ComplexMatch -> m (Pattern, ComplexMatch)
 matchPat (ComplexMatch bnd) = do
   ((pat:pats), body) <- unbind bnd
   return (pat, ComplexMatch $ bind pats body)

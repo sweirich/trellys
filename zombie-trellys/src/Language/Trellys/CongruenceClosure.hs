@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TupleSections, TypeFamilies, 
              FlexibleInstances, FlexibleContexts, ViewPatterns,
-             TemplateHaskell, RankNTypes #-}
+             TemplateHaskell, RankNTypes, LambdaCase #-}
 {-# OPTIONS_GHC -Wall -fno-warn-unused-matches #-}
 
 module Language.Trellys.CongruenceClosure(
@@ -46,8 +46,8 @@ import qualified Data.Set as S
 import Data.Bimap (Bimap)
 import qualified Data.Bimap as BM
 import Data.List (intercalate)
-import Data.FingerTree.PSQueue (PSQ, Binding(..), minView)
-import qualified Data.FingerTree.PSQueue as PQ
+import Data.OrdPSQ (OrdPSQ, minView)
+import qualified Data.OrdPSQ as PSQ
 import Control.Monad.Trans
 import Control.Monad.State.Class
 import Control.Monad.Trans.State.Strict (StateT(..))
@@ -366,16 +366,22 @@ proveEqual :: Monad m => Constant -> Constant -> StateT ProblemState m Proof
 proveEqual x y | x==y = return RawRefl
 proveEqual x y = do
   theGraph <- gets edges
-  let dijkstra :: Constant -> PSQ Constant BestPath  -> BestPath
+  let dijkstra :: Constant -> OrdPSQ Constant BestPath ()  -> BestPath
       dijkstra goal (minView -> Nothing) = NoPath
-      dijkstra goal (minView -> Just((n :-> path), _)) | n==goal = path
-      dijkstra goal (minView -> Just((n :-> path), rest)) =  dijkstra goal (visit rest)
-       where visit :: PSQ Constant BestPath -> PSQ Constant BestPath
-             visit unvisited = foldr (\(p', n') uv -> PQ.adjust (min (extend (proofSize p') p' path)) n' uv)
+      dijkstra goal (minView -> Just(n, path, (), _)) | n==goal = path
+      dijkstra goal (minView -> Just(n, path, (), rest)) =  dijkstra goal (visit rest)
+       where visit :: OrdPSQ Constant BestPath () -> OrdPSQ Constant BestPath ()
+             visit unvisited = foldr (\(p', n') uv -> adjust (min (extend (proofSize p') p' path)) n' uv)
                                      unvisited
                                      (M.findWithDefault [] n theGraph)
+
+             adjust f n psq = snd $ adjust' f n psq
+             adjust' f = PSQ.alter $ \case
+                Just (p, ()) -> ((), Just (f p, ()))
+                Nothing      -> ((), Nothing)
+
   -- Unvisited starts out with the source node having cost 0, and all the rest cost Infinity:
-  let initialUnvisited =   PQ.fromList [(n :-> path) | n <- (M.keys theGraph),
+  let initialUnvisited =   PSQ.fromList [(n, path, ()) | n <- (M.keys theGraph),
                                                        let path = if (n==x) then (Path 0 []) else NoPath]                      
   case dijkstra y initialUnvisited of 
     NoPath -> error "Internal error: proveEqual found no path"
